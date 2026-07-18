@@ -1917,3 +1917,12 @@
 {"ts": "2026-07-18T22:59:50.638749+00:00", "project": "vgt", "event": "agent.start_deferred", "detail": {"issue": 11, "reason": "all_agents_capped", "usage": "claude 81% (capped), codex 100% (capped)"}}
 {"ts": "2026-07-18T22:59:50.640289+00:00", "project": "vgt", "event": "orchestrator.pass_outcome", "detail": {"outcomes": ["blocked", "deferred"], "scheduled": 0, "followups_created": 0}}
 {"ts": "2026-07-18T22:59:50.640564+00:00", "project": "vgt", "event": "orchestrator.no_capacity", "detail": {"message": "work is available, but scheduler capacity or budget headroom is exhausted"}}
+{"ts": "2026-07-18T23:01:04.161507+00:00", "project": "vgt", "event": "agent.review_started", "detail": {"issue": 11, "agent": "claude", "pr": 16, "pid": 40157, "process_started_at": "Sun Jul 19 01:01:02 2026"}}
+{"ts": "2026-07-18T23:01:04.163458+00:00", "project": "vgt", "event": "scheduler.stall_cleared", "detail": {"category": "deferred_passes", "reason": "budget", "first_seen_at": "2026-07-18T20:54:01.621189+00:00", "last_seen_at": "2026-07-18T22:59:50.568873+00:00", "consecutive_passes": 109}}
+{"ts": "2026-07-18T23:01:04.180603+00:00", "project": "vgt", "event": "orchestrator.pass_outcome", "detail": {"outcomes": ["blocked", "deferred", "scheduled"], "scheduled": 1, "followups_created": 0}}
+{"ts": "2026-07-18T23:02:12.688462+00:00", "project": "vgt", "event": "orchestrator.pass_outcome", "detail": {"outcomes": ["blocked", "deferred"], "scheduled": 0, "followups_created": 0}}
+{"ts": "2026-07-18T23:02:12.688624+00:00", "project": "vgt", "event": "orchestrator.no_capacity", "detail": {"message": "work is available, but scheduler capacity or budget headroom is exhausted"}}
+{"ts": "2026-07-18T23:03:20.964643+00:00", "project": "vgt", "event": "orchestrator.pass_outcome", "detail": {"outcomes": ["blocked", "deferred"], "scheduled": 0, "followups_created": 0}}
+{"ts": "2026-07-18T23:03:20.964929+00:00", "project": "vgt", "event": "orchestrator.no_capacity", "detail": {"message": "work is available, but scheduler capacity or budget headroom is exhausted"}}
+{"ts": "2026-07-18T23:04:31.521950+00:00", "project": "vgt", "event": "issue.closed_labels_cleaned", "detail": {"issue": 11, "removed": ["status:working"]}}
+{"ts": "2026-07-18T23:04:31.921489+00:00", "project": "vgt", "event": "worktree.cleaned_up", "detail": {"issue": 11, "branch": "issue-11-phase-1-apply-analysis-into-the-reaper-p", "worktree": "/Users/marekkucharski/projects/.pm-worktrees/vgt/issue-11"}}
