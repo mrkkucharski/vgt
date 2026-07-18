@@ -1136,3 +1136,28 @@
 {"ts": "2026-07-18T18:45:48.159916+00:00", "project": "vgt", "event": "agent.review_started", "detail": {"issue": 8, "agent": "codex", "pr": 13, "pid": 23725, "process_started_at": "Sat Jul 18 20:45:46 2026"}}
 {"ts": "2026-07-18T18:45:48.173225+00:00", "project": "vgt", "event": "orchestrator.pass_outcome", "detail": {"outcomes": ["blocked", "deferred", "scheduled"], "scheduled": 1, "followups_created": 0}}
 {"ts": "2026-07-18T18:46:58.230106+00:00", "project": "vgt", "event": "issue.closed_labels_cleaned", "detail": {"issue": 8, "removed": ["status:working"]}}
+{"ts": "2026-07-18T18:47:04.140364+00:00", "project": "vgt", "event": "agent.started", "detail": {"issue": 11, "agent": "codex", "branch": "issue-11-phase-1-apply-analysis-into-the-reaper-p", "pid": 24014, "process_started_at": "Sat Jul 18 20:47:02 2026"}}
+{"ts": "2026-07-18T18:47:04.141901+00:00", "project": "vgt", "event": "scheduler.fairness_override", "detail": {"issue": 11, "role": "implement", "max_consecutive_priority_starts": 3, "priority_starts_since_implementation": 0}}
+{"ts": "2026-07-18T18:47:04.152992+00:00", "project": "vgt", "event": "orchestrator.pass_outcome", "detail": {"outcomes": ["blocked", "deferred", "scheduled"], "scheduled": 1, "followups_created": 0}}
+{"ts": "2026-07-18T18:48:12.910628+00:00", "project": "vgt", "event": "orchestrator.pass_outcome", "detail": {"outcomes": ["blocked", "deferred"], "scheduled": 0, "followups_created": 0}}
+{"ts": "2026-07-18T18:48:12.910936+00:00", "project": "vgt", "event": "orchestrator.no_capacity", "detail": {"message": "work is available, but scheduler capacity or budget headroom is exhausted"}}
+{"ts": "2026-07-18T18:49:21.515347+00:00", "project": "vgt", "event": "orchestrator.pass_outcome", "detail": {"outcomes": ["blocked", "deferred"], "scheduled": 0, "followups_created": 0}}
+{"ts": "2026-07-18T18:49:21.515596+00:00", "project": "vgt", "event": "orchestrator.no_capacity", "detail": {"message": "work is available, but scheduler capacity or budget headroom is exhausted"}}
+{"ts": "2026-07-18T18:50:30.292102+00:00", "project": "vgt", "event": "orchestrator.pass_outcome", "detail": {"outcomes": ["blocked", "deferred"], "scheduled": 0, "followups_created": 0}}
+{"ts": "2026-07-18T18:50:30.292388+00:00", "project": "vgt", "event": "orchestrator.no_capacity", "detail": {"message": "work is available, but scheduler capacity or budget headroom is exhausted"}}
+{"ts": "2026-07-18T18:51:38.949098+00:00", "project": "vgt", "event": "orchestrator.pass_outcome", "detail": {"outcomes": ["blocked", "deferred"], "scheduled": 0, "followups_created": 0}}
+{"ts": "2026-07-18T18:51:38.949392+00:00", "project": "vgt", "event": "orchestrator.no_capacity", "detail": {"message": "work is available, but scheduler capacity or budget headroom is exhausted"}}
+{"ts": "2026-07-18T18:52:47.835008+00:00", "project": "vgt", "event": "orchestrator.pass_outcome", "detail": {"outcomes": ["blocked", "deferred"], "scheduled": 0, "followups_created": 0}}
+{"ts": "2026-07-18T18:52:47.835336+00:00", "project": "vgt", "event": "orchestrator.no_capacity", "detail": {"message": "work is available, but scheduler capacity or budget headroom is exhausted"}}
+{"ts": "2026-07-18T18:53:56.358796+00:00", "project": "vgt", "event": "orchestrator.pass_outcome", "detail": {"outcomes": ["blocked", "deferred"], "scheduled": 0, "followups_created": 0}}
+{"ts": "2026-07-18T18:53:56.359077+00:00", "project": "vgt", "event": "orchestrator.no_capacity", "detail": {"message": "work is available, but scheduler capacity or budget headroom is exhausted"}}
+{"ts": "2026-07-18T18:55:06.497757+00:00", "project": "vgt", "event": "orchestrator.pass_outcome", "detail": {"outcomes": ["blocked", "deferred"], "scheduled": 0, "followups_created": 0}}
+{"ts": "2026-07-18T18:55:06.498085+00:00", "project": "vgt", "event": "orchestrator.no_capacity", "detail": {"message": "work is available, but scheduler capacity or budget headroom is exhausted"}}
+{"ts": "2026-07-18T18:56:15.159727+00:00", "project": "vgt", "event": "orchestrator.pass_outcome", "detail": {"outcomes": ["blocked", "deferred"], "scheduled": 0, "followups_created": 0}}
+{"ts": "2026-07-18T18:56:15.160053+00:00", "project": "vgt", "event": "orchestrator.no_capacity", "detail": {"message": "work is available, but scheduler capacity or budget headroom is exhausted"}}
+{"ts": "2026-07-18T18:57:24.088966+00:00", "project": "vgt", "event": "orchestrator.pass_outcome", "detail": {"outcomes": ["blocked", "deferred"], "scheduled": 0, "followups_created": 0}}
+{"ts": "2026-07-18T18:57:24.089362+00:00", "project": "vgt", "event": "orchestrator.no_capacity", "detail": {"message": "work is available, but scheduler capacity or budget headroom is exhausted"}}
+{"ts": "2026-07-18T18:58:31.968507+00:00", "project": "vgt", "event": "agent.ready_for_review", "detail": {"issue": 11, "agent": "codex", "role": "implement"}}
+{"ts": "2026-07-18T18:58:35.079129+00:00", "project": "vgt", "event": "agent.branch_mismatch", "detail": {"issue": 9, "phase": "review", "branch": "issue-11-phase-1-apply-analysis-into-the-reaper-p", "worktree_path": "/Users/marekkucharski/projects/.pm-worktrees/vgt/issue-11"}}
+{"ts": "2026-07-18T18:58:35.093515+00:00", "project": "vgt", "event": "agent.branch_recovered", "detail": {"issue": 9, "phase": "review", "branch": "issue-9-phase-1-key-beat-aligned-chords"}}
+{"ts": "2026-07-18T18:58:37.122606+00:00", "project": "vgt", "event": "pr.created", "detail": {"issue": 9, "pr": 14, "branch": "issue-9-phase-1-key-beat-aligned-chords"}}
