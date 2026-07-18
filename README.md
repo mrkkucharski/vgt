@@ -102,3 +102,29 @@ collapse to their nearest maj/min match — so every result is flagged
 Every run also renders a **chord-sheet artifact** —
 `<project>.vgt-chords.txt`, next to the sidecar — a plain-text timestamp +
 chord-label listing for by-eye verification.
+
+### Sections
+
+The `sections` stage detects song-structure boundaries + generic labels
+("A", "B", …) from the reference track's full mix, stored in the sidecar as
+`{"index", "start_seconds", "end_seconds", "label", "backend"}` entries
+spanning the track end-to-end:
+
+- **Primary backend: MSAF**'s novelty/structure segmentation, installed via
+  the optional `msaf` extra (`uv sync --extra msaf`). Like madmom above,
+  MSAF's maintenance is uncertain and its last release predates modern
+  Python/NumPy/SciPy — isolated behind this extra so a default install
+  never needs it.
+- **Fallback: a self-similarity novelty + peak-picking heuristic** (built on
+  librosa, installed by default) when MSAF isn't installed or fails to
+  process the track: a Foote-style checkerboard-kernel novelty curve over
+  chroma+MFCC features picks boundary candidates, then segments are
+  agglomeratively matched against earlier segments' feature centroids so a
+  recurring section (e.g. a chorus) gets the same label each time.
+
+Labels are intentionally generic — renaming them (`"A"` → `"chorus"`) is a
+normal correction, not a failure, and (like every other stage) persists once
+`human_verified: true` is set. Every run also renders a **section-timeline
+artifact** — `<project>.vgt-sections.txt`, next to the sidecar — so the
+detected structure can be checked by eye; it is vgt-owned and regenerated
+each run, not committed alongside the project.

@@ -3,9 +3,9 @@ track's source audio and persists the result into the `.vgt` sidecar.
 
 Runs entirely in the Python CLI (never inside REAPER, per docs/GOAL.md's
 "analysis stays out of the DAW process" requirement). `detect_tempo`,
-`detect_key`, and `detect_chords` are real detectors (see tempo.py/key.py/
-chords.py); `sections` remains a stub for a later Phase 1 sub-issue. All run
-through the same stage-cache and corrections-survive-rerun framework.
+`detect_key`, `detect_sections`, and `detect_chords` are all real detectors
+(see tempo.py/key.py/sections.py/chords.py), running through the same
+stage-cache and corrections-survive-rerun framework.
 
 Stages run in `sidecar.ANALYSIS_STAGES` order (tempo before chords), so
 `detect_chords` can read the tempo stage's just-refreshed beat grid out of
@@ -24,6 +24,7 @@ from . import __version__
 from .chords import ChordDetectionError, chord_sheet_path, detect_chords as _detect_chords, render_chord_sheet
 from .key import KeyDetectionError, detect_key as _detect_key
 from .project import ProjectError, locate_project, track_source_path
+from .sections import SectionDetectionError, detect_sections as _detect_sections, render_section_timeline, section_timeline_path
 from .sidecar import ANALYSIS_STAGES, SidecarError, read_sidecar, refresh_stage, write_sidecar
 from .tempo import TempoDetectionError, build_tempo_grid, click_artifact_path, detect_beats, render_click_over_mix
 
@@ -70,8 +71,17 @@ def detect_key(project_path: Path, source: Path, settings: dict[str, Any], analy
 
 
 def detect_sections(project_path: Path, source: Path, settings: dict[str, Any], analysis: dict[str, Any]) -> list[Any]:
-    del project_path, source, settings, analysis
-    return []
+    """Section boundaries + generic labels (see sections.py), plus a
+    plain-text section-timeline artifact rendered next to the sidecar for
+    by-eye verification."""
+    del analysis
+    try:
+        sections_value = _detect_sections(source, settings)
+    except SectionDetectionError as exc:
+        raise AnalysisError(str(exc)) from exc
+    if sections_value:
+        render_section_timeline(sections_value, section_timeline_path(project_path))
+    return sections_value
 
 
 def _tempo_beat_times(tempo_value: dict[str, Any] | None, source: Path) -> list[float]:
