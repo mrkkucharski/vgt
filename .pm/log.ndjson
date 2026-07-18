@@ -164,3 +164,23 @@
 {"ts": "2026-07-18T08:38:16.371923+00:00", "project": "vgt", "event": "issues.created", "detail": {"count": 1}}
 {"ts": "2026-07-18T08:38:17.127154+00:00", "project": "vgt", "event": "orchestrator.pass_outcome", "detail": {"outcomes": ["follow-ups-created"], "scheduled": 0, "followups_created": 1}}
 {"ts": "2026-07-18T08:38:17.128228+00:00", "project": "vgt", "event": "orchestrator.pass_completed", "detail": {"message": "scheduler pass completed project completion or follow-up work"}}
+{"ts": "2026-07-18T08:39:28.074025+00:00", "project": "vgt", "event": "agent.started", "detail": {"issue": 4, "agent": "codex", "branch": "issue-4-verify-phase-0-apply-against-a-live-reap", "pid": 89439, "process_started_at": "Sat Jul 18 10:39:26 2026"}}
+{"ts": "2026-07-18T08:39:28.092178+00:00", "project": "vgt", "event": "orchestrator.pass_outcome", "detail": {"outcomes": ["deferred", "scheduled"], "scheduled": 1, "followups_created": 0}}
+{"ts": "2026-07-18T08:40:32.981806+00:00", "project": "vgt", "event": "orchestrator.pass_outcome", "detail": {"outcomes": ["deferred"], "scheduled": 0, "followups_created": 0}}
+{"ts": "2026-07-18T08:40:32.982949+00:00", "project": "vgt", "event": "orchestrator.no_capacity", "detail": {"message": "work is available, but scheduler capacity or budget headroom is exhausted"}}
+{"ts": "2026-07-18T08:41:37.756760+00:00", "project": "vgt", "event": "orchestrator.pass_outcome", "detail": {"outcomes": ["deferred"], "scheduled": 0, "followups_created": 0}}
+{"ts": "2026-07-18T08:41:37.757290+00:00", "project": "vgt", "event": "orchestrator.no_capacity", "detail": {"message": "work is available, but scheduler capacity or budget headroom is exhausted"}}
+{"ts": "2026-07-18T08:42:42.450116+00:00", "project": "vgt", "event": "orchestrator.pass_outcome", "detail": {"outcomes": ["deferred"], "scheduled": 0, "followups_created": 0}}
+{"ts": "2026-07-18T08:42:42.451015+00:00", "project": "vgt", "event": "orchestrator.no_capacity", "detail": {"message": "work is available, but scheduler capacity or budget headroom is exhausted"}}
+{"ts": "2026-07-18T08:43:47.333268+00:00", "project": "vgt", "event": "orchestrator.pass_outcome", "detail": {"outcomes": ["deferred"], "scheduled": 0, "followups_created": 0}}
+{"ts": "2026-07-18T08:43:47.334997+00:00", "project": "vgt", "event": "orchestrator.no_capacity", "detail": {"message": "work is available, but scheduler capacity or budget headroom is exhausted"}}
+{"ts": "2026-07-18T08:44:52.067524+00:00", "project": "vgt", "event": "orchestrator.pass_outcome", "detail": {"outcomes": ["deferred"], "scheduled": 0, "followups_created": 0}}
+{"ts": "2026-07-18T08:44:52.068042+00:00", "project": "vgt", "event": "orchestrator.no_capacity", "detail": {"message": "work is available, but scheduler capacity or budget headroom is exhausted"}}
+{"ts": "2026-07-18T08:45:57.087935+00:00", "project": "vgt", "event": "orchestrator.pass_outcome", "detail": {"outcomes": ["deferred"], "scheduled": 0, "followups_created": 0}}
+{"ts": "2026-07-18T08:45:57.089408+00:00", "project": "vgt", "event": "orchestrator.no_capacity", "detail": {"message": "work is available, but scheduler capacity or budget headroom is exhausted"}}
+{"ts": "2026-07-18T08:47:01.984128+00:00", "project": "vgt", "event": "orchestrator.pass_outcome", "detail": {"outcomes": ["deferred"], "scheduled": 0, "followups_created": 0}}
+{"ts": "2026-07-18T08:47:01.985905+00:00", "project": "vgt", "event": "orchestrator.no_capacity", "detail": {"message": "work is available, but scheduler capacity or budget headroom is exhausted"}}
+{"ts": "2026-07-18T08:48:06.719498+00:00", "project": "vgt", "event": "orchestrator.pass_outcome", "detail": {"outcomes": ["deferred"], "scheduled": 0, "followups_created": 0}}
+{"ts": "2026-07-18T08:48:06.720948+00:00", "project": "vgt", "event": "orchestrator.no_capacity", "detail": {"message": "work is available, but scheduler capacity or budget headroom is exhausted"}}
+{"ts": "2026-07-18T08:49:11.819027+00:00", "project": "vgt", "event": "agent.ready_for_review", "detail": {"issue": 4, "agent": "codex", "role": "implement"}}
+{"ts": "2026-07-18T08:49:16.422666+00:00", "project": "vgt", "event": "pr.created", "detail": {"issue": 4, "pr": 5, "branch": "issue-4-verify-phase-0-apply-against-a-live-reap"}}
