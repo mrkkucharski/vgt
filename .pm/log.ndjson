@@ -1133,3 +1133,6 @@
 {"ts": "2026-07-18T18:44:34.089521+00:00", "project": "vgt", "event": "orchestrator.pass_outcome", "detail": {"outcomes": ["blocked", "deferred"], "scheduled": 0, "followups_created": 0}}
 {"ts": "2026-07-18T18:44:34.089825+00:00", "project": "vgt", "event": "orchestrator.no_capacity", "detail": {"message": "work is available, but scheduler capacity or budget headroom is exhausted"}}
 {"ts": "2026-07-18T18:45:42.059931+00:00", "project": "vgt", "event": "agent.ready_for_review", "detail": {"issue": 8, "agent": "claude", "role": "fix"}}
+{"ts": "2026-07-18T18:45:48.159916+00:00", "project": "vgt", "event": "agent.review_started", "detail": {"issue": 8, "agent": "codex", "pr": 13, "pid": 23725, "process_started_at": "Sat Jul 18 20:45:46 2026"}}
+{"ts": "2026-07-18T18:45:48.173225+00:00", "project": "vgt", "event": "orchestrator.pass_outcome", "detail": {"outcomes": ["blocked", "deferred", "scheduled"], "scheduled": 1, "followups_created": 0}}
+{"ts": "2026-07-18T18:46:58.230106+00:00", "project": "vgt", "event": "issue.closed_labels_cleaned", "detail": {"issue": 8, "removed": ["status:working"]}}
