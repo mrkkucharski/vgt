@@ -79,10 +79,12 @@ def test_live_verifier_requires_a_saved_baseline_and_is_read_only() -> None:
     assert "Main_SaveProject" not in script
 
 
-def test_phase1_live_verifier_is_read_only_and_checks_fallback() -> None:
+def test_phase1_live_verifier_checks_fallback_and_has_an_opt_in_reaper_proof() -> None:
     script = PHASE1_VERIFY_SCRIPT.read_text()
     assert "--baseline" in script
+    assert "--run-live" in script
+    assert "subprocess.run" in script
     assert "[vgt] Chords" in script
     assert "[vgt] Beats" in script
     assert "read_text" in script
-    assert "write_text" not in script
+    assert "EnumProjectMarkers3" in script

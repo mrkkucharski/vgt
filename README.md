@@ -148,3 +148,7 @@ For a saved-project check after analysis, use:
 uv run python scripts/verify_phase1_apply.py "$PROJECT" \
   --baseline "test/Reaper Project/Reaper Project.RPP"
 ```
+
+To run the full disposable REAPER proof (including both the default-map and
+existing-map branches, each applied twice), use `--run-live` with the same
+baseline argument instead of supplying a project path.
