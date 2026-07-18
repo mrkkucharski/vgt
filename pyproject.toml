@@ -1,0 +1,23 @@
+[project]
+name = "vgt"
+version = "0.1.0"
+description = "Non-destructive REAPER project plumbing for virtual guitar teacher"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = []
+
+[dependency-groups]
+dev = ["pytest>=8"]
+
+[project.scripts]
+vgt = "vgt.cli:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/vgt"]
