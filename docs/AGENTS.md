@@ -6,24 +6,56 @@ root. The root AGENTS.md covers how proj-mgr orchestration works and is the same
 for every managed project; this file is where *this* project's own context and
 rules live.
 
-Fill in the sections below (delete what doesn't apply, add what does) before
-starting real work on the project.
-
 ## Project overview
 
-One or two paragraphs: what this project is, who it's for, what "good" looks
-like. (What "done" looks like belongs in docs/GOAL.md.)
+**vgt** (virtual guitar teacher) is a CLI that prepares REAPER projects for
+guitar practice. This project is **phase 0**: locate/open a REAPER project,
+store vgt's own state next to it, create a `[vgt]`-managed area, and add one
+track that mirrors the original song — all non-destructively and idempotently.
+See `docs/GOAL.md` for the exact scope and `docs/phase1-song-prep-plan.md` for
+where this is heading (out of scope now).
 
-## Repository structure
+## Environment assumptions
 
-- `path/` — what lives here and why an agent would touch it
+- **REAPER is installed on the machine.** You may assume a working REAPER
+  install (target: 7.x; the test fixture was saved with 7.65) at the standard
+  macOS location `/Applications/REAPER.app`, with the CLI binary at
+  `/Applications/REAPER.app/Contents/MacOS/REAPER`. It is fine to invoke REAPER
+  (e.g. to run a ReaScript action) or rely on its presence in tests; you do not
+  need to bundle, download, or install it.
+- Platform is macOS (Apple Silicon). Python 3.11 + `uv` per the plan's stack.
+
+## Test project
+
+A real REAPER project fixture lives at **`test/Seven Rivers/`** — use it for
+developing and testing project locating, reading, and non-destructive
+augmentation against a genuine `.RPP` (not a synthetic one).
+
+- `Seven Rivers.RPP` — REAPER 7.65 project, 4 tracks: `Click`, and the
+  `drums` / `other` / `vocals` stems.
+- `Media/*.m4a` — the three audio stems, referenced by the `.RPP` via
+  **relative** paths (`FILE "Media/..."`), so they resolve regardless of
+  checkout location.
+- REAPER-generated peak caches (`Media/peaks/`, `*.reapeaks`) and auto-backups
+  (`Backups/`) are **git-ignored** — REAPER regenerates peaks on open, so don't
+  rely on them being present and don't commit them.
+
+Treat this as a **read-mostly fixture**: exercise vgt against a copy, and never
+commit vgt's mutations back into `test/`. The tracks here are the user's own —
+per the non-destructive rule, vgt must only ever touch `[vgt]`-prefixed objects
+it creates.
 
 ## Conventions
 
-Naming, formatting, commit style, testing expectations, or anything else an
-agent should follow to stay consistent with the rest of the repo.
+- Everything vgt creates in a REAPER project carries a `[vgt]` prefix (tracks,
+  regions, folders); only `[vgt]`-owned objects may be modified or removed.
+- Commit style: conventional commits (see git history).
 
 ## Domain rules
 
-Project-specific rules that aren't obvious from the code -- edge cases, things
-*not* to do, invariants to preserve.
+- **Non-destructive & idempotent** are hard invariants — never overwrite,
+  rename, or delete tracks/objects vgt didn't create; re-running a command must
+  not duplicate or corrupt anything.
+- Prefer manipulating the project through the REAPER API (ReaScript action) over
+  editing `.RPP` text, so changes appear live in the user's open project and
+  REAPER handles construction correctly.
