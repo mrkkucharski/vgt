@@ -4,6 +4,7 @@ import shutil
 
 import pytest
 
+from vgt import analysis as analysis_module
 from vgt.analysis import AnalysisError, analyze
 from vgt.cli import main
 from vgt.sidecar import ANALYSIS_STAGES, read_sidecar, upgrade, write_sidecar
@@ -95,6 +96,29 @@ def test_analyze_is_idempotent(tmp_path: Path) -> None:
     second = analyze(project)
 
     assert first == second
+
+
+def test_stage_cache_only_refreshes_the_stage_with_changed_settings(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    project = _project_copy(tmp_path)
+    _write_v1_sidecar(project)
+    calls = {stage: 0 for stage in ANALYSIS_STAGES}
+
+    def detector(stage: str):
+        def detect(_source: Path, _settings: dict[str, object]) -> dict[str, str]:
+            calls[stage] += 1
+            return {"stage": stage}
+
+        return detect
+
+    for stage in ANALYSIS_STAGES:
+        monkeypatch.setitem(analysis_module._DETECTORS, stage, detector(stage))
+
+    analyze(project)
+    analyze(project, settings={"tempo": {"sensitivity": "high"}})
+
+    assert calls == {"tempo": 2, "key": 1, "sections": 1, "chords": 1}
 
 
 def test_manual_correction_survives_rerun(tmp_path: Path) -> None:

@@ -97,9 +97,24 @@ local function read_analysis_block()
   if not key_start then return nil end
   local brace_start = body:find("{", key_start)
   local depth = 0
+  local in_string = false
+  local escaped_char = false
   for index = brace_start, #body do
     local char = body:sub(index, index)
-    if char == "{" then
+    if in_string then
+      -- JSON strings may contain braces (for example in a human-entered
+      -- section label), which are not object delimiters. A backslash only
+      -- escapes the immediately following character.
+      if escaped_char then
+        escaped_char = false
+      elseif char == "\\" then
+        escaped_char = true
+      elseif char == '"' then
+        in_string = false
+      end
+    elseif char == '"' then
+      in_string = true
+    elseif char == "{" then
       depth = depth + 1
     elseif char == "}" then
       depth = depth - 1

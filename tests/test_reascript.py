@@ -1,4 +1,6 @@
 from pathlib import Path
+import json
+import subprocess
 
 
 VERIFY_SCRIPT = Path(__file__).parents[1] / "scripts" / "verify_phase0_apply.py"
@@ -24,6 +26,35 @@ def test_apply_asks_for_a_reference_track_and_names_the_folder_after_it() -> Non
     assert 'PREFIX .. " " .. track_name(reference)' in script
     # Only the chosen reference is mirrored, not every track.
     assert "copy_file_backed_items(reference, mirror)" in script
+
+
+def test_apply_preserves_analysis_json_with_braces_inside_strings(tmp_path: Path) -> None:
+    """The Lua sidecar reader must not mistake corrected text for JSON syntax."""
+    sidecar = tmp_path / "song.vgt"
+    analysis = {
+        "tempo": {"value": {"label": 'Verse {A} with a \\"quote\\"'}, "human_verified": True},
+        "sections": {"value": [{"name": "{intro}"}]},
+    }
+    sidecar.write_text(json.dumps({"schema_version": 2, "analysis": analysis}))
+
+    script = APPLY_SCRIPT.read_text()
+    helpers_end = script.index("local function remove_previous_managed_tracks()")
+    lua_program = "\n".join(
+        [
+            "reaper = {EnumProjects = function() return true, arg[1] end}",
+            script[:helpers_end],
+            "io.write(read_analysis_block() or '')",
+        ]
+    )
+    result = subprocess.run(
+        ["lua", "-", str(tmp_path / "song.RPP")],
+        input=lua_program,
+        text=True,
+        capture_output=True,
+        check=True,
+    )
+
+    assert json.loads(result.stdout) == analysis
 
 
 def test_live_verifier_requires_a_saved_baseline_and_is_read_only() -> None:
