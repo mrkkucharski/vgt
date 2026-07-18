@@ -27,3 +27,7 @@ The action is intentionally the mutation path: it uses REAPER's API and never te
 The folder/mirror are therefore idempotent and original tracks remain untouched. REAPER-native click-source items have no file to clone and are deliberately skipped; the fixture's three audio stems are mirrored. `vgt apply` validates the project path and directs you to this action rather than silently falling back to unsafe RPP editing.
 
 Use a copy of any project when experimenting; the included `test/Seven Rivers` fixture is read-mostly.
+
+For a repeatable live-REAPER run against a disposable copy of that fixture, see
+[Phase 0 live verification](docs/phase0-live-verification.md). The verifier
+checks the saved RPP and sidecar after both the first apply and re-apply.
