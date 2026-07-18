@@ -4,6 +4,8 @@
 
 local PREFIX = "[vgt]"
 local MIRROR_NAME = PREFIX .. " Mirror"
+local CHORDS_NAME = PREFIX .. " Chords"
+local BEATS_NAME = PREFIX .. " Beats"
 
 local function project_path()
   local _, path = reaper.EnumProjects(-1, "")
@@ -86,6 +88,13 @@ local function read_managed_guids()
   return guids
 end
 
+local function prior_tempo_map_applied()
+  local body = read_sidecar_body() or ""
+  -- This flag is vgt's record that the current map was created during an
+  -- earlier eligible apply.  We never delete or rewrite that map on re-apply.
+  return body:match('"tempo_map_applied"%s*:%s*true') ~= nil
+end
+
 -- The Python `vgt analyze` stage (schema v2) adds a top-level "analysis"
 -- object to the sidecar. This action is the sole writer of the sidecar's
 -- other fields, so it must round-trip that object verbatim on re-apply
@@ -122,6 +131,103 @@ local function read_analysis_block()
     end
   end
   return nil
+end
+
+-- Analysis is produced by Python, so use a small JSON reader here instead of
+-- trying to scrape individual values with patterns.  In particular, labels
+-- are user-correctable and may contain punctuation that a pattern parser
+-- would mishandle.  This intentionally only decodes JSON; the RPP remains
+-- exclusively a REAPER API write.
+local function decode_json(text)
+  local position = 1
+  local function whitespace()
+    while text:sub(position, position):match("%s") do position = position + 1 end
+  end
+  local function string_value()
+    position = position + 1 -- opening quote
+    local pieces = {}
+    while position <= #text do
+      local char = text:sub(position, position)
+      position = position + 1
+      if char == '"' then return table.concat(pieces) end
+      if char ~= "\\" then
+        pieces[#pieces + 1] = char
+      else
+        local escaped_char = text:sub(position, position)
+        position = position + 1
+        local escapes = {['"'] = '"', ['\\'] = '\\', ['/'] = '/', b = '\b', f = '\f', n = '\n', r = '\r', t = '\t'}
+        if escaped_char == "u" then
+          local code = tonumber(text:sub(position, position + 3), 16)
+          position = position + 4
+          pieces[#pieces + 1] = (code and utf8.char(code)) or "?"
+        elseif escapes[escaped_char] then
+          pieces[#pieces + 1] = escapes[escaped_char]
+        else
+          error("invalid JSON escape")
+        end
+      end
+    end
+    error("unterminated JSON string")
+  end
+  local value
+  local function array_value()
+    position = position + 1
+    local result = {}
+    whitespace()
+    if text:sub(position, position) == "]" then position = position + 1 return result end
+    while true do
+      result[#result + 1] = value()
+      whitespace()
+      local char = text:sub(position, position)
+      position = position + 1
+      if char == "]" then return result end
+      if char ~= "," then error("invalid JSON array") end
+      whitespace()
+    end
+  end
+  local function object_value()
+    position = position + 1
+    local result = {}
+    whitespace()
+    if text:sub(position, position) == "}" then position = position + 1 return result end
+    while true do
+      if text:sub(position, position) ~= '"' then error("invalid JSON object key") end
+      local key = string_value()
+      whitespace()
+      if text:sub(position, position) ~= ":" then error("invalid JSON object") end
+      position = position + 1
+      result[key] = value()
+      whitespace()
+      local char = text:sub(position, position)
+      position = position + 1
+      if char == "}" then return result end
+      if char ~= "," then error("invalid JSON object") end
+      whitespace()
+    end
+  end
+  value = function()
+    whitespace()
+    local char = text:sub(position, position)
+    if char == '"' then return string_value() end
+    if char == "{" then return object_value() end
+    if char == "[" then return array_value() end
+    local literal = text:sub(position):match("^-?%d+%.?%d*[eE]?[-+]?%d*")
+    if literal and literal ~= "" then position = position + #literal return tonumber(literal) end
+    if text:sub(position, position + 3) == "null" then position = position + 4 return nil end
+    for word, decoded in pairs({["true"] = true, ["false"] = false}) do
+      if text:sub(position, position + #word - 1) == word then position = position + #word return decoded end
+    end
+    error("invalid JSON value")
+  end
+  local result = value()
+  whitespace()
+  if position <= #text then error("trailing JSON data") end
+  return result
+end
+
+local function read_analysis()
+  local block = read_analysis_block()
+  return block and decode_json(block) or nil
 end
 
 local function remove_previous_managed_tracks()
@@ -162,12 +268,117 @@ local function copy_file_backed_items(source, destination)
         reaper.SetMediaItemTakeInfo_Value(take, "D_STARTOFFS", reaper.GetMediaItemTakeInfo_Value(source_take, "D_STARTOFFS"))
         reaper.SetMediaItemTakeInfo_Value(take, "D_PLAYRATE", reaper.GetMediaItemTakeInfo_Value(source_take, "D_PLAYRATE"))
         reaper.SetMediaItemTakeInfo_Value(take, "D_PITCH", reaper.GetMediaItemTakeInfo_Value(source_take, "D_PITCH"))
+        -- Tempo maps must never stretch vgt-owned audio.
+        reaper.SetMediaItemInfo_Value(item, "C_BEATATTACHMODE", 0)
       end
     end
   end
 end
 
-local function write_settings(folder, mirror, reference)
+local function add_labeled_item(track, start_time, end_time, label)
+  if end_time <= start_time then return end
+  local item = reaper.AddMediaItemToTrack(track)
+  reaper.SetMediaItemInfo_Value(item, "D_POSITION", start_time)
+  reaper.SetMediaItemInfo_Value(item, "D_LENGTH", end_time - start_time)
+  reaper.SetMediaItemInfo_Value(item, "C_BEATATTACHMODE", 0)
+  -- REAPER locks items rather than whole tracks; locking every vgt label item
+  -- makes the muted label lane effectively read-only in the arrange view.
+  reaper.SetMediaItemInfo_Value(item, "C_LOCK", 1)
+  reaper.GetSetMediaItemInfo_String(item, "P_NOTES", label, true)
+  local take = reaper.AddTakeToMediaItem(item)
+  reaper.GetSetMediaItemTakeInfo_String(take, "P_NAME", label, true)
+end
+
+local function add_locked_muted_track(index, name)
+  reaper.InsertTrackAtIndex(index, true)
+  local track = reaper.GetTrack(0, index)
+  reaper.GetSetMediaTrackInfo_String(track, "P_NAME", name, true)
+  reaper.SetMediaTrackInfo_Value(track, "B_MUTE", 1)
+  return track
+end
+
+local function reference_start_and_end(reference)
+  local start_time, end_time = nil, nil
+  for index = 0, reaper.CountTrackMediaItems(reference) - 1 do
+    local item = reaper.GetTrackMediaItem(reference, index)
+    local start = reaper.GetMediaItemInfo_Value(item, "D_POSITION")
+    local finish = start + reaper.GetMediaItemInfo_Value(item, "D_LENGTH")
+    start_time = start_time and math.min(start_time, start) or start
+    end_time = end_time and math.max(end_time, finish) or finish
+  end
+  return start_time or 0, end_time or 0
+end
+
+local function parse_time_signature(value)
+  local numerator, denominator = tostring(value or "4/4"):match("^(%d+)%s*/%s*(%d+)$")
+  return tonumber(numerator) or 4, tonumber(denominator) or 4
+end
+
+local function is_single_default_tempo_marker()
+  local count = reaper.CountTempoTimeSigMarkers(0)
+  -- A fresh REAPER project has no *explicit* marker, but its project-settings
+  -- tempo is semantically the single default marker described by the rule.
+  if count == 0 then
+    local numerator, denominator, bpm = reaper.TimeMap_GetTimeSigAtTime(0, 0)
+    return math.abs(bpm - 120) < 0.001 and numerator == 4 and denominator == 4
+  end
+  if count ~= 1 then return false end
+  local ok, time, _, _, bpm, numerator, denominator = reaper.GetTempoTimeSigMarker(0, 0)
+  return ok and math.abs(time) < 0.000001 and math.abs(bpm - 120) < 0.001 and numerator == 4 and denominator == 4
+end
+
+local function apply_tempo_map(tempo, reference_start)
+  local bpm = tonumber(tempo.bpm)
+  if not bpm or bpm <= 0 then return false end
+  local numerator, denominator = parse_time_signature(tempo.time_signature)
+  -- Update the one default marker, then put explicit markers at the analyzed
+  -- downbeat / piecewise boundaries.  REAPER owns the map construction.
+  reaper.SetTempoTimeSigMarker(0, 0, 0, -1, -1, bpm, numerator, denominator, false)
+  local downbeat = reference_start + (tonumber(tempo.downbeat_offset_seconds) or 0)
+  reaper.SetTempoTimeSigMarker(0, -1, downbeat, 0, 0, bpm, numerator, denominator, false)
+  if tempo.mode == "piecewise" and type(tempo.spans) == "table" then
+    for _, span in ipairs(tempo.spans) do
+      local span_bpm = tonumber(span.bpm)
+      if span_bpm and span_bpm > 0 then
+        reaper.SetTempoTimeSigMarker(0, -1, reference_start + (tonumber(span.start_seconds) or 0), -1, -1, span_bpm, numerator, denominator, false)
+      end
+    end
+  end
+  return true
+end
+
+local function add_beat_markers(track, tempo, reference_start, reference_end)
+  local bpm = tonumber(tempo.bpm)
+  if not bpm or bpm <= 0 or reference_end <= reference_start then return end
+  local interval = 60 / bpm
+  local time = reference_start + (tonumber(tempo.downbeat_offset_seconds) or 0)
+  while time > reference_start do time = time - interval end
+  local beat = 1
+  while time < reference_end do
+    if time >= reference_start then add_labeled_item(track, time, math.min(time + interval, reference_end), "Beat " .. beat) end
+    time = time + interval
+    beat = beat + 1
+  end
+end
+
+local function remove_previous_vgt_regions()
+  for index = reaper.CountProjectMarkers(0) - 1, 0, -1 do
+    local _, is_region, _, _, name = reaper.EnumProjectMarkers3(0, index)
+    if is_region and name:sub(1, #PREFIX) == PREFIX then reaper.DeleteProjectMarkerByIndex(0, index) end
+  end
+end
+
+local function add_sections(sections, reference_start)
+  if type(sections) ~= "table" then return end
+  for _, section in ipairs(sections) do
+    local start_time = reference_start + (tonumber(section.start_seconds) or 0)
+    local end_time = reference_start + (tonumber(section.end_seconds) or 0)
+    local label = tostring(section.label or section.name or "section")
+    if end_time > start_time then reaper.AddProjectMarker2(0, true, start_time, end_time, PREFIX .. " " .. label, -1, 0) end
+  end
+end
+
+local function write_settings(folder, managed_tracks, reference, tempo_map_applied)
   -- Preserve any analysis the Python CLI already wrote (schema v2); a fresh
   -- sidecar with no prior analysis stays schema v1, matching Phase 0's
   -- long-standing on-disk format.
@@ -177,16 +388,18 @@ local function write_settings(folder, mirror, reference)
 
   local file, error_message = io.open(sidecar_path(), "w")
   if not file then error(error_message) end
+  local guids = {}
+  for _, track in ipairs(managed_tracks) do guids[#guids + 1] = '"' .. reaper.GetTrackGUID(track) .. '"' end
   file:write(string.format([[{
   "schema_version": %d,%s
-  "managed_track_guids": ["%s", "%s"],
-  "config": {"reference_track_name": "%s", "reference_track_guid": "%s", "folder_name": "%s", "mirror_name": "%s"}
+  "managed_track_guids": [%s],
+  "config": {"reference_track_name": "%s", "reference_track_guid": "%s", "folder_name": "%s", "mirror_name": "%s", "tempo_map_applied": %s}
 }
 ]],
     schema_version, analysis_field,
-    reaper.GetTrackGUID(folder), reaper.GetTrackGUID(mirror),
+    table.concat(guids, ", "),
     escaped(track_name(reference)), reaper.GetTrackGUID(reference),
-    escaped(PREFIX .. " " .. track_name(reference)), escaped(MIRROR_NAME)))
+    escaped(PREFIX .. " " .. track_name(reference)), escaped(MIRROR_NAME), tempo_map_applied and "true" or "false"))
   file:close()
 end
 
@@ -202,7 +415,9 @@ local function apply()
 
   reaper.Undo_BeginBlock()
   reaper.PreventUIRefresh(1)
+  local analysis = read_analysis()
   remove_previous_managed_tracks()
+  remove_previous_vgt_regions()
 
   -- Re-resolve the reference by GUID: deleting the previous managed tracks can invalidate the pointer.
   reference = find_track_by_guid(reference_guid)
@@ -220,12 +435,44 @@ local function apply()
   reaper.InsertTrackAtIndex(insert_at + 1, true)
   local mirror = reaper.GetTrack(0, insert_at + 1)
   reaper.GetSetMediaTrackInfo_String(mirror, "P_NAME", MIRROR_NAME, true)
-  reaper.SetMediaTrackInfo_Value(mirror, "I_FOLDERDEPTH", -1)
+  -- Close the folder after all analysis tracks have been added below.
+  reaper.SetMediaTrackInfo_Value(mirror, "I_FOLDERDEPTH", 0)
 
   -- Clone only the chosen reference track's file-backed media. Every other track stays untouched.
   copy_file_backed_items(reference, mirror)
 
-  write_settings(folder, mirror, reference)
+  local managed_tracks = {folder, mirror}
+  local reference_start, reference_end = reference_start_and_end(reference)
+  local tempo = analysis and analysis.tempo and analysis.tempo.value
+  local tempo_map_applied = prior_tempo_map_applied()
+  if type(tempo) == "table" and tonumber(tempo.bpm) then
+    if tempo_map_applied then
+      -- Already written by vgt on an earlier run; leave the live map alone.
+    elseif is_single_default_tempo_marker() then
+      tempo_map_applied = apply_tempo_map(tempo, reference_start)
+    else
+      local beats = add_locked_muted_track(insert_at + 2, BEATS_NAME)
+      add_beat_markers(beats, tempo, reference_start, reference_end)
+      managed_tracks[#managed_tracks + 1] = beats
+    end
+  end
+
+  local chords = analysis and analysis.chords and analysis.chords.value
+  local segments = type(chords) == "table" and (chords.segments or chords) or nil
+  if type(segments) == "table" then
+    local chords_track = add_locked_muted_track(reaper.CountTracks(0), CHORDS_NAME)
+    for _, chord in ipairs(segments) do
+      add_labeled_item(chords_track, reference_start + (tonumber(chord.start_seconds) or 0), reference_start + (tonumber(chord.end_seconds) or 0), tostring(chord.chord or chord.label or "N"))
+    end
+    managed_tracks[#managed_tracks + 1] = chords_track
+  end
+
+  add_sections(analysis and analysis.sections and analysis.sections.value, reference_start)
+
+  -- The folder must close after every child we appended.
+  reaper.SetMediaTrackInfo_Value(managed_tracks[#managed_tracks], "I_FOLDERDEPTH", -1)
+
+  write_settings(folder, managed_tracks, reference, tempo_map_applied)
   reaper.MarkProjectDirty(0)
   reaper.UpdateArrange()
   reaper.PreventUIRefresh(-1)
