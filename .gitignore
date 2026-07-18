@@ -1,0 +1,7 @@
+# REAPER-generated, regenerable artifacts (peaks are rebuilt on open;
+# backups are auto-saved). Keep the fixture project + media, drop the noise.
+*.reapeaks
+peaks/
+Backups/
+*.rpp-bak
+*-bak
