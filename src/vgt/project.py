@@ -36,6 +36,7 @@ _SAMPLERATE = re.compile(r"^\s*SAMPLERATE\s+(\d+)", re.MULTILINE)
 _TEMPO = re.compile(r"^\s*TEMPO\s+([0-9.]+)\s+(\d+)\s+(\d+)", re.MULTILINE)
 _TRACK_START = re.compile(r"^\s*<TRACK\s+({[^}]+})", re.MULTILINE)
 _NAME = re.compile(r'^\s*NAME\s+(?:"(?P<quoted>.*)"|(?P<plain>\S.*))\s*$', re.MULTILINE)
+_FILE = re.compile(r'^\s*FILE\s+"(?P<path>[^"]*)"', re.MULTILINE)
 
 
 def locate_project(project: str | Path | None, working_directory: Path | None = None) -> Path:
@@ -99,3 +100,21 @@ def read_project(path: str | Path) -> ProjectInfo:
         time_signature_denominator=int(tempo.group(3)),
         tracks=tuple(tracks),
     )
+
+
+def track_source_path(project: str | Path, track_guid: str) -> Path:
+    """Resolve the on-disk media file backing a track's first item, by GUID.
+
+    Used to hand the reference track's audio to the analysis stage, which reads
+    the file directly rather than going through REAPER.
+    """
+    project_path = locate_project(project)
+    text = project_path.read_text(encoding="utf-8", errors="replace")
+    for guid, block in _track_blocks(text):
+        if guid != track_guid:
+            continue
+        file_match = _FILE.search(block)
+        if file_match is None:
+            raise ProjectError(f"Track {track_guid} has no file-backed media source.")
+        return (project_path.parent / file_match.group("path")).resolve()
+    raise ProjectError(f"No track with GUID {track_guid} found in {project_path}.")

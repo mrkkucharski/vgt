@@ -7,6 +7,7 @@ import json
 from pathlib import Path
 import sys
 
+from .analysis import AnalysisError, analyze
 from .project import ProjectError, locate_project, read_project
 
 
@@ -17,6 +18,10 @@ def _parser() -> argparse.ArgumentParser:
     inspect.add_argument("project", nargs="?", help="Path to a .RPP project (defaults to cwd's only .RPP).")
     apply = subparsers.add_parser("apply", help="Prepare the open project through the bundled ReaScript action.")
     apply.add_argument("project", nargs="?", help="Path to a .RPP project (defaults to cwd's only .RPP).")
+    analyze_parser = subparsers.add_parser(
+        "analyze", help="Detect tempo/key/sections/chords for the reference track and persist them to the .vgt sidecar."
+    )
+    analyze_parser.add_argument("project", nargs="?", help="Path to a .RPP project (defaults to cwd's only .RPP).")
     return parser
 
 
@@ -24,13 +29,16 @@ def main(argv: list[str] | None = None) -> int:
     # Phase 0's primary invocation is `vgt [project.rpp]`; retain explicit
     # subcommands for scripts that want to state their intent.
     arguments = list(sys.argv[1:] if argv is None else argv)
-    if not arguments or arguments[0] not in {"inspect", "apply", "-h", "--help"}:
+    if not arguments or arguments[0] not in {"inspect", "apply", "analyze", "-h", "--help"}:
         arguments.insert(0, "inspect")
     args = _parser().parse_args(arguments)
     try:
         project = locate_project(args.project)
         if args.command == "inspect":
             print(json.dumps(read_project(project).to_dict(), indent=2))
+            return 0
+        if args.command == "analyze":
+            print(json.dumps(analyze(project), indent=2))
             return 0
         # Deliberately no RPP text-edit fallback: only the ReaScript mutates projects.
         print(
@@ -40,7 +48,7 @@ def main(argv: list[str] | None = None) -> int:
             file=sys.stderr,
         )
         return 2
-    except ProjectError as exc:
+    except (ProjectError, AnalysisError) as exc:
         print(f"vgt: {exc}", file=sys.stderr)
         return 2
 
