@@ -1,11 +1,19 @@
 {
   "current_issue": 11,
-  "session_id": "021833ec-444b-47fb-b941-7e03461d1774",
-  "pid": 32145,
-  "process_started_at": "Sat Jul 18 22:39:03 2026",
-  "agent": "codex",
-  "started_at": "2026-07-18T20:39:02.129538+00:00",
-  "scheduler_stalls": {},
+  "session_id": "5ec13305-92b9-441f-8438-2c2c4d666fe5",
+  "pid": 40157,
+  "process_started_at": "Sun Jul 19 01:01:02 2026",
+  "agent": "claude",
+  "started_at": "2026-07-18T23:01:00.275819+00:00",
+  "scheduler_stalls": {
+    "deferred_passes": {
+      "budget": {
+        "first_seen_at": "2026-07-18T20:54:01.621189+00:00",
+        "last_seen_at": "2026-07-18T22:59:50.568873+00:00",
+        "consecutive_passes": 109
+      }
+    }
+  },
   "budget": {
     "window_start": "2026-07-18T18:31:31.708110+00:00",
     "seconds_used": 571.428827,
@@ -17,7 +25,7 @@
   "verification_followups": {
     "f0d8bfc9d2dc6da7a31609184e25c4d66d3986fd2340b33a83e98204fb86691e": "created"
   },
-  "role": "fix",
+  "role": "review",
   "branch": "issue-11-phase-1-apply-analysis-into-the-reaper-p",
   "worktree_path": "/Users/marekkucharski/projects/.pm-worktrees/vgt/issue-11",
   "pr_number": 16,
@@ -40,11 +48,11 @@
   "pending_transition": {
     "issue": 11,
     "target": "working",
-    "event": "agent.fix_started",
+    "event": "agent.review_started",
     "detail": {
       "issue": 11,
-      "agent": "codex",
-      "fix_count": 1
+      "agent": "claude",
+      "pr": 16
     },
     "cleanup": {}
   }
