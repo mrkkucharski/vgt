@@ -4,6 +4,7 @@ import subprocess
 
 
 VERIFY_SCRIPT = Path(__file__).parents[1] / "scripts" / "verify_phase0_apply.py"
+PHASE1_VERIFY_SCRIPT = Path(__file__).parents[1] / "scripts" / "verify_phase1_apply.py"
 APPLY_SCRIPT = Path(__file__).parents[1] / "reascript" / "vgt_initialize.lua"
 
 
@@ -26,6 +27,19 @@ def test_apply_asks_for_a_reference_track_and_names_the_folder_after_it() -> Non
     assert 'PREFIX .. " " .. track_name(reference)' in script
     # Only the chosen reference is mirrored, not every track.
     assert "copy_file_backed_items(reference, mirror)" in script
+
+
+def test_phase1_apply_reads_analysis_and_uses_only_reaper_api() -> None:
+    script = APPLY_SCRIPT.read_text()
+    assert "decode_json" in script
+    assert "SetTempoTimeSigMarker" in script
+    assert "AddProjectMarker2" in script
+    assert '"C_BEATATTACHMODE", 0' in script
+    assert '"B_MUTE", 1' in script
+    assert 'SetMediaItemInfo_Value(item, "C_LOCK", 1)' in script
+    assert 'local CHORDS_NAME = PREFIX .. " Chords"' in script
+    assert 'local BEATS_NAME = PREFIX .. " Beats"' in script
+    assert "DeleteProjectMarkerByIndex" in script
 
 
 def test_apply_preserves_analysis_json_with_braces_inside_strings(tmp_path: Path) -> None:
@@ -63,3 +77,12 @@ def test_live_verifier_requires_a_saved_baseline_and_is_read_only() -> None:
     assert "read_text" in script
     assert "write_text" not in script
     assert "Main_SaveProject" not in script
+
+
+def test_phase1_live_verifier_is_read_only_and_checks_fallback() -> None:
+    script = PHASE1_VERIFY_SCRIPT.read_text()
+    assert "--baseline" in script
+    assert "[vgt] Chords" in script
+    assert "[vgt] Beats" in script
+    assert "read_text" in script
+    assert "write_text" not in script

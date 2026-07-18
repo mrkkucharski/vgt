@@ -67,3 +67,23 @@ piecewise-linear tempo map (mode + residual are both recorded):
 Every run also renders a **click-over-mix artifact** — `<project>.vgt-tempo-click.wav`,
 next to the sidecar — so the detected grid can be checked by ear; it is
 vgt-owned and regenerated each run, not committed alongside the project.
+
+## Apply analysis (Phase 1)
+
+Run the same ReaScript again after `vgt analyze`. It reads the sidecar and adds
+`[vgt]` section regions plus a muted, locked `[vgt] Chords` track whose text
+items carry the detected beat-aligned labels. It sets vgt-owned audio items to
+time-based positioning before any tempo changes.
+
+When REAPER still has exactly its single default 120 BPM / 4/4 tempo marker,
+the action writes the detected tempo map. If the project already has any other
+tempo map, it leaves that map untouched and instead creates a muted, locked
+`[vgt] Beats` item track. Both the regions and vgt tracks are reconciled on
+re-apply; no non-`[vgt]` track, region, or item is changed.
+
+For a saved-project check after analysis, use:
+
+```sh
+uv run python scripts/verify_phase1_apply.py "$PROJECT" \
+  --baseline "test/Reaper Project/Reaper Project.RPP"
+```
