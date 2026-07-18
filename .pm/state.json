@@ -1,18 +1,18 @@
 {
   "current_issue": 8,
-  "session_id": "b7037189-8f3f-4be3-85e8-2e220a30ccea",
-  "pid": 96148,
-  "process_started_at": "Sat Jul 18 14:02:48 2026",
-  "agent": "codex",
-  "started_at": "2026-07-18T12:02:47.475754+00:00",
+  "session_id": "b5840071-63cd-40a3-b1f8-d906d821ebcb",
+  "pid": 96472,
+  "process_started_at": "Sat Jul 18 14:04:03 2026",
+  "agent": "claude",
+  "started_at": "2026-07-18T12:04:02.218843+00:00",
   "scheduler_stalls": {},
   "budget": {
     "window_start": "2026-07-18T07:36:51.525392+00:00",
-    "seconds_used": 278.969907,
+    "seconds_used": 352.005521,
     "dollars_used": 0.0,
     "seconds_used_by_agent": {
       "claude": 0.0,
-      "codex": 278.969907
+      "codex": 352.005521
     }
   },
   "verification_followups": {
@@ -40,7 +40,7 @@
     "event": "agent.started",
     "detail": {
       "issue": 8,
-      "agent": "codex",
+      "agent": "claude",
       "branch": "issue-8-phase-1-tempo-beat-downbeat-grid"
     },
     "cleanup": {}
