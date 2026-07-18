@@ -47,3 +47,23 @@ detector's settings, so re-running only recomputes stages whose inputs
 changed. Any stage can be corrected by hand-editing its `value` in the
 sidecar and setting `human_verified: true`; `vgt analyze` then leaves that
 stage untouched on every later run, regardless of what the audio hash says.
+
+### Tempo & beat/downbeat grid
+
+The `tempo` stage detects BPM, downbeat offset, and time signature from the
+reference track's full mix, and fits either a single constant tempo or a
+piecewise-linear tempo map (mode + residual are both recorded):
+
+- **Primary backend: madmom**'s DBN beat + downbeat trackers, installed via
+  the optional `madmom` extra (`uv sync --extra madmom`). madmom's last
+  release predates modern Python/NumPy and its build is fragile (Cython,
+  a legacy NumPy ABI, a deprecated `pkg_resources` import) — it is isolated
+  behind this extra precisely so a default install never needs it.
+- **Fallback: librosa's `beat_track`** (installed by default) when madmom
+  isn't installed, or fails to import. It gives beat times but no
+  downbeats, so time signature falls back to a `time_signature_hint`
+  setting (or `4/4`) rather than a detected bar length.
+
+Every run also renders a **click-over-mix artifact** — `<project>.vgt-tempo-click.wav`,
+next to the sidecar — so the detected grid can be checked by ear; it is
+vgt-owned and regenerated each run, not committed alongside the project.

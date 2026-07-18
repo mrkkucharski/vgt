@@ -2,10 +2,10 @@
 track's source audio and persists the result into the `.vgt` sidecar.
 
 Runs entirely in the Python CLI (never inside REAPER, per docs/GOAL.md's
-"analysis stays out of the DAW process" requirement). The detectors below are
-stubs -- later sub-issues of #7 fill in real DSP/ML -- but the stage-cache and
-corrections-survive-rerun framework they run through is the real deliverable
-here.
+"analysis stays out of the DAW process" requirement). `detect_tempo` is a real
+detector (see tempo.py); key/sections/chords remain stubs for later Phase 1
+sub-issues, running through the same stage-cache and
+corrections-survive-rerun framework.
 """
 
 from __future__ import annotations
@@ -18,6 +18,7 @@ import json
 from . import __version__
 from .project import ProjectError, locate_project, track_source_path
 from .sidecar import ANALYSIS_STAGES, SidecarError, read_sidecar, refresh_stage, write_sidecar
+from .tempo import TempoDetectionError, build_tempo_grid, click_artifact_path, detect_beats, render_click_over_mix
 
 
 class AnalysisError(ValueError):
@@ -36,25 +37,35 @@ def hash_source_file(path: Path) -> str:
     return hashlib.sha256(digest.encode("utf-8")).hexdigest()
 
 
-# Stub detectors: Phase 1 sub-issues replace these with real DSP/ML. Each
-# returns the stage's "value" payload, initially empty/unknown.
-def detect_tempo(source: Path, settings: dict[str, Any]) -> dict[str, Any]:
-    return {"bpm": None, "downbeat_offset_seconds": None, "time_signature": None}
+def detect_tempo(project_path: Path, source: Path, settings: dict[str, Any]) -> dict[str, Any]:
+    """BPM, downbeat offset, time signature, and tempo-map mode/residual (see
+    tempo.py), plus a click-over-mix verification artifact rendered next to
+    the sidecar."""
+    try:
+        beat_times, beat_positions, backend = detect_beats(source)
+        grid = build_tempo_grid(beat_times, beat_positions, backend, settings)
+        artifact = render_click_over_mix(source, beat_times, click_artifact_path(project_path))
+    except TempoDetectionError as exc:
+        raise AnalysisError(str(exc)) from exc
+    grid["click_artifact_path"] = artifact.name
+    return grid
 
 
-def detect_key(source: Path, settings: dict[str, Any]) -> dict[str, Any]:
+# Stubs: Phase 1 sub-issues replace these with real DSP/ML. Each returns the
+# stage's "value" payload, initially empty/unknown.
+def detect_key(project_path: Path, source: Path, settings: dict[str, Any]) -> dict[str, Any]:
     return {"root": None, "scale": None}
 
 
-def detect_sections(source: Path, settings: dict[str, Any]) -> list[Any]:
+def detect_sections(project_path: Path, source: Path, settings: dict[str, Any]) -> list[Any]:
     return []
 
 
-def detect_chords(source: Path, settings: dict[str, Any]) -> list[Any]:
+def detect_chords(project_path: Path, source: Path, settings: dict[str, Any]) -> list[Any]:
     return []
 
 
-_DETECTORS: dict[str, Callable[[Path, dict[str, Any]], Any]] = {
+_DETECTORS: dict[str, Callable[[Path, Path, dict[str, Any]], Any]] = {
     "tempo": detect_tempo,
     "key": detect_key,
     "sections": detect_sections,
@@ -98,7 +109,9 @@ def analyze(project: str | Path | None, settings: dict[str, dict[str, Any]] | No
             analysis[stage],
             input_hash=input_hash,
             settings_hash=_hash_settings(stage_settings),
-            compute=lambda stage=stage, stage_settings=stage_settings: _DETECTORS[stage](source, stage_settings),
+            compute=lambda stage=stage, stage_settings=stage_settings: _DETECTORS[stage](
+                project_path, source, stage_settings
+            ),
         )
     analysis["provenance"] = {
         "tool": "vgt",

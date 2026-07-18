@@ -84,6 +84,14 @@ def test_analyze_writes_v2_sidecar_with_skeleton_and_provenance(tmp_path: Path) 
     assert provenance["tool"] == "vgt"
     assert provenance["reference_source_path"].endswith("The Seven Rivers (Full March - 3_00).mp3")
 
+    tempo = result["analysis"]["tempo"]["value"]
+    assert tempo["bpm"] == pytest.approx(120.0, abs=1.0)
+    assert tempo["time_signature"] == "4/4"
+    assert tempo["mode"] in {"constant", "piecewise"}
+    assert tempo["backend"] in {"madmom", "librosa"}
+    click_artifact = project.with_name(tempo["click_artifact_path"])
+    assert click_artifact.is_file()
+
     on_disk = read_sidecar(project)
     assert on_disk == result
 
@@ -106,7 +114,7 @@ def test_stage_cache_only_refreshes_the_stage_with_changed_settings(
     calls = {stage: 0 for stage in ANALYSIS_STAGES}
 
     def detector(stage: str):
-        def detect(_source: Path, _settings: dict[str, object]) -> dict[str, str]:
+        def detect(_project_path: Path, _source: Path, _settings: dict[str, object]) -> dict[str, str]:
             calls[stage] += 1
             return {"stage": stage}
 
