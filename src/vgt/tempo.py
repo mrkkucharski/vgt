@@ -109,7 +109,12 @@ def _piecewise_spans(beat_times: list[float]) -> tuple[list[dict[str, Any]], flo
         spans.append({"start_seconds": segment[0], "end_seconds": segment[-1], "bpm": bpm})
         residuals.append(residual)
 
-    for i in range(segment_start + _MIN_SPAN_BEATS, n + 1):
+    # `close_span(i - 1)` drops the beat that triggered the CV overflow, so
+    # the window must reach one beat past `_MIN_SPAN_BEATS` before a split is
+    # eligible -- otherwise the *closed* span would be one beat short of the
+    # minimum.
+    i = segment_start + _MIN_SPAN_BEATS + 1
+    while i <= n:
         segment = beat_times[segment_start:i]
         intervals = [b - a for a, b in zip(segment, segment[1:])]
         mean_interval = sum(intervals) / len(intervals)
@@ -117,6 +122,9 @@ def _piecewise_spans(beat_times: list[float]) -> tuple[list[dict[str, Any]], flo
         if cv > PIECEWISE_SEGMENT_CV_THRESHOLD:
             close_span(i - 1)
             segment_start = i - 2
+            i = segment_start + _MIN_SPAN_BEATS + 1
+        else:
+            i += 1
     if n - segment_start >= 2:
         close_span(n)
     residual_overall = (sum(r**2 for r in residuals) / len(residuals)) ** 0.5 if residuals else 0.0

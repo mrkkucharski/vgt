@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from vgt.tempo import build_tempo_grid, detect_beats
+from vgt.tempo import _MIN_SPAN_BEATS, _piecewise_spans, build_tempo_grid, detect_beats
 
 FIXTURE_SOURCE = Path(__file__).parents[1] / "test" / "Reaper Project" / "Media" / "Paris Metro Punk.mp3"
 
@@ -63,6 +63,29 @@ def test_build_tempo_grid_reads_downbeats_when_available() -> None:
 
     assert grid["time_signature"] == "3/4"
     assert grid["downbeat_offset_seconds"] == beat_times[0]
+
+
+def test_piecewise_spans_never_split_below_the_minimum_span_size() -> None:
+    """Rapidly oscillating tempo (a stress case, not realistic music) used to
+    make the greedy splitter emit near-single-beat spans: closing a span
+    rewinds `segment_start`, and the split loop must re-check the minimum
+    span length from that new position rather than continuing to advance a
+    bound computed before the rewind."""
+    beat_times = []
+    t = 0.0
+    for i in range(120):
+        bpm = 60 + (i % 6) * 40
+        t += 60.0 / bpm
+        beat_times.append(t)
+
+    spans, _residual = _piecewise_spans(beat_times)
+
+    for span in spans[:-1]:  # the trailing span may be shorter (leftover beats)
+        tolerance = 1e-9
+        beat_count = sum(
+            1 for t in beat_times if span["start_seconds"] - tolerance <= t <= span["end_seconds"] + tolerance
+        )
+        assert beat_count >= _MIN_SPAN_BEATS
 
 
 def _install_fake_madmom(monkeypatch: pytest.MonkeyPatch, *, raises: bool) -> None:
