@@ -1,0 +1,4 @@
+{"ts": "2026-07-18T07:35:42.995021+00:00", "project": "vgt", "event": "project.verification", "detail": {"command": null, "started_at": "2026-07-18T07:35:42.994947+00:00", "exit_status": null, "status": "absent", "finished_at": "2026-07-18T07:35:42.994992+00:00", "output": "No verification_command is declared for this project.", "output_truncated": false}}
+{"ts": "2026-07-18T07:35:46.320621+00:00", "project": "vgt", "event": "verification.followup_created", "detail": {"title": "Declare project verification command", "status": "absent"}}
+{"ts": "2026-07-18T07:35:47.109240+00:00", "project": "vgt", "event": "orchestrator.pass_outcome", "detail": {"outcomes": ["follow-ups-created"], "scheduled": 0, "followups_created": 1}}
+{"ts": "2026-07-18T07:35:47.109874+00:00", "project": "vgt", "event": "orchestrator.pass_completed", "detail": {"message": "scheduler pass completed project completion or follow-up work"}}
