@@ -89,8 +89,29 @@ def test_analyze_writes_v2_sidecar_with_skeleton_and_provenance(tmp_path: Path) 
     assert tempo["time_signature"] == "4/4"
     assert tempo["mode"] in {"constant", "piecewise"}
     assert tempo["backend"] in {"madmom", "librosa"}
+    assert len(tempo["beat_times"]) > 1
     click_artifact = project.with_name(tempo["click_artifact_path"])
     assert click_artifact.is_file()
+
+    key = result["analysis"]["key"]["value"]
+    assert key["root"] in {
+        "C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B",
+    }
+    assert key["scale"] in {"major", "minor"}
+    assert 0.0 <= key["confidence"] <= 1.0
+
+    chords = result["analysis"]["chords"]["value"]
+    assert chords["vocabulary"] == "maj_min"
+    assert len(chords["segments"]) > 0
+    tempo_beat_times = set(tempo["beat_times"])
+    for segment in chords["segments"]:
+        assert segment["end_seconds"] > segment["start_seconds"]
+        # Every chord boundary must land on the shared tempo-stage beat grid,
+        # not some independently detected grid.
+        assert segment["start_seconds"] in tempo_beat_times
+        assert segment["end_seconds"] in tempo_beat_times
+    chord_sheet = project.with_name(chords["chord_sheet_path"])
+    assert chord_sheet.is_file()
 
     on_disk = read_sidecar(project)
     assert on_disk == result
@@ -114,7 +135,9 @@ def test_stage_cache_only_refreshes_the_stage_with_changed_settings(
     calls = {stage: 0 for stage in ANALYSIS_STAGES}
 
     def detector(stage: str):
-        def detect(_project_path: Path, _source: Path, _settings: dict[str, object]) -> dict[str, str]:
+        def detect(
+            _project_path: Path, _source: Path, _settings: dict[str, object], _analysis: dict[str, object]
+        ) -> dict[str, str]:
             calls[stage] += 1
             return {"stage": stage}
 
@@ -153,6 +176,75 @@ def test_manual_correction_survives_rerun(tmp_path: Path) -> None:
     assert result["analysis"]["tempo"]["human_verified"] is True
     # Untouched stages still refresh normally.
     assert result["analysis"]["key"]["human_verified"] is False
+
+
+def test_chords_fall_back_to_freshly_detected_beats_when_tempo_correction_omits_them(tmp_path: Path) -> None:
+    """A human tempo correction that only sets bpm/downbeat/time-signature
+    (no beat_times array) must not break the chords stage's grid-snapping --
+    it should fall back to detecting beats fresh via the same tempo.py ladder,
+    not chords' own ad hoc beat tracker."""
+    project = _project_copy(tmp_path)
+    _write_v1_sidecar(project)
+    analyze(project)
+
+    sidecar = read_sidecar(project)
+    sidecar["analysis"]["tempo"] = {
+        "value": {"bpm": 118.0, "downbeat_offset_seconds": 0.25, "time_signature": "4/4"},
+        "human_verified": True,
+        "input_hash": sidecar["analysis"]["tempo"]["input_hash"],
+        "settings_hash": sidecar["analysis"]["tempo"]["settings_hash"],
+    }
+    write_sidecar(project, sidecar)
+
+    # Force the chords stage to recompute despite the unchanged audio input.
+    result = analyze(project, settings={"chords": {"note": "force-recompute"}})
+
+    chords = result["analysis"]["chords"]["value"]
+    assert len(chords["beat_times"]) > 1
+    beat_times = set(chords["beat_times"])
+    for segment in chords["segments"]:
+        assert segment["start_seconds"] in beat_times
+        assert segment["end_seconds"] in beat_times
+
+
+def test_key_and_chord_corrections_survive_rerun(tmp_path: Path) -> None:
+    project = _project_copy(tmp_path)
+    _write_v1_sidecar(project)
+    analyze(project)
+
+    sidecar = read_sidecar(project)
+    sidecar["analysis"]["key"] = {
+        "value": {"root": "E", "scale": "minor", "confidence": 1.0, "backend": "human"},
+        "human_verified": True,
+        "input_hash": sidecar["analysis"]["key"]["input_hash"],
+        "settings_hash": sidecar["analysis"]["key"]["settings_hash"],
+    }
+    corrected_chords = {
+        "segments": [{"start_seconds": 0.0, "end_seconds": 2.0, "chord": "E:min"}],
+        "beat_times": [0.0, 1.0, 2.0],
+        "vocabulary": "maj_min",
+        "backend": "human",
+        "chord_sheet_path": sidecar["analysis"]["chords"]["value"]["chord_sheet_path"],
+    }
+    sidecar["analysis"]["chords"] = {
+        "value": corrected_chords,
+        "human_verified": True,
+        "input_hash": sidecar["analysis"]["chords"]["input_hash"],
+        "settings_hash": sidecar["analysis"]["chords"]["settings_hash"],
+    }
+    write_sidecar(project, sidecar)
+
+    result = analyze(project)
+
+    assert result["analysis"]["key"]["value"] == {
+        "root": "E",
+        "scale": "minor",
+        "confidence": 1.0,
+        "backend": "human",
+    }
+    assert result["analysis"]["key"]["human_verified"] is True
+    assert result["analysis"]["chords"]["value"] == corrected_chords
+    assert result["analysis"]["chords"]["human_verified"] is True
 
 
 def test_cli_analyze_invocation(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:

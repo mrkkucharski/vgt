@@ -67,3 +67,38 @@ piecewise-linear tempo map (mode + residual are both recorded):
 Every run also renders a **click-over-mix artifact** — `<project>.vgt-tempo-click.wav`,
 next to the sidecar — so the detected grid can be checked by ear; it is
 vgt-owned and regenerated each run, not committed alongside the project.
+The tempo stage's `value` also stores the raw detected `beat_times` — the
+shared beat-synchronous grid the `chords` stage below aligns to.
+
+### Key & beat-aligned chords
+
+The `key` stage detects root + scale (major/minor) from the reference
+track's full mix:
+
+- **Primary backend: Essentia**'s `KeyExtractor`, used only if `essentia` is
+  importable in the environment (Essentia wheels are fragile on Apple
+  Silicon, so it's never a hard dependency and has no `uv` extra of its own).
+- **Fallback: librosa chroma** correlated against the 24 Krumhansl–Schmuckler
+  major/minor key templates — always available.
+
+The `chords` stage detects a beat-aligned maj/min chord sequence, with every
+segment boundary snapped onto the `tempo` stage's shared `beat_times` grid
+(not a separately detected grid):
+
+- **Primary backend: madmom**'s CNN chord recognizer, via the same `madmom`
+  extra as the tempo stage.
+- **Fallback: Chordino**, via the `sonic-annotator` vamp-plugin host, when
+  `sonic-annotator` and the `nnls-chroma` plugin are installed system-side
+  (neither ships as a pip package, so there's no `uv` extra for this either).
+- **Last resort: a chroma + template classifier** (librosa chroma, the 24
+  maj/min triad templates, majority-vote smoothed across neighboring beats)
+  — always available, and what actually runs in most dev/CI environments
+  since neither of the above is typically installed.
+
+Only major/minor triads are ever recognized — 7ths, sus, add9, etc. all
+collapse to their nearest maj/min match — so every result is flagged
+`"vocabulary": "maj_min"`.
+
+Every run also renders a **chord-sheet artifact** —
+`<project>.vgt-chords.txt`, next to the sidecar — a plain-text timestamp +
+chord-label listing for by-eye verification.

@@ -2,10 +2,15 @@
 track's source audio and persists the result into the `.vgt` sidecar.
 
 Runs entirely in the Python CLI (never inside REAPER, per docs/GOAL.md's
-"analysis stays out of the DAW process" requirement). `detect_tempo` is a real
-detector (see tempo.py); key/sections/chords remain stubs for later Phase 1
-sub-issues, running through the same stage-cache and
-corrections-survive-rerun framework.
+"analysis stays out of the DAW process" requirement). `detect_tempo`,
+`detect_key`, and `detect_chords` are real detectors (see tempo.py/key.py/
+chords.py); `sections` remains a stub for a later Phase 1 sub-issue. All run
+through the same stage-cache and corrections-survive-rerun framework.
+
+Stages run in `sidecar.ANALYSIS_STAGES` order (tempo before chords), so
+`detect_chords` can read the tempo stage's just-refreshed beat grid out of
+`analysis` and snap chord boundaries to it -- the shared beat-synchronous
+grid the chords stage is required to align to, rather than detecting its own.
 """
 
 from __future__ import annotations
@@ -16,6 +21,8 @@ import hashlib
 import json
 
 from . import __version__
+from .chords import ChordDetectionError, chord_sheet_path, detect_chords as _detect_chords, render_chord_sheet
+from .key import KeyDetectionError, detect_key as _detect_key
 from .project import ProjectError, locate_project, track_source_path
 from .sidecar import ANALYSIS_STAGES, SidecarError, read_sidecar, refresh_stage, write_sidecar
 from .tempo import TempoDetectionError, build_tempo_grid, click_artifact_path, detect_beats, render_click_over_mix
@@ -37,10 +44,12 @@ def hash_source_file(path: Path) -> str:
     return hashlib.sha256(digest.encode("utf-8")).hexdigest()
 
 
-def detect_tempo(project_path: Path, source: Path, settings: dict[str, Any]) -> dict[str, Any]:
-    """BPM, downbeat offset, time signature, and tempo-map mode/residual (see
-    tempo.py), plus a click-over-mix verification artifact rendered next to
-    the sidecar."""
+def detect_tempo(project_path: Path, source: Path, settings: dict[str, Any], analysis: dict[str, Any]) -> dict[str, Any]:
+    """BPM, downbeat offset, time signature, tempo-map mode/residual, and the
+    raw detected beat times (see tempo.py) -- the last of these is the shared
+    grid `detect_chords` snaps to -- plus a click-over-mix verification
+    artifact rendered next to the sidecar."""
+    del analysis  # tempo runs first; nothing upstream to read yet
     try:
         beat_times, beat_positions, backend = detect_beats(source)
         grid = build_tempo_grid(beat_times, beat_positions, backend, settings)
@@ -48,24 +57,54 @@ def detect_tempo(project_path: Path, source: Path, settings: dict[str, Any]) -> 
     except TempoDetectionError as exc:
         raise AnalysisError(str(exc)) from exc
     grid["click_artifact_path"] = artifact.name
+    grid["beat_times"] = [round(t, 6) for t in beat_times]
     return grid
 
 
-# Stubs: Phase 1 sub-issues replace these with real DSP/ML. Each returns the
-# stage's "value" payload, initially empty/unknown.
-def detect_key(project_path: Path, source: Path, settings: dict[str, Any]) -> dict[str, Any]:
-    return {"root": None, "scale": None}
+def detect_key(project_path: Path, source: Path, settings: dict[str, Any], analysis: dict[str, Any]) -> dict[str, Any]:
+    del project_path, analysis
+    try:
+        return _detect_key(source, settings)
+    except KeyDetectionError as exc:
+        raise AnalysisError(str(exc)) from exc
 
 
-def detect_sections(project_path: Path, source: Path, settings: dict[str, Any]) -> list[Any]:
+def detect_sections(project_path: Path, source: Path, settings: dict[str, Any], analysis: dict[str, Any]) -> list[Any]:
+    del project_path, source, settings, analysis
     return []
 
 
-def detect_chords(project_path: Path, source: Path, settings: dict[str, Any]) -> list[Any]:
-    return []
+def _tempo_beat_times(tempo_value: dict[str, Any] | None, source: Path) -> list[float]:
+    """Beat timestamps backing the chords stage's grid alignment: reused from
+    the tempo stage's persisted value when present, otherwise (e.g. after a
+    human correction that only set bpm/time-signature, dropping the raw beat
+    array) re-detected fresh via the same primary/fallback ladder tempo.py
+    uses -- never chords' own ad hoc beat tracker, so both stages always
+    agree on one shared grid."""
+    if tempo_value and tempo_value.get("beat_times"):
+        return tempo_value["beat_times"]
+    try:
+        beat_times, _beat_positions, _backend = detect_beats(source)
+    except TempoDetectionError as exc:
+        raise AnalysisError(str(exc)) from exc
+    return beat_times
 
 
-_DETECTORS: dict[str, Callable[[Path, Path, dict[str, Any]], Any]] = {
+def detect_chords(project_path: Path, source: Path, settings: dict[str, Any], analysis: dict[str, Any]) -> dict[str, Any]:
+    """Beat-aligned maj/min chord segments (see chords.py), snapped to the
+    tempo stage's shared beat grid, plus a chord-sheet text artifact rendered
+    next to the sidecar for by-eye verification."""
+    beat_times = _tempo_beat_times(analysis["tempo"]["value"], source)
+    try:
+        chords_value = _detect_chords(source, beat_times, settings)
+    except ChordDetectionError as exc:
+        raise AnalysisError(str(exc)) from exc
+    artifact = render_chord_sheet(chords_value, chord_sheet_path(project_path))
+    chords_value["chord_sheet_path"] = artifact.name
+    return chords_value
+
+
+_DETECTORS: dict[str, Callable[[Path, Path, dict[str, Any], dict[str, Any]], Any]] = {
     "tempo": detect_tempo,
     "key": detect_key,
     "sections": detect_sections,
@@ -110,7 +149,7 @@ def analyze(project: str | Path | None, settings: dict[str, dict[str, Any]] | No
             input_hash=input_hash,
             settings_hash=_hash_settings(stage_settings),
             compute=lambda stage=stage, stage_settings=stage_settings: _DETECTORS[stage](
-                project_path, source, stage_settings
+                project_path, source, stage_settings, analysis
             ),
         )
     analysis["provenance"] = {
