@@ -1,10 +1,10 @@
 {
-  "current_issue": 1,
-  "session_id": "e0b4906c-5c71-4fb2-ab37-22ce027e5fc2",
-  "pid": 83767,
-  "process_started_at": "Sat Jul 18 09:36:55 2026",
+  "current_issue": 2,
+  "session_id": "e84fa1bb-7b5e-4111-ac35-eed1dbd04486",
+  "pid": 88073,
+  "process_started_at": "Sat Jul 18 10:28:14 2026",
   "agent": "codex",
-  "started_at": "2026-07-18T07:36:54.487276+00:00",
+  "started_at": "2026-07-18T08:28:12.916721+00:00",
   "scheduler_stalls": {},
   "budget": {
     "window_start": "2026-07-18T07:36:51.525392+00:00",
@@ -15,17 +15,17 @@
     "f0d8bfc9d2dc6da7a31609184e25c4d66d3986fd2340b33a83e98204fb86691e": "created"
   },
   "role": "implement",
-  "branch": "issue-1-declare-project-verification-command",
-  "worktree_path": "/Users/marekkucharski/projects/.pm-worktrees/vgt/issue-1",
+  "branch": "issue-2-phase-0-reaper-project-plumbing-locate-r",
+  "worktree_path": "/Users/marekkucharski/projects/.pm-worktrees/vgt/issue-2",
   "pr_number": null,
   "pending_transition": {
-    "issue": 1,
+    "issue": 2,
     "target": "working",
     "event": "agent.started",
     "detail": {
-      "issue": 1,
+      "issue": 2,
       "agent": "codex",
-      "branch": "issue-1-declare-project-verification-command"
+      "branch": "issue-2-phase-0-reaper-project-plumbing-locate-r"
     },
     "cleanup": {}
   }
