@@ -114,7 +114,7 @@ def test_stage_cache_only_refreshes_the_stage_with_changed_settings(
     calls = {stage: 0 for stage in ANALYSIS_STAGES}
 
     def detector(stage: str):
-        def detect(_source: Path, _settings: dict[str, object]) -> dict[str, str]:
+        def detect(_project_path: Path, _source: Path, _settings: dict[str, object]) -> dict[str, str]:
             calls[stage] += 1
             return {"stage": stage}
 

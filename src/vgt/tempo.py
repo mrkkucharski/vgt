@@ -32,14 +32,21 @@ class TempoDetectionError(RuntimeError):
 
 def _madmom_beats(source: Path) -> tuple[list[float], list[int]] | None:
     """Beat times + 1-indexed position-in-bar via madmom's DBN downbeat
-    tracker, or None if madmom isn't importable/usable in this environment."""
+    tracker, or None if madmom isn't importable, or fails at runtime, in this
+    environment. madmom's last release predates modern Python/NumPy (see
+    module docstring), so runtime failures during model processing -- not
+    just the import -- are an expected way for it to be unusable here; both
+    must fall back to librosa."""
     try:
         from madmom.features.downbeats import DBNDownBeatTrackingProcessor, RNNDownBeatProcessor
     except ImportError:
         return None
 
-    activations = RNNDownBeatProcessor()(str(source))
-    beats = DBNDownBeatTrackingProcessor(beats_per_bar=[3, 4], fps=100)(activations)
+    try:
+        activations = RNNDownBeatProcessor()(str(source))
+        beats = DBNDownBeatTrackingProcessor(beats_per_bar=[3, 4], fps=100)(activations)
+    except Exception:
+        return None
     beat_times = beats[:, 0].tolist()
     beat_positions = beats[:, 1].astype(int).tolist()
     return beat_times, beat_positions

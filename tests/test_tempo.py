@@ -1,4 +1,12 @@
-from vgt.tempo import build_tempo_grid
+import sys
+import types
+from pathlib import Path
+
+import pytest
+
+from vgt.tempo import build_tempo_grid, detect_beats
+
+FIXTURE_SOURCE = Path(__file__).parents[1] / "test" / "Reaper Project" / "Media" / "Paris Metro Punk.mp3"
 
 
 def _constant_beats(bpm: float, count: int, offset: float = 0.1) -> list[float]:
@@ -55,3 +63,42 @@ def test_build_tempo_grid_reads_downbeats_when_available() -> None:
 
     assert grid["time_signature"] == "3/4"
     assert grid["downbeat_offset_seconds"] == beat_times[0]
+
+
+def _install_fake_madmom(monkeypatch: pytest.MonkeyPatch, *, raises: bool) -> None:
+    """Simulate an importable-but-broken madmom, the failure mode its known
+    fragility (see tempo.py's module docstring) actually produces: it imports
+    but blows up once its models run against real audio/NumPy."""
+
+    class _Processor:
+        def __call__(self, *args: object, **kwargs: object) -> object:
+            if raises:
+                raise RuntimeError("madmom model processing failed")
+            raise AssertionError("test double should always raise")
+
+    downbeats_module = types.ModuleType("madmom.features.downbeats")
+    downbeats_module.DBNDownBeatTrackingProcessor = _Processor  # type: ignore[attr-defined]
+    downbeats_module.RNNDownBeatProcessor = _Processor  # type: ignore[attr-defined]
+    features_module = types.ModuleType("madmom.features")
+    features_module.downbeats = downbeats_module  # type: ignore[attr-defined]
+    madmom_module = types.ModuleType("madmom")
+    madmom_module.features = features_module  # type: ignore[attr-defined]
+
+    monkeypatch.setitem(sys.modules, "madmom", madmom_module)
+    monkeypatch.setitem(sys.modules, "madmom.features", features_module)
+    monkeypatch.setitem(sys.modules, "madmom.features.downbeats", downbeats_module)
+
+
+def test_detect_beats_falls_back_to_librosa_when_madmom_processing_fails(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """madmom importing successfully doesn't mean it can process audio (its
+    last release predates modern Python/NumPy) -- a runtime failure, not just
+    an ImportError, must still fall back to librosa rather than propagate."""
+    _install_fake_madmom(monkeypatch, raises=True)
+
+    beat_times, beat_positions, backend = detect_beats(FIXTURE_SOURCE)
+
+    assert backend == "librosa"
+    assert len(beat_times) >= 2
+    assert len(beat_positions) == len(beat_times)
