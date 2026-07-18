@@ -1,17 +1,17 @@
 {
   "current_issue": 9,
-  "session_id": "c9f344bf-92c3-484f-8db4-ad0573dcc4f1",
-  "pid": 4062,
-  "process_started_at": "Sat Jul 18 15:36:08 2026",
-  "agent": "codex",
-  "started_at": "2026-07-18T13:36:07.072098+00:00",
+  "session_id": "cd63c433-4325-4e75-b8ce-8fb2216648b9",
+  "pid": 19822,
+  "process_started_at": "Sat Jul 18 20:09:21 2026",
+  "agent": "claude",
+  "started_at": "2026-07-18T18:09:20.508309+00:00",
   "scheduler_stalls": {},
   "budget": {
     "window_start": "2026-07-18T13:31:07.104540+00:00",
-    "seconds_used": 71.92,
+    "seconds_used": 16463.999144999998,
     "dollars_used": 0.0,
     "seconds_used_by_agent": {
-      "codex": 71.92
+      "codex": 16463.999144999998
     }
   },
   "verification_followups": {
@@ -39,7 +39,7 @@
     "event": "agent.started",
     "detail": {
       "issue": 9,
-      "agent": "codex",
+      "agent": "claude",
       "branch": "issue-9-phase-1-key-beat-aligned-chords"
     },
     "cleanup": {}
