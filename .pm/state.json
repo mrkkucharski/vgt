@@ -1,20 +1,24 @@
 {
   "current_issue": 7,
-  "session_id": "ab8cbabc-d8e4-412a-a6e7-b52b5ba3a8da",
-  "pid": 94235,
-  "process_started_at": "Sat Jul 18 13:53:33 2026",
-  "agent": "codex",
-  "started_at": "2026-07-18T11:53:32.251862+00:00",
+  "session_id": "b1a983d9-ba23-408d-a1dc-9f35ddd94cff",
+  "pid": 94522,
+  "process_started_at": "Sat Jul 18 13:54:46 2026",
+  "agent": "claude",
+  "started_at": "2026-07-18T11:54:44.863317+00:00",
   "scheduler_stalls": {},
   "budget": {
     "window_start": "2026-07-18T07:36:51.525392+00:00",
-    "seconds_used": 0.0,
-    "dollars_used": 0.0
+    "seconds_used": 70.876725,
+    "dollars_used": 0.0,
+    "seconds_used_by_agent": {
+      "claude": 0.0,
+      "codex": 70.876725
+    }
   },
   "verification_followups": {
     "f0d8bfc9d2dc6da7a31609184e25c4d66d3986fd2340b33a83e98204fb86691e": "created"
   },
-  "role": "review",
+  "role": "fix",
   "branch": "issue-7-phase-1-analysis-foundation-vgt-sidecar",
   "worktree_path": "/Users/marekkucharski/projects/.pm-worktrees/vgt/issue-7",
   "pr_number": 12,
@@ -27,14 +31,17 @@
       }
     }
   },
+  "fix_counts": {
+    "7": 1
+  },
   "pending_transition": {
     "issue": 7,
     "target": "working",
-    "event": "agent.review_started",
+    "event": "agent.fix_started",
     "detail": {
       "issue": 7,
-      "agent": "codex",
-      "pr": 12
+      "agent": "claude",
+      "fix_count": 1
     },
     "cleanup": {}
   }
