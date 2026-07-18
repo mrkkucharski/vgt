@@ -1,10 +1,10 @@
 {
   "current_issue": 10,
-  "session_id": "863968c5-d19b-4cf0-8cbb-3745cb62ec0c",
-  "pid": 27486,
-  "process_started_at": "Sat Jul 18 21:23:15 2026",
+  "session_id": "e850c271-3412-47ad-a281-2dacec793565",
+  "pid": 28152,
+  "process_started_at": "Sat Jul 18 21:30:15 2026",
   "agent": "claude",
-  "started_at": "2026-07-18T19:23:14.279108+00:00",
+  "started_at": "2026-07-18T19:30:13.273611+00:00",
   "scheduler_stalls": {},
   "budget": {
     "window_start": "2026-07-18T18:31:31.708110+00:00",
@@ -17,7 +17,7 @@
   "verification_followups": {
     "f0d8bfc9d2dc6da7a31609184e25c4d66d3986fd2340b33a83e98204fb86691e": "created"
   },
-  "role": "fix",
+  "role": "review",
   "branch": "issue-10-phase-1-section-detection",
   "worktree_path": "/Users/marekkucharski/projects/.pm-worktrees/vgt/issue-10",
   "pr_number": 15,
@@ -39,11 +39,11 @@
   "pending_transition": {
     "issue": 10,
     "target": "working",
-    "event": "agent.fix_started",
+    "event": "agent.review_started",
     "detail": {
       "issue": 10,
       "agent": "claude",
-      "fix_count": 1
+      "pr": 15
     },
     "cleanup": {}
   }
