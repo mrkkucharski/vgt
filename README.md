@@ -34,3 +34,16 @@ Use a copy of any project when experimenting; the included `test/Reaper Project`
 For a repeatable live-REAPER run against a disposable copy of that fixture, see
 [Phase 0 live verification](docs/phase0-live-verification.md). The verifier
 checks the saved RPP and sidecar after both the first apply and re-apply.
+
+## Analyze the reference track (Phase 1)
+
+`vgt analyze [project.rpp]` requires a `.vgt` sidecar already written by the
+apply action above. It resolves the reference track's source audio file,
+runs the tempo/key/sections/chords detectors, and writes the results back
+into the sidecar as schema version 2 — never inside REAPER itself.
+
+Each detector's output is cached against a hash of the source audio and the
+detector's settings, so re-running only recomputes stages whose inputs
+changed. Any stage can be corrected by hand-editing its `value` in the
+sidecar and setting `human_verified: true`; `vgt analyze` then leaves that
+stage untouched on every later run, regardless of what the audio hash says.
