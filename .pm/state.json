@@ -1,11 +1,19 @@
 {
-  "current_issue": 10,
-  "session_id": "e850c271-3412-47ad-a281-2dacec793565",
-  "pid": 28152,
-  "process_started_at": "Sat Jul 18 21:30:15 2026",
-  "agent": "claude",
-  "started_at": "2026-07-18T19:30:13.273611+00:00",
-  "scheduler_stalls": {},
+  "current_issue": 11,
+  "session_id": "2e31266e-7e93-421c-ad44-3c7f6a232f77",
+  "pid": 31814,
+  "process_started_at": "Sat Jul 18 22:36:39 2026",
+  "agent": "codex",
+  "started_at": "2026-07-18T20:36:38.081588+00:00",
+  "scheduler_stalls": {
+    "deferred_passes": {
+      "budget": {
+        "first_seen_at": "2026-07-18T19:36:03.765364+00:00",
+        "last_seen_at": "2026-07-18T20:35:25.506599+00:00",
+        "consecutive_passes": 52
+      }
+    }
+  },
   "budget": {
     "window_start": "2026-07-18T18:31:31.708110+00:00",
     "seconds_used": 429.596277,
@@ -18,9 +26,9 @@
     "f0d8bfc9d2dc6da7a31609184e25c4d66d3986fd2340b33a83e98204fb86691e": "created"
   },
   "role": "review",
-  "branch": "issue-10-phase-1-section-detection",
-  "worktree_path": "/Users/marekkucharski/projects/.pm-worktrees/vgt/issue-10",
-  "pr_number": 15,
+  "branch": "issue-11-phase-1-apply-analysis-into-the-reaper-p",
+  "worktree_path": "/Users/marekkucharski/projects/.pm-worktrees/vgt/issue-11",
+  "pr_number": 16,
   "followup_generation": {
     "fingerprint": "3d318dc82e3e7c229e211f23c3d3dae35d152b3d42d85d2cf62af1cf61a144a5",
     "items": {
@@ -37,13 +45,13 @@
     "10": 1
   },
   "pending_transition": {
-    "issue": 10,
+    "issue": 11,
     "target": "working",
     "event": "agent.review_started",
     "detail": {
-      "issue": 10,
-      "agent": "claude",
-      "pr": 15
+      "issue": 11,
+      "agent": "codex",
+      "pr": 16
     },
     "cleanup": {}
   }
