@@ -273,3 +273,288 @@
 {"ts": "2026-07-18T12:02:50.559565+00:00", "project": "vgt", "event": "orchestrator.pass_outcome", "detail": {"outcomes": ["blocked", "deferred", "scheduled"], "scheduled": 1, "followups_created": 0}}
 {"ts": "2026-07-18T12:04:00.509540+00:00", "project": "vgt", "event": "agent.process_identity_mismatch", "detail": {"issue": 8, "pid": 96148, "expected_process_started_at": "Sat Jul 18 14:02:48 2026", "observed_process_started_at": null, "role": "implement"}}
 {"ts": "2026-07-18T12:04:02.217405+00:00", "project": "vgt", "event": "agent.crashed", "detail": {"issue": 8, "agent": "codex", "exit_code": null, "role": "implement"}}
+{"ts": "2026-07-18T12:04:05.684719+00:00", "project": "vgt", "event": "agent.started", "detail": {"issue": 8, "agent": "claude", "branch": "issue-8-phase-1-tempo-beat-downbeat-grid", "pid": 96472, "process_started_at": "Sat Jul 18 14:04:03 2026"}}
+{"ts": "2026-07-18T12:04:05.709361+00:00", "project": "vgt", "event": "orchestrator.pass_outcome", "detail": {"outcomes": ["blocked", "deferred", "scheduled"], "scheduled": 1, "followups_created": 0}}
+{"ts": "2026-07-18T12:05:14.670750+00:00", "project": "vgt", "event": "orchestrator.pass_outcome", "detail": {"outcomes": ["blocked", "deferred"], "scheduled": 0, "followups_created": 0}}
+{"ts": "2026-07-18T12:05:14.671111+00:00", "project": "vgt", "event": "orchestrator.no_capacity", "detail": {"message": "work is available, but scheduler capacity or budget headroom is exhausted"}}
+{"ts": "2026-07-18T12:06:23.276808+00:00", "project": "vgt", "event": "orchestrator.pass_outcome", "detail": {"outcomes": ["blocked", "deferred"], "scheduled": 0, "followups_created": 0}}
+{"ts": "2026-07-18T12:06:23.277194+00:00", "project": "vgt", "event": "orchestrator.no_capacity", "detail": {"message": "work is available, but scheduler capacity or budget headroom is exhausted"}}
+{"ts": "2026-07-18T12:07:32.188704+00:00", "project": "vgt", "event": "orchestrator.pass_outcome", "detail": {"outcomes": ["blocked", "deferred"], "scheduled": 0, "followups_created": 0}}
+{"ts": "2026-07-18T12:07:32.189100+00:00", "project": "vgt", "event": "orchestrator.no_capacity", "detail": {"message": "work is available, but scheduler capacity or budget headroom is exhausted"}}
+{"ts": "2026-07-18T12:08:40.756226+00:00", "project": "vgt", "event": "orchestrator.pass_outcome", "detail": {"outcomes": ["blocked", "deferred"], "scheduled": 0, "followups_created": 0}}
+{"ts": "2026-07-18T12:08:40.756481+00:00", "project": "vgt", "event": "orchestrator.no_capacity", "detail": {"message": "work is available, but scheduler capacity or budget headroom is exhausted"}}
+{"ts": "2026-07-18T12:09:48.741040+00:00", "project": "vgt", "event": "orchestrator.pass_outcome", "detail": {"outcomes": ["blocked", "deferred"], "scheduled": 0, "followups_created": 0}}
+{"ts": "2026-07-18T12:09:48.741413+00:00", "project": "vgt", "event": "orchestrator.no_capacity", "detail": {"message": "work is available, but scheduler capacity or budget headroom is exhausted"}}
+{"ts": "2026-07-18T12:10:57.735426+00:00", "project": "vgt", "event": "orchestrator.pass_outcome", "detail": {"outcomes": ["blocked", "deferred"], "scheduled": 0, "followups_created": 0}}
+{"ts": "2026-07-18T12:10:57.735799+00:00", "project": "vgt", "event": "orchestrator.no_capacity", "detail": {"message": "work is available, but scheduler capacity or budget headroom is exhausted"}}
+{"ts": "2026-07-18T12:12:06.084710+00:00", "project": "vgt", "event": "orchestrator.pass_outcome", "detail": {"outcomes": ["blocked", "deferred"], "scheduled": 0, "followups_created": 0}}
+{"ts": "2026-07-18T12:12:06.085063+00:00", "project": "vgt", "event": "orchestrator.no_capacity", "detail": {"message": "work is available, but scheduler capacity or budget headroom is exhausted"}}
+{"ts": "2026-07-18T12:13:15.047068+00:00", "project": "vgt", "event": "orchestrator.pass_outcome", "detail": {"outcomes": ["blocked", "deferred"], "scheduled": 0, "followups_created": 0}}
+{"ts": "2026-07-18T12:13:15.047458+00:00", "project": "vgt", "event": "orchestrator.no_capacity", "detail": {"message": "work is available, but scheduler capacity or budget headroom is exhausted"}}
+{"ts": "2026-07-18T12:14:23.079696+00:00", "project": "vgt", "event": "agent.ready_for_review", "detail": {"issue": 8, "agent": "claude", "role": "implement"}}
+{"ts": "2026-07-18T12:14:26.236809+00:00", "project": "vgt", "event": "agent.branch_mismatch", "detail": {"issue": 7, "phase": "fix", "branch": "issue-8-phase-1-tempo-beat-downbeat-grid", "worktree_path": "/Users/marekkucharski/projects/.pm-worktrees/vgt/issue-8"}}
+{"ts": "2026-07-18T12:14:26.237302+00:00", "project": "vgt", "event": "agent.worktree_missing", "detail": {"issue": 7, "phase": "fix", "branch": null, "worktree_path": null}}
+{"ts": "2026-07-18T12:14:26.238429+00:00", "project": "vgt", "event": "orchestrator.pass_outcome", "detail": {"outcomes": ["blocked", "failed"], "scheduled": 0, "followups_created": 0}}
+{"ts": "2026-07-18T12:14:26.238787+00:00", "project": "vgt", "event": "orchestrator.pass_failed", "detail": {"message": "scheduler pass completed with project failures"}}
+{"ts": "2026-07-18T12:15:36.389385+00:00", "project": "vgt", "event": "agent.branch_mismatch", "detail": {"issue": 7, "phase": "fix", "branch": "issue-8-phase-1-tempo-beat-downbeat-grid", "worktree_path": "/Users/marekkucharski/projects/.pm-worktrees/vgt/issue-8"}}
+{"ts": "2026-07-18T12:15:36.389923+00:00", "project": "vgt", "event": "agent.worktree_missing", "detail": {"issue": 7, "phase": "fix", "branch": null, "worktree_path": null}}
+{"ts": "2026-07-18T12:15:36.390895+00:00", "project": "vgt", "event": "orchestrator.pass_outcome", "detail": {"outcomes": ["blocked", "failed"], "scheduled": 0, "followups_created": 0}}
+{"ts": "2026-07-18T12:15:36.391216+00:00", "project": "vgt", "event": "orchestrator.pass_failed", "detail": {"message": "scheduler pass completed with project failures"}}
+{"ts": "2026-07-18T12:16:46.217129+00:00", "project": "vgt", "event": "agent.branch_mismatch", "detail": {"issue": 7, "phase": "fix", "branch": "issue-8-phase-1-tempo-beat-downbeat-grid", "worktree_path": "/Users/marekkucharski/projects/.pm-worktrees/vgt/issue-8"}}
+{"ts": "2026-07-18T12:16:46.217605+00:00", "project": "vgt", "event": "agent.worktree_missing", "detail": {"issue": 7, "phase": "fix", "branch": null, "worktree_path": null}}
+{"ts": "2026-07-18T12:16:46.218791+00:00", "project": "vgt", "event": "orchestrator.pass_outcome", "detail": {"outcomes": ["blocked", "failed"], "scheduled": 0, "followups_created": 0}}
+{"ts": "2026-07-18T12:16:46.219150+00:00", "project": "vgt", "event": "orchestrator.pass_failed", "detail": {"message": "scheduler pass completed with project failures"}}
+{"ts": "2026-07-18T12:17:55.444158+00:00", "project": "vgt", "event": "agent.branch_mismatch", "detail": {"issue": 7, "phase": "fix", "branch": "issue-8-phase-1-tempo-beat-downbeat-grid", "worktree_path": "/Users/marekkucharski/projects/.pm-worktrees/vgt/issue-8"}}
+{"ts": "2026-07-18T12:17:55.444767+00:00", "project": "vgt", "event": "agent.worktree_missing", "detail": {"issue": 7, "phase": "fix", "branch": null, "worktree_path": null}}
+{"ts": "2026-07-18T12:17:55.445684+00:00", "project": "vgt", "event": "orchestrator.pass_outcome", "detail": {"outcomes": ["blocked", "failed"], "scheduled": 0, "followups_created": 0}}
+{"ts": "2026-07-18T12:17:55.445980+00:00", "project": "vgt", "event": "orchestrator.pass_failed", "detail": {"message": "scheduler pass completed with project failures"}}
+{"ts": "2026-07-18T12:19:05.030224+00:00", "project": "vgt", "event": "agent.branch_mismatch", "detail": {"issue": 7, "phase": "fix", "branch": "issue-8-phase-1-tempo-beat-downbeat-grid", "worktree_path": "/Users/marekkucharski/projects/.pm-worktrees/vgt/issue-8"}}
+{"ts": "2026-07-18T12:19:05.030670+00:00", "project": "vgt", "event": "agent.worktree_missing", "detail": {"issue": 7, "phase": "fix", "branch": null, "worktree_path": null}}
+{"ts": "2026-07-18T12:19:05.031644+00:00", "project": "vgt", "event": "orchestrator.pass_outcome", "detail": {"outcomes": ["blocked", "failed"], "scheduled": 0, "followups_created": 0}}
+{"ts": "2026-07-18T12:19:05.031990+00:00", "project": "vgt", "event": "orchestrator.pass_failed", "detail": {"message": "scheduler pass completed with project failures"}}
+{"ts": "2026-07-18T12:20:14.969735+00:00", "project": "vgt", "event": "agent.branch_mismatch", "detail": {"issue": 7, "phase": "fix", "branch": "issue-8-phase-1-tempo-beat-downbeat-grid", "worktree_path": "/Users/marekkucharski/projects/.pm-worktrees/vgt/issue-8"}}
+{"ts": "2026-07-18T12:20:14.970203+00:00", "project": "vgt", "event": "agent.worktree_missing", "detail": {"issue": 7, "phase": "fix", "branch": null, "worktree_path": null}}
+{"ts": "2026-07-18T12:20:14.971365+00:00", "project": "vgt", "event": "orchestrator.pass_outcome", "detail": {"outcomes": ["blocked", "failed"], "scheduled": 0, "followups_created": 0}}
+{"ts": "2026-07-18T12:20:14.971769+00:00", "project": "vgt", "event": "orchestrator.pass_failed", "detail": {"message": "scheduler pass completed with project failures"}}
+{"ts": "2026-07-18T12:21:25.063921+00:00", "project": "vgt", "event": "agent.branch_mismatch", "detail": {"issue": 7, "phase": "fix", "branch": "issue-8-phase-1-tempo-beat-downbeat-grid", "worktree_path": "/Users/marekkucharski/projects/.pm-worktrees/vgt/issue-8"}}
+{"ts": "2026-07-18T12:21:25.064384+00:00", "project": "vgt", "event": "agent.worktree_missing", "detail": {"issue": 7, "phase": "fix", "branch": null, "worktree_path": null}}
+{"ts": "2026-07-18T12:21:25.065437+00:00", "project": "vgt", "event": "orchestrator.pass_outcome", "detail": {"outcomes": ["blocked", "failed"], "scheduled": 0, "followups_created": 0}}
+{"ts": "2026-07-18T12:21:25.065812+00:00", "project": "vgt", "event": "orchestrator.pass_failed", "detail": {"message": "scheduler pass completed with project failures"}}
+{"ts": "2026-07-18T12:22:35.060277+00:00", "project": "vgt", "event": "agent.branch_mismatch", "detail": {"issue": 7, "phase": "fix", "branch": "issue-8-phase-1-tempo-beat-downbeat-grid", "worktree_path": "/Users/marekkucharski/projects/.pm-worktrees/vgt/issue-8"}}
+{"ts": "2026-07-18T12:22:35.060783+00:00", "project": "vgt", "event": "agent.worktree_missing", "detail": {"issue": 7, "phase": "fix", "branch": null, "worktree_path": null}}
+{"ts": "2026-07-18T12:22:35.062424+00:00", "project": "vgt", "event": "orchestrator.pass_outcome", "detail": {"outcomes": ["blocked", "failed"], "scheduled": 0, "followups_created": 0}}
+{"ts": "2026-07-18T12:22:35.062854+00:00", "project": "vgt", "event": "orchestrator.pass_failed", "detail": {"message": "scheduler pass completed with project failures"}}
+{"ts": "2026-07-18T12:23:44.482600+00:00", "project": "vgt", "event": "agent.branch_mismatch", "detail": {"issue": 7, "phase": "fix", "branch": "issue-8-phase-1-tempo-beat-downbeat-grid", "worktree_path": "/Users/marekkucharski/projects/.pm-worktrees/vgt/issue-8"}}
+{"ts": "2026-07-18T12:23:44.483044+00:00", "project": "vgt", "event": "agent.worktree_missing", "detail": {"issue": 7, "phase": "fix", "branch": null, "worktree_path": null}}
+{"ts": "2026-07-18T12:23:44.484334+00:00", "project": "vgt", "event": "orchestrator.pass_outcome", "detail": {"outcomes": ["blocked", "failed"], "scheduled": 0, "followups_created": 0}}
+{"ts": "2026-07-18T12:23:44.484738+00:00", "project": "vgt", "event": "orchestrator.pass_failed", "detail": {"message": "scheduler pass completed with project failures"}}
+{"ts": "2026-07-18T12:24:54.059348+00:00", "project": "vgt", "event": "agent.branch_mismatch", "detail": {"issue": 7, "phase": "fix", "branch": "issue-8-phase-1-tempo-beat-downbeat-grid", "worktree_path": "/Users/marekkucharski/projects/.pm-worktrees/vgt/issue-8"}}
+{"ts": "2026-07-18T12:24:54.059775+00:00", "project": "vgt", "event": "agent.worktree_missing", "detail": {"issue": 7, "phase": "fix", "branch": null, "worktree_path": null}}
+{"ts": "2026-07-18T12:24:54.060812+00:00", "project": "vgt", "event": "orchestrator.pass_outcome", "detail": {"outcomes": ["blocked", "failed"], "scheduled": 0, "followups_created": 0}}
+{"ts": "2026-07-18T12:24:54.061174+00:00", "project": "vgt", "event": "orchestrator.pass_failed", "detail": {"message": "scheduler pass completed with project failures"}}
+{"ts": "2026-07-18T12:26:04.055477+00:00", "project": "vgt", "event": "agent.branch_mismatch", "detail": {"issue": 7, "phase": "fix", "branch": "issue-8-phase-1-tempo-beat-downbeat-grid", "worktree_path": "/Users/marekkucharski/projects/.pm-worktrees/vgt/issue-8"}}
+{"ts": "2026-07-18T12:26:04.055983+00:00", "project": "vgt", "event": "agent.worktree_missing", "detail": {"issue": 7, "phase": "fix", "branch": null, "worktree_path": null}}
+{"ts": "2026-07-18T12:26:04.057055+00:00", "project": "vgt", "event": "orchestrator.pass_outcome", "detail": {"outcomes": ["blocked", "failed"], "scheduled": 0, "followups_created": 0}}
+{"ts": "2026-07-18T12:26:04.057409+00:00", "project": "vgt", "event": "orchestrator.pass_failed", "detail": {"message": "scheduler pass completed with project failures"}}
+{"ts": "2026-07-18T12:27:13.349811+00:00", "project": "vgt", "event": "agent.branch_mismatch", "detail": {"issue": 7, "phase": "fix", "branch": "issue-8-phase-1-tempo-beat-downbeat-grid", "worktree_path": "/Users/marekkucharski/projects/.pm-worktrees/vgt/issue-8"}}
+{"ts": "2026-07-18T12:27:13.350429+00:00", "project": "vgt", "event": "agent.worktree_missing", "detail": {"issue": 7, "phase": "fix", "branch": null, "worktree_path": null}}
+{"ts": "2026-07-18T12:27:13.351460+00:00", "project": "vgt", "event": "orchestrator.pass_outcome", "detail": {"outcomes": ["blocked", "failed"], "scheduled": 0, "followups_created": 0}}
+{"ts": "2026-07-18T12:27:13.351794+00:00", "project": "vgt", "event": "orchestrator.pass_failed", "detail": {"message": "scheduler pass completed with project failures"}}
+{"ts": "2026-07-18T12:28:22.706438+00:00", "project": "vgt", "event": "agent.branch_mismatch", "detail": {"issue": 7, "phase": "fix", "branch": "issue-8-phase-1-tempo-beat-downbeat-grid", "worktree_path": "/Users/marekkucharski/projects/.pm-worktrees/vgt/issue-8"}}
+{"ts": "2026-07-18T12:28:22.706973+00:00", "project": "vgt", "event": "agent.worktree_missing", "detail": {"issue": 7, "phase": "fix", "branch": null, "worktree_path": null}}
+{"ts": "2026-07-18T12:28:22.708164+00:00", "project": "vgt", "event": "orchestrator.pass_outcome", "detail": {"outcomes": ["blocked", "failed"], "scheduled": 0, "followups_created": 0}}
+{"ts": "2026-07-18T12:28:22.708584+00:00", "project": "vgt", "event": "orchestrator.pass_failed", "detail": {"message": "scheduler pass completed with project failures"}}
+{"ts": "2026-07-18T12:29:32.403609+00:00", "project": "vgt", "event": "agent.branch_mismatch", "detail": {"issue": 7, "phase": "fix", "branch": "issue-8-phase-1-tempo-beat-downbeat-grid", "worktree_path": "/Users/marekkucharski/projects/.pm-worktrees/vgt/issue-8"}}
+{"ts": "2026-07-18T12:29:32.404130+00:00", "project": "vgt", "event": "agent.worktree_missing", "detail": {"issue": 7, "phase": "fix", "branch": null, "worktree_path": null}}
+{"ts": "2026-07-18T12:29:32.405206+00:00", "project": "vgt", "event": "orchestrator.pass_outcome", "detail": {"outcomes": ["blocked", "failed"], "scheduled": 0, "followups_created": 0}}
+{"ts": "2026-07-18T12:29:32.405560+00:00", "project": "vgt", "event": "orchestrator.pass_failed", "detail": {"message": "scheduler pass completed with project failures"}}
+{"ts": "2026-07-18T12:30:42.095896+00:00", "project": "vgt", "event": "agent.branch_mismatch", "detail": {"issue": 7, "phase": "fix", "branch": "issue-8-phase-1-tempo-beat-downbeat-grid", "worktree_path": "/Users/marekkucharski/projects/.pm-worktrees/vgt/issue-8"}}
+{"ts": "2026-07-18T12:30:42.096263+00:00", "project": "vgt", "event": "agent.worktree_missing", "detail": {"issue": 7, "phase": "fix", "branch": null, "worktree_path": null}}
+{"ts": "2026-07-18T12:30:42.097364+00:00", "project": "vgt", "event": "orchestrator.pass_outcome", "detail": {"outcomes": ["blocked", "failed"], "scheduled": 0, "followups_created": 0}}
+{"ts": "2026-07-18T12:30:42.097716+00:00", "project": "vgt", "event": "orchestrator.pass_failed", "detail": {"message": "scheduler pass completed with project failures"}}
+{"ts": "2026-07-18T12:31:52.234086+00:00", "project": "vgt", "event": "agent.branch_mismatch", "detail": {"issue": 7, "phase": "fix", "branch": "issue-8-phase-1-tempo-beat-downbeat-grid", "worktree_path": "/Users/marekkucharski/projects/.pm-worktrees/vgt/issue-8"}}
+{"ts": "2026-07-18T12:31:52.234839+00:00", "project": "vgt", "event": "agent.worktree_missing", "detail": {"issue": 7, "phase": "fix", "branch": null, "worktree_path": null}}
+{"ts": "2026-07-18T12:31:52.236203+00:00", "project": "vgt", "event": "orchestrator.pass_outcome", "detail": {"outcomes": ["blocked", "failed"], "scheduled": 0, "followups_created": 0}}
+{"ts": "2026-07-18T12:31:52.236565+00:00", "project": "vgt", "event": "orchestrator.pass_failed", "detail": {"message": "scheduler pass completed with project failures"}}
+{"ts": "2026-07-18T12:33:01.695311+00:00", "project": "vgt", "event": "agent.branch_mismatch", "detail": {"issue": 7, "phase": "fix", "branch": "issue-8-phase-1-tempo-beat-downbeat-grid", "worktree_path": "/Users/marekkucharski/projects/.pm-worktrees/vgt/issue-8"}}
+{"ts": "2026-07-18T12:33:01.695893+00:00", "project": "vgt", "event": "agent.worktree_missing", "detail": {"issue": 7, "phase": "fix", "branch": null, "worktree_path": null}}
+{"ts": "2026-07-18T12:33:01.696911+00:00", "project": "vgt", "event": "orchestrator.pass_outcome", "detail": {"outcomes": ["blocked", "failed"], "scheduled": 0, "followups_created": 0}}
+{"ts": "2026-07-18T12:33:01.697248+00:00", "project": "vgt", "event": "orchestrator.pass_failed", "detail": {"message": "scheduler pass completed with project failures"}}
+{"ts": "2026-07-18T12:34:11.188933+00:00", "project": "vgt", "event": "agent.branch_mismatch", "detail": {"issue": 7, "phase": "fix", "branch": "issue-8-phase-1-tempo-beat-downbeat-grid", "worktree_path": "/Users/marekkucharski/projects/.pm-worktrees/vgt/issue-8"}}
+{"ts": "2026-07-18T12:34:11.189518+00:00", "project": "vgt", "event": "agent.worktree_missing", "detail": {"issue": 7, "phase": "fix", "branch": null, "worktree_path": null}}
+{"ts": "2026-07-18T12:34:11.190427+00:00", "project": "vgt", "event": "orchestrator.pass_outcome", "detail": {"outcomes": ["blocked", "failed"], "scheduled": 0, "followups_created": 0}}
+{"ts": "2026-07-18T12:34:11.190728+00:00", "project": "vgt", "event": "orchestrator.pass_failed", "detail": {"message": "scheduler pass completed with project failures"}}
+{"ts": "2026-07-18T12:35:21.321417+00:00", "project": "vgt", "event": "agent.branch_mismatch", "detail": {"issue": 7, "phase": "fix", "branch": "issue-8-phase-1-tempo-beat-downbeat-grid", "worktree_path": "/Users/marekkucharski/projects/.pm-worktrees/vgt/issue-8"}}
+{"ts": "2026-07-18T12:35:21.321882+00:00", "project": "vgt", "event": "agent.worktree_missing", "detail": {"issue": 7, "phase": "fix", "branch": null, "worktree_path": null}}
+{"ts": "2026-07-18T12:35:21.323063+00:00", "project": "vgt", "event": "orchestrator.pass_outcome", "detail": {"outcomes": ["blocked", "failed"], "scheduled": 0, "followups_created": 0}}
+{"ts": "2026-07-18T12:35:21.323469+00:00", "project": "vgt", "event": "orchestrator.pass_failed", "detail": {"message": "scheduler pass completed with project failures"}}
+{"ts": "2026-07-18T12:36:31.056663+00:00", "project": "vgt", "event": "agent.branch_mismatch", "detail": {"issue": 7, "phase": "fix", "branch": "issue-8-phase-1-tempo-beat-downbeat-grid", "worktree_path": "/Users/marekkucharski/projects/.pm-worktrees/vgt/issue-8"}}
+{"ts": "2026-07-18T12:36:31.057104+00:00", "project": "vgt", "event": "agent.worktree_missing", "detail": {"issue": 7, "phase": "fix", "branch": null, "worktree_path": null}}
+{"ts": "2026-07-18T12:36:31.058190+00:00", "project": "vgt", "event": "orchestrator.pass_outcome", "detail": {"outcomes": ["blocked", "failed"], "scheduled": 0, "followups_created": 0}}
+{"ts": "2026-07-18T12:36:31.058549+00:00", "project": "vgt", "event": "orchestrator.pass_failed", "detail": {"message": "scheduler pass completed with project failures"}}
+{"ts": "2026-07-18T12:37:40.996971+00:00", "project": "vgt", "event": "agent.branch_mismatch", "detail": {"issue": 7, "phase": "fix", "branch": "issue-8-phase-1-tempo-beat-downbeat-grid", "worktree_path": "/Users/marekkucharski/projects/.pm-worktrees/vgt/issue-8"}}
+{"ts": "2026-07-18T12:37:40.997449+00:00", "project": "vgt", "event": "agent.worktree_missing", "detail": {"issue": 7, "phase": "fix", "branch": null, "worktree_path": null}}
+{"ts": "2026-07-18T12:37:40.998564+00:00", "project": "vgt", "event": "orchestrator.pass_outcome", "detail": {"outcomes": ["blocked", "failed"], "scheduled": 0, "followups_created": 0}}
+{"ts": "2026-07-18T12:37:40.998930+00:00", "project": "vgt", "event": "orchestrator.pass_failed", "detail": {"message": "scheduler pass completed with project failures"}}
+{"ts": "2026-07-18T12:38:50.544146+00:00", "project": "vgt", "event": "agent.branch_mismatch", "detail": {"issue": 7, "phase": "fix", "branch": "issue-8-phase-1-tempo-beat-downbeat-grid", "worktree_path": "/Users/marekkucharski/projects/.pm-worktrees/vgt/issue-8"}}
+{"ts": "2026-07-18T12:38:50.544724+00:00", "project": "vgt", "event": "agent.worktree_missing", "detail": {"issue": 7, "phase": "fix", "branch": null, "worktree_path": null}}
+{"ts": "2026-07-18T12:38:50.545650+00:00", "project": "vgt", "event": "orchestrator.pass_outcome", "detail": {"outcomes": ["blocked", "failed"], "scheduled": 0, "followups_created": 0}}
+{"ts": "2026-07-18T12:38:50.545948+00:00", "project": "vgt", "event": "orchestrator.pass_failed", "detail": {"message": "scheduler pass completed with project failures"}}
+{"ts": "2026-07-18T12:40:00.346995+00:00", "project": "vgt", "event": "agent.branch_mismatch", "detail": {"issue": 7, "phase": "fix", "branch": "issue-8-phase-1-tempo-beat-downbeat-grid", "worktree_path": "/Users/marekkucharski/projects/.pm-worktrees/vgt/issue-8"}}
+{"ts": "2026-07-18T12:40:00.347524+00:00", "project": "vgt", "event": "agent.worktree_missing", "detail": {"issue": 7, "phase": "fix", "branch": null, "worktree_path": null}}
+{"ts": "2026-07-18T12:40:00.348665+00:00", "project": "vgt", "event": "orchestrator.pass_outcome", "detail": {"outcomes": ["blocked", "failed"], "scheduled": 0, "followups_created": 0}}
+{"ts": "2026-07-18T12:40:00.349009+00:00", "project": "vgt", "event": "orchestrator.pass_failed", "detail": {"message": "scheduler pass completed with project failures"}}
+{"ts": "2026-07-18T12:41:10.085110+00:00", "project": "vgt", "event": "agent.branch_mismatch", "detail": {"issue": 7, "phase": "fix", "branch": "issue-8-phase-1-tempo-beat-downbeat-grid", "worktree_path": "/Users/marekkucharski/projects/.pm-worktrees/vgt/issue-8"}}
+{"ts": "2026-07-18T12:41:10.085622+00:00", "project": "vgt", "event": "agent.worktree_missing", "detail": {"issue": 7, "phase": "fix", "branch": null, "worktree_path": null}}
+{"ts": "2026-07-18T12:41:10.086821+00:00", "project": "vgt", "event": "orchestrator.pass_outcome", "detail": {"outcomes": ["blocked", "failed"], "scheduled": 0, "followups_created": 0}}
+{"ts": "2026-07-18T12:41:10.087171+00:00", "project": "vgt", "event": "orchestrator.pass_failed", "detail": {"message": "scheduler pass completed with project failures"}}
+{"ts": "2026-07-18T12:42:20.464654+00:00", "project": "vgt", "event": "agent.branch_mismatch", "detail": {"issue": 7, "phase": "fix", "branch": "issue-8-phase-1-tempo-beat-downbeat-grid", "worktree_path": "/Users/marekkucharski/projects/.pm-worktrees/vgt/issue-8"}}
+{"ts": "2026-07-18T12:42:20.465192+00:00", "project": "vgt", "event": "agent.worktree_missing", "detail": {"issue": 7, "phase": "fix", "branch": null, "worktree_path": null}}
+{"ts": "2026-07-18T12:42:20.466288+00:00", "project": "vgt", "event": "orchestrator.pass_outcome", "detail": {"outcomes": ["blocked", "failed"], "scheduled": 0, "followups_created": 0}}
+{"ts": "2026-07-18T12:42:20.466662+00:00", "project": "vgt", "event": "orchestrator.pass_failed", "detail": {"message": "scheduler pass completed with project failures"}}
+{"ts": "2026-07-18T12:43:29.978991+00:00", "project": "vgt", "event": "agent.branch_mismatch", "detail": {"issue": 7, "phase": "fix", "branch": "issue-8-phase-1-tempo-beat-downbeat-grid", "worktree_path": "/Users/marekkucharski/projects/.pm-worktrees/vgt/issue-8"}}
+{"ts": "2026-07-18T12:43:29.979413+00:00", "project": "vgt", "event": "agent.worktree_missing", "detail": {"issue": 7, "phase": "fix", "branch": null, "worktree_path": null}}
+{"ts": "2026-07-18T12:43:29.980499+00:00", "project": "vgt", "event": "orchestrator.pass_outcome", "detail": {"outcomes": ["blocked", "failed"], "scheduled": 0, "followups_created": 0}}
+{"ts": "2026-07-18T12:43:29.980856+00:00", "project": "vgt", "event": "orchestrator.pass_failed", "detail": {"message": "scheduler pass completed with project failures"}}
+{"ts": "2026-07-18T12:44:39.561712+00:00", "project": "vgt", "event": "agent.branch_mismatch", "detail": {"issue": 7, "phase": "fix", "branch": "issue-8-phase-1-tempo-beat-downbeat-grid", "worktree_path": "/Users/marekkucharski/projects/.pm-worktrees/vgt/issue-8"}}
+{"ts": "2026-07-18T12:44:39.562157+00:00", "project": "vgt", "event": "agent.worktree_missing", "detail": {"issue": 7, "phase": "fix", "branch": null, "worktree_path": null}}
+{"ts": "2026-07-18T12:44:39.563058+00:00", "project": "vgt", "event": "orchestrator.pass_outcome", "detail": {"outcomes": ["blocked", "failed"], "scheduled": 0, "followups_created": 0}}
+{"ts": "2026-07-18T12:44:39.563347+00:00", "project": "vgt", "event": "orchestrator.pass_failed", "detail": {"message": "scheduler pass completed with project failures"}}
+{"ts": "2026-07-18T12:45:49.246188+00:00", "project": "vgt", "event": "agent.branch_mismatch", "detail": {"issue": 7, "phase": "fix", "branch": "issue-8-phase-1-tempo-beat-downbeat-grid", "worktree_path": "/Users/marekkucharski/projects/.pm-worktrees/vgt/issue-8"}}
+{"ts": "2026-07-18T12:45:49.246727+00:00", "project": "vgt", "event": "agent.worktree_missing", "detail": {"issue": 7, "phase": "fix", "branch": null, "worktree_path": null}}
+{"ts": "2026-07-18T12:45:49.247921+00:00", "project": "vgt", "event": "orchestrator.pass_outcome", "detail": {"outcomes": ["blocked", "failed"], "scheduled": 0, "followups_created": 0}}
+{"ts": "2026-07-18T12:45:49.248279+00:00", "project": "vgt", "event": "orchestrator.pass_failed", "detail": {"message": "scheduler pass completed with project failures"}}
+{"ts": "2026-07-18T12:46:59.130200+00:00", "project": "vgt", "event": "agent.branch_mismatch", "detail": {"issue": 7, "phase": "fix", "branch": "issue-8-phase-1-tempo-beat-downbeat-grid", "worktree_path": "/Users/marekkucharski/projects/.pm-worktrees/vgt/issue-8"}}
+{"ts": "2026-07-18T12:46:59.130657+00:00", "project": "vgt", "event": "agent.worktree_missing", "detail": {"issue": 7, "phase": "fix", "branch": null, "worktree_path": null}}
+{"ts": "2026-07-18T12:46:59.131720+00:00", "project": "vgt", "event": "orchestrator.pass_outcome", "detail": {"outcomes": ["blocked", "failed"], "scheduled": 0, "followups_created": 0}}
+{"ts": "2026-07-18T12:46:59.132042+00:00", "project": "vgt", "event": "orchestrator.pass_failed", "detail": {"message": "scheduler pass completed with project failures"}}
+{"ts": "2026-07-18T12:48:08.875239+00:00", "project": "vgt", "event": "agent.branch_mismatch", "detail": {"issue": 7, "phase": "fix", "branch": "issue-8-phase-1-tempo-beat-downbeat-grid", "worktree_path": "/Users/marekkucharski/projects/.pm-worktrees/vgt/issue-8"}}
+{"ts": "2026-07-18T12:48:08.875772+00:00", "project": "vgt", "event": "agent.worktree_missing", "detail": {"issue": 7, "phase": "fix", "branch": null, "worktree_path": null}}
+{"ts": "2026-07-18T12:48:08.876772+00:00", "project": "vgt", "event": "orchestrator.pass_outcome", "detail": {"outcomes": ["blocked", "failed"], "scheduled": 0, "followups_created": 0}}
+{"ts": "2026-07-18T12:48:08.877037+00:00", "project": "vgt", "event": "orchestrator.pass_failed", "detail": {"message": "scheduler pass completed with project failures"}}
+{"ts": "2026-07-18T12:49:18.898553+00:00", "project": "vgt", "event": "agent.branch_mismatch", "detail": {"issue": 7, "phase": "fix", "branch": "issue-8-phase-1-tempo-beat-downbeat-grid", "worktree_path": "/Users/marekkucharski/projects/.pm-worktrees/vgt/issue-8"}}
+{"ts": "2026-07-18T12:49:18.899066+00:00", "project": "vgt", "event": "agent.worktree_missing", "detail": {"issue": 7, "phase": "fix", "branch": null, "worktree_path": null}}
+{"ts": "2026-07-18T12:49:18.900220+00:00", "project": "vgt", "event": "orchestrator.pass_outcome", "detail": {"outcomes": ["blocked", "failed"], "scheduled": 0, "followups_created": 0}}
+{"ts": "2026-07-18T12:49:18.900569+00:00", "project": "vgt", "event": "orchestrator.pass_failed", "detail": {"message": "scheduler pass completed with project failures"}}
+{"ts": "2026-07-18T12:50:28.558258+00:00", "project": "vgt", "event": "agent.branch_mismatch", "detail": {"issue": 7, "phase": "fix", "branch": "issue-8-phase-1-tempo-beat-downbeat-grid", "worktree_path": "/Users/marekkucharski/projects/.pm-worktrees/vgt/issue-8"}}
+{"ts": "2026-07-18T12:50:28.558720+00:00", "project": "vgt", "event": "agent.worktree_missing", "detail": {"issue": 7, "phase": "fix", "branch": null, "worktree_path": null}}
+{"ts": "2026-07-18T12:50:28.559773+00:00", "project": "vgt", "event": "orchestrator.pass_outcome", "detail": {"outcomes": ["blocked", "failed"], "scheduled": 0, "followups_created": 0}}
+{"ts": "2026-07-18T12:50:28.560074+00:00", "project": "vgt", "event": "orchestrator.pass_failed", "detail": {"message": "scheduler pass completed with project failures"}}
+{"ts": "2026-07-18T12:51:37.761971+00:00", "project": "vgt", "event": "agent.branch_mismatch", "detail": {"issue": 7, "phase": "fix", "branch": "issue-8-phase-1-tempo-beat-downbeat-grid", "worktree_path": "/Users/marekkucharski/projects/.pm-worktrees/vgt/issue-8"}}
+{"ts": "2026-07-18T12:51:37.762410+00:00", "project": "vgt", "event": "agent.worktree_missing", "detail": {"issue": 7, "phase": "fix", "branch": null, "worktree_path": null}}
+{"ts": "2026-07-18T12:51:37.763400+00:00", "project": "vgt", "event": "orchestrator.pass_outcome", "detail": {"outcomes": ["blocked", "failed"], "scheduled": 0, "followups_created": 0}}
+{"ts": "2026-07-18T12:51:37.763671+00:00", "project": "vgt", "event": "orchestrator.pass_failed", "detail": {"message": "scheduler pass completed with project failures"}}
+{"ts": "2026-07-18T12:52:47.494050+00:00", "project": "vgt", "event": "agent.branch_mismatch", "detail": {"issue": 7, "phase": "fix", "branch": "issue-8-phase-1-tempo-beat-downbeat-grid", "worktree_path": "/Users/marekkucharski/projects/.pm-worktrees/vgt/issue-8"}}
+{"ts": "2026-07-18T12:52:47.494534+00:00", "project": "vgt", "event": "agent.worktree_missing", "detail": {"issue": 7, "phase": "fix", "branch": null, "worktree_path": null}}
+{"ts": "2026-07-18T12:52:47.495663+00:00", "project": "vgt", "event": "orchestrator.pass_outcome", "detail": {"outcomes": ["blocked", "failed"], "scheduled": 0, "followups_created": 0}}
+{"ts": "2026-07-18T12:52:47.496012+00:00", "project": "vgt", "event": "orchestrator.pass_failed", "detail": {"message": "scheduler pass completed with project failures"}}
+{"ts": "2026-07-18T12:53:57.026261+00:00", "project": "vgt", "event": "agent.branch_mismatch", "detail": {"issue": 7, "phase": "fix", "branch": "issue-8-phase-1-tempo-beat-downbeat-grid", "worktree_path": "/Users/marekkucharski/projects/.pm-worktrees/vgt/issue-8"}}
+{"ts": "2026-07-18T12:53:57.026740+00:00", "project": "vgt", "event": "agent.worktree_missing", "detail": {"issue": 7, "phase": "fix", "branch": null, "worktree_path": null}}
+{"ts": "2026-07-18T12:53:57.027763+00:00", "project": "vgt", "event": "orchestrator.pass_outcome", "detail": {"outcomes": ["blocked", "failed"], "scheduled": 0, "followups_created": 0}}
+{"ts": "2026-07-18T12:53:57.028066+00:00", "project": "vgt", "event": "orchestrator.pass_failed", "detail": {"message": "scheduler pass completed with project failures"}}
+{"ts": "2026-07-18T12:55:06.626174+00:00", "project": "vgt", "event": "agent.branch_mismatch", "detail": {"issue": 7, "phase": "fix", "branch": "issue-8-phase-1-tempo-beat-downbeat-grid", "worktree_path": "/Users/marekkucharski/projects/.pm-worktrees/vgt/issue-8"}}
+{"ts": "2026-07-18T12:55:06.626649+00:00", "project": "vgt", "event": "agent.worktree_missing", "detail": {"issue": 7, "phase": "fix", "branch": null, "worktree_path": null}}
+{"ts": "2026-07-18T12:55:06.627668+00:00", "project": "vgt", "event": "orchestrator.pass_outcome", "detail": {"outcomes": ["blocked", "failed"], "scheduled": 0, "followups_created": 0}}
+{"ts": "2026-07-18T12:55:06.627947+00:00", "project": "vgt", "event": "orchestrator.pass_failed", "detail": {"message": "scheduler pass completed with project failures"}}
+{"ts": "2026-07-18T12:56:15.957500+00:00", "project": "vgt", "event": "agent.branch_mismatch", "detail": {"issue": 7, "phase": "fix", "branch": "issue-8-phase-1-tempo-beat-downbeat-grid", "worktree_path": "/Users/marekkucharski/projects/.pm-worktrees/vgt/issue-8"}}
+{"ts": "2026-07-18T12:56:15.958014+00:00", "project": "vgt", "event": "agent.worktree_missing", "detail": {"issue": 7, "phase": "fix", "branch": null, "worktree_path": null}}
+{"ts": "2026-07-18T12:56:15.959104+00:00", "project": "vgt", "event": "orchestrator.pass_outcome", "detail": {"outcomes": ["blocked", "failed"], "scheduled": 0, "followups_created": 0}}
+{"ts": "2026-07-18T12:56:15.959407+00:00", "project": "vgt", "event": "orchestrator.pass_failed", "detail": {"message": "scheduler pass completed with project failures"}}
+{"ts": "2026-07-18T12:57:25.397771+00:00", "project": "vgt", "event": "agent.branch_mismatch", "detail": {"issue": 7, "phase": "fix", "branch": "issue-8-phase-1-tempo-beat-downbeat-grid", "worktree_path": "/Users/marekkucharski/projects/.pm-worktrees/vgt/issue-8"}}
+{"ts": "2026-07-18T12:57:25.398244+00:00", "project": "vgt", "event": "agent.worktree_missing", "detail": {"issue": 7, "phase": "fix", "branch": null, "worktree_path": null}}
+{"ts": "2026-07-18T12:57:25.399164+00:00", "project": "vgt", "event": "orchestrator.pass_outcome", "detail": {"outcomes": ["blocked", "failed"], "scheduled": 0, "followups_created": 0}}
+{"ts": "2026-07-18T12:57:25.399463+00:00", "project": "vgt", "event": "orchestrator.pass_failed", "detail": {"message": "scheduler pass completed with project failures"}}
+{"ts": "2026-07-18T12:58:34.841325+00:00", "project": "vgt", "event": "agent.branch_mismatch", "detail": {"issue": 7, "phase": "fix", "branch": "issue-8-phase-1-tempo-beat-downbeat-grid", "worktree_path": "/Users/marekkucharski/projects/.pm-worktrees/vgt/issue-8"}}
+{"ts": "2026-07-18T12:58:34.841827+00:00", "project": "vgt", "event": "agent.worktree_missing", "detail": {"issue": 7, "phase": "fix", "branch": null, "worktree_path": null}}
+{"ts": "2026-07-18T12:58:34.842777+00:00", "project": "vgt", "event": "orchestrator.pass_outcome", "detail": {"outcomes": ["blocked", "failed"], "scheduled": 0, "followups_created": 0}}
+{"ts": "2026-07-18T12:58:34.843043+00:00", "project": "vgt", "event": "orchestrator.pass_failed", "detail": {"message": "scheduler pass completed with project failures"}}
+{"ts": "2026-07-18T12:59:45.003794+00:00", "project": "vgt", "event": "agent.branch_mismatch", "detail": {"issue": 7, "phase": "fix", "branch": "issue-8-phase-1-tempo-beat-downbeat-grid", "worktree_path": "/Users/marekkucharski/projects/.pm-worktrees/vgt/issue-8"}}
+{"ts": "2026-07-18T12:59:45.004226+00:00", "project": "vgt", "event": "agent.worktree_missing", "detail": {"issue": 7, "phase": "fix", "branch": null, "worktree_path": null}}
+{"ts": "2026-07-18T12:59:45.005259+00:00", "project": "vgt", "event": "orchestrator.pass_outcome", "detail": {"outcomes": ["blocked", "failed"], "scheduled": 0, "followups_created": 0}}
+{"ts": "2026-07-18T12:59:45.005562+00:00", "project": "vgt", "event": "orchestrator.pass_failed", "detail": {"message": "scheduler pass completed with project failures"}}
+{"ts": "2026-07-18T13:00:55.205734+00:00", "project": "vgt", "event": "agent.branch_mismatch", "detail": {"issue": 7, "phase": "fix", "branch": "issue-8-phase-1-tempo-beat-downbeat-grid", "worktree_path": "/Users/marekkucharski/projects/.pm-worktrees/vgt/issue-8"}}
+{"ts": "2026-07-18T13:00:55.206172+00:00", "project": "vgt", "event": "agent.worktree_missing", "detail": {"issue": 7, "phase": "fix", "branch": null, "worktree_path": null}}
+{"ts": "2026-07-18T13:00:55.207208+00:00", "project": "vgt", "event": "orchestrator.pass_outcome", "detail": {"outcomes": ["blocked", "failed"], "scheduled": 0, "followups_created": 0}}
+{"ts": "2026-07-18T13:00:55.207597+00:00", "project": "vgt", "event": "orchestrator.pass_failed", "detail": {"message": "scheduler pass completed with project failures"}}
+{"ts": "2026-07-18T13:02:04.657688+00:00", "project": "vgt", "event": "agent.branch_mismatch", "detail": {"issue": 7, "phase": "fix", "branch": "issue-8-phase-1-tempo-beat-downbeat-grid", "worktree_path": "/Users/marekkucharski/projects/.pm-worktrees/vgt/issue-8"}}
+{"ts": "2026-07-18T13:02:04.658147+00:00", "project": "vgt", "event": "agent.worktree_missing", "detail": {"issue": 7, "phase": "fix", "branch": null, "worktree_path": null}}
+{"ts": "2026-07-18T13:02:04.659151+00:00", "project": "vgt", "event": "orchestrator.pass_outcome", "detail": {"outcomes": ["blocked", "failed"], "scheduled": 0, "followups_created": 0}}
+{"ts": "2026-07-18T13:02:04.659496+00:00", "project": "vgt", "event": "orchestrator.pass_failed", "detail": {"message": "scheduler pass completed with project failures"}}
+{"ts": "2026-07-18T13:03:13.842323+00:00", "project": "vgt", "event": "agent.branch_mismatch", "detail": {"issue": 7, "phase": "fix", "branch": "issue-8-phase-1-tempo-beat-downbeat-grid", "worktree_path": "/Users/marekkucharski/projects/.pm-worktrees/vgt/issue-8"}}
+{"ts": "2026-07-18T13:03:13.842732+00:00", "project": "vgt", "event": "agent.worktree_missing", "detail": {"issue": 7, "phase": "fix", "branch": null, "worktree_path": null}}
+{"ts": "2026-07-18T13:03:13.843887+00:00", "project": "vgt", "event": "orchestrator.pass_outcome", "detail": {"outcomes": ["blocked", "failed"], "scheduled": 0, "followups_created": 0}}
+{"ts": "2026-07-18T13:03:13.844193+00:00", "project": "vgt", "event": "orchestrator.pass_failed", "detail": {"message": "scheduler pass completed with project failures"}}
+{"ts": "2026-07-18T13:04:25.130234+00:00", "project": "vgt", "event": "agent.branch_mismatch", "detail": {"issue": 7, "phase": "fix", "branch": "issue-8-phase-1-tempo-beat-downbeat-grid", "worktree_path": "/Users/marekkucharski/projects/.pm-worktrees/vgt/issue-8"}}
+{"ts": "2026-07-18T13:04:25.130878+00:00", "project": "vgt", "event": "agent.worktree_missing", "detail": {"issue": 7, "phase": "fix", "branch": null, "worktree_path": null}}
+{"ts": "2026-07-18T13:04:25.132087+00:00", "project": "vgt", "event": "orchestrator.pass_outcome", "detail": {"outcomes": ["blocked", "failed"], "scheduled": 0, "followups_created": 0}}
+{"ts": "2026-07-18T13:04:25.132469+00:00", "project": "vgt", "event": "orchestrator.pass_failed", "detail": {"message": "scheduler pass completed with project failures"}}
+{"ts": "2026-07-18T13:05:34.819584+00:00", "project": "vgt", "event": "agent.branch_mismatch", "detail": {"issue": 7, "phase": "fix", "branch": "issue-8-phase-1-tempo-beat-downbeat-grid", "worktree_path": "/Users/marekkucharski/projects/.pm-worktrees/vgt/issue-8"}}
+{"ts": "2026-07-18T13:05:34.820036+00:00", "project": "vgt", "event": "agent.worktree_missing", "detail": {"issue": 7, "phase": "fix", "branch": null, "worktree_path": null}}
+{"ts": "2026-07-18T13:05:34.820873+00:00", "project": "vgt", "event": "orchestrator.pass_outcome", "detail": {"outcomes": ["blocked", "failed"], "scheduled": 0, "followups_created": 0}}
+{"ts": "2026-07-18T13:05:34.821130+00:00", "project": "vgt", "event": "orchestrator.pass_failed", "detail": {"message": "scheduler pass completed with project failures"}}
+{"ts": "2026-07-18T13:06:44.496229+00:00", "project": "vgt", "event": "agent.branch_mismatch", "detail": {"issue": 7, "phase": "fix", "branch": "issue-8-phase-1-tempo-beat-downbeat-grid", "worktree_path": "/Users/marekkucharski/projects/.pm-worktrees/vgt/issue-8"}}
+{"ts": "2026-07-18T13:06:44.496747+00:00", "project": "vgt", "event": "agent.worktree_missing", "detail": {"issue": 7, "phase": "fix", "branch": null, "worktree_path": null}}
+{"ts": "2026-07-18T13:06:44.497925+00:00", "project": "vgt", "event": "orchestrator.pass_outcome", "detail": {"outcomes": ["blocked", "failed"], "scheduled": 0, "followups_created": 0}}
+{"ts": "2026-07-18T13:06:44.498267+00:00", "project": "vgt", "event": "orchestrator.pass_failed", "detail": {"message": "scheduler pass completed with project failures"}}
+{"ts": "2026-07-18T13:07:53.974887+00:00", "project": "vgt", "event": "agent.branch_mismatch", "detail": {"issue": 7, "phase": "fix", "branch": "issue-8-phase-1-tempo-beat-downbeat-grid", "worktree_path": "/Users/marekkucharski/projects/.pm-worktrees/vgt/issue-8"}}
+{"ts": "2026-07-18T13:07:53.975404+00:00", "project": "vgt", "event": "agent.worktree_missing", "detail": {"issue": 7, "phase": "fix", "branch": null, "worktree_path": null}}
+{"ts": "2026-07-18T13:07:53.976404+00:00", "project": "vgt", "event": "orchestrator.pass_outcome", "detail": {"outcomes": ["blocked", "failed"], "scheduled": 0, "followups_created": 0}}
+{"ts": "2026-07-18T13:07:53.976682+00:00", "project": "vgt", "event": "orchestrator.pass_failed", "detail": {"message": "scheduler pass completed with project failures"}}
+{"ts": "2026-07-18T13:09:03.965965+00:00", "project": "vgt", "event": "agent.branch_mismatch", "detail": {"issue": 7, "phase": "fix", "branch": "issue-8-phase-1-tempo-beat-downbeat-grid", "worktree_path": "/Users/marekkucharski/projects/.pm-worktrees/vgt/issue-8"}}
+{"ts": "2026-07-18T13:09:03.966497+00:00", "project": "vgt", "event": "agent.worktree_missing", "detail": {"issue": 7, "phase": "fix", "branch": null, "worktree_path": null}}
+{"ts": "2026-07-18T13:09:03.967529+00:00", "project": "vgt", "event": "orchestrator.pass_outcome", "detail": {"outcomes": ["blocked", "failed"], "scheduled": 0, "followups_created": 0}}
+{"ts": "2026-07-18T13:09:03.967868+00:00", "project": "vgt", "event": "orchestrator.pass_failed", "detail": {"message": "scheduler pass completed with project failures"}}
+{"ts": "2026-07-18T13:10:13.649806+00:00", "project": "vgt", "event": "agent.branch_mismatch", "detail": {"issue": 7, "phase": "fix", "branch": "issue-8-phase-1-tempo-beat-downbeat-grid", "worktree_path": "/Users/marekkucharski/projects/.pm-worktrees/vgt/issue-8"}}
+{"ts": "2026-07-18T13:10:13.650261+00:00", "project": "vgt", "event": "agent.worktree_missing", "detail": {"issue": 7, "phase": "fix", "branch": null, "worktree_path": null}}
+{"ts": "2026-07-18T13:10:13.651379+00:00", "project": "vgt", "event": "orchestrator.pass_outcome", "detail": {"outcomes": ["blocked", "failed"], "scheduled": 0, "followups_created": 0}}
+{"ts": "2026-07-18T13:10:13.651734+00:00", "project": "vgt", "event": "orchestrator.pass_failed", "detail": {"message": "scheduler pass completed with project failures"}}
+{"ts": "2026-07-18T13:11:23.272859+00:00", "project": "vgt", "event": "agent.branch_mismatch", "detail": {"issue": 7, "phase": "fix", "branch": "issue-8-phase-1-tempo-beat-downbeat-grid", "worktree_path": "/Users/marekkucharski/projects/.pm-worktrees/vgt/issue-8"}}
+{"ts": "2026-07-18T13:11:23.273310+00:00", "project": "vgt", "event": "agent.worktree_missing", "detail": {"issue": 7, "phase": "fix", "branch": null, "worktree_path": null}}
+{"ts": "2026-07-18T13:11:23.274265+00:00", "project": "vgt", "event": "orchestrator.pass_outcome", "detail": {"outcomes": ["blocked", "failed"], "scheduled": 0, "followups_created": 0}}
+{"ts": "2026-07-18T13:11:23.274523+00:00", "project": "vgt", "event": "orchestrator.pass_failed", "detail": {"message": "scheduler pass completed with project failures"}}
+{"ts": "2026-07-18T13:12:32.762259+00:00", "project": "vgt", "event": "agent.branch_mismatch", "detail": {"issue": 7, "phase": "fix", "branch": "issue-8-phase-1-tempo-beat-downbeat-grid", "worktree_path": "/Users/marekkucharski/projects/.pm-worktrees/vgt/issue-8"}}
+{"ts": "2026-07-18T13:12:32.763110+00:00", "project": "vgt", "event": "agent.worktree_missing", "detail": {"issue": 7, "phase": "fix", "branch": null, "worktree_path": null}}
+{"ts": "2026-07-18T13:12:32.764347+00:00", "project": "vgt", "event": "orchestrator.pass_outcome", "detail": {"outcomes": ["blocked", "failed"], "scheduled": 0, "followups_created": 0}}
+{"ts": "2026-07-18T13:12:32.764688+00:00", "project": "vgt", "event": "orchestrator.pass_failed", "detail": {"message": "scheduler pass completed with project failures"}}
+{"ts": "2026-07-18T13:13:42.334458+00:00", "project": "vgt", "event": "agent.branch_mismatch", "detail": {"issue": 7, "phase": "fix", "branch": "issue-8-phase-1-tempo-beat-downbeat-grid", "worktree_path": "/Users/marekkucharski/projects/.pm-worktrees/vgt/issue-8"}}
+{"ts": "2026-07-18T13:13:42.334936+00:00", "project": "vgt", "event": "agent.worktree_missing", "detail": {"issue": 7, "phase": "fix", "branch": null, "worktree_path": null}}
+{"ts": "2026-07-18T13:13:42.335968+00:00", "project": "vgt", "event": "orchestrator.pass_outcome", "detail": {"outcomes": ["blocked", "failed"], "scheduled": 0, "followups_created": 0}}
+{"ts": "2026-07-18T13:13:42.336276+00:00", "project": "vgt", "event": "orchestrator.pass_failed", "detail": {"message": "scheduler pass completed with project failures"}}
+{"ts": "2026-07-18T13:14:52.152809+00:00", "project": "vgt", "event": "agent.branch_mismatch", "detail": {"issue": 7, "phase": "fix", "branch": "issue-8-phase-1-tempo-beat-downbeat-grid", "worktree_path": "/Users/marekkucharski/projects/.pm-worktrees/vgt/issue-8"}}
+{"ts": "2026-07-18T13:14:52.153321+00:00", "project": "vgt", "event": "agent.worktree_missing", "detail": {"issue": 7, "phase": "fix", "branch": null, "worktree_path": null}}
+{"ts": "2026-07-18T13:14:52.154522+00:00", "project": "vgt", "event": "orchestrator.pass_outcome", "detail": {"outcomes": ["blocked", "failed"], "scheduled": 0, "followups_created": 0}}
+{"ts": "2026-07-18T13:14:52.154854+00:00", "project": "vgt", "event": "orchestrator.pass_failed", "detail": {"message": "scheduler pass completed with project failures"}}
+{"ts": "2026-07-18T13:16:02.377844+00:00", "project": "vgt", "event": "agent.branch_mismatch", "detail": {"issue": 7, "phase": "fix", "branch": "issue-8-phase-1-tempo-beat-downbeat-grid", "worktree_path": "/Users/marekkucharski/projects/.pm-worktrees/vgt/issue-8"}}
+{"ts": "2026-07-18T13:16:02.378343+00:00", "project": "vgt", "event": "agent.worktree_missing", "detail": {"issue": 7, "phase": "fix", "branch": null, "worktree_path": null}}
+{"ts": "2026-07-18T13:16:02.379417+00:00", "project": "vgt", "event": "orchestrator.pass_outcome", "detail": {"outcomes": ["blocked", "failed"], "scheduled": 0, "followups_created": 0}}
+{"ts": "2026-07-18T13:16:02.379777+00:00", "project": "vgt", "event": "orchestrator.pass_failed", "detail": {"message": "scheduler pass completed with project failures"}}
+{"ts": "2026-07-18T13:17:12.148510+00:00", "project": "vgt", "event": "agent.branch_mismatch", "detail": {"issue": 7, "phase": "fix", "branch": "issue-8-phase-1-tempo-beat-downbeat-grid", "worktree_path": "/Users/marekkucharski/projects/.pm-worktrees/vgt/issue-8"}}
+{"ts": "2026-07-18T13:17:12.149087+00:00", "project": "vgt", "event": "agent.worktree_missing", "detail": {"issue": 7, "phase": "fix", "branch": null, "worktree_path": null}}
+{"ts": "2026-07-18T13:17:12.150715+00:00", "project": "vgt", "event": "orchestrator.pass_outcome", "detail": {"outcomes": ["blocked", "failed"], "scheduled": 0, "followups_created": 0}}
+{"ts": "2026-07-18T13:17:12.151074+00:00", "project": "vgt", "event": "orchestrator.pass_failed", "detail": {"message": "scheduler pass completed with project failures"}}
+{"ts": "2026-07-18T13:18:22.046389+00:00", "project": "vgt", "event": "agent.branch_mismatch", "detail": {"issue": 7, "phase": "fix", "branch": "issue-8-phase-1-tempo-beat-downbeat-grid", "worktree_path": "/Users/marekkucharski/projects/.pm-worktrees/vgt/issue-8"}}
+{"ts": "2026-07-18T13:18:22.046857+00:00", "project": "vgt", "event": "agent.worktree_missing", "detail": {"issue": 7, "phase": "fix", "branch": null, "worktree_path": null}}
+{"ts": "2026-07-18T13:18:22.047968+00:00", "project": "vgt", "event": "orchestrator.pass_outcome", "detail": {"outcomes": ["blocked", "failed"], "scheduled": 0, "followups_created": 0}}
+{"ts": "2026-07-18T13:18:22.048329+00:00", "project": "vgt", "event": "orchestrator.pass_failed", "detail": {"message": "scheduler pass completed with project failures"}}
+{"ts": "2026-07-18T13:19:31.409966+00:00", "project": "vgt", "event": "agent.branch_mismatch", "detail": {"issue": 7, "phase": "fix", "branch": "issue-8-phase-1-tempo-beat-downbeat-grid", "worktree_path": "/Users/marekkucharski/projects/.pm-worktrees/vgt/issue-8"}}
+{"ts": "2026-07-18T13:19:31.410399+00:00", "project": "vgt", "event": "agent.worktree_missing", "detail": {"issue": 7, "phase": "fix", "branch": null, "worktree_path": null}}
+{"ts": "2026-07-18T13:19:31.411418+00:00", "project": "vgt", "event": "orchestrator.pass_outcome", "detail": {"outcomes": ["blocked", "failed"], "scheduled": 0, "followups_created": 0}}
+{"ts": "2026-07-18T13:19:31.411719+00:00", "project": "vgt", "event": "orchestrator.pass_failed", "detail": {"message": "scheduler pass completed with project failures"}}
+{"ts": "2026-07-18T13:20:41.674197+00:00", "project": "vgt", "event": "agent.branch_mismatch", "detail": {"issue": 7, "phase": "fix", "branch": "issue-8-phase-1-tempo-beat-downbeat-grid", "worktree_path": "/Users/marekkucharski/projects/.pm-worktrees/vgt/issue-8"}}
+{"ts": "2026-07-18T13:20:41.674801+00:00", "project": "vgt", "event": "agent.worktree_missing", "detail": {"issue": 7, "phase": "fix", "branch": null, "worktree_path": null}}
+{"ts": "2026-07-18T13:20:41.675705+00:00", "project": "vgt", "event": "orchestrator.pass_outcome", "detail": {"outcomes": ["blocked", "failed"], "scheduled": 0, "followups_created": 0}}
+{"ts": "2026-07-18T13:20:41.676002+00:00", "project": "vgt", "event": "orchestrator.pass_failed", "detail": {"message": "scheduler pass completed with project failures"}}
+{"ts": "2026-07-18T13:21:51.076455+00:00", "project": "vgt", "event": "agent.branch_mismatch", "detail": {"issue": 7, "phase": "fix", "branch": "issue-8-phase-1-tempo-beat-downbeat-grid", "worktree_path": "/Users/marekkucharski/projects/.pm-worktrees/vgt/issue-8"}}
+{"ts": "2026-07-18T13:21:51.076932+00:00", "project": "vgt", "event": "agent.worktree_missing", "detail": {"issue": 7, "phase": "fix", "branch": null, "worktree_path": null}}
+{"ts": "2026-07-18T13:21:51.077910+00:00", "project": "vgt", "event": "orchestrator.pass_outcome", "detail": {"outcomes": ["blocked", "failed"], "scheduled": 0, "followups_created": 0}}
+{"ts": "2026-07-18T13:21:51.078171+00:00", "project": "vgt", "event": "orchestrator.pass_failed", "detail": {"message": "scheduler pass completed with project failures"}}
+{"ts": "2026-07-18T13:23:00.970770+00:00", "project": "vgt", "event": "agent.branch_mismatch", "detail": {"issue": 7, "phase": "fix", "branch": "issue-8-phase-1-tempo-beat-downbeat-grid", "worktree_path": "/Users/marekkucharski/projects/.pm-worktrees/vgt/issue-8"}}
+{"ts": "2026-07-18T13:23:00.971310+00:00", "project": "vgt", "event": "agent.worktree_missing", "detail": {"issue": 7, "phase": "fix", "branch": null, "worktree_path": null}}
+{"ts": "2026-07-18T13:23:00.972477+00:00", "project": "vgt", "event": "orchestrator.pass_outcome", "detail": {"outcomes": ["blocked", "failed"], "scheduled": 0, "followups_created": 0}}
+{"ts": "2026-07-18T13:23:00.972834+00:00", "project": "vgt", "event": "orchestrator.pass_failed", "detail": {"message": "scheduler pass completed with project failures"}}
+{"ts": "2026-07-18T13:24:10.769420+00:00", "project": "vgt", "event": "agent.branch_mismatch", "detail": {"issue": 7, "phase": "fix", "branch": "issue-8-phase-1-tempo-beat-downbeat-grid", "worktree_path": "/Users/marekkucharski/projects/.pm-worktrees/vgt/issue-8"}}
+{"ts": "2026-07-18T13:24:10.769834+00:00", "project": "vgt", "event": "agent.worktree_missing", "detail": {"issue": 7, "phase": "fix", "branch": null, "worktree_path": null}}
+{"ts": "2026-07-18T13:24:10.770864+00:00", "project": "vgt", "event": "orchestrator.pass_outcome", "detail": {"outcomes": ["blocked", "failed"], "scheduled": 0, "followups_created": 0}}
+{"ts": "2026-07-18T13:24:10.771222+00:00", "project": "vgt", "event": "orchestrator.pass_failed", "detail": {"message": "scheduler pass completed with project failures"}}
+{"ts": "2026-07-18T13:25:20.655563+00:00", "project": "vgt", "event": "agent.branch_mismatch", "detail": {"issue": 7, "phase": "fix", "branch": "issue-8-phase-1-tempo-beat-downbeat-grid", "worktree_path": "/Users/marekkucharski/projects/.pm-worktrees/vgt/issue-8"}}
+{"ts": "2026-07-18T13:25:20.656048+00:00", "project": "vgt", "event": "agent.worktree_missing", "detail": {"issue": 7, "phase": "fix", "branch": null, "worktree_path": null}}
+{"ts": "2026-07-18T13:25:20.657087+00:00", "project": "vgt", "event": "orchestrator.pass_outcome", "detail": {"outcomes": ["blocked", "failed"], "scheduled": 0, "followups_created": 0}}
+{"ts": "2026-07-18T13:25:20.657393+00:00", "project": "vgt", "event": "orchestrator.pass_failed", "detail": {"message": "scheduler pass completed with project failures"}}
+{"ts": "2026-07-18T13:26:30.237286+00:00", "project": "vgt", "event": "agent.branch_mismatch", "detail": {"issue": 7, "phase": "fix", "branch": "issue-8-phase-1-tempo-beat-downbeat-grid", "worktree_path": "/Users/marekkucharski/projects/.pm-worktrees/vgt/issue-8"}}
+{"ts": "2026-07-18T13:26:30.238239+00:00", "project": "vgt", "event": "agent.worktree_missing", "detail": {"issue": 7, "phase": "fix", "branch": null, "worktree_path": null}}
+{"ts": "2026-07-18T13:26:30.239656+00:00", "project": "vgt", "event": "orchestrator.pass_outcome", "detail": {"outcomes": ["blocked", "failed"], "scheduled": 0, "followups_created": 0}}
+{"ts": "2026-07-18T13:26:30.240024+00:00", "project": "vgt", "event": "orchestrator.pass_failed", "detail": {"message": "scheduler pass completed with project failures"}}
+{"ts": "2026-07-18T13:27:39.272824+00:00", "project": "vgt", "event": "agent.branch_mismatch", "detail": {"issue": 7, "phase": "fix", "branch": "issue-8-phase-1-tempo-beat-downbeat-grid", "worktree_path": "/Users/marekkucharski/projects/.pm-worktrees/vgt/issue-8"}}
+{"ts": "2026-07-18T13:27:39.273289+00:00", "project": "vgt", "event": "agent.worktree_missing", "detail": {"issue": 7, "phase": "fix", "branch": null, "worktree_path": null}}
+{"ts": "2026-07-18T13:27:39.274286+00:00", "project": "vgt", "event": "orchestrator.pass_outcome", "detail": {"outcomes": ["blocked", "failed"], "scheduled": 0, "followups_created": 0}}
+{"ts": "2026-07-18T13:27:39.274560+00:00", "project": "vgt", "event": "orchestrator.pass_failed", "detail": {"message": "scheduler pass completed with project failures"}}
+{"ts": "2026-07-18T13:28:49.147693+00:00", "project": "vgt", "event": "agent.branch_mismatch", "detail": {"issue": 7, "phase": "fix", "branch": "issue-8-phase-1-tempo-beat-downbeat-grid", "worktree_path": "/Users/marekkucharski/projects/.pm-worktrees/vgt/issue-8"}}
+{"ts": "2026-07-18T13:28:49.148394+00:00", "project": "vgt", "event": "agent.worktree_missing", "detail": {"issue": 7, "phase": "fix", "branch": null, "worktree_path": null}}
+{"ts": "2026-07-18T13:28:49.150178+00:00", "project": "vgt", "event": "orchestrator.pass_outcome", "detail": {"outcomes": ["blocked", "failed"], "scheduled": 0, "followups_created": 0}}
+{"ts": "2026-07-18T13:28:49.150600+00:00", "project": "vgt", "event": "orchestrator.pass_failed", "detail": {"message": "scheduler pass completed with project failures"}}
+{"ts": "2026-07-18T13:29:58.266506+00:00", "project": "vgt", "event": "agent.branch_mismatch", "detail": {"issue": 7, "phase": "fix", "branch": "issue-8-phase-1-tempo-beat-downbeat-grid", "worktree_path": "/Users/marekkucharski/projects/.pm-worktrees/vgt/issue-8"}}
+{"ts": "2026-07-18T13:29:58.266965+00:00", "project": "vgt", "event": "agent.worktree_missing", "detail": {"issue": 7, "phase": "fix", "branch": null, "worktree_path": null}}
+{"ts": "2026-07-18T13:29:58.267938+00:00", "project": "vgt", "event": "orchestrator.pass_outcome", "detail": {"outcomes": ["blocked", "failed"], "scheduled": 0, "followups_created": 0}}
+{"ts": "2026-07-18T13:29:58.268169+00:00", "project": "vgt", "event": "orchestrator.pass_failed", "detail": {"message": "scheduler pass completed with project failures"}}
+{"ts": "2026-07-18T13:31:07.906805+00:00", "project": "vgt", "event": "agent.branch_mismatch", "detail": {"issue": 7, "phase": "fix", "branch": "issue-8-phase-1-tempo-beat-downbeat-grid", "worktree_path": "/Users/marekkucharski/projects/.pm-worktrees/vgt/issue-8"}}
+{"ts": "2026-07-18T13:31:07.922039+00:00", "project": "vgt", "event": "agent.branch_recovered", "detail": {"issue": 7, "phase": "fix", "branch": "issue-7-phase-1-analysis-foundation-vgt-sidecar"}}
