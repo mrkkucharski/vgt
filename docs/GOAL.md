@@ -22,15 +22,16 @@ along with specific track sets. And so on.
 The whole initiative is divided into sub-projects or phases. Each phase builds an incremental piece of the
 functionality.
 
-## Scope of this project (phase 0)
+## Phases
 
-**This project is phase 0: the REAPER-plumbing foundation only.** It establishes how vgt locates, opens, and
-safely augments a REAPER project, and where vgt stores its own state. The full analysis pipeline described in
-[phase1-song-prep-plan.md](phase1-song-prep-plan.md) — stem separation, beat/tempo maps, key/chord detection,
-sections, MIDI reference generation, the manifest contract — is **out of scope for phase 0**. That plan is
-context for where we are heading, not a description of what to build now.
+The initiative is built in incremental phases. Each adds a self-contained slice and builds on the `[vgt]`
+conventions and the `<project>.vgt` sidecar established by the phases before it. "Done" for the whole project is
+the union of every phase's deliverables below.
 
-Phase 0 delivers:
+### Phase 0 — REAPER-plumbing foundation *(delivered)*
+
+Establishes how vgt locates, opens, and safely augments a REAPER project, and where vgt stores its own state.
+Shipped:
 - **locating a REAPER project** — accept a project path as input;
 - **defaulting to the current project** — when no project is given and there is already a REAPER project in the
   working directory, assume the user wants to work with that one;
@@ -42,7 +43,34 @@ Phase 0 delivers:
   vgt's own state (schema version, the vgt-managed track GUIDs it created, and any config);
 - **preparing a "vgt managed" area for practice tracks** — a REAPER track folder (and a `[vgt]` name prefix on
   every track/region vgt creates) so a student can immediately identify what vgt owns;
-- **creating one track in the vgt-managed area** — initially this track simply mirrors the original song.
+- **choosing a reference track and mirroring it** — the apply action asks which of the project's own tracks is
+  the reference, names the managed folder after it (`[vgt] <reference track name>`), and mirrors that one track's
+  media into the managed area.
+
+### Phase 1 — Reference analysis *(current)*
+
+Analyze the chosen reference track — **the full mix; no stem separation yet** — and record what vgt learns about
+the song, both in the sidecar and as `[vgt]`-owned objects in the project. From the reference audio, detect:
+- **tempo & beat grid** — BPM, downbeat offset, and time signature;
+- **key** — root + scale (major/minor);
+- **sections** — intro / verse / chorus / … boundaries;
+- **chords** — beat-aligned chord labels (maj/min vocabulary).
+
+Phase 1 delivers:
+- **an analysis stage in the CLI** — heavy analysis runs in the Python CLI, never inside REAPER; the ReaScript
+  action passes the reference track's source-file path (already identified in phase 0) to the CLI;
+- **persisting analysis in the sidecar** — extend the `<project>.vgt` schema (bump `schema_version`) to hold the
+  detected tempo/key/sections/chords alongside phase 0's state;
+- **reflecting analysis into the project**, additively and idempotently, as `[vgt]`-owned objects:
+  - a **tempo map** — subject to the tempo-map rule: written only when the project still has a single default
+    tempo marker; otherwise left untouched and offered non-invasively (a muted `[vgt]` beat-marker track);
+  - `[vgt]` **section regions** (intro/verse/chorus/…), renamable by the user;
+  - a **muted, locked `[vgt] Chords`** track carrying the beat-aligned chord labels as text items.
+
+**Out of scope for phase 1** (deferred to later phases): stem separation, guitar MIDI reference generation,
+practice controls (stem muting / looping / tempo-ramp), and performance scoring. The full song-prep pipeline in
+[phase1-song-prep-plan.md](phase1-song-prep-plan.md) is the longer-range roadmap; phase 1 here is its analysis
+slice with separation and the MIDI reference intentionally deferred.
 
 ## Requirements
 
@@ -53,12 +81,14 @@ Phase 0 delivers:
   do not fight the project's existing sample rate, tempo, etc.
 - **Prefer live, in-app manipulation.** The intended mechanism is to manipulate the project through the REAPER
   API via a ReaScript action (not by editing `.RPP` text), so the modifications appear immediately in the user's
-  open project and REAPER handles project construction correctly. Phase 0 should establish this path; where a
-  piece is not yet technically feasible in-app, note it explicitly rather than silently falling back to text
-  edits.
+  open project and REAPER handles project construction correctly. Where a piece is not yet technically feasible
+  in-app, note it explicitly rather than silently falling back to text edits.
+- **Analysis stays out of the DAW process.** ML/DSP analysis runs in the Python CLI; REAPER only reads the
+  reference source path and applies results through the API. The DAW never loads heavy analysis dependencies.
+- **Correctable.** Auto-analysis will sometimes be wrong; every detected value (tempo, key, sections, chords) is
+  overridable, and corrections survive re-runs of the analysis.
 - **CLI-initiated.** A command-line interface initiates the actions, with the intent that it be invoked from a
-  ReaScript action inside REAPER in the future. Phase 0 builds the CLI; the ReaScript wrapper is a thin caller
-  that later phases flesh out.
-- **Idempotent.** Running the same command twice produces the same result — no duplicate tracks, folders, or
-  settings. Re-running reconciles vgt's managed area to the intended state.
+  ReaScript action inside REAPER. The ReaScript wrapper is a thin caller; the CLI does the work.
+- **Idempotent.** Running the same command twice produces the same result — no duplicate tracks, folders, regions,
+  or settings. Re-running reconciles vgt's managed area to the intended state.
 - **Documented.** There is documentation describing how vgt works and how to run it.
