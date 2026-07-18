@@ -26,6 +26,13 @@ madmom = [
     "madmom>=0.16.1",
     "setuptools<81",  # madmom still imports the deprecated pkg_resources API
 ]
+# MSAF is the primary section-segmentation backend (docs/GOAL.md), but its
+# maintenance is uncertain and its last release predates modern
+# Python/NumPy/SciPy -- isolated here so a default `vgt` install never needs
+# it. When unavailable (or it fails to import/process), the sections stage
+# falls back to a self-similarity novelty + peak-picking heuristic built on
+# librosa (a hard dependency above).
+msaf = ["msaf>=0.1.80"]
 
 [tool.uv.extra-build-dependencies]
 madmom = ["Cython", "numpy<2"]

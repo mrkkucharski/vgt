@@ -100,6 +100,16 @@ def test_analyze_writes_v2_sidecar_with_skeleton_and_provenance(tmp_path: Path) 
     assert key["scale"] in {"major", "minor"}
     assert 0.0 <= key["confidence"] <= 1.0
 
+    sections = result["analysis"]["sections"]["value"]
+    assert len(sections) > 0
+    assert sections[0]["start_seconds"] == 0.0
+    assert sections[-1]["end_seconds"] > sections[-1]["start_seconds"]
+    for earlier, later in zip(sections, sections[1:]):
+        assert earlier["end_seconds"] == later["start_seconds"]
+        assert earlier["label"]
+    timeline = project.with_name(f"{project.stem}.vgt-sections.txt")
+    assert timeline.is_file()
+
     chords = result["analysis"]["chords"]["value"]
     assert chords["vocabulary"] == "maj_min"
     assert len(chords["segments"]) > 0
@@ -245,6 +255,34 @@ def test_key_and_chord_corrections_survive_rerun(tmp_path: Path) -> None:
     assert result["analysis"]["key"]["human_verified"] is True
     assert result["analysis"]["chords"]["value"] == corrected_chords
     assert result["analysis"]["chords"]["human_verified"] is True
+
+
+def test_section_rename_and_boundary_nudge_survive_rerun(tmp_path: Path) -> None:
+    project = _project_copy(tmp_path)
+    _write_v1_sidecar(project)
+    first = analyze(project)
+
+    sidecar = read_sidecar(project)
+    corrected_sections = [
+        {**section, "label": "intro"} if section["index"] == 0 else section
+        for section in sidecar["analysis"]["sections"]["value"]
+    ]
+    corrected_sections[1]["start_seconds"] = corrected_sections[0]["end_seconds"] = round(
+        corrected_sections[0]["end_seconds"] + 0.5, 3
+    )
+    sidecar["analysis"]["sections"] = {
+        "value": corrected_sections,
+        "human_verified": True,
+        "input_hash": sidecar["analysis"]["sections"]["input_hash"],
+        "settings_hash": sidecar["analysis"]["sections"]["settings_hash"],
+    }
+    write_sidecar(project, sidecar)
+
+    result = analyze(project)
+
+    assert result["analysis"]["sections"]["value"] == corrected_sections
+    assert result["analysis"]["sections"]["human_verified"] is True
+    assert result != first
 
 
 def test_cli_analyze_invocation(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
