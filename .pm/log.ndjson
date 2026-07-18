@@ -558,3 +558,10 @@
 {"ts": "2026-07-18T13:29:58.268169+00:00", "project": "vgt", "event": "orchestrator.pass_failed", "detail": {"message": "scheduler pass completed with project failures"}}
 {"ts": "2026-07-18T13:31:07.906805+00:00", "project": "vgt", "event": "agent.branch_mismatch", "detail": {"issue": 7, "phase": "fix", "branch": "issue-8-phase-1-tempo-beat-downbeat-grid", "worktree_path": "/Users/marekkucharski/projects/.pm-worktrees/vgt/issue-8"}}
 {"ts": "2026-07-18T13:31:07.922039+00:00", "project": "vgt", "event": "agent.branch_recovered", "detail": {"issue": 7, "phase": "fix", "branch": "issue-7-phase-1-analysis-foundation-vgt-sidecar"}}
+{"ts": "2026-07-18T13:31:11.897341+00:00", "project": "vgt", "event": "agent.fix_started", "detail": {"issue": 7, "agent": "codex", "fix_count": 2, "pid": 2375, "process_started_at": "Sat Jul 18 15:31:10 2026"}}
+{"ts": "2026-07-18T13:31:13.290514+00:00", "project": "vgt", "event": "orchestrator.pass_outcome", "detail": {"outcomes": ["blocked", "deferred", "scheduled"], "scheduled": 1, "followups_created": 0}}
+{"ts": "2026-07-18T13:32:21.868641+00:00", "project": "vgt", "event": "orchestrator.pass_outcome", "detail": {"outcomes": ["blocked", "deferred"], "scheduled": 0, "followups_created": 0}}
+{"ts": "2026-07-18T13:32:21.868888+00:00", "project": "vgt", "event": "orchestrator.no_capacity", "detail": {"message": "work is available, but scheduler capacity or budget headroom is exhausted"}}
+{"ts": "2026-07-18T13:33:31.510387+00:00", "project": "vgt", "event": "agent.branch_mismatch", "detail": {"issue": 7, "phase": "review", "branch": "issue-8-phase-1-tempo-beat-downbeat-grid", "worktree_path": "/Users/marekkucharski/projects/.pm-worktrees/vgt/issue-7"}}
+{"ts": "2026-07-18T13:33:31.518276+00:00", "project": "vgt", "event": "agent.branch_recovered", "detail": {"issue": 7, "phase": "review", "branch": "issue-7-phase-1-analysis-foundation-vgt-sidecar"}}
+{"ts": "2026-07-18T13:33:31.900709+00:00", "project": "vgt", "event": "pr.found", "detail": {"issue": 7, "pr": 12, "branch": "issue-7-phase-1-analysis-foundation-vgt-sidecar"}}
