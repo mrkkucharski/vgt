@@ -1,0 +1,14 @@
+{
+  "current_issue": null,
+  "session_id": null,
+  "pid": null,
+  "process_started_at": null,
+  "agent": null,
+  "started_at": null,
+  "scheduler_stalls": {},
+  "budget": {
+    "window_start": null,
+    "seconds_used": 0.0,
+    "dollars_used": 0.0
+  }
+}
