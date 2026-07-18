@@ -51,8 +51,11 @@ local function copy_file_backed_items(source, destination)
     local source_take = reaper.GetActiveTake(source_item)
     if source_take then
       local source_media = reaper.GetMediaItemTake_Source(source_take)
-      local ok, filename = reaper.GetMediaSourceFileName(source_media, "")
-      if ok and filename ~= "" then
+      -- Lua returns the filename directly (unlike several APIs that return an
+      -- `ok, value` pair). Keeping it in one variable avoids passing nil to
+      -- PCM_Source_CreateFromFile and leaving an empty item behind.
+      local filename = reaper.GetMediaSourceFileName(source_media, "")
+      if filename ~= "" then
         local item = reaper.AddMediaItemToTrack(destination)
         reaper.SetMediaItemInfo_Value(item, "D_POSITION", reaper.GetMediaItemInfo_Value(source_item, "D_POSITION"))
         reaper.SetMediaItemInfo_Value(item, "D_LENGTH", reaper.GetMediaItemInfo_Value(source_item, "D_LENGTH"))
