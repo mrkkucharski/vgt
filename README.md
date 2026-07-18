@@ -22,8 +22,8 @@ The action is intentionally the mutation path: it uses REAPER's API and never te
 - pops up a menu of the project's own (non-`[vgt]`) tracks and asks which one is the **reference** to mirror;
 - creates a REAPER folder named `[vgt] <reference track name>` (e.g. `[vgt] The Seven Rivers (Full March - 3_00)`) with a `[vgt] Mirror` child;
 - clones only the chosen reference track's file-backed media to the mirror track, without adding sends, changing source tracks, or changing project tempo/sample rate;
-- writes the adjacent `.vgt` sidecar — named after the project, e.g. `Reaper Project.vgt` — with schema version 1, its two created track GUIDs, and config recording the reference track;
-- on re-apply, deletes only tracks whose GUID occurs in the sidecar **and** whose current name begins `[vgt]`, then recreates the same area.
+- writes the adjacent `.vgt` sidecar — named after the project, e.g. `Reaper Project.vgt` — with its two created track GUIDs and config recording the reference track;
+- on re-apply, deletes only tracks whose GUID occurs in the sidecar **and** whose current name begins `[vgt]`, then recreates the same area, carrying forward any `analysis` block `vgt analyze` had already written (schema stays version 1 until analysis exists, then becomes version 2).
 
 The folder/mirror are therefore idempotent and original tracks remain untouched. REAPER-native click-source items have no file to clone, so choosing a click track mirrors nothing. `vgt apply` validates the project path and directs you to this action rather than silently falling back to unsafe RPP editing.
 
@@ -34,3 +34,16 @@ Use a copy of any project when experimenting; the included `test/Reaper Project`
 For a repeatable live-REAPER run against a disposable copy of that fixture, see
 [Phase 0 live verification](docs/phase0-live-verification.md). The verifier
 checks the saved RPP and sidecar after both the first apply and re-apply.
+
+## Analyze the reference track (Phase 1)
+
+`vgt analyze [project.rpp]` requires a `.vgt` sidecar already written by the
+apply action above. It resolves the reference track's source audio file,
+runs the tempo/key/sections/chords detectors, and writes the results back
+into the sidecar as schema version 2 — never inside REAPER itself.
+
+Each detector's output is cached against a hash of the source audio and the
+detector's settings, so re-running only recomputes stages whose inputs
+changed. Any stage can be corrected by hand-editing its `value` in the
+sidecar and setting `human_verified: true`; `vgt analyze` then leaves that
+stage untouched on every later run, regardless of what the audio hash says.

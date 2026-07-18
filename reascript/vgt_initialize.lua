@@ -68,16 +68,60 @@ local function choose_reference(candidates)
   return candidates[choice]
 end
 
-local function read_managed_guids()
+local function read_sidecar_body()
   local file = io.open(sidecar_path(), "r")
-  if not file then return {} end
+  if not file then return nil end
   local body = file:read("*a")
   file:close()
+  return body
+end
+
+local function read_managed_guids()
+  local body = read_sidecar_body()
+  if not body then return {} end
   local guids = {}
   -- GUIDs are deliberately read only from our schema's managed_track_guids array.
   local array = body:match('"managed_track_guids"%s*:%s*%[(.-)%]') or ""
   for guid in array:gmatch("{[%x%-]+}") do guids[guid] = true end
   return guids
+end
+
+-- The Python `vgt analyze` stage (schema v2) adds a top-level "analysis"
+-- object to the sidecar. This action is the sole writer of the sidecar's
+-- other fields, so it must round-trip that object verbatim on re-apply
+-- rather than silently dropping any analysis a user has already run.
+local function read_analysis_block()
+  local body = read_sidecar_body()
+  if not body then return nil end
+  local key_start = body:find('"analysis"%s*:%s*{')
+  if not key_start then return nil end
+  local brace_start = body:find("{", key_start)
+  local depth = 0
+  local in_string = false
+  local escaped_char = false
+  for index = brace_start, #body do
+    local char = body:sub(index, index)
+    if in_string then
+      -- JSON strings may contain braces (for example in a human-entered
+      -- section label), which are not object delimiters. A backslash only
+      -- escapes the immediately following character.
+      if escaped_char then
+        escaped_char = false
+      elseif char == "\\" then
+        escaped_char = true
+      elseif char == '"' then
+        in_string = false
+      end
+    elseif char == '"' then
+      in_string = true
+    elseif char == "{" then
+      depth = depth + 1
+    elseif char == "}" then
+      depth = depth - 1
+      if depth == 0 then return body:sub(brace_start, index) end
+    end
+  end
+  return nil
 end
 
 local function remove_previous_managed_tracks()
@@ -124,14 +168,22 @@ local function copy_file_backed_items(source, destination)
 end
 
 local function write_settings(folder, mirror, reference)
+  -- Preserve any analysis the Python CLI already wrote (schema v2); a fresh
+  -- sidecar with no prior analysis stays schema v1, matching Phase 0's
+  -- long-standing on-disk format.
+  local analysis = read_analysis_block()
+  local schema_version = analysis and 2 or 1
+  local analysis_field = analysis and ('\n  "analysis": ' .. analysis .. ",") or ""
+
   local file, error_message = io.open(sidecar_path(), "w")
   if not file then error(error_message) end
   file:write(string.format([[{
-  "schema_version": 1,
+  "schema_version": %d,%s
   "managed_track_guids": ["%s", "%s"],
   "config": {"reference_track_name": "%s", "reference_track_guid": "%s", "folder_name": "%s", "mirror_name": "%s"}
 }
 ]],
+    schema_version, analysis_field,
     reaper.GetTrackGUID(folder), reaper.GetTrackGUID(mirror),
     escaped(track_name(reference)), reaper.GetTrackGUID(reference),
     escaped(PREFIX .. " " .. track_name(reference)), escaped(MIRROR_NAME)))
