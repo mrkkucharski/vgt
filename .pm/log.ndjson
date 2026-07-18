@@ -1076,3 +1076,13 @@
 {"ts": "2026-07-18T18:19:39.897415+00:00", "project": "vgt", "event": "agent.ready_for_review", "detail": {"issue": 9, "agent": "claude", "role": "implement"}}
 {"ts": "2026-07-18T18:19:43.124099+00:00", "project": "vgt", "event": "agent.branch_mismatch", "detail": {"issue": 8, "phase": "fix", "branch": "issue-9-phase-1-key-beat-aligned-chords", "worktree_path": "/Users/marekkucharski/projects/.pm-worktrees/vgt/issue-9"}}
 {"ts": "2026-07-18T18:19:43.142519+00:00", "project": "vgt", "event": "agent.branch_recovered", "detail": {"issue": 8, "phase": "fix", "branch": "issue-8-phase-1-tempo-beat-downbeat-grid"}}
+{"ts": "2026-07-18T18:19:46.783892+00:00", "project": "vgt", "event": "agent.fix_started", "detail": {"issue": 8, "agent": "claude", "fix_count": 1, "pid": 20749, "process_started_at": "Sat Jul 18 20:19:44 2026"}}
+{"ts": "2026-07-18T18:19:48.167980+00:00", "project": "vgt", "event": "orchestrator.pass_outcome", "detail": {"outcomes": ["blocked", "deferred", "scheduled"], "scheduled": 1, "followups_created": 0}}
+{"ts": "2026-07-18T18:20:57.089740+00:00", "project": "vgt", "event": "orchestrator.pass_outcome", "detail": {"outcomes": ["blocked", "deferred"], "scheduled": 0, "followups_created": 0}}
+{"ts": "2026-07-18T18:20:57.089982+00:00", "project": "vgt", "event": "orchestrator.no_capacity", "detail": {"message": "work is available, but scheduler capacity or budget headroom is exhausted"}}
+{"ts": "2026-07-18T18:22:05.917501+00:00", "project": "vgt", "event": "orchestrator.pass_outcome", "detail": {"outcomes": ["blocked", "deferred"], "scheduled": 0, "followups_created": 0}}
+{"ts": "2026-07-18T18:22:05.917781+00:00", "project": "vgt", "event": "orchestrator.no_capacity", "detail": {"message": "work is available, but scheduler capacity or budget headroom is exhausted"}}
+{"ts": "2026-07-18T18:23:14.434531+00:00", "project": "vgt", "event": "orchestrator.pass_outcome", "detail": {"outcomes": ["blocked", "deferred"], "scheduled": 0, "followups_created": 0}}
+{"ts": "2026-07-18T18:23:14.434815+00:00", "project": "vgt", "event": "orchestrator.no_capacity", "detail": {"message": "work is available, but scheduler capacity or budget headroom is exhausted"}}
+{"ts": "2026-07-18T18:24:22.679846+00:00", "project": "vgt", "event": "agent.ready_for_review", "detail": {"issue": 8, "agent": "claude", "role": "fix"}}
+{"ts": "2026-07-18T18:24:26.131732+00:00", "project": "vgt", "event": "pr.found", "detail": {"issue": 8, "pr": 13, "branch": "issue-8-phase-1-tempo-beat-downbeat-grid"}}
