@@ -1,11 +1,50 @@
 {
-  "current_issue": 4,
-  "session_id": "ea494c78-39cf-4506-8cf1-32fad5c7525f",
-  "pid": 90446,
-  "process_started_at": "Sat Jul 18 10:49:17 2026",
+  "current_issue": 7,
+  "session_id": "efde1d80-90dd-4bfc-8ad5-2c5c8628d604",
+  "pid": 93933,
+  "process_started_at": "Sat Jul 18 13:50:11 2026",
   "agent": "claude",
-  "started_at": "2026-07-18T08:49:16.423990+00:00",
-  "scheduler_stalls": {},
+  "started_at": "2026-07-18T11:50:09.996151+00:00",
+  "scheduler_stalls": {
+    "blocked_issues": {
+      "11": {
+        "first_seen_at": "2026-07-18T11:44:38.954425+00:00",
+        "last_seen_at": "2026-07-18T11:48:58.113848+00:00",
+        "consecutive_passes": 5,
+        "title": "Phase 1: apply analysis into the REAPER project"
+      },
+      "10": {
+        "first_seen_at": "2026-07-18T11:44:38.956068+00:00",
+        "last_seen_at": "2026-07-18T11:48:58.115459+00:00",
+        "consecutive_passes": 5,
+        "title": "Phase 1: section detection"
+      },
+      "9": {
+        "first_seen_at": "2026-07-18T11:44:38.956773+00:00",
+        "last_seen_at": "2026-07-18T11:48:58.115959+00:00",
+        "consecutive_passes": 5,
+        "title": "Phase 1: key + beat-aligned chords"
+      },
+      "8": {
+        "first_seen_at": "2026-07-18T11:44:38.957204+00:00",
+        "last_seen_at": "2026-07-18T11:48:58.116455+00:00",
+        "consecutive_passes": 5,
+        "title": "Phase 1: tempo & beat/downbeat grid"
+      },
+      "7": {
+        "first_seen_at": "2026-07-18T11:44:38.957808+00:00",
+        "last_seen_at": "2026-07-18T11:48:58.117131+00:00",
+        "consecutive_passes": 5,
+        "title": "Phase 1: analysis foundation + .vgt sidecar schema v2"
+      },
+      "6": {
+        "first_seen_at": "2026-07-18T11:44:38.958196+00:00",
+        "last_seen_at": "2026-07-18T11:48:58.117566+00:00",
+        "consecutive_passes": 5,
+        "title": "Phase 1: Reference analysis (tempo, key, sections, chords \u2014 no stems)"
+      }
+    }
+  },
   "budget": {
     "window_start": "2026-07-18T07:36:51.525392+00:00",
     "seconds_used": 0.0,
@@ -14,10 +53,10 @@
   "verification_followups": {
     "f0d8bfc9d2dc6da7a31609184e25c4d66d3986fd2340b33a83e98204fb86691e": "created"
   },
-  "role": "review",
-  "branch": "issue-4-verify-phase-0-apply-against-a-live-reap",
-  "worktree_path": "/Users/marekkucharski/projects/.pm-worktrees/vgt/issue-4",
-  "pr_number": 5,
+  "role": "implement",
+  "branch": "issue-7-phase-1-analysis-foundation-vgt-sidecar",
+  "worktree_path": "/Users/marekkucharski/projects/.pm-worktrees/vgt/issue-7",
+  "pr_number": null,
   "followup_generation": {
     "fingerprint": "3d318dc82e3e7c229e211f23c3d3dae35d152b3d42d85d2cf62af1cf61a144a5",
     "items": {
@@ -28,13 +67,13 @@
     }
   },
   "pending_transition": {
-    "issue": 4,
+    "issue": 7,
     "target": "working",
-    "event": "agent.review_started",
+    "event": "agent.started",
     "detail": {
-      "issue": 4,
+      "issue": 7,
       "agent": "claude",
-      "pr": 5
+      "branch": "issue-7-phase-1-analysis-foundation-vgt-sidecar"
     },
     "cleanup": {}
   }
