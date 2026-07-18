@@ -34,8 +34,9 @@ def main(argv: list[str] | None = None) -> int:
             return 0
         # Deliberately no RPP text-edit fallback: only the ReaScript mutates projects.
         print(
-            f"Open {project} in REAPER, then run reascript/vgt_phase0_apply.lua from REAPER's Action List. "
-            "That action uses REAPER's API and creates/updates the adjacent vgt.json.",
+            f"Open {project} in REAPER, then run reascript/vgt_initialize.lua from REAPER's Action List. "
+            "That action uses REAPER's API and creates/updates the adjacent .vgt sidecar "
+            "(named after the project, e.g. 'Reaper Project.vgt').",
             file=sys.stderr,
         )
         return 2

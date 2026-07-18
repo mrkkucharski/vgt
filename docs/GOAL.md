@@ -37,8 +37,9 @@ Phase 0 delivers:
 - **opening the project and reading relevant information** — parse the project and read at least: sample rate,
   tempo/time-signature, and the existing track list (names and GUIDs) so vgt can tell which tracks are already
   vgt-managed;
-- **storing vgt settings next to the REAPER project** — a single `vgt.json` sidecar file living alongside the
-  `.RPP`, holding vgt's own state (schema version, the vgt-managed track GUIDs it created, and any config);
+- **storing vgt settings next to the REAPER project** — a single sidecar file living alongside the
+  `.RPP` and sharing its name with a `.vgt` extension (e.g. `Reaper Project.RPP` → `Reaper Project.vgt`), holding
+  vgt's own state (schema version, the vgt-managed track GUIDs it created, and any config);
 - **preparing a "vgt managed" area for practice tracks** — a REAPER track folder (and a `[vgt]` name prefix on
   every track/region vgt creates) so a student can immediately identify what vgt owns;
 - **creating one track in the vgt-managed area** — initially this track simply mirrors the original song.

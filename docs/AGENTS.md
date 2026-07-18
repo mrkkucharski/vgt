@@ -27,15 +27,15 @@ where this is heading (out of scope now).
 
 ## Test project
 
-A real REAPER project fixture lives at **`test/Seven Rivers/`** — use it for
+A real REAPER project fixture lives at **`test/Reaper Project/`** — use it for
 developing and testing project locating, reading, and non-destructive
 augmentation against a genuine `.RPP` (not a synthetic one).
 
-- `Seven Rivers.RPP` — REAPER 7.65 project, 4 tracks: `Click`, and the
-  `drums` / `other` / `vocals` stems.
-- `Media/*.m4a` — the three audio stems, referenced by the `.RPP` via
+- `Reaper Project.RPP` — REAPER 7.74 project, 3 tracks: `Click`, and two song
+  tracks `The Seven Rivers (Full March - 3_00)` and `Paris Metro Punk`.
+- `Media/*.mp3` — the two song audio files, referenced by the `.RPP` via
   **relative** paths (`FILE "Media/..."`), so they resolve regardless of
-  checkout location.
+  checkout location. `Click` is a REAPER-native click source with no file.
 - REAPER-generated peak caches (`Media/peaks/`, `*.reapeaks`) and auto-backups
   (`Backups/`) are **git-ignored** — REAPER regenerates peaks on open, so don't
   rely on them being present and don't commit them.

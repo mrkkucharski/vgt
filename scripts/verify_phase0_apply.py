@@ -20,9 +20,8 @@ sys.path.insert(0, str(ROOT / "src"))
 from vgt.project import ProjectError, _track_blocks, locate_project, read_project  # noqa: E402
 
 
-FOLDER_NAME = "[vgt] Practice"
-MIRROR_NAME = "[vgt] Mirror"
-EXPECTED_CONFIG = {"folder_name": FOLDER_NAME, "mirror_name": MIRROR_NAME}
+PREFIX = "[vgt]"
+MIRROR_NAME = f"{PREFIX} Mirror"
 # REAPER persists the I_FOLDERDEPTH API value as the second ISBUS field in RPP.
 _FOLDER_DEPTH = re.compile(r"^\s*ISBUS\s+\d+\s+(-?\d+)", re.MULTILINE)
 _FILE = re.compile(r'^\s*FILE\s+"(?P<path>.*)"', re.MULTILINE)
@@ -66,7 +65,7 @@ def verify(project_path: Path, baseline_path: Path) -> dict[str, object]:
     if actual_original != original:
         _fail("the original tracks' names, GUIDs, or ordering changed")
 
-    sidecar_file = project_path.with_name("vgt.json")
+    sidecar_file = project_path.with_suffix(".vgt")
     try:
         sidecar = json.loads(sidecar_file.read_text(encoding="utf-8"))
     except OSError as error:
@@ -75,31 +74,47 @@ def verify(project_path: Path, baseline_path: Path) -> dict[str, object]:
         raise VerificationError(f"invalid JSON in {sidecar_file}: {error}") from error
 
     if sidecar.get("schema_version") != 1:
-        _fail("vgt.json schema_version is not 1")
-    if sidecar.get("config") != EXPECTED_CONFIG:
-        _fail("vgt.json config is not the Phase 0 practice/mirror config")
+        _fail("sidecar schema_version is not 1")
+    config = sidecar.get("config")
+    if not isinstance(config, dict):
+        _fail("sidecar config is missing or not an object")
+    reference_name = config.get("reference_track_name")
+    reference_guid = config.get("reference_track_guid")
+    folder_name = config.get("folder_name")
+    if config.get("mirror_name") != MIRROR_NAME:
+        _fail(f"sidecar mirror_name is not {MIRROR_NAME!r}")
+
+    baseline_name_by_guid = {track.guid: track.name for track in baseline.tracks}
+    if reference_guid not in baseline_name_by_guid:
+        _fail("sidecar reference_track_guid is not one of the original tracks")
+    if reference_name != baseline_name_by_guid[reference_guid]:
+        _fail("sidecar reference_track_name does not match the original track's name")
+    if folder_name != f"{PREFIX} {reference_name}":
+        _fail("sidecar folder_name does not reflect the reference track name")
+
     managed_guids = sidecar.get("managed_track_guids")
     if not isinstance(managed_guids, list) or len(managed_guids) != 2 or len(set(managed_guids)) != 2:
-        _fail("vgt.json must contain exactly two distinct managed_track_guids")
+        _fail("sidecar must contain exactly two distinct managed_track_guids")
 
     blocks = _track_blocks(project_path.read_text(encoding="utf-8", errors="replace"))
-    current_managed = [(track.name, track.guid) for track in project.tracks if track.name.startswith("[vgt]")]
+    current_managed = [(track.name, track.guid) for track in project.tracks if track.name.startswith(PREFIX)]
     if len(current_managed) != 2 or {guid for _, guid in current_managed} != set(managed_guids):
-        _fail("vgt.json GUIDs do not exactly match the two current [vgt] tracks")
-    if [name for name, _ in current_managed] != [FOLDER_NAME, MIRROR_NAME]:
-        _fail("expected exactly one [vgt] Practice folder and one [vgt] Mirror child")
+        _fail("sidecar GUIDs do not exactly match the two current [vgt] tracks")
+    if [name for name, _ in current_managed] != [folder_name, MIRROR_NAME]:
+        _fail(f"expected exactly one {folder_name!r} folder and one {MIRROR_NAME!r} child")
 
     block_by_guid = dict(blocks)
     folder_guid, mirror_guid = managed_guids
     # GUID order is written by the script as folder then mirror.
     if _depth(block_by_guid.get(folder_guid, "")) != 1 or _depth(block_by_guid.get(mirror_guid, "")) != -1:
-        _fail("the vgt tracks do not have folder depths +1 (Practice) and -1 (Mirror)")
+        _fail("the vgt tracks do not have folder depths +1 (folder) and -1 (mirror)")
 
     baseline_blocks = dict(_track_blocks(baseline_path.read_text(encoding="utf-8", errors="replace")))
-    source_files = [filename for _, guid in original for filename in _files(baseline_blocks[guid])]
+    # The mirror must hold exactly the chosen reference track's file-backed media, and nothing else.
+    source_files = _files(baseline_blocks[reference_guid])
     mirror_files = _files(block_by_guid[mirror_guid])
     if mirror_files != source_files:
-        _fail("mirror items are not exactly the original file-backed media items")
+        _fail("mirror items are not exactly the reference track's file-backed media items")
     for filename in mirror_files:
         media_path = Path(filename)
         if not media_path.is_absolute():
@@ -110,6 +125,7 @@ def verify(project_path: Path, baseline_path: Path) -> dict[str, object]:
     return {
         "project": str(project_path),
         "original_tracks": len(original),
+        "reference_track": reference_name,
         "managed_track_guids": managed_guids,
         "mirror_file_backed_items": len(mirror_files),
     }

@@ -7,7 +7,7 @@ from vgt.cli import main
 from vgt.project import ProjectError, locate_project, read_project
 
 
-FIXTURE = Path(__file__).parents[1] / "test" / "Seven Rivers" / "Seven Rivers.RPP"
+FIXTURE = Path(__file__).parents[1] / "test" / "Reaper Project" / "Reaper Project.RPP"
 
 
 def test_reads_the_real_fixture() -> None:
@@ -17,11 +17,10 @@ def test_reads_the_real_fixture() -> None:
     assert (project.tempo, project.time_signature_numerator, project.time_signature_denominator) == (120.0, 4, 4)
     assert [track.name for track in project.tracks] == [
         "Click",
-        "The Seven Rivers (Full March - 3:00)_drums",
-        "The Seven Rivers (Full March - 3:00)_other",
-        "The Seven Rivers (Full March - 3:00)_vocals",
+        "The Seven Rivers (Full March - 3_00)",
+        "Paris Metro Punk",
     ]
-    assert len({track.guid for track in project.tracks}) == 4
+    assert len({track.guid for track in project.tracks}) == 3
 
 
 def test_locates_the_only_project_in_working_directory() -> None:
