@@ -141,3 +141,15 @@
 {"ts": "2026-07-18T08:27:04.459294+00:00", "project": "vgt", "event": "orchestrator.pass_failed", "detail": {"message": "scheduler pass completed with project failures"}}
 {"ts": "2026-07-18T08:28:10.648985+00:00", "project": "vgt", "event": "issue.closed_labels_cleaned", "detail": {"issue": 1, "removed": ["status:ready-for-review"]}}
 {"ts": "2026-07-18T08:28:10.703082+00:00", "project": "vgt", "event": "worktree.cleaned_up", "detail": {"issue": 1, "branch": "issue-1-declare-project-verification-command", "worktree": "/Users/marekkucharski/projects/.pm-worktrees/vgt/issue-1"}}
+{"ts": "2026-07-18T08:28:16.240480+00:00", "project": "vgt", "event": "agent.started", "detail": {"issue": 2, "agent": "codex", "branch": "issue-2-phase-0-reaper-project-plumbing-locate-r", "pid": 88073, "process_started_at": "Sat Jul 18 10:28:14 2026"}}
+{"ts": "2026-07-18T08:28:16.251561+00:00", "project": "vgt", "event": "orchestrator.pass_outcome", "detail": {"outcomes": ["deferred", "scheduled"], "scheduled": 1, "followups_created": 0}}
+{"ts": "2026-07-18T08:29:20.923517+00:00", "project": "vgt", "event": "orchestrator.pass_outcome", "detail": {"outcomes": ["deferred"], "scheduled": 0, "followups_created": 0}}
+{"ts": "2026-07-18T08:29:20.924027+00:00", "project": "vgt", "event": "orchestrator.no_capacity", "detail": {"message": "work is available, but scheduler capacity or budget headroom is exhausted"}}
+{"ts": "2026-07-18T08:30:25.545637+00:00", "project": "vgt", "event": "orchestrator.pass_outcome", "detail": {"outcomes": ["deferred"], "scheduled": 0, "followups_created": 0}}
+{"ts": "2026-07-18T08:30:25.547106+00:00", "project": "vgt", "event": "orchestrator.no_capacity", "detail": {"message": "work is available, but scheduler capacity or budget headroom is exhausted"}}
+{"ts": "2026-07-18T08:31:30.237142+00:00", "project": "vgt", "event": "orchestrator.pass_outcome", "detail": {"outcomes": ["deferred"], "scheduled": 0, "followups_created": 0}}
+{"ts": "2026-07-18T08:31:30.238569+00:00", "project": "vgt", "event": "orchestrator.no_capacity", "detail": {"message": "work is available, but scheduler capacity or budget headroom is exhausted"}}
+{"ts": "2026-07-18T08:32:34.852179+00:00", "project": "vgt", "event": "orchestrator.pass_outcome", "detail": {"outcomes": ["deferred"], "scheduled": 0, "followups_created": 0}}
+{"ts": "2026-07-18T08:32:34.853112+00:00", "project": "vgt", "event": "orchestrator.no_capacity", "detail": {"message": "work is available, but scheduler capacity or budget headroom is exhausted"}}
+{"ts": "2026-07-18T08:33:39.898226+00:00", "project": "vgt", "event": "agent.ready_for_review", "detail": {"issue": 2, "agent": "codex", "role": "implement"}}
+{"ts": "2026-07-18T08:33:43.712388+00:00", "project": "vgt", "event": "pr.created", "detail": {"issue": 2, "pr": 3, "branch": "issue-2-phase-0-reaper-project-plumbing-locate-r"}}

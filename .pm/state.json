@@ -1,10 +1,10 @@
 {
   "current_issue": 2,
-  "session_id": "e84fa1bb-7b5e-4111-ac35-eed1dbd04486",
-  "pid": 88073,
-  "process_started_at": "Sat Jul 18 10:28:14 2026",
-  "agent": "codex",
-  "started_at": "2026-07-18T08:28:12.916721+00:00",
+  "session_id": "1f88d770-76ce-4fcf-90df-8d70ed02ca3b",
+  "pid": 88657,
+  "process_started_at": "Sat Jul 18 10:33:45 2026",
+  "agent": "claude",
+  "started_at": "2026-07-18T08:33:43.713762+00:00",
   "scheduler_stalls": {},
   "budget": {
     "window_start": "2026-07-18T07:36:51.525392+00:00",
@@ -14,18 +14,18 @@
   "verification_followups": {
     "f0d8bfc9d2dc6da7a31609184e25c4d66d3986fd2340b33a83e98204fb86691e": "created"
   },
-  "role": "implement",
+  "role": "review",
   "branch": "issue-2-phase-0-reaper-project-plumbing-locate-r",
   "worktree_path": "/Users/marekkucharski/projects/.pm-worktrees/vgt/issue-2",
-  "pr_number": null,
+  "pr_number": 3,
   "pending_transition": {
     "issue": 2,
     "target": "working",
-    "event": "agent.started",
+    "event": "agent.review_started",
     "detail": {
       "issue": 2,
-      "agent": "codex",
-      "branch": "issue-2-phase-0-reaper-project-plumbing-locate-r"
+      "agent": "claude",
+      "pr": 3
     },
     "cleanup": {}
   }
