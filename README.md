@@ -23,7 +23,7 @@ The action is intentionally the mutation path: it uses REAPER's API and never te
 - creates a REAPER folder named `[vgt] <reference track name>` (e.g. `[vgt] The Seven Rivers (Full March - 3_00)`) with a `[vgt] Mirror` child;
 - clones only the chosen reference track's file-backed media to the mirror track, without adding sends, changing source tracks, or changing project tempo/sample rate;
 - writes the adjacent `.vgt` sidecar — named after the project, e.g. `Reaper Project.vgt` — with its two created track GUIDs and config recording the reference track;
-- on re-apply, deletes only tracks whose GUID occurs in the sidecar **and** whose current name begins `[vgt]`, then recreates the same area, carrying forward any `analysis` block `vgt analyze` had already written (schema stays version 1 until analysis exists, then becomes version 2).
+- on re-apply, deletes only tracks whose GUID occurs in the sidecar **and** whose current name begins `[vgt]`, then recreates the same area, carrying forward any `analysis` block `vgt analyze` had already written (schema stays version 1 until analysis exists, then becomes version 3).
 
 The folder/mirror are therefore idempotent and original tracks remain untouched. REAPER-native click-source items have no file to clone, so choosing a click track mirrors nothing. `vgt apply` validates the project path and directs you to this action rather than silently falling back to unsafe RPP editing.
 
@@ -40,7 +40,7 @@ checks the saved RPP and sidecar after both the first apply and re-apply.
 `vgt analyze [project.rpp]` requires a `.vgt` sidecar already written by the
 apply action above. It resolves the reference track's source audio file,
 runs the tempo/key/sections/chords detectors, and writes the results back
-into the sidecar as schema version 2 — never inside REAPER itself.
+into the sidecar as schema version 3 — never inside REAPER itself.
 
 Each detector's output is cached against a hash of the source audio and the
 detector's settings, so re-running only recomputes stages whose inputs
@@ -49,6 +49,8 @@ useful after changing a detector's code rather than its inputs. Any stage can
 be corrected by hand-editing its `value` in the sidecar and setting
 `human_verified: true`; `vgt analyze` then leaves that stage untouched on
 every later run, regardless of what the audio hash says — even under `--force`.
+Each detected stage records its UTC `analyzed_at` time; a correction records
+`verified_at`, so the sidecar retains when vgt learned or a human confirmed it.
 
 Progress is reported to stderr as each detector starts (the JSON result stays
 on stdout, so `vgt analyze … | jq` and file redirects are unaffected).
@@ -187,3 +189,15 @@ sections) and the rest of the sidecar are left untouched.
 From then on: `vgt analyze` skips the chords stage (human-verified stages are
 never recomputed), and re-running the apply ReaScript repaints `[vgt] Chords`
 identically from the corrected sidecar — the round trip is idempotent.
+
+## Check vgt state
+
+`vgt status [project.rpp]` is read-only: it prints the project and sidecar,
+reference track/source-file availability, managed area, each analysis stage,
+timestamps, and the click/chord-sheet/section-timeline artifacts. In
+particular, the `chords` line says whether it is only machine-detected or
+human-corrected. Old sidecars that predate timestamps show `unknown` rather
+than being changed.
+
+Use `vgt status --json [project.rpp]` for the same information in a stable
+machine-readable structure.

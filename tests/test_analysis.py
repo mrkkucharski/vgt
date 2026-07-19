@@ -49,7 +49,7 @@ def test_upgrade_keeps_v1_fields_and_adds_v2_analysis_skeleton() -> None:
 
     v2 = upgrade(v1)
 
-    assert v2["schema_version"] == 2
+    assert v2["schema_version"] == 3
     assert v2["managed_track_guids"] == ["{AAAA}", "{BBBB}"]
     assert v2["config"] == {"reference_track_guid": REFERENCE_GUID}
     for stage in ANALYSIS_STAGES:
@@ -58,6 +58,8 @@ def test_upgrade_keeps_v1_fields_and_adds_v2_analysis_skeleton() -> None:
             "human_verified": False,
             "input_hash": None,
             "settings_hash": None,
+            "analyzed_at": None,
+            "verified_at": None,
         }
     assert v2["analysis"]["provenance"]["tool"] == "vgt"
 
@@ -75,11 +77,12 @@ def test_analyze_writes_v2_sidecar_with_skeleton_and_provenance(tmp_path: Path) 
 
     result = analyze(project)
 
-    assert result["schema_version"] == 2
+    assert result["schema_version"] == 3
     assert result["managed_track_guids"] == ["{AAAA}", "{BBBB}"]  # phase 0 fields intact
     for stage in ANALYSIS_STAGES:
         assert result["analysis"][stage]["input_hash"] is not None
         assert result["analysis"][stage]["human_verified"] is False
+        assert result["analysis"][stage]["analyzed_at"] is not None
     provenance = result["analysis"]["provenance"]
     assert provenance["tool"] == "vgt"
     assert provenance["reference_source_path"].endswith("The Seven Rivers (Full March - 3_00).mp3")
@@ -292,4 +295,4 @@ def test_cli_analyze_invocation(tmp_path: Path, capsys: pytest.CaptureFixture[st
     assert main(["analyze", str(project)]) == 0
 
     output = json.loads(capsys.readouterr().out)
-    assert output["schema_version"] == 2
+    assert output["schema_version"] == 3

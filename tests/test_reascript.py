@@ -219,7 +219,9 @@ _G.__messages = messages
         "human_verified": True,
         "input_hash": "old-hash",
         "settings_hash": "old-settings",
+        "verified_at": data["analysis"]["chords"]["verified_at"],
     }
+    assert data["analysis"]["chords"]["verified_at"].endswith("Z")
     # The tempo stage (untouched) round-trips byte-for-byte in structure.
     assert data["analysis"]["tempo"] == analysis["tempo"]
 

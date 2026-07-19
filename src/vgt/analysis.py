@@ -17,6 +17,7 @@ from __future__ import annotations
 
 from pathlib import Path
 from typing import Any, Callable
+from datetime import UTC, datetime
 import hashlib
 import json
 
@@ -188,6 +189,7 @@ def analyze(
                 project_path, source, stage_settings, analysis
             ),
             force=force,
+            analyzed_at=datetime.now(UTC).isoformat().replace("+00:00", "Z"),
         )
     emit("writing sidecar")
     analysis["provenance"] = {

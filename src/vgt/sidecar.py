@@ -6,6 +6,8 @@ Schema versions:
   2 -- Phase 1 adds `analysis`: one entry per detector (tempo/key/sections/chords),
        each cached on an input+settings hash so re-running only recomputes stages
        whose inputs changed, and a `provenance` block recording the tool/version.
+  3 -- Analysis stages record `analyzed_at` and human corrections record
+       `verified_at`, both as UTC ISO-8601 timestamps.
 
 Every stage entry has the same shape:
   {
@@ -13,6 +15,8 @@ Every stage entry has the same shape:
     "human_verified": bool,   # true once a human has corrected/confirmed it
     "input_hash": str | null, # hash of the analyzed audio at last (re)compute
     "settings_hash": str | null,
+    "analyzed_at": str | null, # UTC time at which this value was detected
+    "verified_at": str | null, # UTC time at which a human verified it
   }
 A human correction is applied by setting "value" and "human_verified": true;
 `refresh_stage` then leaves it untouched on every later re-run regardless of
@@ -25,7 +29,7 @@ from pathlib import Path
 from typing import Any, Callable
 import json
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 
 ANALYSIS_STAGES = ("tempo", "key", "sections", "chords")
 
@@ -40,7 +44,14 @@ def sidecar_path(project_path: str | Path) -> Path:
 
 
 def _empty_stage() -> dict[str, Any]:
-    return {"value": None, "human_verified": False, "input_hash": None, "settings_hash": None}
+    return {
+        "value": None,
+        "human_verified": False,
+        "input_hash": None,
+        "settings_hash": None,
+        "analyzed_at": None,
+        "verified_at": None,
+    }
 
 
 def read_sidecar(project_path: str | Path) -> dict[str, Any]:
@@ -85,6 +96,7 @@ def refresh_stage(
     settings_hash: str,
     compute: Callable[[], Any],
     force: bool = False,
+    analyzed_at: str | None = None,
 ) -> dict[str, Any]:
     """Recompute a stage's cached value unless a human has verified it, or the
     inputs/settings that produced the cached value haven't changed.
@@ -100,4 +112,6 @@ def refresh_stage(
         "human_verified": False,
         "input_hash": input_hash,
         "settings_hash": settings_hash,
+        "analyzed_at": analyzed_at,
+        "verified_at": None,
     }

@@ -285,6 +285,7 @@ local function write_corrected_chords(segments)
   decoded.value = type(decoded.value) == "table" and decoded.value or {}
   decoded.value.segments = segments
   decoded.human_verified = true
+  decoded.verified_at = os.date("!%Y-%m-%dT%H:%M:%SZ")
 
   local new_chords_text = encode_json(decoded)
   local new_analysis_text = analysis_text:sub(1, chords_start - 1) .. new_chords_text .. analysis_text:sub(chords_end + 1)
