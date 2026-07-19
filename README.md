@@ -177,12 +177,15 @@ To run the full disposable REAPER proof (including both the default-map and
 existing-map branches, each applied twice), use `--run-live` with the same
 baseline argument instead of supplying a project path.
 
-## Correcting chords in REAPER
+## Correcting chords and sections in REAPER
 
-Auto-detected chords are sometimes wrong, and correcting raw second-offsets
-by hand in the sidecar is awkward. Instead, edit the chords directly on the
-`[vgt] Chords` track's timeline — its items are unlocked (though still muted,
-so they never play):
+Auto-detected chords and sections are sometimes wrong, and correcting raw
+second-offsets by hand in the sidecar is awkward. Instead, edit them directly
+in REAPER, then run one action — `vgt sync` — to read every manual edit back
+into the sidecar in a single pass.
+
+**Chords**: edit items directly on the `[vgt] Chords` track's timeline — its
+items are unlocked (though still muted, so they never play):
 
 - **rename** an item's take to relabel a chord (e.g. `Am` → `A`);
 - **move or resize** an item to adjust its boundaries;
@@ -190,31 +193,30 @@ so they never play):
 - **delete** an item to drop a spurious chord, or **add** a new item (with a
   take name) to insert one.
 
-When done, load [reascript/vgt_read_chords.lua](reascript/vgt_read_chords.lua)
-in REAPER's Action List and run it (or run `vgt read-chords [project.rpp]`
-for the same pointer from the CLI). It scans the `[vgt] Chords` track's items
-— position, length, take name — by GUID against the sidecar's
-`managed_track_guids`, so it only ever reads objects vgt itself created, and
-writes them back into the sidecar as `analysis.chords.value.segments` with
-`chords.human_verified: true`. It never touches `analysis.chords.detected` —
-the original machine detection stays available there — nor any other
-analysis stage (tempo, key, sections) or the rest of the sidecar.
+**Sections**: rename or move the `[vgt]` regions vgt created for detected
+sections.
 
-From then on: `vgt analyze` skips the chords stage (human-verified stages are
-never recomputed), and re-running the apply ReaScript repaints `[vgt] Chords`
-identically from the corrected sidecar — the round trip is idempotent.
+When done with either (or both), load
+[reascript/vgt_sync.lua](reascript/vgt_sync.lua) in REAPER's Action List and
+run it (or run `vgt sync [project.rpp]` for the same pointer from the CLI).
+It:
 
-## Correcting sections in REAPER
+- scans the `[vgt] Chords` track's items — position, length, take name — by
+  GUID against the sidecar's `managed_track_guids`, so it only ever reads a
+  chords track vgt itself created, and writes them back as
+  `analysis.chords.value.segments` with `chords.human_verified: true`;
+- scans regions by ID against the sidecar's `managed_region_ids`, never any
+  other project region (including a user region whose name starts with
+  `[vgt]`), and writes them back as `analysis.sections.value` with
+  `sections.human_verified: true`;
+- never touches `analysis.chords.detected` or `analysis.sections.detected` —
+  the original machine detections stay available there (#19) — nor any other
+  analysis stage (tempo, key) or the rest of the sidecar.
 
-Rename or move the regions vgt created for detected sections, then run
-[reascript/vgt_read_sections.lua](reascript/vgt_read_sections.lua) from
-REAPER's Action List (or `vgt read-sections [project.rpp]` for the CLI
-pointer). The action reads only region IDs in the sidecar's
-`managed_region_ids`, never any other project region — including a user region
-whose name starts with `[vgt]`. It writes the edited labels and boundaries to
-`analysis.sections.value` as human-verified, relative to the reference item.
-Those corrections are kept by later `vgt analyze` runs and re-applied as fresh
-`[vgt]` regions.
+From then on: `vgt analyze` skips the chords and sections stages
+(human-verified stages are never recomputed), and re-running the apply
+ReaScript repaints `[vgt] Chords` and the section regions identically from
+the corrected sidecar — the round trip is idempotent.
 
 ## Check vgt state
 

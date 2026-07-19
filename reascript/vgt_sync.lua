@@ -1,13 +1,18 @@
--- vgt read-chords action for REAPER 7.x.
+-- vgt sync action for REAPER 7.x.
 -- Install this file in REAPER's Action List and run it while a vgt-prepared
--- project is open. It reads the (user-editable) [vgt] Chords track's items --
--- position, length, take name -- and writes them back into the adjacent
--- .vgt sidecar as a human-verified `analysis.chords` stage, so the correction
--- survives future `vgt analyze` and apply runs. It never edits the RPP: only
--- vgt_initialize.lua mutates REAPER projects, per the "ReaScript is a thin
--- caller" rule -- this action's own job is entirely REAPER-state bookkeeping,
--- symmetric to how vgt_initialize.lua's write_settings() already writes the
--- sidecar directly from Lua.
+-- project is open. It synchronizes every manual REAPER edit back into the
+-- adjacent .vgt sidecar in one invocation:
+--   * the (user-editable) [vgt] Chords track's items -- position, length,
+--     take name -- become analysis.chords.value.segments;
+--   * the [vgt]-owned section regions -- start, end, name -- become
+--     analysis.sections.value.
+-- Both are written as human_verified: true, so the corrections survive
+-- future `vgt analyze` and apply runs. This consolidates the former
+-- vgt_read_chords.lua and vgt_read_sections.lua into a single action (#33).
+-- It never edits the RPP: only vgt_initialize.lua mutates REAPER projects,
+-- per the "ReaScript is a thin caller" rule -- this action's own job is
+-- entirely REAPER-state bookkeeping, symmetric to how vgt_initialize.lua's
+-- write_settings() already writes the sidecar directly from Lua.
 
 local PREFIX = "[vgt]"
 local CHORDS_NAME = PREFIX .. " Chords"
@@ -44,6 +49,15 @@ local function read_managed_guids()
   return guids
 end
 
+local function read_managed_region_ids()
+  local body = read_sidecar_body()
+  if not body then return {} end
+  local ids = {}
+  local array = body:match('"managed_region_ids"%s*:%s*%[(.-)%]') or ""
+  for id in array:gmatch("%-?%d+") do ids[tonumber(id)] = true end
+  return ids
+end
+
 local function find_track_by_guid(guid)
   for index = 0, reaper.CountTracks(0) - 1 do
     local track = reaper.GetTrack(0, index)
@@ -64,6 +78,15 @@ local function find_vgt_chords_track()
   return nil
 end
 
+local function reference_track()
+  local body = read_sidecar_body() or ""
+  local guid = body:match('"reference_track_guid"%s*:%s*"({[%x%-]+})"')
+  if not guid then error("sidecar has no config.reference_track_guid; run vgt_initialize.lua first.") end
+  local track = find_track_by_guid(guid)
+  if not track then error("the reference track no longer exists.") end
+  return track
+end
+
 local function reference_start(reference)
   local start_time = nil
   for index = 0, reaper.CountTrackMediaItems(reference) - 1 do
@@ -74,9 +97,10 @@ local function reference_start(reference)
   return start_time or 0
 end
 
--- Same balanced-brace object-span finder vgt_initialize.lua's
--- read_analysis_block() uses, generalized to any object-valued key so it can
--- locate both "analysis" (top-level) and "chords" (inside analysis).
+-- Balanced-brace object-span finder, matching vgt_initialize.lua's
+-- read_analysis_block(), generalized to any object-valued key so it can
+-- locate both "analysis" (top-level) and "chords"/"sections" (inside
+-- analysis).
 local function find_object_span(haystack, key)
   local key_start = haystack:find('"' .. key .. '"%s*:%s*{')
   if not key_start then return nil end
@@ -107,7 +131,7 @@ local function find_object_span(haystack, key)
 end
 
 -- Minimal JSON decoder, matching vgt_initialize.lua's read_analysis()
--- decoder: analysis is produced by Python, and chord labels are
+-- decoder: analysis is produced by Python, and chord/section labels are
 -- user-correctable text that a pattern-scraper would mishandle.
 local function decode_json(text)
   local position = 1
@@ -224,8 +248,8 @@ end
 -- decode_json() (mirroring standard Lua JSON libraries) represents a JSON
 -- array as a table with keys 1..n and a JSON object as a table with string
 -- keys; an empty table is ambiguous between the two, so an empty table
--- always round-trips as "[]" (fine here: every object this action touches --
--- chord stage fields -- is non-empty).
+-- always round-trips as "[]" (fine here: the only empty-table case this
+-- action can produce is an empty sections list, which is itself an array).
 local function is_array(value)
   local count = 0
   for _ in pairs(value) do count = count + 1 end
@@ -265,47 +289,6 @@ local function round6(value)
   return math.floor(value * 1e6 + 0.5) / 1e6
 end
 
--- Splice a corrected `segments` array into the sidecar's
--- analysis.chords.value.segments, and set analysis.chords.human_verified,
--- leaving every other byte of the sidecar (other stages, config, formatting)
--- untouched.
-local function write_corrected_chords(segments)
-  local body = read_sidecar_body()
-  if not body then error("No .vgt sidecar found; run vgt_initialize.lua first.") end
-
-  local analysis_start, analysis_end = find_object_span(body, "analysis")
-  if not analysis_start then error("sidecar has no analysis block; run `vgt analyze` first.") end
-  local analysis_text = body:sub(analysis_start, analysis_end)
-
-  local chords_start, chords_end = find_object_span(analysis_text, "chords")
-  if not chords_start then error("sidecar analysis has no chords stage; run `vgt analyze` first.") end
-  local chords_text = analysis_text:sub(chords_start, chords_end)
-
-  local decoded = decode_json(chords_text)
-  decoded.value = type(decoded.value) == "table" and decoded.value or {}
-  decoded.value.segments = segments
-  decoded.human_verified = true
-  decoded.verified_at = os.date("!%Y-%m-%dT%H:%M:%SZ")
-
-  local new_chords_text = encode_json(decoded)
-  local new_analysis_text = analysis_text:sub(1, chords_start - 1) .. new_chords_text .. analysis_text:sub(chords_end + 1)
-  local new_body = body:sub(1, analysis_start - 1) .. new_analysis_text .. body:sub(analysis_end + 1)
-
-  local file, error_message = io.open(sidecar_path(), "w")
-  if not file then error(error_message) end
-  file:write(new_body)
-  file:close()
-end
-
-local function reference_track()
-  local body = read_sidecar_body() or ""
-  local guid = body:match('"reference_track_guid"%s*:%s*"({[%x%-]+})"')
-  if not guid then error("sidecar has no config.reference_track_guid; run vgt_initialize.lua first.") end
-  local track = find_track_by_guid(guid)
-  if not track then error("the reference track no longer exists.") end
-  return track
-end
-
 local function chord_items_as_segments(chords_track, offset)
   local items = {}
   for index = 0, reaper.CountTrackMediaItems(chords_track) - 1 do
@@ -332,27 +315,111 @@ local function chord_items_as_segments(chords_track, offset)
   return segments
 end
 
-local function read_chords()
-  if project_path() == "" then error("Save the REAPER project before reading chords back.") end
+local function section_label(name)
+  if name:sub(1, #PREFIX) == PREFIX then
+    return name:sub(#PREFIX + 1):gsub("^%s+", "")
+  end
+  -- Ownership comes from the saved region ID, not from presentation. Retain
+  -- a user rename even if they removed the conventional [vgt] prefix.
+  return name
+end
+
+local function managed_regions_as_sections(offset)
+  local managed = read_managed_region_ids()
+  local sections = {}
+  for index = 0, reaper.CountProjectMarkers(0) - 1 do
+    local _, is_region, start_time, end_time, name, region_id = reaper.EnumProjectMarkers3(0, index)
+    if is_region and managed[region_id] and end_time > start_time then
+      sections[#sections + 1] = {
+        start_seconds = round6(start_time - offset),
+        end_seconds = round6(end_time - offset),
+        label = section_label(name or "section"),
+      }
+    end
+  end
+  table.sort(sections, function(a, b) return a.start_seconds < b.start_seconds end)
+  return sections
+end
+
+-- Decode the JSON object stored at analysis.<key> and return its start/end
+-- byte offsets within `analysis_text` alongside the decoded table, so the
+-- caller can later splice a re-encoded replacement back in.
+local function decode_stage(analysis_text, key)
+  local start, finish = find_object_span(analysis_text, key)
+  if not start then error("sidecar analysis has no " .. key .. " stage; run `vgt analyze` first.") end
+  return start, finish, decode_json(analysis_text:sub(start, finish))
+end
+
+-- Splice corrected `chords` segments and `sections` entries into the
+-- sidecar's analysis.chords.value.segments and analysis.sections.value,
+-- setting each stage's human_verified/verified_at, leaving every other
+-- byte of the sidecar (other stages, detected baselines, config, formatting)
+-- untouched. Both stages are located before either is rewritten, then
+-- spliced back in from the last span to the first, so rewriting one stage's
+-- (possibly different-length) text never invalidates the other's offsets.
+local function write_sync(segments, sections)
+  local body = read_sidecar_body()
+  if not body then error("No .vgt sidecar found; run vgt_initialize.lua first.") end
+
+  local analysis_start, analysis_end = find_object_span(body, "analysis")
+  if not analysis_start then error("sidecar has no analysis block; run `vgt analyze` first.") end
+  local analysis_text = body:sub(analysis_start, analysis_end)
+
+  local timestamp = os.date("!%Y-%m-%dT%H:%M:%SZ")
+
+  local chords_start, chords_end, chords_decoded = decode_stage(analysis_text, "chords")
+  chords_decoded.value = type(chords_decoded.value) == "table" and chords_decoded.value or {}
+  chords_decoded.value.segments = segments
+  chords_decoded.human_verified = true
+  chords_decoded.verified_at = timestamp
+
+  local sections_start, sections_end, sections_decoded = decode_stage(analysis_text, "sections")
+  sections_decoded.value = sections
+  sections_decoded.human_verified = true
+  sections_decoded.verified_at = timestamp
+
+  local edits = {
+    {start = chords_start, finish = chords_end, text = encode_json(chords_decoded)},
+    {start = sections_start, finish = sections_end, text = encode_json(sections_decoded)},
+  }
+  table.sort(edits, function(a, b) return a.start > b.start end)
+  for _, edit in ipairs(edits) do
+    analysis_text = analysis_text:sub(1, edit.start - 1) .. edit.text .. analysis_text:sub(edit.finish + 1)
+  end
+
+  local new_body = body:sub(1, analysis_start - 1) .. analysis_text .. body:sub(analysis_end + 1)
+
+  local file, error_message = io.open(sidecar_path(), "w")
+  if not file then error(error_message) end
+  file:write(new_body)
+  file:close()
+end
+
+local function sync()
+  if project_path() == "" then error("Save the REAPER project before syncing.") end
 
   local chords_track = find_vgt_chords_track()
   if not chords_track then error("No " .. CHORDS_NAME .. " track found; run vgt_initialize.lua first.") end
 
   local offset = reference_start(reference_track())
   local segments = chord_items_as_segments(chords_track, offset)
+  local sections = managed_regions_as_sections(offset)
 
   -- This action only ever writes the sidecar file, never REAPER project
   -- state, so there is nothing to wrap in an undo block.
-  write_corrected_chords(segments)
+  write_sync(segments, sections)
 
   -- ShowConsoleMsg (not ShowMessageBox) on success: a modal dialog here
   -- would block headless/automated runs waiting for a click that never
   -- comes, matching vgt_initialize.lua's convention of only popping a
   -- blocking message box on failure.
-  reaper.ShowConsoleMsg(string.format("vgt: read %d chord item(s) from %s into the sidecar as human-verified.\n", #segments, CHORDS_NAME))
+  reaper.ShowConsoleMsg(string.format(
+    "vgt: synced %d chord item(s) and %d section region(s) into the sidecar as human-verified.\n",
+    #segments, #sections
+  ))
 end
 
-local ok, error_message = xpcall(read_chords, debug.traceback)
+local ok, error_message = xpcall(sync, debug.traceback)
 if not ok then
-  reaper.ShowMessageBox("vgt: reading chords failed:\n" .. error_message, "vgt", 0)
+  reaper.ShowMessageBox("vgt: sync failed:\n" .. error_message, "vgt", 0)
 end

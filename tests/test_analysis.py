@@ -49,7 +49,7 @@ def test_upgrade_keeps_v1_fields_and_adds_v2_analysis_skeleton() -> None:
 
     upgraded = upgrade(v1)
 
-    assert upgraded["schema_version"] == 4
+    assert upgraded["schema_version"] == 5
     assert upgraded["managed_region_ids"] == []
     assert upgraded["managed_track_guids"] == ["{AAAA}", "{BBBB}"]
     assert upgraded["config"] == {"reference_track_guid": REFERENCE_GUID}
@@ -62,7 +62,7 @@ def test_upgrade_keeps_v1_fields_and_adds_v2_analysis_skeleton() -> None:
             "analyzed_at": None,
             "verified_at": None,
         }
-        if stage == "chords":
+        if stage in ("chords", "sections"):
             expected["detected"] = None
             expected["detected_input_hash"] = None
             expected["detected_settings_hash"] = None
@@ -92,6 +92,30 @@ def test_upgrade_backfills_detected_from_value_for_v2_chords() -> None:
     chords = upgraded["analysis"]["chords"]
     assert chords["detected"] == chords["value"]
     assert chords["detected"] is not chords["value"]  # backfill copies, doesn't alias
+
+
+def test_upgrade_backfills_detected_from_value_for_v4_sections() -> None:
+    """Same v2 -> v3 chords backfill, applied to sections for the v4 -> v5
+    migration (#33): a v4 sidecar has no `detected` field on the sections
+    stage, so it is seeded from `value` (best effort)."""
+    v4 = {
+        "schema_version": 4,
+        "config": {"reference_track_guid": REFERENCE_GUID},
+        "analysis": {
+            "sections": {
+                "value": [{"label": "Verse", "start_seconds": 0.0, "end_seconds": 10.0}],
+                "human_verified": True,
+                "input_hash": "abc",
+                "settings_hash": "def",
+            }
+        },
+    }
+
+    upgraded = upgrade(v4)
+
+    sections = upgraded["analysis"]["sections"]
+    assert sections["detected"] == sections["value"]
+    assert sections["detected"] is not sections["value"]  # backfill copies, doesn't alias
 
 
 def test_upgrade_does_not_clobber_an_existing_detected_field() -> None:
@@ -126,7 +150,7 @@ def test_analyze_writes_v2_sidecar_with_skeleton_and_provenance(tmp_path: Path) 
 
     result = analyze(project)
 
-    assert result["schema_version"] == 4
+    assert result["schema_version"] == 5
     assert result["managed_track_guids"] == ["{AAAA}", "{BBBB}"]  # phase 0 fields intact
     for stage in ANALYSIS_STAGES:
         assert result["analysis"][stage]["input_hash"] is not None
@@ -316,8 +340,8 @@ def test_key_and_chord_corrections_survive_rerun(tmp_path: Path) -> None:
     assert result["analysis"]["chords"]["detected"] == corrected_chords
 
 
-def test_read_chords_style_correction_preserves_original_detected(tmp_path: Path) -> None:
-    """Mirrors what `vgt_read_chords.lua` does: overwrite only
+def test_analyze_style_chord_correction_preserves_original_detected(tmp_path: Path) -> None:
+    """Mirrors what `vgt_sync.lua` does for chords: overwrite only
     `value.segments` and set `human_verified`, leaving `detected` (and every
     other field the detector wrote) untouched -- the core guarantee #19
     adds. A subsequent `analyze()` with unchanged audio/settings must not
@@ -433,6 +457,33 @@ def test_section_rename_and_boundary_nudge_survive_rerun(tmp_path: Path) -> None
     assert result != first
 
 
+def test_sync_style_correction_preserves_original_detected_sections(tmp_path: Path) -> None:
+    """Mirrors what `vgt_sync.lua` does for sections: overwrite only `value`
+    and set `human_verified`, leaving `detected` untouched -- the same #19
+    guarantee `test_analyze_style_chord_correction_preserves_original_detected`
+    checks for chords, extended to sections (#33)."""
+    project = _project_copy(tmp_path)
+    _write_v1_sidecar(project)
+    first = analyze(project)
+
+    original_detected = first["analysis"]["sections"]["detected"]
+    assert original_detected == first["analysis"]["sections"]["value"]
+
+    sidecar = read_sidecar(project)
+    corrected_sections = [{"label": "Intro", "start_seconds": 0.0, "end_seconds": 5.0}]
+    sidecar["analysis"]["sections"]["value"] = corrected_sections
+    sidecar["analysis"]["sections"]["human_verified"] = True
+    write_sidecar(project, sidecar)
+
+    result = analyze(project)
+
+    sections = result["analysis"]["sections"]
+    assert sections["value"] == corrected_sections
+    assert sections["human_verified"] is True
+    assert sections["detected"] == original_detected
+    assert sections["detected"] != corrected_sections
+
+
 def test_cli_analyze_invocation(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
     project = _project_copy(tmp_path)
     _write_v1_sidecar(project)
@@ -440,4 +491,4 @@ def test_cli_analyze_invocation(tmp_path: Path, capsys: pytest.CaptureFixture[st
     assert main(["analyze", str(project)]) == 0
 
     output = json.loads(capsys.readouterr().out)
-    assert output["schema_version"] == 4
+    assert output["schema_version"] == 5

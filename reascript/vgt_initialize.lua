@@ -324,7 +324,7 @@ local function add_labeled_item(track, start_time, end_time, label, locked)
   -- REAPER locks items rather than whole tracks; locking a vgt label item
   -- makes it read-only in the arrange view. Chord items are deliberately left
   -- unlocked (locked == false) so the user can correct them on the timeline;
-  -- vgt_read_chords.lua reads those edits back into the sidecar.
+  -- vgt_sync.lua reads those edits back into the sidecar.
   if locked ~= false then reaper.SetMediaItemInfo_Value(item, "C_LOCK", 1) end
   reaper.GetSetMediaItemInfo_String(item, "P_NOTES", label, true)
   local take = reaper.AddTakeToMediaItem(item)
