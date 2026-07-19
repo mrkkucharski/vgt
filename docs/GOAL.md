@@ -63,7 +63,7 @@ Phase 1 delivers:
   detected tempo/key/sections/chords alongside phase 0's state;
 - **reflecting analysis into the project**, additively and idempotently, as `[vgt]`-owned objects:
   - a **tempo map** — subject to the tempo-map rule: written only when the project still has a single default
-    tempo marker; otherwise left untouched and offered non-invasively (a muted `[vgt]` beat-marker track). A
+    tempo marker; otherwise left untouched and offered non-invasively (an unmuted `[vgt]` beat-marker track). A
     re-apply refreshes a vgt-created map with newly detected/corrected tempo data as long as the live map is
     still demonstrably the one vgt wrote (a fingerprint recorded in the sidecar proves it); the moment a human
     edits it by hand, vgt never touches it again and falls back to the non-invasive beat-marker track instead;

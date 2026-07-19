@@ -331,11 +331,11 @@ local function add_labeled_item(track, start_time, end_time, label, locked)
   reaper.GetSetMediaItemTakeInfo_String(take, "P_NAME", label, true)
 end
 
-local function add_locked_muted_track(index, name)
+local function add_locked_track(index, name, muted)
   reaper.InsertTrackAtIndex(index, true)
   local track = reaper.GetTrack(0, index)
   reaper.GetSetMediaTrackInfo_String(track, "P_NAME", name, true)
-  reaper.SetMediaTrackInfo_Value(track, "B_MUTE", 1)
+  reaper.SetMediaTrackInfo_Value(track, "B_MUTE", muted and 1 or 0)
   return track
 end
 
@@ -427,7 +427,9 @@ local function add_beat_markers(track, tempo, reference_start, reference_end)
 end
 
 local function offer_beats_track(index, tempo, reference_start, reference_end, managed_tracks)
-  local beats = add_locked_muted_track(index, BEATS_NAME)
+  -- This is an item-label-only track, so it does not need muting. Keeping it
+  -- unmuted ensures its beat labels remain readable in REAPER.
+  local beats = add_locked_track(index, BEATS_NAME, false)
   add_beat_markers(beats, tempo, reference_start, reference_end)
   managed_tracks[#managed_tracks + 1] = beats
 end
@@ -575,7 +577,7 @@ local function apply()
   local chords = analysis and analysis.chords and analysis.chords.value
   local segments = type(chords) == "table" and (chords.segments or chords) or nil
   if type(segments) == "table" then
-    local chords_track = add_locked_muted_track(reaper.CountTracks(0), CHORDS_NAME)
+    local chords_track = add_locked_track(reaper.CountTracks(0), CHORDS_NAME, true)
     for _, chord in ipairs(segments) do
       -- locked = false: chord items are the editing surface for corrections (see add_labeled_item).
       add_labeled_item(chords_track, reference_start + (tonumber(chord.start_seconds) or 0), reference_start + (tonumber(chord.end_seconds) or 0), tostring(chord.chord or chord.label or "N"), false)

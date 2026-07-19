@@ -161,8 +161,8 @@ positioning before any tempo changes.
 
 When REAPER still has exactly its single default 120 BPM / 4/4 tempo marker,
 the action writes the detected tempo map. If the project already has any other
-tempo map, it leaves that map untouched and instead creates a muted, locked
-`[vgt] Beats` item track. Both the regions and vgt tracks are reconciled on
+tempo map, it leaves that map untouched and instead creates an unmuted, locked
+`[vgt] Beats` item track so its labels remain readable. Both the regions and vgt tracks are reconciled on
 re-apply; region ownership is recorded by REAPER region ID in the sidecar, so
 even a user-created region named `[vgt] ...` is preserved.
 
