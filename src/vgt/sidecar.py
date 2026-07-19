@@ -7,7 +7,13 @@ Schema versions:
        each cached on an input+settings hash so re-running only recomputes stages
        whose inputs changed, and a `provenance` block recording the tool/version.
   3 -- Analysis stages record `analyzed_at` and human corrections record
-       `verified_at`, both as UTC ISO-8601 timestamps.
+       `verified_at`, both as UTC ISO-8601 timestamps. The `chords` stage also
+       gains a `detected` sibling of `value` holding the pristine
+       machine-detected chords, so a human correction to `value` never
+       destroys the original detection (#19). Existing v2 sidecars are
+       migrated by backfilling `detected` from `value` (best effort -- if a
+       human had already corrected `value` under v2, the true original is
+       gone and the backfill just seeds `detected` with the corrected chords).
 
 Every stage entry has the same shape:
   {
@@ -21,12 +27,25 @@ Every stage entry has the same shape:
 A human correction is applied by setting "value" and "human_verified": true;
 `refresh_stage` then leaves it untouched on every later re-run regardless of
 whether the input or settings hash changed.
+
+The `chords` stage additionally carries:
+  {
+    "detected": <machine-detected chords, independent of human corrections>,
+    "detected_input_hash": str | null,    # hash `detected` was last computed against
+    "detected_settings_hash": str | null,
+  }
+`detected` is never touched by `read-chords`; only `vgt analyze`'s detector
+writes it. Unlike `value`, `detected` keeps tracking the current audio and
+settings via its own hash pair even once `value` is human-verified and
+frozen -- it is the machine baseline, so it stays live, while the human's
+`value` is what freezes (see `analysis.py`'s `_refresh_chords_stage`).
 """
 
 from __future__ import annotations
 
 from pathlib import Path
 from typing import Any, Callable
+import copy
 import json
 
 SCHEMA_VERSION = 3
@@ -54,8 +73,12 @@ def _empty_stage() -> dict[str, Any]:
     }
 
 
+def _empty_chords_stage() -> dict[str, Any]:
+    return {**_empty_stage(), "detected": None, "detected_input_hash": None, "detected_settings_hash": None}
+
+
 def read_sidecar(project_path: str | Path) -> dict[str, Any]:
-    """Read the sidecar for `project_path`, upgrading schema v1 to v2 in memory."""
+    """Read the sidecar for `project_path`, upgrading older schema versions in memory."""
     path = sidecar_path(project_path)
     if not path.is_file():
         raise SidecarError(f"No .vgt sidecar found at {path}; run the Phase 0 apply action first.")
@@ -64,12 +87,23 @@ def read_sidecar(project_path: str | Path) -> dict[str, Any]:
 
 
 def upgrade(data: dict[str, Any]) -> dict[str, Any]:
-    """Return `data` with all Phase 0 fields intact and a v2 `analysis` block present."""
+    """Return `data` with all older fields intact and a current-schema `analysis` block present."""
     upgraded = dict(data)
     upgraded["schema_version"] = SCHEMA_VERSION
     analysis = dict(upgraded.get("analysis") or {})
     for stage in ANALYSIS_STAGES:
-        analysis[stage] = {**_empty_stage(), **(analysis.get(stage) or {})}
+        if stage == "chords":
+            merged = {**_empty_chords_stage(), **(analysis.get(stage) or {})}
+            if merged["detected"] is None and merged["value"] is not None:
+                # v2 -> v3 migration: best-effort backfill, see module docstring.
+                # Assume `detected` was last computed alongside `value`, so it
+                # inherits `value`'s hash pair rather than starting stale.
+                merged["detected"] = copy.deepcopy(merged["value"])
+                merged["detected_input_hash"] = merged["input_hash"]
+                merged["detected_settings_hash"] = merged["settings_hash"]
+            analysis[stage] = merged
+        else:
+            analysis[stage] = {**_empty_stage(), **(analysis.get(stage) or {})}
     analysis.setdefault("provenance", {"tool": "vgt", "version": None, "settings": {}})
     upgraded["analysis"] = analysis
     return upgraded
