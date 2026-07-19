@@ -100,8 +100,39 @@ end
 local function prior_tempo_map_applied()
   local body = read_sidecar_body() or ""
   -- This flag is vgt's record that the current map was created during an
-  -- earlier eligible apply.  We never delete or rewrite that map on re-apply.
+  -- earlier eligible apply.  We never blindly rewrite that map on re-apply --
+  -- see prior_tempo_map_fingerprint / current_tempo_fingerprint below, which
+  -- decide whether it is still safe to do so.
   return body:match('"tempo_map_applied"%s*:%s*true') ~= nil
+end
+
+local function prior_tempo_map_fingerprint()
+  local body = read_sidecar_body() or ""
+  return body:match('"tempo_map_fingerprint"%s*:%s*"(.-)"') or ""
+end
+
+local function prior_tempo_data_fingerprint()
+  local body = read_sidecar_body() or ""
+  return body:match('"tempo_data_fingerprint"%s*:%s*"(.-)"') or ""
+end
+
+-- A canonical snapshot of the *analyzed* tempo data itself (bpm, downbeat
+-- offset, time signature, piecewise spans) -- independent of where the
+-- reference track happens to sit in the timeline. Comparing this against the
+-- fingerprint recorded for the live map is how a re-apply tells "the
+-- detected/corrected tempo actually changed" apart from "nothing changed,
+-- don't needlessly rewrite (and thereby re-shift any beat-attached
+-- reference items) an already-current map".
+local function tempo_data_fingerprint(tempo)
+  local parts = {
+    string.format("%.6f:%s:%.6f", tonumber(tempo.bpm) or 0, tostring(tempo.time_signature or ""), tonumber(tempo.downbeat_offset_seconds) or 0),
+  }
+  if type(tempo.spans) == "table" then
+    for _, span in ipairs(tempo.spans) do
+      parts[#parts + 1] = string.format("%.6f:%.6f:%.6f", tonumber(span.start_seconds) or 0, tonumber(span.end_seconds) or 0, tonumber(span.bpm) or 0)
+    end
+  end
+  return table.concat(parts, ";")
 end
 
 -- The Python `vgt analyze` stage adds a top-level "analysis"
@@ -344,6 +375,13 @@ local function apply_tempo_map(tempo, reference_start)
   local bpm = tonumber(tempo.bpm)
   if not bpm or bpm <= 0 then return false end
   local numerator, denominator = parse_time_signature(tempo.time_signature)
+  -- On a refresh, clear every marker vgt previously wrote first (index 0 can
+  -- only be updated, never deleted) so the new map is built from a clean
+  -- slate -- otherwise a stale marker left at the old downbeat/span times
+  -- would linger and make the map internally inconsistent.
+  for index = reaper.CountTempoTimeSigMarkers(0) - 1, 1, -1 do
+    reaper.DeleteTempoTimeSigMarker(0, index)
+  end
   -- Update the one default marker, then put explicit markers at the analyzed
   -- downbeat / piecewise boundaries.  REAPER owns the map construction.
   reaper.SetTempoTimeSigMarker(0, 0, 0, -1, -1, bpm, numerator, denominator, false)
@@ -360,6 +398,22 @@ local function apply_tempo_map(tempo, reference_start)
   return true
 end
 
+-- A canonical snapshot of every tempo/time-sig marker currently in the
+-- project, in REAPER's own marker order. Comparing this against the
+-- fingerprint recorded the last time vgt wrote the map is how a re-apply
+-- tells "still exactly what vgt left it as" apart from "user has since
+-- edited it by hand" -- only the former is safe to overwrite.
+local function current_tempo_fingerprint()
+  local parts = {}
+  for index = 0, reaper.CountTempoTimeSigMarkers(0) - 1 do
+    local ok, time, _, _, bpm, numerator, denominator = reaper.GetTempoTimeSigMarker(0, index)
+    if ok then
+      parts[#parts + 1] = string.format("%.6f:%.3f:%d:%d", time, bpm, numerator, denominator)
+    end
+  end
+  return table.concat(parts, ";")
+end
+
 local function add_beat_markers(track, tempo, reference_start, reference_end)
   local bpm = tonumber(tempo.bpm)
   if not bpm or bpm <= 0 or reference_end <= reference_start then return end
@@ -372,6 +426,12 @@ local function add_beat_markers(track, tempo, reference_start, reference_end)
     time = time + interval
     beat = beat + 1
   end
+end
+
+local function offer_beats_track(index, tempo, reference_start, reference_end, managed_tracks)
+  local beats = add_locked_muted_track(index, BEATS_NAME)
+  add_beat_markers(beats, tempo, reference_start, reference_end)
+  managed_tracks[#managed_tracks + 1] = beats
 end
 
 local function remove_previous_managed_regions()
@@ -396,7 +456,7 @@ local function add_sections(sections, reference_start)
   return region_ids
 end
 
-local function write_settings(folder, managed_tracks, managed_region_ids, reference, tempo_map_applied)
+local function write_settings(folder, managed_tracks, managed_region_ids, reference, tempo_map_applied, tempo_map_fingerprint, tempo_data_fp)
   -- Preserve any analysis the Python CLI already wrote (schema v4); a fresh
   -- sidecar with no prior analysis stays schema v1, matching Phase 0's
   -- long-standing on-disk format.
@@ -416,13 +476,14 @@ local function write_settings(folder, managed_tracks, managed_region_ids, refere
   "schema_version": %d,%s
   "managed_track_guids": [%s],
   "managed_region_ids": [%s],
-  "config": {"reference_track_name": "%s", "reference_track_guid": "%s", "folder_name": "%s", "mirror_name": "%s", "tempo_map_applied": %s}
+  "config": {"reference_track_name": "%s", "reference_track_guid": "%s", "folder_name": "%s", "mirror_name": "%s", "tempo_map_applied": %s, "tempo_map_fingerprint": "%s", "tempo_data_fingerprint": "%s"}
 }
 ]],
     schema_version, analysis_field,
     table.concat(guids, ", "), table.concat(region_ids, ", "),
     escaped(track_name(reference)), reaper.GetTrackGUID(reference),
-    escaped(PREFIX .. " " .. track_name(reference)), escaped(MIRROR_NAME), tempo_map_applied and "true" or "false"))
+    escaped(PREFIX .. " " .. track_name(reference)), escaped(MIRROR_NAME), tempo_map_applied and "true" or "false",
+    escaped(tempo_map_fingerprint or ""), escaped(tempo_data_fp or "")))
   file:close()
 end
 
@@ -468,15 +529,48 @@ local function apply()
   local reference_start, reference_end = reference_start_and_end(reference)
   local tempo = analysis and analysis.tempo and analysis.tempo.value
   local tempo_map_applied = prior_tempo_map_applied()
+  local tempo_map_fingerprint = ""
+  local tempo_data_fp = ""
   if type(tempo) == "table" and tonumber(tempo.bpm) then
-    if tempo_map_applied then
-      -- Already written by vgt on an earlier run; leave the live map alone.
+    tempo_data_fp = tempo_data_fingerprint(tempo)
+    local prior_map_fingerprint = prior_tempo_map_fingerprint()
+    local map_untouched = tempo_map_applied and prior_map_fingerprint ~= "" and current_tempo_fingerprint() == prior_map_fingerprint
+    if map_untouched and tempo_data_fp == prior_tempo_data_fingerprint() then
+      -- Live map still matches what vgt wrote, and the tempo data hasn't
+      -- changed either -- nothing to do. Rewriting an unchanged map would
+      -- needlessly re-shift any beat-attached reference items.
+      tempo_map_fingerprint = prior_map_fingerprint
+    elseif map_untouched then
+      -- The live map is byte-for-byte what vgt wrote last time, but the
+      -- detected/corrected tempo data has since changed -- safe to refresh.
+      if apply_tempo_map(tempo, reference_start) then
+        tempo_map_fingerprint = current_tempo_fingerprint()
+        -- Rewriting the map can shift any beat-attached reference item;
+        -- re-read its position so chords/sections/beats placed below land
+        -- exactly where the reference audio now actually sits.
+        reference_start, reference_end = reference_start_and_end(reference)
+      else
+        tempo_map_applied = false
+        tempo_data_fp = ""
+      end
+    elseif tempo_map_applied then
+      -- Either the user has since edited the map vgt wrote, or an older
+      -- sidecar recorded no fingerprint to check against. Either way we
+      -- cannot prove the map is still ours, so it is never touched again;
+      -- offer the latest tempo data non-invasively instead.
+      tempo_data_fp = ""
+      offer_beats_track(insert_at + 2, tempo, reference_start, reference_end, managed_tracks)
     elseif is_single_default_tempo_marker() then
       tempo_map_applied = apply_tempo_map(tempo, reference_start)
+      if tempo_map_applied then
+        tempo_map_fingerprint = current_tempo_fingerprint()
+        reference_start, reference_end = reference_start_and_end(reference)
+      else
+        tempo_data_fp = ""
+      end
     else
-      local beats = add_locked_muted_track(insert_at + 2, BEATS_NAME)
-      add_beat_markers(beats, tempo, reference_start, reference_end)
-      managed_tracks[#managed_tracks + 1] = beats
+      tempo_data_fp = ""
+      offer_beats_track(insert_at + 2, tempo, reference_start, reference_end, managed_tracks)
     end
   end
 
@@ -496,7 +590,7 @@ local function apply()
   -- The folder must close after every child we appended.
   reaper.SetMediaTrackInfo_Value(managed_tracks[#managed_tracks], "I_FOLDERDEPTH", -1)
 
-  write_settings(folder, managed_tracks, managed_region_ids, reference, tempo_map_applied)
+  write_settings(folder, managed_tracks, managed_region_ids, reference, tempo_map_applied, tempo_map_fingerprint, tempo_data_fp)
   reaper.MarkProjectDirty(0)
   reaper.UpdateArrange()
   reaper.PreventUIRefresh(-1)
