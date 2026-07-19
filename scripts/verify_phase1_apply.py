@@ -124,7 +124,7 @@ def verify(project_path: Path, baseline_path: Path, *, first_snapshot: dict[str,
     except (OSError, json.JSONDecodeError) as error:
         raise VerificationError(f"cannot read a valid sidecar: {error}") from error
     analysis = sidecar.get("analysis")
-    if sidecar.get("schema_version") != 2 or not isinstance(analysis, dict):
+    if sidecar.get("schema_version") not in (2, 3) or not isinstance(analysis, dict):
         _fail("Phase 1 sidecar analysis is missing")
 
     rpp_text = project_path.read_text(encoding="utf-8", errors="replace")

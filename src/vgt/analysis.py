@@ -17,6 +17,7 @@ from __future__ import annotations
 
 from pathlib import Path
 from typing import Any, Callable
+import copy
 import hashlib
 import json
 
@@ -84,6 +85,51 @@ def detect_sections(project_path: Path, source: Path, settings: dict[str, Any], 
     return sections_value
 
 
+def _refresh_chords_stage(
+    stage: dict[str, Any],
+    *,
+    input_hash: str,
+    settings_hash: str,
+    compute: Callable[..., Any],
+    force: bool = False,
+) -> dict[str, Any]:
+    """Like `sidecar.refresh_stage`, but tracks `detected` -- the pristine
+    machine-detection baseline -- independently of `value`.
+
+    Before a human verifies `value`, the two are recomputed together (there
+    is only one detector call; `detected` is just the pristine copy of its
+    result), same as `refresh_stage`.
+
+    Once a human has verified `value`, `refresh_stage` freezes it for good --
+    but `detected` keeps tracking the current audio/settings via its own
+    `detected_input_hash`/`detected_settings_hash` pair, recomputing whenever
+    those change (or `force`). `value` and `human_verified` are never touched
+    by that recompute; only `detected` moves, preserving the human's
+    correction while keeping the machine baseline current (#19)."""
+    if not stage.get("human_verified"):
+        refreshed = refresh_stage(stage, input_hash=input_hash, settings_hash=settings_hash, compute=compute, force=force)
+        if refreshed is stage:
+            return stage
+        return {
+            **refreshed,
+            "detected": copy.deepcopy(refreshed["value"]),
+            "detected_input_hash": input_hash,
+            "detected_settings_hash": settings_hash,
+        }
+
+    detected_is_current = (
+        stage.get("detected_input_hash") == input_hash and stage.get("detected_settings_hash") == settings_hash
+    )
+    if not force and detected_is_current:
+        return stage
+    return {
+        **stage,
+        "detected": compute(render_artifact=False),
+        "detected_input_hash": input_hash,
+        "detected_settings_hash": settings_hash,
+    }
+
+
 def _tempo_beat_times(tempo_value: dict[str, Any] | None, source: Path) -> list[float]:
     """Beat timestamps backing the chords stage's grid alignment: reused from
     the tempo stage's persisted value when present, otherwise (e.g. after a
@@ -100,21 +146,37 @@ def _tempo_beat_times(tempo_value: dict[str, Any] | None, source: Path) -> list[
     return beat_times
 
 
-def detect_chords(project_path: Path, source: Path, settings: dict[str, Any], analysis: dict[str, Any]) -> dict[str, Any]:
+def detect_chords(
+    project_path: Path,
+    source: Path,
+    settings: dict[str, Any],
+    analysis: dict[str, Any],
+    *,
+    render_artifact: bool = True,
+) -> dict[str, Any]:
     """Beat-aligned maj/min chord segments (see chords.py), snapped to the
     tempo stage's shared beat grid, plus a chord-sheet text artifact rendered
-    next to the sidecar for by-eye verification."""
+    next to the sidecar for by-eye verification.
+
+    `render_artifact=False` skips writing that artifact: used when this is
+    only refreshing the `detected` baseline of an already human-verified
+    stage (see `_refresh_chords_stage`), so the on-disk `.vgt-chords.txt` --
+    documented as reflecting the effective, human-corrected `value` -- isn't
+    silently overwritten with the raw machine detection the human corrected
+    away from."""
     beat_times = _tempo_beat_times(analysis["tempo"]["value"], source)
     try:
         chords_value = _detect_chords(source, beat_times, settings)
     except ChordDetectionError as exc:
         raise AnalysisError(str(exc)) from exc
-    artifact = render_chord_sheet(chords_value, chord_sheet_path(project_path))
-    chords_value["chord_sheet_path"] = artifact.name
+    artifact_path = chord_sheet_path(project_path)
+    if render_artifact:
+        render_chord_sheet(chords_value, artifact_path)
+    chords_value["chord_sheet_path"] = artifact_path.name
     return chords_value
 
 
-_DETECTORS: dict[str, Callable[[Path, Path, dict[str, Any], dict[str, Any]], Any]] = {
+_DETECTORS: dict[str, Callable[..., Any]] = {
     "tempo": detect_tempo,
     "key": detect_key,
     "sections": detect_sections,
@@ -173,19 +235,27 @@ def analyze(
         stage_settings = settings.get(stage, {})
         settings_hash = _hash_settings(stage_settings)
         if analysis[stage].get("human_verified"):
-            emit(f"[{position}/{total}] {stage} — human-verified, keeping")
+            if stage == "chords" and (
+                force
+                or analysis[stage].get("detected_input_hash") != input_hash
+                or analysis[stage].get("detected_settings_hash") != settings_hash
+            ):
+                emit(f"[{position}/{total}] {stage} — human-verified value kept; refreshing detected baseline…")
+            else:
+                emit(f"[{position}/{total}] {stage} — human-verified, keeping")
         elif not force and stage_is_current(analysis[stage], input_hash=input_hash, settings_hash=settings_hash):
             emit(f"[{position}/{total}] {stage} — unchanged, using cached result")
         elif force:
             emit(f"[{position}/{total}] {stage} — re-analyzing (forced)…")
         else:
             emit(f"[{position}/{total}] {stage} — analyzing…")
-        analysis[stage] = refresh_stage(
+        refresh = _refresh_chords_stage if stage == "chords" else refresh_stage
+        analysis[stage] = refresh(
             analysis[stage],
             input_hash=input_hash,
             settings_hash=settings_hash,
-            compute=lambda stage=stage, stage_settings=stage_settings: _DETECTORS[stage](
-                project_path, source, stage_settings, analysis
+            compute=lambda stage=stage, stage_settings=stage_settings, **kwargs: _DETECTORS[stage](
+                project_path, source, stage_settings, analysis, **kwargs
             ),
             force=force,
         )

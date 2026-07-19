@@ -106,9 +106,21 @@ Only major/minor triads are ever recognized — 7ths, sus, add9, etc. all
 collapse to their nearest maj/min match — so every result is flagged
 `"vocabulary": "maj_min"`.
 
-Every run also renders a **chord-sheet artifact** —
+Every run that (re)computes `value` also renders a **chord-sheet artifact** —
 `<project>.vgt-chords.txt`, next to the sidecar — a plain-text timestamp +
-chord-label listing for by-eye verification.
+chord-label listing of `value`, for by-eye verification.
+
+The `chords` stage stores two parallel chord lists: `value` (the effective,
+human-correctable chords used everywhere else — apply, the chord sheet) and
+`detected` (the pristine machine detection, untouched by corrections). With
+no corrections the two are equal. Once `value` is human-verified it freezes
+for good, but `detected` keeps tracking the current reference audio and
+detector settings on every `vgt analyze` run — it's the machine baseline, so
+it stays live even while the human's `value` is frozen. Refreshing `detected`
+in that state never touches the chord-sheet artifact, since that artifact
+documents `value`, not the machine baseline. Keeping both around is what
+makes a future "restore the original detection over this time range" action
+possible.
 
 ### Sections
 
@@ -181,8 +193,9 @@ for the same pointer from the CLI). It scans the `[vgt] Chords` track's items
 — position, length, take name — by GUID against the sidecar's
 `managed_track_guids`, so it only ever reads objects vgt itself created, and
 writes them back into the sidecar as `analysis.chords.value.segments` with
-`chords.human_verified: true`. Every other analysis stage (tempo, key,
-sections) and the rest of the sidecar are left untouched.
+`chords.human_verified: true`. It never touches `analysis.chords.detected` —
+the original machine detection stays available there — nor any other
+analysis stage (tempo, key, sections) or the rest of the sidecar.
 
 From then on: `vgt analyze` skips the chords stage (human-verified stages are
 never recomputed), and re-running the apply ReaScript repaints `[vgt] Chords`

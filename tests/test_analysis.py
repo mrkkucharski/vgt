@@ -47,19 +47,67 @@ def test_upgrade_keeps_v1_fields_and_adds_v2_analysis_skeleton() -> None:
         "config": {"reference_track_guid": REFERENCE_GUID},
     }
 
-    v2 = upgrade(v1)
+    upgraded = upgrade(v1)
 
-    assert v2["schema_version"] == 2
-    assert v2["managed_track_guids"] == ["{AAAA}", "{BBBB}"]
-    assert v2["config"] == {"reference_track_guid": REFERENCE_GUID}
+    assert upgraded["schema_version"] == 3
+    assert upgraded["managed_track_guids"] == ["{AAAA}", "{BBBB}"]
+    assert upgraded["config"] == {"reference_track_guid": REFERENCE_GUID}
     for stage in ANALYSIS_STAGES:
-        assert v2["analysis"][stage] == {
+        expected = {
             "value": None,
             "human_verified": False,
             "input_hash": None,
             "settings_hash": None,
         }
-    assert v2["analysis"]["provenance"]["tool"] == "vgt"
+        if stage == "chords":
+            expected["detected"] = None
+            expected["detected_input_hash"] = None
+            expected["detected_settings_hash"] = None
+        assert upgraded["analysis"][stage] == expected
+    assert upgraded["analysis"]["provenance"]["tool"] == "vgt"
+
+
+def test_upgrade_backfills_detected_from_value_for_v2_chords() -> None:
+    """A v2 sidecar has no `detected` field on the chords stage -- the v2 -> v3
+    migration seeds it from `value` (best effort; if `value` was already a
+    human correction, the true original detection is unrecoverable)."""
+    v2 = {
+        "schema_version": 2,
+        "config": {"reference_track_guid": REFERENCE_GUID},
+        "analysis": {
+            "chords": {
+                "value": {"segments": [{"start_seconds": 0.0, "end_seconds": 1.0, "chord": "C"}]},
+                "human_verified": True,
+                "input_hash": "abc",
+                "settings_hash": "def",
+            }
+        },
+    }
+
+    upgraded = upgrade(v2)
+
+    chords = upgraded["analysis"]["chords"]
+    assert chords["detected"] == chords["value"]
+    assert chords["detected"] is not chords["value"]  # backfill copies, doesn't alias
+
+
+def test_upgrade_does_not_clobber_an_existing_detected_field() -> None:
+    v3 = {
+        "schema_version": 3,
+        "analysis": {
+            "chords": {
+                "value": {"segments": [{"start_seconds": 0.0, "end_seconds": 1.0, "chord": "C"}]},
+                "detected": {"segments": [{"start_seconds": 0.0, "end_seconds": 1.0, "chord": "G"}]},
+                "human_verified": True,
+                "input_hash": "abc",
+                "settings_hash": "def",
+            }
+        },
+    }
+
+    upgraded = upgrade(v3)
+
+    assert upgraded["analysis"]["chords"]["detected"]["segments"][0]["chord"] == "G"
 
 
 def test_analyze_requires_an_existing_sidecar(tmp_path: Path) -> None:
@@ -75,7 +123,7 @@ def test_analyze_writes_v2_sidecar_with_skeleton_and_provenance(tmp_path: Path) 
 
     result = analyze(project)
 
-    assert result["schema_version"] == 2
+    assert result["schema_version"] == 3
     assert result["managed_track_guids"] == ["{AAAA}", "{BBBB}"]  # phase 0 fields intact
     for stage in ANALYSIS_STAGES:
         assert result["analysis"][stage]["input_hash"] is not None
@@ -122,6 +170,9 @@ def test_analyze_writes_v2_sidecar_with_skeleton_and_provenance(tmp_path: Path) 
         assert segment["end_seconds"] in tempo_beat_times
     chord_sheet = project.with_name(chords["chord_sheet_path"])
     assert chord_sheet.is_file()
+
+    # No correction has been made yet, so `detected` mirrors `value` exactly.
+    assert result["analysis"]["chords"]["detected"] == chords
 
     on_disk = read_sidecar(project)
     assert on_disk == result
@@ -255,6 +306,99 @@ def test_key_and_chord_corrections_survive_rerun(tmp_path: Path) -> None:
     assert result["analysis"]["key"]["human_verified"] is True
     assert result["analysis"]["chords"]["value"] == corrected_chords
     assert result["analysis"]["chords"]["human_verified"] is True
+    # The original detection (backfilled from `value` since this sidecar was
+    # written without a `detected` field) is preserved, not overwritten by
+    # the correction.
+    assert result["analysis"]["chords"]["detected"] == corrected_chords
+
+
+def test_read_chords_style_correction_preserves_original_detected(tmp_path: Path) -> None:
+    """Mirrors what `vgt_read_chords.lua` does: overwrite only
+    `value.segments` and set `human_verified`, leaving `detected` (and every
+    other field the detector wrote) untouched -- the core guarantee #19
+    adds. A subsequent `analyze()` with unchanged audio/settings must not
+    recompute `detected` either -- it only tracks the current inputs, and
+    they haven't moved (see the sibling test below for the case where they
+    do)."""
+    project = _project_copy(tmp_path)
+    _write_v1_sidecar(project)
+    first = analyze(project)
+
+    original_detected = first["analysis"]["chords"]["detected"]
+    assert original_detected == first["analysis"]["chords"]["value"]
+
+    sidecar = read_sidecar(project)
+    corrected_segments = [{"start_seconds": 0.0, "end_seconds": 1.0, "chord": "C:maj"}]
+    sidecar["analysis"]["chords"]["value"]["segments"] = corrected_segments
+    sidecar["analysis"]["chords"]["human_verified"] = True
+    write_sidecar(project, sidecar)
+
+    result = analyze(project)
+
+    chords = result["analysis"]["chords"]
+    assert chords["value"]["segments"] == corrected_segments
+    assert chords["human_verified"] is True
+    assert chords["detected"] == original_detected
+    assert chords["detected"]["segments"] != corrected_segments
+
+
+def test_detected_keeps_refreshing_against_current_settings_once_value_is_human_verified(tmp_path: Path) -> None:
+    """Per #19's design leaning: `detected` is the machine baseline and stays
+    live -- even once `value` is human-verified and frozen, a settings change
+    still recomputes `detected` (while `value`/`human_verified` don't move).
+    The detector is deterministic given the same audio, so the recomputed
+    `detected.segments` come out identical -- what's observable is that the
+    recompute actually ran, tracked by `detected_settings_hash` moving to the
+    new settings hash instead of staying pinned to the stale one."""
+    project = _project_copy(tmp_path)
+    _write_v1_sidecar(project)
+    analyze(project)
+
+    sidecar = read_sidecar(project)
+    stale_detected_settings_hash = sidecar["analysis"]["chords"]["detected_settings_hash"]
+    corrected_segments = [{"start_seconds": 0.0, "end_seconds": 1.0, "chord": "C:maj"}]
+    sidecar["analysis"]["chords"]["value"]["segments"] = corrected_segments
+    sidecar["analysis"]["chords"]["human_verified"] = True
+    write_sidecar(project, sidecar)
+
+    # Same audio, but different chord-detector settings -- `detected` should
+    # track this even though `value` is frozen by the human correction.
+    result = analyze(project, settings={"chords": {"note": "force-recompute"}})
+
+    chords = result["analysis"]["chords"]
+    assert chords["value"]["segments"] == corrected_segments
+    assert chords["human_verified"] is True
+    assert chords["detected_settings_hash"] != stale_detected_settings_hash
+
+
+def test_refreshing_detected_after_verification_does_not_overwrite_chord_sheet_artifact(tmp_path: Path) -> None:
+    """The `.vgt-chords.txt` chord-sheet artifact documents the effective,
+    human-corrected `value` (see README's Chords section), not the machine
+    baseline. Refreshing `detected` after `value` is human-verified must not
+    re-render that file with the raw new detection -- otherwise the on-disk
+    verification artifact would silently diverge from the corrected `value`
+    it's supposed to reflect, even though the JSON `value` itself stays
+    correct (#19 fix-cycle-2)."""
+    project = _project_copy(tmp_path)
+    _write_v1_sidecar(project)
+    first = analyze(project)
+
+    chord_sheet = project.with_name(first["analysis"]["chords"]["value"]["chord_sheet_path"])
+    contents_before_correction = chord_sheet.read_text(encoding="utf-8")
+
+    sidecar = read_sidecar(project)
+    corrected_segments = [{"start_seconds": 0.0, "end_seconds": 1.0, "chord": "C:maj"}]
+    sidecar["analysis"]["chords"]["value"]["segments"] = corrected_segments
+    sidecar["analysis"]["chords"]["human_verified"] = True
+    write_sidecar(project, sidecar)
+
+    # Same audio, but different chord-detector settings -- forces `detected`
+    # to recompute even though `value` is frozen by the human correction.
+    result = analyze(project, settings={"chords": {"note": "force-recompute"}})
+
+    chords = result["analysis"]["chords"]
+    assert chords["detected_input_hash"]  # sanity: the refresh path did run
+    assert chord_sheet.read_text(encoding="utf-8") == contents_before_correction
 
 
 def test_section_rename_and_boundary_nudge_survive_rerun(tmp_path: Path) -> None:
@@ -292,4 +436,4 @@ def test_cli_analyze_invocation(tmp_path: Path, capsys: pytest.CaptureFixture[st
     assert main(["analyze", str(project)]) == 0
 
     output = json.loads(capsys.readouterr().out)
-    assert output["schema_version"] == 2
+    assert output["schema_version"] == 3
