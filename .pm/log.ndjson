@@ -3674,3 +3674,17 @@
 {"ts": "2026-07-19T15:45:11.807798+00:00", "project": "vgt", "event": "orchestrator.pass_outcome", "detail": {"outcomes": ["deferred"], "scheduled": 0, "followups_created": 0}}
 {"ts": "2026-07-19T15:45:11.807975+00:00", "project": "vgt", "event": "orchestrator.no_capacity", "detail": {"message": "work is available, but scheduler capacity or budget headroom is exhausted"}}
 {"ts": "2026-07-19T15:46:24.159202+00:00", "project": "vgt", "event": "pr.created", "detail": {"issue": 26, "pr": 30, "branch": "issue-26-read-renamed-section-regions-back-as-ver"}}
+{"ts": "2026-07-19T15:46:27.799485+00:00", "project": "vgt", "event": "agent.review_started", "detail": {"issue": 26, "agent": "claude", "pr": 30, "pid": 91783, "process_started_at": "Sun Jul 19 17:46:25 2026"}}
+{"ts": "2026-07-19T15:46:28.195362+00:00", "project": "vgt", "event": "scheduler.stall_cleared", "detail": {"category": "deferred_passes", "reason": "budget", "first_seen_at": "2026-07-19T14:47:56.834939+00:00", "last_seen_at": "2026-07-19T15:45:11.730510+00:00", "consecutive_passes": 50}}
+{"ts": "2026-07-19T15:46:28.207805+00:00", "project": "vgt", "event": "orchestrator.pass_outcome", "detail": {"outcomes": ["deferred", "scheduled"], "scheduled": 1, "followups_created": 0}}
+{"ts": "2026-07-19T15:47:37.206724+00:00", "project": "vgt", "event": "orchestrator.pass_outcome", "detail": {"outcomes": ["deferred"], "scheduled": 0, "followups_created": 0}}
+{"ts": "2026-07-19T15:47:37.206880+00:00", "project": "vgt", "event": "orchestrator.no_capacity", "detail": {"message": "work is available, but scheduler capacity or budget headroom is exhausted"}}
+{"ts": "2026-07-19T15:48:45.791308+00:00", "project": "vgt", "event": "orchestrator.pass_outcome", "detail": {"outcomes": ["deferred"], "scheduled": 0, "followups_created": 0}}
+{"ts": "2026-07-19T15:48:45.791480+00:00", "project": "vgt", "event": "orchestrator.no_capacity", "detail": {"message": "work is available, but scheduler capacity or budget headroom is exhausted"}}
+{"ts": "2026-07-19T15:49:54.411180+00:00", "project": "vgt", "event": "orchestrator.pass_outcome", "detail": {"outcomes": ["deferred"], "scheduled": 0, "followups_created": 0}}
+{"ts": "2026-07-19T15:49:54.411450+00:00", "project": "vgt", "event": "orchestrator.no_capacity", "detail": {"message": "work is available, but scheduler capacity or budget headroom is exhausted"}}
+{"ts": "2026-07-19T15:51:02.902833+00:00", "project": "vgt", "event": "orchestrator.pass_outcome", "detail": {"outcomes": ["deferred"], "scheduled": 0, "followups_created": 0}}
+{"ts": "2026-07-19T15:51:02.902999+00:00", "project": "vgt", "event": "orchestrator.no_capacity", "detail": {"message": "work is available, but scheduler capacity or budget headroom is exhausted"}}
+{"ts": "2026-07-19T15:52:13.662416+00:00", "project": "vgt", "event": "issue.closed_labels_cleaned", "detail": {"issue": 26, "removed": ["status:working"]}}
+{"ts": "2026-07-19T15:52:14.183502+00:00", "project": "vgt", "event": "worktree.cleaned_up", "detail": {"issue": 26, "branch": "issue-26-read-renamed-section-regions-back-as-ver", "worktree": "/Users/marekkucharski/projects/.pm-worktrees/vgt/issue-26"}}
+{"ts": "2026-07-19T15:52:18.612543+00:00", "project": "vgt", "event": "orchestrator.issue_selected", "detail": {"issue": 27, "method": "local_priorities"}}
