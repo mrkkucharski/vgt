@@ -291,11 +291,13 @@ local function add_labeled_item(track, start_time, end_time, label, locked)
   reaper.GetSetMediaItemTakeInfo_String(take, "P_NAME", label, true)
 end
 
-local function add_locked_muted_track(index, name)
+local function add_locked_muted_track(index, name, muted)
   reaper.InsertTrackAtIndex(index, true)
   local track = reaper.GetTrack(0, index)
   reaper.GetSetMediaTrackInfo_String(track, "P_NAME", name, true)
-  reaper.SetMediaTrackInfo_Value(track, "B_MUTE", 1)
+  -- Muted tracks render dark-on-dark in REAPER; the chords track has no audio
+  -- to mute, so it's created unmuted purely so its labels stay readable.
+  reaper.SetMediaTrackInfo_Value(track, "B_MUTE", muted == false and 0 or 1)
   return track
 end
 
@@ -464,7 +466,7 @@ local function apply()
   local chords = analysis and analysis.chords and analysis.chords.value
   local segments = type(chords) == "table" and (chords.segments or chords) or nil
   if type(segments) == "table" then
-    local chords_track = add_locked_muted_track(reaper.CountTracks(0), CHORDS_NAME)
+    local chords_track = add_locked_muted_track(reaper.CountTracks(0), CHORDS_NAME, false)
     for _, chord in ipairs(segments) do
       -- locked = false: chord items are the editing surface for corrections (see add_labeled_item).
       add_labeled_item(chords_track, reference_start + (tonumber(chord.start_seconds) or 0), reference_start + (tonumber(chord.end_seconds) or 0), tostring(chord.chord or chord.label or "N"), false)
