@@ -110,6 +110,15 @@ Every run also renders a **chord-sheet artifact** —
 `<project>.vgt-chords.txt`, next to the sidecar — a plain-text timestamp +
 chord-label listing for by-eye verification.
 
+The `chords` stage stores two parallel chord lists: `value` (the effective,
+human-correctable chords used everywhere else — apply, the chord sheet) and
+`detected` (the pristine machine detection, untouched by corrections). With
+no corrections the two are equal. `detected` is refreshed by `vgt analyze`
+in lockstep with `value`; once `value` is human-verified it freezes, and
+`detected` freezes alongside it, preserving exactly the detection a
+correction was made from. Keeping both around is what makes a future
+"restore the original detection over this time range" action possible.
+
 ### Sections
 
 The `sections` stage detects song-structure boundaries + generic labels
@@ -181,8 +190,9 @@ for the same pointer from the CLI). It scans the `[vgt] Chords` track's items
 — position, length, take name — by GUID against the sidecar's
 `managed_track_guids`, so it only ever reads objects vgt itself created, and
 writes them back into the sidecar as `analysis.chords.value.segments` with
-`chords.human_verified: true`. Every other analysis stage (tempo, key,
-sections) and the rest of the sidecar are left untouched.
+`chords.human_verified: true`. It never touches `analysis.chords.detected` —
+the original machine detection stays available there — nor any other
+analysis stage (tempo, key, sections) or the rest of the sidecar.
 
 From then on: `vgt analyze` skips the chords stage (human-verified stages are
 never recomputed), and re-running the apply ReaScript repaints `[vgt] Chords`

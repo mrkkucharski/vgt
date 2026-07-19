@@ -156,6 +156,7 @@ def test_read_chords_writes_corrected_segments_as_human_verified(tmp_path: Path)
         "tempo": {"value": {"bpm": 120.0}, "human_verified": True, "input_hash": "h1", "settings_hash": "h2"},
         "chords": {
             "value": {"segments": [{"start_seconds": 0.0, "end_seconds": 1.0, "chord": "Am"}], "vocabulary": "maj_min", "backend": "librosa"},
+            "detected": {"segments": [{"start_seconds": 0.0, "end_seconds": 1.0, "chord": "Am"}], "vocabulary": "maj_min", "backend": "librosa"},
             "human_verified": False,
             "input_hash": "old-hash",
             "settings_hash": "old-settings",
@@ -164,7 +165,7 @@ def test_read_chords_writes_corrected_segments_as_human_verified(tmp_path: Path)
     sidecar.write_text(
         json.dumps(
             {
-                "schema_version": 2,
+                "schema_version": 3,
                 "managed_track_guids": [chords_guid, other_guid],
                 "config": {"reference_track_guid": reference_guid},
                 "analysis": analysis,
@@ -216,10 +217,13 @@ _G.__messages = messages
             "vocabulary": "maj_min",
             "backend": "librosa",
         },
+        "detected": analysis["chords"]["detected"],
         "human_verified": True,
         "input_hash": "old-hash",
         "settings_hash": "old-settings",
     }
+    # `detected` (the original machine detection) is untouched by the correction.
+    assert data["analysis"]["chords"]["detected"] == analysis["chords"]["detected"]
     # The tempo stage (untouched) round-trips byte-for-byte in structure.
     assert data["analysis"]["tempo"] == analysis["tempo"]
 

@@ -17,6 +17,7 @@ from __future__ import annotations
 
 from pathlib import Path
 from typing import Any, Callable
+import copy
 import hashlib
 import json
 
@@ -82,6 +83,28 @@ def detect_sections(project_path: Path, source: Path, settings: dict[str, Any], 
     if sections_value:
         render_section_timeline(sections_value, section_timeline_path(project_path))
     return sections_value
+
+
+def _refresh_chords_stage(
+    stage: dict[str, Any],
+    *,
+    input_hash: str,
+    settings_hash: str,
+    compute: Callable[[], Any],
+    force: bool = False,
+) -> dict[str, Any]:
+    """Like `sidecar.refresh_stage`, but also keeps `detected` in lockstep
+    with `value` on every actual recompute (there is only one detector call;
+    `detected` is just the pristine copy of its result). Once a human has
+    verified `value`, `refresh_stage`'s early return freezes the whole stage
+    -- including `detected` -- so the original detection a correction was
+    made from is preserved exactly, and re-analyzing never re-triggers the
+    detector (which would otherwise also overwrite the chord-sheet artifact
+    with a reading that no longer matches the corrected `value`)."""
+    refreshed = refresh_stage(stage, input_hash=input_hash, settings_hash=settings_hash, compute=compute, force=force)
+    if refreshed is stage:
+        return stage
+    return {**refreshed, "detected": copy.deepcopy(refreshed["value"])}
 
 
 def _tempo_beat_times(tempo_value: dict[str, Any] | None, source: Path) -> list[float]:
@@ -180,7 +203,8 @@ def analyze(
             emit(f"[{position}/{total}] {stage} — re-analyzing (forced)…")
         else:
             emit(f"[{position}/{total}] {stage} — analyzing…")
-        analysis[stage] = refresh_stage(
+        refresh = _refresh_chords_stage if stage == "chords" else refresh_stage
+        analysis[stage] = refresh(
             analysis[stage],
             input_hash=input_hash,
             settings_hash=settings_hash,
