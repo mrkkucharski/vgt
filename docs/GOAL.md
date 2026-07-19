@@ -65,7 +65,9 @@ Phase 1 delivers:
   - a **tempo map** — subject to the tempo-map rule: written only when the project still has a single default
     tempo marker; otherwise left untouched and offered non-invasively (a muted `[vgt]` beat-marker track);
   - `[vgt]` **section regions** (intro/verse/chorus/…), renamable by the user;
-  - a **muted, locked `[vgt] Chords`** track carrying the beat-aligned chord labels as text items.
+  - a **muted `[vgt] Chords`** track carrying the beat-aligned chord labels as text items, editable on the
+    timeline and read back into the sidecar as human-verified corrections (see README's "Correcting chords in
+    REAPER").
 
 **Out of scope for phase 1** (deferred to later phases): stem separation, guitar MIDI reference generation,
 practice controls (stem muting / looping / tempo-ramp), and performance scoring. The full song-prep pipeline in

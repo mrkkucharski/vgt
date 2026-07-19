@@ -275,15 +275,17 @@ local function copy_file_backed_items(source, destination)
   end
 end
 
-local function add_labeled_item(track, start_time, end_time, label)
+local function add_labeled_item(track, start_time, end_time, label, locked)
   if end_time <= start_time then return end
   local item = reaper.AddMediaItemToTrack(track)
   reaper.SetMediaItemInfo_Value(item, "D_POSITION", start_time)
   reaper.SetMediaItemInfo_Value(item, "D_LENGTH", end_time - start_time)
   reaper.SetMediaItemInfo_Value(item, "C_BEATATTACHMODE", 0)
-  -- REAPER locks items rather than whole tracks; locking every vgt label item
-  -- makes the muted label lane effectively read-only in the arrange view.
-  reaper.SetMediaItemInfo_Value(item, "C_LOCK", 1)
+  -- REAPER locks items rather than whole tracks; locking a vgt label item
+  -- makes it read-only in the arrange view. Chord items are deliberately left
+  -- unlocked (locked == false) so the user can correct them on the timeline;
+  -- vgt_read_chords.lua reads those edits back into the sidecar.
+  if locked ~= false then reaper.SetMediaItemInfo_Value(item, "C_LOCK", 1) end
   reaper.GetSetMediaItemInfo_String(item, "P_NOTES", label, true)
   local take = reaper.AddTakeToMediaItem(item)
   reaper.GetSetMediaItemTakeInfo_String(take, "P_NAME", label, true)
@@ -462,7 +464,8 @@ local function apply()
   if type(segments) == "table" then
     local chords_track = add_locked_muted_track(reaper.CountTracks(0), CHORDS_NAME)
     for _, chord in ipairs(segments) do
-      add_labeled_item(chords_track, reference_start + (tonumber(chord.start_seconds) or 0), reference_start + (tonumber(chord.end_seconds) or 0), tostring(chord.chord or chord.label or "N"))
+      -- locked = false: chord items are the editing surface for corrections (see add_labeled_item).
+      add_labeled_item(chords_track, reference_start + (tonumber(chord.start_seconds) or 0), reference_start + (tonumber(chord.end_seconds) or 0), tostring(chord.chord or chord.label or "N"), false)
     end
     managed_tracks[#managed_tracks + 1] = chords_track
   end

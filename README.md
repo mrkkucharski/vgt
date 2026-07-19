@@ -139,9 +139,11 @@ each run, not committed alongside the project.
 ## Apply analysis (Phase 1)
 
 Run the same ReaScript again after `vgt analyze`. It reads the sidecar and adds
-`[vgt]` section regions plus a muted, locked `[vgt] Chords` track whose text
-items carry the detected beat-aligned labels. It sets vgt-owned audio items to
-time-based positioning before any tempo changes.
+`[vgt]` section regions plus a muted `[vgt] Chords` track whose text items
+carry the detected beat-aligned labels. Unlike every other vgt-owned label
+track, chord items are left **unlocked** — they are the editing surface for
+chord corrections (see below). It sets vgt-owned audio items to time-based
+positioning before any tempo changes.
 
 When REAPER still has exactly its single default 120 BPM / 4/4 tempo marker,
 the action writes the detected tempo map. If the project already has any other
@@ -159,3 +161,29 @@ uv run python scripts/verify_phase1_apply.py "$PROJECT" \
 To run the full disposable REAPER proof (including both the default-map and
 existing-map branches, each applied twice), use `--run-live` with the same
 baseline argument instead of supplying a project path.
+
+## Correcting chords in REAPER
+
+Auto-detected chords are sometimes wrong, and correcting raw second-offsets
+by hand in the sidecar is awkward. Instead, edit the chords directly on the
+`[vgt] Chords` track's timeline — its items are unlocked (though still muted,
+so they never play):
+
+- **rename** an item's take to relabel a chord (e.g. `Am` → `A`);
+- **move or resize** an item to adjust its boundaries;
+- **split** an item (REAPER's native split action) to break one chord into two;
+- **delete** an item to drop a spurious chord, or **add** a new item (with a
+  take name) to insert one.
+
+When done, load [reascript/vgt_read_chords.lua](reascript/vgt_read_chords.lua)
+in REAPER's Action List and run it (or run `vgt read-chords [project.rpp]`
+for the same pointer from the CLI). It scans the `[vgt] Chords` track's items
+— position, length, take name — by GUID against the sidecar's
+`managed_track_guids`, so it only ever reads objects vgt itself created, and
+writes them back into the sidecar as `analysis.chords.value.segments` with
+`chords.human_verified: true`. Every other analysis stage (tempo, key,
+sections) and the rest of the sidecar are left untouched.
+
+From then on: `vgt analyze` skips the chords stage (human-verified stages are
+never recomputed), and re-running the apply ReaScript repaints `[vgt] Chords`
+identically from the corrected sidecar — the round trip is idempotent.
