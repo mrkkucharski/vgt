@@ -51,7 +51,9 @@ def test_beats_track_stays_muted_but_chords_track_is_created_unmuted() -> None:
     # Issue #21: the chords track has no audio, so muting it only made its
     # (dark-on-dark) labels unreadable. Beats keeps its default muted behavior.
     assert 'reaper.SetMediaTrackInfo_Value(track, "B_MUTE", muted == false and 0 or 1)' in script
-    assert "add_locked_muted_track(insert_at + 2, BEATS_NAME)" in script
+    assert "local function offer_beats_track(index, tempo, reference_start, reference_end, managed_tracks)" in script
+    assert "local beats = add_locked_muted_track(index, BEATS_NAME)" in script
+    assert "offer_beats_track(insert_at + 2, tempo, reference_start, reference_end, managed_tracks)" in script
     assert "add_locked_muted_track(reaper.CountTracks(0), CHORDS_NAME, false)" in script
 
 
@@ -118,6 +120,69 @@ def test_apply_removes_only_sidecar_recorded_region_ids(tmp_path: Path) -> None:
     assert result.stdout == "17:true:1"
 
 
+def test_current_tempo_fingerprint_reflects_every_live_marker(tmp_path: Path) -> None:
+    """The fingerprint must capture every marker's time/bpm/timesig, in order,
+    so any live edit (add, remove, or change one) is detectable on re-apply."""
+    script = APPLY_SCRIPT.read_text()
+    helpers_end = script.index("local function write_settings")
+    lua_program = "\n".join(
+        [
+            "local markers = {{time = 0, bpm = 120, num = 4, den = 4}, {time = 10.5, bpm = 140.25, num = 3, den = 4}}",
+            "reaper = {}",
+            "function reaper.EnumProjects() return true, arg[1] end",
+            "function reaper.CountTempoTimeSigMarkers() return #markers end",
+            "function reaper.GetTempoTimeSigMarker(_, index)",
+            "  local marker = markers[index + 1]",
+            "  return true, marker.time, 0, 0, marker.bpm, marker.num, marker.den",
+            "end",
+            script[:helpers_end],
+            "io.write(current_tempo_fingerprint())",
+        ]
+    )
+    result = subprocess.run(
+        ["lua", "-", str(tmp_path / "song.RPP")], input=lua_program, text=True, capture_output=True, check=True
+    )
+    assert result.stdout == "0.000000:120.000:4:4;10.500000:140.250:3:4"
+
+
+def test_prior_tempo_map_fingerprint_reads_the_sidecar_config_field(tmp_path: Path) -> None:
+    sidecar = tmp_path / "song.vgt"
+    sidecar.write_text(json.dumps({"config": {"tempo_map_fingerprint": "0.000000:120.000:4:4"}}))
+    script = APPLY_SCRIPT.read_text()
+    helpers_end = script.index("local function write_settings")
+    lua_program = "\n".join(
+        [
+            "reaper = {EnumProjects = function() return true, arg[1] end}",
+            script[:helpers_end],
+            "io.write(prior_tempo_map_fingerprint())",
+        ]
+    )
+    result = subprocess.run(
+        ["lua", "-", str(tmp_path / "song.RPP")], input=lua_program, text=True, capture_output=True, check=True
+    )
+    assert result.stdout == "0.000000:120.000:4:4"
+
+
+def test_prior_tempo_map_fingerprint_is_empty_when_never_recorded(tmp_path: Path) -> None:
+    """Older sidecars (pre-issue-#27) recorded tempo_map_applied but no
+    fingerprint -- treated as unverifiable, never as a match."""
+    sidecar = tmp_path / "song.vgt"
+    sidecar.write_text(json.dumps({"config": {"tempo_map_applied": True}}))
+    script = APPLY_SCRIPT.read_text()
+    helpers_end = script.index("local function write_settings")
+    lua_program = "\n".join(
+        [
+            "reaper = {EnumProjects = function() return true, arg[1] end}",
+            script[:helpers_end],
+            "io.write('[', prior_tempo_map_fingerprint(), ']')",
+        ]
+    )
+    result = subprocess.run(
+        ["lua", "-", str(tmp_path / "song.RPP")], input=lua_program, text=True, capture_output=True, check=True
+    )
+    assert result.stdout == "[]"
+
+
 def test_live_verifier_requires_a_saved_baseline_and_is_read_only() -> None:
     script = VERIFY_SCRIPT.read_text()
     assert "--baseline" in script
@@ -137,6 +202,17 @@ def test_phase1_live_verifier_checks_fallback_and_has_an_opt_in_reaper_proof() -
     assert "EnumProjectMarkers3" in script
     assert "User-created region" in script
     assert "managed_region_ids" in script
+
+
+def test_phase1_live_verifier_has_an_opt_in_tempo_refresh_proof() -> None:
+    """Issue #27: re-apply must refresh a still-untouched vgt tempo map with
+    fresh tempo data, but freeze it (and fall back to [vgt] Beats) forever
+    once a human has edited it by hand."""
+    script = PHASE1_VERIFY_SCRIPT.read_text()
+    assert "--run-live-tempo-refresh" in script
+    assert "def run_live_tempo_refresh(" in script
+    assert "tempo_map_fingerprint" in script
+    assert "SetTempoTimeSigMarker(0, 0, 0, -1, -1, 155, 3, 4, false)" in script
 
 
 def test_read_chords_only_reads_reaper_state_and_never_mutates_the_rpp() -> None:
