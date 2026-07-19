@@ -106,9 +106,9 @@ Only major/minor triads are ever recognized — 7ths, sus, add9, etc. all
 collapse to their nearest maj/min match — so every result is flagged
 `"vocabulary": "maj_min"`.
 
-Every run also renders a **chord-sheet artifact** —
+Every run that (re)computes `value` also renders a **chord-sheet artifact** —
 `<project>.vgt-chords.txt`, next to the sidecar — a plain-text timestamp +
-chord-label listing for by-eye verification.
+chord-label listing of `value`, for by-eye verification.
 
 The `chords` stage stores two parallel chord lists: `value` (the effective,
 human-correctable chords used everywhere else — apply, the chord sheet) and
@@ -116,9 +116,11 @@ human-correctable chords used everywhere else — apply, the chord sheet) and
 no corrections the two are equal. Once `value` is human-verified it freezes
 for good, but `detected` keeps tracking the current reference audio and
 detector settings on every `vgt analyze` run — it's the machine baseline, so
-it stays live even while the human's `value` is frozen. Keeping both around
-is what makes a future "restore the original detection over this time
-range" action possible.
+it stays live even while the human's `value` is frozen. Refreshing `detected`
+in that state never touches the chord-sheet artifact, since that artifact
+documents `value`, not the machine baseline. Keeping both around is what
+makes a future "restore the original detection over this time range" action
+possible.
 
 ### Sections
 

@@ -371,6 +371,36 @@ def test_detected_keeps_refreshing_against_current_settings_once_value_is_human_
     assert chords["detected_settings_hash"] != stale_detected_settings_hash
 
 
+def test_refreshing_detected_after_verification_does_not_overwrite_chord_sheet_artifact(tmp_path: Path) -> None:
+    """The `.vgt-chords.txt` chord-sheet artifact documents the effective,
+    human-corrected `value` (see README's Chords section), not the machine
+    baseline. Refreshing `detected` after `value` is human-verified must not
+    re-render that file with the raw new detection -- otherwise the on-disk
+    verification artifact would silently diverge from the corrected `value`
+    it's supposed to reflect, even though the JSON `value` itself stays
+    correct (#19 fix-cycle-2)."""
+    project = _project_copy(tmp_path)
+    _write_v1_sidecar(project)
+    first = analyze(project)
+
+    chord_sheet = project.with_name(first["analysis"]["chords"]["value"]["chord_sheet_path"])
+    contents_before_correction = chord_sheet.read_text(encoding="utf-8")
+
+    sidecar = read_sidecar(project)
+    corrected_segments = [{"start_seconds": 0.0, "end_seconds": 1.0, "chord": "C:maj"}]
+    sidecar["analysis"]["chords"]["value"]["segments"] = corrected_segments
+    sidecar["analysis"]["chords"]["human_verified"] = True
+    write_sidecar(project, sidecar)
+
+    # Same audio, but different chord-detector settings -- forces `detected`
+    # to recompute even though `value` is frozen by the human correction.
+    result = analyze(project, settings={"chords": {"note": "force-recompute"}})
+
+    chords = result["analysis"]["chords"]
+    assert chords["detected_input_hash"]  # sanity: the refresh path did run
+    assert chord_sheet.read_text(encoding="utf-8") == contents_before_correction
+
+
 def test_section_rename_and_boundary_nudge_survive_rerun(tmp_path: Path) -> None:
     project = _project_copy(tmp_path)
     _write_v1_sidecar(project)

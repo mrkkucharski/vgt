@@ -90,7 +90,7 @@ def _refresh_chords_stage(
     *,
     input_hash: str,
     settings_hash: str,
-    compute: Callable[[], Any],
+    compute: Callable[..., Any],
     force: bool = False,
 ) -> dict[str, Any]:
     """Like `sidecar.refresh_stage`, but tracks `detected` -- the pristine
@@ -124,7 +124,7 @@ def _refresh_chords_stage(
         return stage
     return {
         **stage,
-        "detected": compute(),
+        "detected": compute(render_artifact=False),
         "detected_input_hash": input_hash,
         "detected_settings_hash": settings_hash,
     }
@@ -146,21 +146,37 @@ def _tempo_beat_times(tempo_value: dict[str, Any] | None, source: Path) -> list[
     return beat_times
 
 
-def detect_chords(project_path: Path, source: Path, settings: dict[str, Any], analysis: dict[str, Any]) -> dict[str, Any]:
+def detect_chords(
+    project_path: Path,
+    source: Path,
+    settings: dict[str, Any],
+    analysis: dict[str, Any],
+    *,
+    render_artifact: bool = True,
+) -> dict[str, Any]:
     """Beat-aligned maj/min chord segments (see chords.py), snapped to the
     tempo stage's shared beat grid, plus a chord-sheet text artifact rendered
-    next to the sidecar for by-eye verification."""
+    next to the sidecar for by-eye verification.
+
+    `render_artifact=False` skips writing that artifact: used when this is
+    only refreshing the `detected` baseline of an already human-verified
+    stage (see `_refresh_chords_stage`), so the on-disk `.vgt-chords.txt` --
+    documented as reflecting the effective, human-corrected `value` -- isn't
+    silently overwritten with the raw machine detection the human corrected
+    away from."""
     beat_times = _tempo_beat_times(analysis["tempo"]["value"], source)
     try:
         chords_value = _detect_chords(source, beat_times, settings)
     except ChordDetectionError as exc:
         raise AnalysisError(str(exc)) from exc
-    artifact = render_chord_sheet(chords_value, chord_sheet_path(project_path))
-    chords_value["chord_sheet_path"] = artifact.name
+    artifact_path = chord_sheet_path(project_path)
+    if render_artifact:
+        render_chord_sheet(chords_value, artifact_path)
+    chords_value["chord_sheet_path"] = artifact_path.name
     return chords_value
 
 
-_DETECTORS: dict[str, Callable[[Path, Path, dict[str, Any], dict[str, Any]], Any]] = {
+_DETECTORS: dict[str, Callable[..., Any]] = {
     "tempo": detect_tempo,
     "key": detect_key,
     "sections": detect_sections,
@@ -219,7 +235,14 @@ def analyze(
         stage_settings = settings.get(stage, {})
         settings_hash = _hash_settings(stage_settings)
         if analysis[stage].get("human_verified"):
-            emit(f"[{position}/{total}] {stage} — human-verified, keeping")
+            if stage == "chords" and (
+                force
+                or analysis[stage].get("detected_input_hash") != input_hash
+                or analysis[stage].get("detected_settings_hash") != settings_hash
+            ):
+                emit(f"[{position}/{total}] {stage} — human-verified value kept; refreshing detected baseline…")
+            else:
+                emit(f"[{position}/{total}] {stage} — human-verified, keeping")
         elif not force and stage_is_current(analysis[stage], input_hash=input_hash, settings_hash=settings_hash):
             emit(f"[{position}/{total}] {stage} — unchanged, using cached result")
         elif force:
@@ -231,8 +254,8 @@ def analyze(
             analysis[stage],
             input_hash=input_hash,
             settings_hash=settings_hash,
-            compute=lambda stage=stage, stage_settings=stage_settings: _DETECTORS[stage](
-                project_path, source, stage_settings, analysis
+            compute=lambda stage=stage, stage_settings=stage_settings, **kwargs: _DETECTORS[stage](
+                project_path, source, stage_settings, analysis, **kwargs
             ),
             force=force,
         )
