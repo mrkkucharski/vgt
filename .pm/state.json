@@ -1,10 +1,10 @@
 {
   "current_issue": 33,
-  "session_id": "f0e75a65-8b5f-4e18-b005-8eca83e47497",
-  "pid": 322,
-  "process_started_at": "Sun Jul 19 20:38:26 2026",
-  "agent": "claude",
-  "started_at": "2026-07-19T18:38:24.422437+00:00",
+  "session_id": "2ea238d0-adf0-45db-b6b7-d3525966b151",
+  "pid": 1910,
+  "process_started_at": "Sun Jul 19 20:53:24 2026",
+  "agent": "codex",
+  "started_at": "2026-07-19T18:53:22.574879+00:00",
   "scheduler_stalls": {},
   "budget": {
     "window_start": "2026-07-19T15:46:21.062958+00:00",
@@ -15,10 +15,10 @@
   "verification_followups": {
     "f0d8bfc9d2dc6da7a31609184e25c4d66d3986fd2340b33a83e98204fb86691e": "created"
   },
-  "role": "implement",
+  "role": "review",
   "branch": "issue-33-consolidate-chord-section-read-back-into",
   "worktree_path": "/Users/marekkucharski/projects/.pm-worktrees/vgt/issue-33",
-  "pr_number": null,
+  "pr_number": 35,
   "followup_generation": {
     "fingerprint": "21aabd4138fef85732e2ba4ed6fa65365084fb3986dac0b7f66d093f17bfed99",
     "items": {
@@ -51,11 +51,11 @@
   "pending_transition": {
     "issue": 33,
     "target": "working",
-    "event": "agent.started",
+    "event": "agent.review_started",
     "detail": {
       "issue": 33,
-      "agent": "claude",
-      "branch": "issue-33-consolidate-chord-section-read-back-into"
+      "agent": "codex",
+      "pr": 35
     },
     "cleanup": {}
   }
