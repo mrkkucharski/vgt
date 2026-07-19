@@ -1,10 +1,10 @@
 {
-  "current_issue": 19,
-  "session_id": "cbfae65c-7a2c-4da4-bad6-8f5512af260f",
-  "pid": 70893,
-  "process_started_at": "Sun Jul 19 12:02:14 2026",
+  "current_issue": 20,
+  "session_id": "bc003030-9bbe-4438-89c8-22a40c8fb991",
+  "pid": 71575,
+  "process_started_at": "Sun Jul 19 12:10:23 2026",
   "agent": "claude",
-  "started_at": "2026-07-19T10:02:12.823574+00:00",
+  "started_at": "2026-07-19T10:10:22.113861+00:00",
   "scheduler_stalls": {},
   "budget": {
     "window_start": "2026-07-19T05:45:06.823040+00:00",
@@ -18,9 +18,9 @@
     "f0d8bfc9d2dc6da7a31609184e25c4d66d3986fd2340b33a83e98204fb86691e": "created"
   },
   "role": "review",
-  "branch": "issue-19-preserve-originally-detected-chords-alon",
-  "worktree_path": "/Users/marekkucharski/projects/.pm-worktrees/vgt/issue-19",
-  "pr_number": 22,
+  "branch": "issue-20-add-vgt-status-command-summarize-sidecar",
+  "worktree_path": "/Users/marekkucharski/projects/.pm-worktrees/vgt/issue-20",
+  "pr_number": 23,
   "followup_generation": {
     "fingerprint": "3d318dc82e3e7c229e211f23c3d3dae35d152b3d42d85d2cf62af1cf61a144a5",
     "items": {
@@ -39,13 +39,13 @@
     "19": 2
   },
   "pending_transition": {
-    "issue": 19,
+    "issue": 20,
     "target": "working",
     "event": "agent.review_started",
     "detail": {
-      "issue": 19,
+      "issue": 20,
       "agent": "claude",
-      "pr": 22
+      "pr": 23
     },
     "cleanup": {}
   }

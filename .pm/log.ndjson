@@ -2633,3 +2633,21 @@
 {"ts": "2026-07-19T10:01:00.509150+00:00", "project": "vgt", "event": "orchestrator.no_capacity", "detail": {"message": "work is available, but scheduler capacity or budget headroom is exhausted"}}
 {"ts": "2026-07-19T10:02:08.949360+00:00", "project": "vgt", "event": "agent.ready_for_review", "detail": {"issue": 19, "agent": "claude", "role": "fix"}}
 {"ts": "2026-07-19T10:02:12.822328+00:00", "project": "vgt", "event": "pr.found", "detail": {"issue": 19, "pr": 22, "branch": "issue-19-preserve-originally-detected-chords-alon"}}
+{"ts": "2026-07-19T10:02:16.215239+00:00", "project": "vgt", "event": "agent.review_started", "detail": {"issue": 19, "agent": "claude", "pr": 22, "pid": 70893, "process_started_at": "Sun Jul 19 12:02:14 2026"}}
+{"ts": "2026-07-19T10:02:16.228462+00:00", "project": "vgt", "event": "orchestrator.pass_outcome", "detail": {"outcomes": ["deferred", "scheduled"], "scheduled": 1, "followups_created": 0}}
+{"ts": "2026-07-19T10:03:25.417386+00:00", "project": "vgt", "event": "orchestrator.pass_outcome", "detail": {"outcomes": ["deferred"], "scheduled": 0, "followups_created": 0}}
+{"ts": "2026-07-19T10:03:25.417554+00:00", "project": "vgt", "event": "orchestrator.no_capacity", "detail": {"message": "work is available, but scheduler capacity or budget headroom is exhausted"}}
+{"ts": "2026-07-19T10:04:33.751310+00:00", "project": "vgt", "event": "orchestrator.pass_outcome", "detail": {"outcomes": ["deferred"], "scheduled": 0, "followups_created": 0}}
+{"ts": "2026-07-19T10:04:33.751476+00:00", "project": "vgt", "event": "orchestrator.no_capacity", "detail": {"message": "work is available, but scheduler capacity or budget headroom is exhausted"}}
+{"ts": "2026-07-19T10:05:42.192819+00:00", "project": "vgt", "event": "orchestrator.pass_outcome", "detail": {"outcomes": ["deferred"], "scheduled": 0, "followups_created": 0}}
+{"ts": "2026-07-19T10:05:42.193056+00:00", "project": "vgt", "event": "orchestrator.no_capacity", "detail": {"message": "work is available, but scheduler capacity or budget headroom is exhausted"}}
+{"ts": "2026-07-19T10:06:50.589412+00:00", "project": "vgt", "event": "orchestrator.pass_outcome", "detail": {"outcomes": ["deferred"], "scheduled": 0, "followups_created": 0}}
+{"ts": "2026-07-19T10:06:50.589812+00:00", "project": "vgt", "event": "orchestrator.no_capacity", "detail": {"message": "work is available, but scheduler capacity or budget headroom is exhausted"}}
+{"ts": "2026-07-19T10:07:58.806409+00:00", "project": "vgt", "event": "orchestrator.pass_outcome", "detail": {"outcomes": ["deferred"], "scheduled": 0, "followups_created": 0}}
+{"ts": "2026-07-19T10:07:58.806757+00:00", "project": "vgt", "event": "orchestrator.no_capacity", "detail": {"message": "work is available, but scheduler capacity or budget headroom is exhausted"}}
+{"ts": "2026-07-19T10:09:06.856942+00:00", "project": "vgt", "event": "orchestrator.pass_outcome", "detail": {"outcomes": ["deferred"], "scheduled": 0, "followups_created": 0}}
+{"ts": "2026-07-19T10:09:06.857109+00:00", "project": "vgt", "event": "orchestrator.no_capacity", "detail": {"message": "work is available, but scheduler capacity or budget headroom is exhausted"}}
+{"ts": "2026-07-19T10:10:18.225708+00:00", "project": "vgt", "event": "issue.closed_labels_cleaned", "detail": {"issue": 19, "removed": ["status:working"]}}
+{"ts": "2026-07-19T10:10:18.594568+00:00", "project": "vgt", "event": "worktree.cleaned_up", "detail": {"issue": 19, "branch": "issue-19-preserve-originally-detected-chords-alon", "worktree": "/Users/marekkucharski/projects/.pm-worktrees/vgt/issue-19"}}
+{"ts": "2026-07-19T10:10:19.878424+00:00", "project": "vgt", "event": "agent.branch_recovered", "detail": {"issue": 20, "phase": "review", "branch": "issue-20-add-vgt-status-command-summarize-sidecar"}}
+{"ts": "2026-07-19T10:10:22.112796+00:00", "project": "vgt", "event": "pr.created", "detail": {"issue": 20, "pr": 23, "branch": "issue-20-add-vgt-status-command-summarize-sidecar"}}
