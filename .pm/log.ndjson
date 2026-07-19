@@ -4163,3 +4163,7 @@
 {"ts": "2026-07-19T20:42:16.829699+00:00", "project": "vgt", "event": "orchestrator.no_capacity", "detail": {"message": "work is available, but scheduler capacity or budget headroom is exhausted"}}
 {"ts": "2026-07-19T20:43:24.563454+00:00", "project": "vgt", "event": "agent.ready_for_review", "detail": {"issue": 36, "agent": "codex", "role": "implement"}}
 {"ts": "2026-07-19T20:43:30.029462+00:00", "project": "vgt", "event": "pr.created", "detail": {"issue": 36, "pr": 39, "branch": "issue-36-unmute-the-vgt-beats-track-so-its-beat-m"}}
+{"ts": "2026-07-19T20:43:33.353890+00:00", "project": "vgt", "event": "agent.review_started", "detail": {"issue": 36, "agent": "claude", "pr": 39, "pid": 9017, "process_started_at": "Sun Jul 19 22:43:31 2026"}}
+{"ts": "2026-07-19T20:43:33.366895+00:00", "project": "vgt", "event": "orchestrator.pass_outcome", "detail": {"outcomes": ["deferred", "scheduled"], "scheduled": 1, "followups_created": 0}}
+{"ts": "2026-07-19T20:44:43.752955+00:00", "project": "vgt", "event": "issue.closed_labels_cleaned", "detail": {"issue": 36, "removed": ["status:working"]}}
+{"ts": "2026-07-19T20:44:44.054089+00:00", "project": "vgt", "event": "worktree.cleaned_up", "detail": {"issue": 36, "branch": "issue-36-unmute-the-vgt-beats-track-so-its-beat-m", "worktree": "/Users/marekkucharski/projects/.pm-worktrees/vgt/issue-36"}}
