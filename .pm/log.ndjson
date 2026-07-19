@@ -3448,3 +3448,13 @@
 {"ts": "2026-07-19T14:34:52.940006+00:00", "project": "vgt", "event": "orchestrator.pass_outcome", "detail": {"outcomes": ["deferred"], "scheduled": 0, "followups_created": 0}}
 {"ts": "2026-07-19T14:34:52.940451+00:00", "project": "vgt", "event": "orchestrator.no_capacity", "detail": {"message": "work is available, but scheduler capacity or budget headroom is exhausted"}}
 {"ts": "2026-07-19T14:36:05.115966+00:00", "project": "vgt", "event": "pr.created", "detail": {"issue": 25, "pr": 29, "branch": "issue-25-track-and-reconcile-only-vgt-owned-secti"}}
+{"ts": "2026-07-19T14:36:08.704324+00:00", "project": "vgt", "event": "agent.review_started", "detail": {"issue": 25, "agent": "codex", "pr": 29, "pid": 87251, "process_started_at": "Sun Jul 19 16:36:06 2026"}}
+{"ts": "2026-07-19T14:36:08.706409+00:00", "project": "vgt", "event": "scheduler.stall_cleared", "detail": {"category": "deferred_passes", "reason": "budget", "first_seen_at": "2026-07-19T12:44:55.088281+00:00", "last_seen_at": "2026-07-19T14:34:51.981030+00:00", "consecutive_passes": 95}}
+{"ts": "2026-07-19T14:36:08.717790+00:00", "project": "vgt", "event": "orchestrator.pass_outcome", "detail": {"outcomes": ["deferred", "scheduled"], "scheduled": 1, "followups_created": 0}}
+{"ts": "2026-07-19T14:37:17.352311+00:00", "project": "vgt", "event": "orchestrator.pass_outcome", "detail": {"outcomes": ["deferred"], "scheduled": 0, "followups_created": 0}}
+{"ts": "2026-07-19T14:37:17.352460+00:00", "project": "vgt", "event": "orchestrator.no_capacity", "detail": {"message": "work is available, but scheduler capacity or budget headroom is exhausted"}}
+{"ts": "2026-07-19T14:38:26.484880+00:00", "project": "vgt", "event": "orchestrator.pass_outcome", "detail": {"outcomes": ["deferred"], "scheduled": 0, "followups_created": 0}}
+{"ts": "2026-07-19T14:38:26.486654+00:00", "project": "vgt", "event": "orchestrator.no_capacity", "detail": {"message": "work is available, but scheduler capacity or budget headroom is exhausted"}}
+{"ts": "2026-07-19T14:39:37.183803+00:00", "project": "vgt", "event": "issue.closed_labels_cleaned", "detail": {"issue": 25, "removed": ["status:working"]}}
+{"ts": "2026-07-19T14:39:37.702139+00:00", "project": "vgt", "event": "worktree.cleaned_up", "detail": {"issue": 25, "branch": "issue-25-track-and-reconcile-only-vgt-owned-secti", "worktree": "/Users/marekkucharski/projects/.pm-worktrees/vgt/issue-25"}}
+{"ts": "2026-07-19T14:39:43.896147+00:00", "project": "vgt", "event": "orchestrator.issue_selected", "detail": {"issue": 26, "method": "local_priorities"}}
