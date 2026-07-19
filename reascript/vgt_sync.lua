@@ -7,8 +7,8 @@
 --   * the [vgt]-owned section regions -- start, end, name -- become
 --     analysis.sections.value.
 -- Both are written as human_verified: true, so the corrections survive
--- future `vgt analyze` and apply runs. This consolidates the former
--- vgt_read_chords.lua and vgt_read_sections.lua into a single action (#33).
+-- future `vgt analyze` and apply runs. This consolidates the formerly
+-- separate chord and section read-back actions into a single action (#33).
 -- It never edits the RPP: only vgt_initialize.lua mutates REAPER projects,
 -- per the "ReaScript is a thin caller" rule -- this action's own job is
 -- entirely REAPER-state bookkeeping, symmetric to how vgt_initialize.lua's
