@@ -82,7 +82,7 @@ The mode used (constant vs. piecewise) and residual error go into the manifest.
 Auto-analysis *will* be wrong sometimes; the design treats correction as normal operation:
 
 - `corrections.yaml` next to the manifest: tempo/key overrides, section renames and boundary nudges, chord fixes. Re-running the pipeline re-applies overrides and marks fields `human_verified: true`.
-- Every analysis stage emits a **checkable artifact**: a click-over-mix render for the beat grid, a printable chord sheet, a section timeline. Trust is earned per song, not assumed.
+- Every analysis stage emits a **checkable artifact**: a click-only render for the beat grid, a printable chord sheet, a section timeline. Trust is earned per song, not assumed.
 
 ### Manifest sketch
 

@@ -25,8 +25,8 @@ from .chords import ChordDetectionError, chord_sheet_path, detect_chords as _det
 from .key import KeyDetectionError, detect_key as _detect_key
 from .project import ProjectError, locate_project, track_source_path
 from .sections import SectionDetectionError, detect_sections as _detect_sections, render_section_timeline, section_timeline_path
-from .sidecar import ANALYSIS_STAGES, SidecarError, read_sidecar, refresh_stage, write_sidecar
-from .tempo import TempoDetectionError, build_tempo_grid, click_artifact_path, detect_beats, render_click_over_mix
+from .sidecar import ANALYSIS_STAGES, SidecarError, read_sidecar, refresh_stage, stage_is_current, write_sidecar
+from .tempo import TempoDetectionError, build_tempo_grid, click_artifact_path, detect_beats, render_click
 
 
 class AnalysisError(ValueError):
@@ -48,13 +48,13 @@ def hash_source_file(path: Path) -> str:
 def detect_tempo(project_path: Path, source: Path, settings: dict[str, Any], analysis: dict[str, Any]) -> dict[str, Any]:
     """BPM, downbeat offset, time signature, tempo-map mode/residual, and the
     raw detected beat times (see tempo.py) -- the last of these is the shared
-    grid `detect_chords` snaps to -- plus a click-over-mix verification
+    grid `detect_chords` snaps to -- plus a click-only verification
     artifact rendered next to the sidecar."""
     del analysis  # tempo runs first; nothing upstream to read yet
     try:
         beat_times, beat_positions, backend = detect_beats(source)
         grid = build_tempo_grid(beat_times, beat_positions, backend, settings)
-        artifact = render_click_over_mix(source, beat_times, click_artifact_path(project_path))
+        artifact = render_click(source, beat_times, click_artifact_path(project_path))
     except TempoDetectionError as exc:
         raise AnalysisError(str(exc)) from exc
     grid["click_artifact_path"] = artifact.name
@@ -130,12 +130,25 @@ def reference_source_path(project_path: Path, sidecar: dict[str, Any]) -> Path:
     return track_source_path(project_path, guid)
 
 
-def analyze(project: str | Path | None, settings: dict[str, dict[str, Any]] | None = None) -> dict[str, Any]:
+def analyze(
+    project: str | Path | None,
+    settings: dict[str, dict[str, Any]] | None = None,
+    progress: Callable[[str], None] | None = None,
+    force: bool = False,
+) -> dict[str, Any]:
     """Run (or refresh) analysis for `project` and persist it into the sidecar.
 
     Idempotent: unchanged inputs/settings leave cached stage values untouched,
     and stages marked `human_verified` are never recomputed.
+
+    `force` recomputes every stage even when its cache is current, but still
+    preserves human-verified stages.
+
+    `progress`, when given, is called with human-readable status lines as each
+    stage starts (the detectors are otherwise silent for a minute or more); the
+    CLI wires it to stderr so the JSON result on stdout stays pipe-clean.
     """
+    emit = progress or (lambda _message: None)
     settings = settings or {}
     project_path = locate_project(project)
     try:
@@ -150,18 +163,33 @@ def analyze(project: str | Path | None, settings: dict[str, dict[str, Any]] | No
     if not source.is_file():
         raise AnalysisError(f"Reference source file not found: {source}")
 
+    emit(f"analyzing reference track '{source.name}'")
+    emit(f"running {len(ANALYSIS_STAGES)} detectors ({', '.join(ANALYSIS_STAGES)}); first run can take a minute or two")
+
     input_hash = hash_source_file(source)
     analysis = sidecar["analysis"]
-    for stage in ANALYSIS_STAGES:
+    total = len(ANALYSIS_STAGES)
+    for position, stage in enumerate(ANALYSIS_STAGES, start=1):
         stage_settings = settings.get(stage, {})
+        settings_hash = _hash_settings(stage_settings)
+        if analysis[stage].get("human_verified"):
+            emit(f"[{position}/{total}] {stage} — human-verified, keeping")
+        elif not force and stage_is_current(analysis[stage], input_hash=input_hash, settings_hash=settings_hash):
+            emit(f"[{position}/{total}] {stage} — unchanged, using cached result")
+        elif force:
+            emit(f"[{position}/{total}] {stage} — re-analyzing (forced)…")
+        else:
+            emit(f"[{position}/{total}] {stage} — analyzing…")
         analysis[stage] = refresh_stage(
             analysis[stage],
             input_hash=input_hash,
-            settings_hash=_hash_settings(stage_settings),
+            settings_hash=settings_hash,
             compute=lambda stage=stage, stage_settings=stage_settings: _DETECTORS[stage](
                 project_path, source, stage_settings, analysis
             ),
+            force=force,
         )
+    emit("writing sidecar")
     analysis["provenance"] = {
         "tool": "vgt",
         "version": __version__,

@@ -69,18 +69,31 @@ def write_sidecar(project_path: str | Path, data: dict[str, Any]) -> None:
     path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
 
 
+def stage_is_current(stage: dict[str, Any], *, input_hash: str, settings_hash: str) -> bool:
+    """True if `stage`'s cached value still stands -- either a human verified it,
+    or the audio and settings that produced it are unchanged -- so a rerun would
+    leave it untouched."""
+    if stage.get("human_verified"):
+        return True
+    return stage.get("input_hash") == input_hash and stage.get("settings_hash") == settings_hash
+
+
 def refresh_stage(
     stage: dict[str, Any],
     *,
     input_hash: str,
     settings_hash: str,
     compute: Callable[[], Any],
+    force: bool = False,
 ) -> dict[str, Any]:
     """Recompute a stage's cached value unless a human has verified it, or the
-    inputs/settings that produced the cached value haven't changed."""
+    inputs/settings that produced the cached value haven't changed.
+
+    `force` recomputes even when the cache is current, but never overrides a
+    human-verified stage -- that correction is preserved regardless."""
     if stage.get("human_verified"):
         return stage
-    if stage.get("input_hash") == input_hash and stage.get("settings_hash") == settings_hash:
+    if not force and stage_is_current(stage, input_hash=input_hash, settings_hash=settings_hash):
         return stage
     return {
         "value": compute(),

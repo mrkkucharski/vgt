@@ -22,6 +22,11 @@ def _parser() -> argparse.ArgumentParser:
         "analyze", help="Detect tempo/key/sections/chords for the reference track and persist them to the .vgt sidecar."
     )
     analyze_parser.add_argument("project", nargs="?", help="Path to a .RPP project (defaults to cwd's only .RPP).")
+    analyze_parser.add_argument(
+        "--force",
+        action="store_true",
+        help="Recompute every stage, ignoring cached results (human-verified stages are still preserved).",
+    )
     return parser
 
 
@@ -38,7 +43,12 @@ def main(argv: list[str] | None = None) -> int:
             print(json.dumps(read_project(project).to_dict(), indent=2))
             return 0
         if args.command == "analyze":
-            print(json.dumps(analyze(project), indent=2))
+            def report(message: str) -> None:
+                # Progress goes to stderr so stdout stays a clean JSON document
+                # for `vgt analyze ... | jq` and file redirects.
+                print(f"vgt: {message}", file=sys.stderr, flush=True)
+
+            print(json.dumps(analyze(project, progress=report, force=args.force), indent=2))
             return 0
         # Deliberately no RPP text-edit fallback: only the ReaScript mutates projects.
         print(
