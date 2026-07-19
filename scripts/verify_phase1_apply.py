@@ -149,8 +149,8 @@ def verify(project_path: Path, baseline_path: Path, *, first_snapshot: dict[str,
     if chord_guid is None:
         _fail(f"missing {CHORDS_NAME!r} track")
     chord_block = blocks[chord_guid]
-    if _MUTE.search(chord_block):
-        _fail("[vgt] Chords must stay unmuted so its labels are readable")
+    if not _MUTE.search(chord_block):
+        _fail("[vgt] Chords must stay muted")
     chord_items = _blocks(chord_block, _ITEM_START)
     expected_chords = _expected_chords(analysis, reference_start)
     if len(chord_items) != len(expected_chords):

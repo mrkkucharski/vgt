@@ -46,15 +46,16 @@ def test_phase1_apply_reads_analysis_and_uses_only_reaper_api() -> None:
     assert '"managed_region_ids"' in script
 
 
-def test_beats_track_stays_muted_but_chords_track_is_created_unmuted() -> None:
+def test_beats_and_chords_tracks_are_both_created_muted() -> None:
     script = APPLY_SCRIPT.read_text()
-    # Issue #21: the chords track has no audio, so muting it only made its
-    # (dark-on-dark) labels unreadable. Beats keeps its default muted behavior.
-    assert 'reaper.SetMediaTrackInfo_Value(track, "B_MUTE", muted == false and 0 or 1)' in script
+    # Issue #28: Phase 1 requires the [vgt] Chords track to stay muted (it
+    # carries no audio to play, but muted keeps it consistent with every
+    # other vgt-owned label track). Its items stay unlocked and editable.
+    assert 'reaper.SetMediaTrackInfo_Value(track, "B_MUTE", 1)' in script
     assert "local function offer_beats_track(index, tempo, reference_start, reference_end, managed_tracks)" in script
     assert "local beats = add_locked_muted_track(index, BEATS_NAME)" in script
     assert "offer_beats_track(insert_at + 2, tempo, reference_start, reference_end, managed_tracks)" in script
-    assert "add_locked_muted_track(reaper.CountTracks(0), CHORDS_NAME, false)" in script
+    assert "add_locked_muted_track(reaper.CountTracks(0), CHORDS_NAME)" in script
 
 
 def test_chord_items_are_added_unlocked_so_they_stay_editable() -> None:
