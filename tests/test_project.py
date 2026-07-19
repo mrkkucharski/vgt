@@ -49,3 +49,10 @@ def test_read_chords_command_points_to_the_read_chords_reascript(capsys: pytest.
     err = capsys.readouterr().err
     assert "reascript/vgt_read_chords.lua" in err
     assert "human-verified" in err
+
+
+def test_read_sections_command_points_to_the_read_sections_reascript(capsys: pytest.CaptureFixture[str]) -> None:
+    assert main(["read-sections", str(FIXTURE)]) == 2
+    err = capsys.readouterr().err
+    assert "reascript/vgt_read_sections.lua" in err
+    assert "human-verified" in err
