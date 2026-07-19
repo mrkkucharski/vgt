@@ -4167,3 +4167,19 @@
 {"ts": "2026-07-19T20:43:33.366895+00:00", "project": "vgt", "event": "orchestrator.pass_outcome", "detail": {"outcomes": ["deferred", "scheduled"], "scheduled": 1, "followups_created": 0}}
 {"ts": "2026-07-19T20:44:43.752955+00:00", "project": "vgt", "event": "issue.closed_labels_cleaned", "detail": {"issue": 36, "removed": ["status:working"]}}
 {"ts": "2026-07-19T20:44:44.054089+00:00", "project": "vgt", "event": "worktree.cleaned_up", "detail": {"issue": 36, "branch": "issue-36-unmute-the-vgt-beats-track-so-its-beat-m", "worktree": "/Users/marekkucharski/projects/.pm-worktrees/vgt/issue-36"}}
+{"ts": "2026-07-19T20:44:49.902781+00:00", "project": "vgt", "event": "agent.started", "detail": {"issue": 37, "agent": "claude", "branch": "issue-37-import-the-rendered-click-wav-as-a-muted", "pid": 9235, "process_started_at": "Sun Jul 19 22:44:48 2026"}}
+{"ts": "2026-07-19T20:44:49.922415+00:00", "project": "vgt", "event": "orchestrator.pass_outcome", "detail": {"outcomes": ["deferred", "scheduled"], "scheduled": 1, "followups_created": 0}}
+{"ts": "2026-07-19T20:45:58.928598+00:00", "project": "vgt", "event": "orchestrator.pass_outcome", "detail": {"outcomes": ["deferred"], "scheduled": 0, "followups_created": 0}}
+{"ts": "2026-07-19T20:45:58.928927+00:00", "project": "vgt", "event": "orchestrator.no_capacity", "detail": {"message": "work is available, but scheduler capacity or budget headroom is exhausted"}}
+{"ts": "2026-07-19T20:47:07.957100+00:00", "project": "vgt", "event": "orchestrator.pass_outcome", "detail": {"outcomes": ["deferred"], "scheduled": 0, "followups_created": 0}}
+{"ts": "2026-07-19T20:47:07.957372+00:00", "project": "vgt", "event": "orchestrator.no_capacity", "detail": {"message": "work is available, but scheduler capacity or budget headroom is exhausted"}}
+{"ts": "2026-07-19T20:48:16.564782+00:00", "project": "vgt", "event": "orchestrator.pass_outcome", "detail": {"outcomes": ["deferred"], "scheduled": 0, "followups_created": 0}}
+{"ts": "2026-07-19T20:48:16.564947+00:00", "project": "vgt", "event": "orchestrator.no_capacity", "detail": {"message": "work is available, but scheduler capacity or budget headroom is exhausted"}}
+{"ts": "2026-07-19T20:49:24.895232+00:00", "project": "vgt", "event": "orchestrator.pass_outcome", "detail": {"outcomes": ["deferred"], "scheduled": 0, "followups_created": 0}}
+{"ts": "2026-07-19T20:49:24.895407+00:00", "project": "vgt", "event": "orchestrator.no_capacity", "detail": {"message": "work is available, but scheduler capacity or budget headroom is exhausted"}}
+{"ts": "2026-07-19T20:50:33.265499+00:00", "project": "vgt", "event": "orchestrator.pass_outcome", "detail": {"outcomes": ["deferred"], "scheduled": 0, "followups_created": 0}}
+{"ts": "2026-07-19T20:50:33.265796+00:00", "project": "vgt", "event": "orchestrator.no_capacity", "detail": {"message": "work is available, but scheduler capacity or budget headroom is exhausted"}}
+{"ts": "2026-07-19T20:51:41.531619+00:00", "project": "vgt", "event": "orchestrator.pass_outcome", "detail": {"outcomes": ["deferred"], "scheduled": 0, "followups_created": 0}}
+{"ts": "2026-07-19T20:51:41.531781+00:00", "project": "vgt", "event": "orchestrator.no_capacity", "detail": {"message": "work is available, but scheduler capacity or budget headroom is exhausted"}}
+{"ts": "2026-07-19T20:52:49.366901+00:00", "project": "vgt", "event": "agent.ready_for_review", "detail": {"issue": 37, "agent": "claude", "role": "implement"}}
+{"ts": "2026-07-19T20:52:55.070258+00:00", "project": "vgt", "event": "pr.created", "detail": {"issue": 37, "pr": 40, "branch": "issue-37-import-the-rendered-click-wav-as-a-muted"}}
