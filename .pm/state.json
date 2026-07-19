@@ -1,11 +1,19 @@
 {
-  "current_issue": 20,
-  "session_id": "b5f31f2a-e917-4c71-93f5-952499c66d45",
-  "pid": 65758,
-  "process_started_at": "Sun Jul 19 10:39:37 2026",
-  "agent": "codex",
-  "started_at": "2026-07-19T08:39:35.471051+00:00",
-  "scheduler_stalls": {},
+  "current_issue": 19,
+  "session_id": "e161aafb-e3e0-4b15-aecc-51e5c8187a9b",
+  "pid": 69253,
+  "process_started_at": "Sun Jul 19 11:40:21 2026",
+  "agent": "claude",
+  "started_at": "2026-07-19T09:40:19.774214+00:00",
+  "scheduler_stalls": {
+    "deferred_passes": {
+      "budget": {
+        "first_seen_at": "2026-07-19T08:47:45.468442+00:00",
+        "last_seen_at": "2026-07-19T09:39:09.251462+00:00",
+        "consecutive_passes": 45
+      }
+    }
+  },
   "budget": {
     "window_start": "2026-07-19T05:45:06.823040+00:00",
     "seconds_used": 559.0820659999999,
@@ -17,9 +25,9 @@
   "verification_followups": {
     "f0d8bfc9d2dc6da7a31609184e25c4d66d3986fd2340b33a83e98204fb86691e": "created"
   },
-  "role": "implement",
-  "branch": "issue-20-add-vgt-status-command-summarize-sidecar",
-  "worktree_path": "/Users/marekkucharski/projects/.pm-worktrees/vgt/issue-20",
+  "role": "fix",
+  "branch": "issue-19-preserve-originally-detected-chords-alon",
+  "worktree_path": "/Users/marekkucharski/projects/.pm-worktrees/vgt/issue-19",
   "pr_number": null,
   "followup_generation": {
     "fingerprint": "3d318dc82e3e7c229e211f23c3d3dae35d152b3d42d85d2cf62af1cf61a144a5",
@@ -36,16 +44,16 @@
     "9": 1,
     "10": 1,
     "11": 1,
-    "19": 1
+    "19": 2
   },
   "pending_transition": {
-    "issue": 20,
+    "issue": 19,
     "target": "working",
-    "event": "agent.started",
+    "event": "agent.fix_started",
     "detail": {
-      "issue": 20,
-      "agent": "codex",
-      "branch": "issue-20-add-vgt-status-command-summarize-sidecar"
+      "issue": 19,
+      "agent": "claude",
+      "fix_count": 2
     },
     "cleanup": {}
   }
