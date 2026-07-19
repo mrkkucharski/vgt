@@ -3732,3 +3732,13 @@
 {"ts": "2026-07-19T16:15:20.385010+00:00", "project": "vgt", "event": "orchestrator.no_capacity", "detail": {"message": "work is available, but scheduler capacity or budget headroom is exhausted"}}
 {"ts": "2026-07-19T16:16:28.360878+00:00", "project": "vgt", "event": "agent.ready_for_review", "detail": {"issue": 27, "agent": "claude", "role": "implement"}}
 {"ts": "2026-07-19T16:16:33.493155+00:00", "project": "vgt", "event": "pr.created", "detail": {"issue": 27, "pr": 31, "branch": "issue-27-safely-refresh-a-vgt-created-tempo-map-a"}}
+{"ts": "2026-07-19T16:16:36.780604+00:00", "project": "vgt", "event": "agent.review_started", "detail": {"issue": 27, "agent": "claude", "pr": 31, "pid": 94215, "process_started_at": "Sun Jul 19 18:16:34 2026"}}
+{"ts": "2026-07-19T16:16:36.794082+00:00", "project": "vgt", "event": "orchestrator.pass_outcome", "detail": {"outcomes": ["deferred", "scheduled"], "scheduled": 1, "followups_created": 0}}
+{"ts": "2026-07-19T16:17:45.631045+00:00", "project": "vgt", "event": "orchestrator.pass_outcome", "detail": {"outcomes": ["deferred"], "scheduled": 0, "followups_created": 0}}
+{"ts": "2026-07-19T16:17:45.631313+00:00", "project": "vgt", "event": "orchestrator.no_capacity", "detail": {"message": "work is available, but scheduler capacity or budget headroom is exhausted"}}
+{"ts": "2026-07-19T16:18:54.181928+00:00", "project": "vgt", "event": "orchestrator.pass_outcome", "detail": {"outcomes": ["deferred"], "scheduled": 0, "followups_created": 0}}
+{"ts": "2026-07-19T16:18:54.182127+00:00", "project": "vgt", "event": "orchestrator.no_capacity", "detail": {"message": "work is available, but scheduler capacity or budget headroom is exhausted"}}
+{"ts": "2026-07-19T16:20:02.658230+00:00", "project": "vgt", "event": "orchestrator.pass_outcome", "detail": {"outcomes": ["deferred"], "scheduled": 0, "followups_created": 0}}
+{"ts": "2026-07-19T16:20:02.658399+00:00", "project": "vgt", "event": "orchestrator.no_capacity", "detail": {"message": "work is available, but scheduler capacity or budget headroom is exhausted"}}
+{"ts": "2026-07-19T16:21:13.710358+00:00", "project": "vgt", "event": "issue.closed_labels_cleaned", "detail": {"issue": 27, "removed": ["status:working"]}}
+{"ts": "2026-07-19T16:21:14.104978+00:00", "project": "vgt", "event": "worktree.cleaned_up", "detail": {"issue": 27, "branch": "issue-27-safely-refresh-a-vgt-created-tempo-map-a", "worktree": "/Users/marekkucharski/projects/.pm-worktrees/vgt/issue-27"}}
