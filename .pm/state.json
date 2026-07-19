@@ -1,10 +1,10 @@
 {
   "current_issue": 19,
-  "session_id": "9091f4e3-dab8-4895-a6a8-11ff53fec96e",
-  "pid": 57616,
-  "process_started_at": "Sun Jul 19 08:28:57 2026",
-  "agent": "claude",
-  "started_at": "2026-07-19T06:28:55.819589+00:00",
+  "session_id": "79ed3f32-f4eb-40a9-bed9-2ce40a3f90a9",
+  "pid": 58450,
+  "process_started_at": "Sun Jul 19 08:40:32 2026",
+  "agent": "codex",
+  "started_at": "2026-07-19T06:40:30.765411+00:00",
   "scheduler_stalls": {},
   "budget": {
     "window_start": "2026-07-19T05:45:06.823040+00:00",
@@ -15,10 +15,10 @@
   "verification_followups": {
     "f0d8bfc9d2dc6da7a31609184e25c4d66d3986fd2340b33a83e98204fb86691e": "created"
   },
-  "role": "implement",
+  "role": "review",
   "branch": "issue-19-preserve-originally-detected-chords-alon",
   "worktree_path": "/Users/marekkucharski/projects/.pm-worktrees/vgt/issue-19",
-  "pr_number": null,
+  "pr_number": 22,
   "followup_generation": {
     "fingerprint": "3d318dc82e3e7c229e211f23c3d3dae35d152b3d42d85d2cf62af1cf61a144a5",
     "items": {
@@ -38,11 +38,11 @@
   "pending_transition": {
     "issue": 19,
     "target": "working",
-    "event": "agent.started",
+    "event": "agent.review_started",
     "detail": {
       "issue": 19,
-      "agent": "claude",
-      "branch": "issue-19-preserve-originally-detected-chords-alon"
+      "agent": "codex",
+      "pr": 22
     },
     "cleanup": {}
   }
