@@ -186,21 +186,16 @@ def click_artifact_path(project_path: Path) -> Path:
     return project_path.with_name(f"{project_path.stem}.vgt-tempo-click.wav")
 
 
-def render_click_over_mix(source: Path, beat_times: list[float], destination: Path, click_gain: float = 0.6) -> Path:
-    """Render a click track over the reference mix so the detected grid can
-    be checked by ear."""
+def render_click(source: Path, beat_times: list[float], destination: Path) -> Path:
+    """Render a click-only track on the detected beat grid so it can be checked
+    by ear (or lined up against the reference in REAPER). The reference audio is
+    loaded only to match its sample rate and length; it is not mixed in."""
     import librosa
-    import numpy as np
     import soundfile as sf
 
     audio, sample_rate = librosa.load(str(source), sr=None, mono=False)
-    if audio.ndim == 1:
-        audio = audio[None, :]
-    clicks = librosa.clicks(times=beat_times, sr=sample_rate, length=audio.shape[1])
-    mixed = audio + click_gain * clicks[None, :]
-    peak = float(np.max(np.abs(mixed)))
-    if peak > 1.0:
-        mixed = mixed / peak
+    length = audio.shape[-1] if audio.ndim > 1 else audio.shape[0]
+    clicks = librosa.clicks(times=beat_times, sr=sample_rate, length=length)
     destination.parent.mkdir(parents=True, exist_ok=True)
-    sf.write(str(destination), mixed.T, sample_rate)
+    sf.write(str(destination), clicks, sample_rate)
     return destination

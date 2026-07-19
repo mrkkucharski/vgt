@@ -44,9 +44,14 @@ into the sidecar as schema version 2 — never inside REAPER itself.
 
 Each detector's output is cached against a hash of the source audio and the
 detector's settings, so re-running only recomputes stages whose inputs
-changed. Any stage can be corrected by hand-editing its `value` in the
-sidecar and setting `human_verified: true`; `vgt analyze` then leaves that
-stage untouched on every later run, regardless of what the audio hash says.
+changed. Pass `--force` to recompute every stage regardless of the cache —
+useful after changing a detector's code rather than its inputs. Any stage can
+be corrected by hand-editing its `value` in the sidecar and setting
+`human_verified: true`; `vgt analyze` then leaves that stage untouched on
+every later run, regardless of what the audio hash says — even under `--force`.
+
+Progress is reported to stderr as each detector starts (the JSON result stays
+on stdout, so `vgt analyze … | jq` and file redirects are unaffected).
 
 ### Tempo & beat/downbeat grid
 
@@ -64,9 +69,11 @@ piecewise-linear tempo map (mode + residual are both recorded):
   downbeats, so time signature falls back to a `time_signature_hint`
   setting (or `4/4`) rather than a detected bar length.
 
-Every run also renders a **click-over-mix artifact** — `<project>.vgt-tempo-click.wav`,
-next to the sidecar — so the detected grid can be checked by ear; it is
-vgt-owned and regenerated each run, not committed alongside the project.
+Every run also renders a **click-only artifact** — `<project>.vgt-tempo-click.wav`,
+next to the sidecar — a bare click on the detected beat grid (the reference
+audio is not mixed in) so the grid can be checked by ear or lined up against
+the reference in REAPER; it is vgt-owned and regenerated each run, not
+committed alongside the project.
 The tempo stage's `value` also stores the raw detected `beat_times` — the
 shared beat-synchronous grid the `chords` stage below aligns to.
 

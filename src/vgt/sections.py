@@ -66,10 +66,19 @@ def _checkerboard_kernel(half_width: int) -> Any:
 def _novelty_curve(features: Any, half_width: int) -> Any:
     """Foote's checkerboard-kernel novelty curve over the self-similarity
     matrix of `features` (n_features, n_frames)."""
+    import warnings
+
     import numpy as np
 
     normed = features / (np.linalg.norm(features, axis=0, keepdims=True) + 1e-9)
-    similarity = normed.T @ normed
+    # numpy's float32 matmul SIMD kernel spuriously sets divide/overflow/invalid
+    # floating-point flags from tail lanes past the valid data, even though every
+    # input is finite and the result is correct (verified against a float64
+    # computation to within float32 epsilon). Suppress only these known-false
+    # matmul warnings; real numeric problems elsewhere still surface.
+    with warnings.catch_warnings():
+        warnings.filterwarnings("ignore", message=".*encountered in matmul", category=RuntimeWarning)
+        similarity = normed.T @ normed
     kernel = _checkerboard_kernel(half_width)
     padded = np.pad(similarity, half_width, mode="edge")
     n_frames = similarity.shape[0]
