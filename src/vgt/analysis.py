@@ -17,6 +17,7 @@ from __future__ import annotations
 
 from pathlib import Path
 from typing import Any, Callable
+from datetime import UTC, datetime
 import copy
 import hashlib
 import json
@@ -92,6 +93,7 @@ def _refresh_chords_stage(
     settings_hash: str,
     compute: Callable[..., Any],
     force: bool = False,
+    analyzed_at: str | None = None,
 ) -> dict[str, Any]:
     """Like `sidecar.refresh_stage`, but tracks `detected` -- the pristine
     machine-detection baseline -- independently of `value`.
@@ -107,7 +109,9 @@ def _refresh_chords_stage(
     by that recompute; only `detected` moves, preserving the human's
     correction while keeping the machine baseline current (#19)."""
     if not stage.get("human_verified"):
-        refreshed = refresh_stage(stage, input_hash=input_hash, settings_hash=settings_hash, compute=compute, force=force)
+        refreshed = refresh_stage(
+            stage, input_hash=input_hash, settings_hash=settings_hash, compute=compute, force=force, analyzed_at=analyzed_at
+        )
         if refreshed is stage:
             return stage
         return {
@@ -258,6 +262,7 @@ def analyze(
                 project_path, source, stage_settings, analysis, **kwargs
             ),
             force=force,
+            analyzed_at=datetime.now(UTC).isoformat().replace("+00:00", "Z"),
         )
     emit("writing sidecar")
     analysis["provenance"] = {

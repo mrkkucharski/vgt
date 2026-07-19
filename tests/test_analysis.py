@@ -58,6 +58,8 @@ def test_upgrade_keeps_v1_fields_and_adds_v2_analysis_skeleton() -> None:
             "human_verified": False,
             "input_hash": None,
             "settings_hash": None,
+            "analyzed_at": None,
+            "verified_at": None,
         }
         if stage == "chords":
             expected["detected"] = None
@@ -128,6 +130,7 @@ def test_analyze_writes_v2_sidecar_with_skeleton_and_provenance(tmp_path: Path) 
     for stage in ANALYSIS_STAGES:
         assert result["analysis"][stage]["input_hash"] is not None
         assert result["analysis"][stage]["human_verified"] is False
+        assert result["analysis"][stage]["analyzed_at"] is not None
     provenance = result["analysis"]["provenance"]
     assert provenance["tool"] == "vgt"
     assert provenance["reference_source_path"].endswith("The Seven Rivers (Full March - 3_00).mp3")

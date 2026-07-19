@@ -95,7 +95,7 @@ local function prior_tempo_map_applied()
   return body:match('"tempo_map_applied"%s*:%s*true') ~= nil
 end
 
--- The Python `vgt analyze` stage (schema v2) adds a top-level "analysis"
+-- The Python `vgt analyze` stage (schema v3) adds a top-level "analysis"
 -- object to the sidecar. This action is the sole writer of the sidecar's
 -- other fields, so it must round-trip that object verbatim on re-apply
 -- rather than silently dropping any analysis a user has already run.
@@ -381,11 +381,13 @@ local function add_sections(sections, reference_start)
 end
 
 local function write_settings(folder, managed_tracks, reference, tempo_map_applied)
-  -- Preserve any analysis the Python CLI already wrote (schema v2); a fresh
+  -- Preserve any analysis the Python CLI already wrote (schema v3); a fresh
   -- sidecar with no prior analysis stays schema v1, matching Phase 0's
   -- long-standing on-disk format.
   local analysis = read_analysis_block()
-  local schema_version = analysis and 2 or 1
+  local prior_body = read_sidecar_body() or ""
+  local prior_schema = tonumber(prior_body:match('"schema_version"%s*:%s*(%d+)')) or 3
+  local schema_version = analysis and math.max(prior_schema, 3) or 1
   local analysis_field = analysis and ('\n  "analysis": ' .. analysis .. ",") or ""
 
   local file, error_message = io.open(sidecar_path(), "w")

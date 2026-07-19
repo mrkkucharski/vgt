@@ -124,7 +124,7 @@ def verify(project_path: Path, baseline_path: Path, *, first_snapshot: dict[str,
     except (OSError, json.JSONDecodeError) as error:
         raise VerificationError(f"cannot read a valid sidecar: {error}") from error
     analysis = sidecar.get("analysis")
-    if sidecar.get("schema_version") not in (2, 3) or not isinstance(analysis, dict):
+    if sidecar.get("schema_version") != 3 or not isinstance(analysis, dict):
         _fail("Phase 1 sidecar analysis is missing")
 
     rpp_text = project_path.read_text(encoding="utf-8", errors="replace")
@@ -243,7 +243,7 @@ def run_live(baseline: Path) -> dict[str, object]:
             _run_reaper(project, run_dir, existing_map=existing_map)  # Phase 0 creates its sidecar.
             sidecar_path = project.with_suffix(".vgt")
             sidecar = json.loads(sidecar_path.read_text(encoding="utf-8"))
-            sidecar.update(schema_version=2, analysis=_analysis())
+            sidecar.update(schema_version=3, analysis=_analysis())
             sidecar_path.write_text(json.dumps(sidecar), encoding="utf-8")
             api_sections = _run_reaper(project, run_dir, existing_map=False)
             first = verify(project, baseline)

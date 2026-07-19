@@ -221,7 +221,9 @@ _G.__messages = messages
         "human_verified": True,
         "input_hash": "old-hash",
         "settings_hash": "old-settings",
+        "verified_at": data["analysis"]["chords"]["verified_at"],
     }
+    assert data["analysis"]["chords"]["verified_at"].endswith("Z")
     # `detected` (the original machine detection) is untouched by the correction.
     assert data["analysis"]["chords"]["detected"] == analysis["chords"]["detected"]
     # The tempo stage (untouched) round-trips byte-for-byte in structure.
