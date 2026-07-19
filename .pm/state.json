@@ -1,10 +1,10 @@
 {
   "current_issue": 36,
-  "session_id": "4b0926c7-e89a-49d1-8cc4-e35cc84434f1",
-  "pid": 8558,
-  "process_started_at": "Sun Jul 19 22:39:58 2026",
-  "agent": "codex",
-  "started_at": "2026-07-19T20:39:56.532264+00:00",
+  "session_id": "f6aa454a-8b79-4104-9e5e-976c2d2755d9",
+  "pid": 9017,
+  "process_started_at": "Sun Jul 19 22:43:31 2026",
+  "agent": "claude",
+  "started_at": "2026-07-19T20:43:30.030876+00:00",
   "scheduler_stalls": {},
   "budget": {
     "window_start": "2026-07-19T15:46:21.062958+00:00",
@@ -15,10 +15,10 @@
   "verification_followups": {
     "f0d8bfc9d2dc6da7a31609184e25c4d66d3986fd2340b33a83e98204fb86691e": "created"
   },
-  "role": "implement",
+  "role": "review",
   "branch": "issue-36-unmute-the-vgt-beats-track-so-its-beat-m",
   "worktree_path": "/Users/marekkucharski/projects/.pm-worktrees/vgt/issue-36",
-  "pr_number": null,
+  "pr_number": 39,
   "followup_generation": {
     "fingerprint": "21aabd4138fef85732e2ba4ed6fa65365084fb3986dac0b7f66d093f17bfed99",
     "items": {
@@ -51,11 +51,11 @@
   "pending_transition": {
     "issue": 36,
     "target": "working",
-    "event": "agent.started",
+    "event": "agent.review_started",
     "detail": {
       "issue": 36,
-      "agent": "codex",
-      "branch": "issue-36-unmute-the-vgt-beats-track-so-its-beat-m"
+      "agent": "claude",
+      "pr": 39
     },
     "cleanup": {}
   }
