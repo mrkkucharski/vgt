@@ -3799,3 +3799,11 @@
 {"ts": "2026-07-19T18:52:11.080906+00:00", "project": "vgt", "event": "orchestrator.pass_outcome", "detail": {"outcomes": ["deferred"], "scheduled": 0, "followups_created": 0}}
 {"ts": "2026-07-19T18:52:11.081079+00:00", "project": "vgt", "event": "orchestrator.no_capacity", "detail": {"message": "work is available, but scheduler capacity or budget headroom is exhausted"}}
 {"ts": "2026-07-19T18:53:22.573593+00:00", "project": "vgt", "event": "pr.created", "detail": {"issue": 33, "pr": 35, "branch": "issue-33-consolidate-chord-section-read-back-into"}}
+{"ts": "2026-07-19T18:53:25.848478+00:00", "project": "vgt", "event": "agent.review_started", "detail": {"issue": 33, "agent": "codex", "pr": 35, "pid": 1910, "process_started_at": "Sun Jul 19 20:53:24 2026"}}
+{"ts": "2026-07-19T18:53:25.861633+00:00", "project": "vgt", "event": "orchestrator.pass_outcome", "detail": {"outcomes": ["deferred", "scheduled"], "scheduled": 1, "followups_created": 0}}
+{"ts": "2026-07-19T18:54:34.369537+00:00", "project": "vgt", "event": "orchestrator.pass_outcome", "detail": {"outcomes": ["deferred"], "scheduled": 0, "followups_created": 0}}
+{"ts": "2026-07-19T18:54:34.369949+00:00", "project": "vgt", "event": "orchestrator.no_capacity", "detail": {"message": "work is available, but scheduler capacity or budget headroom is exhausted"}}
+{"ts": "2026-07-19T18:55:43.784142+00:00", "project": "vgt", "event": "orchestrator.pass_outcome", "detail": {"outcomes": ["deferred"], "scheduled": 0, "followups_created": 0}}
+{"ts": "2026-07-19T18:55:43.784462+00:00", "project": "vgt", "event": "orchestrator.no_capacity", "detail": {"message": "work is available, but scheduler capacity or budget headroom is exhausted"}}
+{"ts": "2026-07-19T18:56:54.551159+00:00", "project": "vgt", "event": "issue.closed_labels_cleaned", "detail": {"issue": 33, "removed": ["status:working"]}}
+{"ts": "2026-07-19T18:56:55.060886+00:00", "project": "vgt", "event": "worktree.cleaned_up", "detail": {"issue": 33, "branch": "issue-33-consolidate-chord-section-read-back-into", "worktree": "/Users/marekkucharski/projects/.pm-worktrees/vgt/issue-33"}}
