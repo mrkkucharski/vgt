@@ -27,12 +27,14 @@ whether the input or settings hash changed.
 The `chords` stage additionally carries:
   {
     "detected": <machine-detected chords, independent of human corrections>,
+    "detected_input_hash": str | null,    # hash `detected` was last computed against
+    "detected_settings_hash": str | null,
   }
 `detected` is never touched by `read-chords`; only `vgt analyze`'s detector
-writes it, and it is refreshed in lockstep with `value` -- so once `value` is
-human-verified and frozen, `detected` freezes alongside it too, preserving
-the exact detection the human correction was made from (see `analysis.py`'s
-`_refresh_chords_stage`).
+writes it. Unlike `value`, `detected` keeps tracking the current audio and
+settings via its own hash pair even once `value` is human-verified and
+frozen -- it is the machine baseline, so it stays live, while the human's
+`value` is what freezes (see `analysis.py`'s `_refresh_chords_stage`).
 """
 
 from __future__ import annotations
@@ -61,7 +63,7 @@ def _empty_stage() -> dict[str, Any]:
 
 
 def _empty_chords_stage() -> dict[str, Any]:
-    return {**_empty_stage(), "detected": None}
+    return {**_empty_stage(), "detected": None, "detected_input_hash": None, "detected_settings_hash": None}
 
 
 def read_sidecar(project_path: str | Path) -> dict[str, Any]:
@@ -83,7 +85,11 @@ def upgrade(data: dict[str, Any]) -> dict[str, Any]:
             merged = {**_empty_chords_stage(), **(analysis.get(stage) or {})}
             if merged["detected"] is None and merged["value"] is not None:
                 # v2 -> v3 migration: best-effort backfill, see module docstring.
+                # Assume `detected` was last computed alongside `value`, so it
+                # inherits `value`'s hash pair rather than starting stale.
                 merged["detected"] = copy.deepcopy(merged["value"])
+                merged["detected_input_hash"] = merged["input_hash"]
+                merged["detected_settings_hash"] = merged["settings_hash"]
             analysis[stage] = merged
         else:
             analysis[stage] = {**_empty_stage(), **(analysis.get(stage) or {})}

@@ -61,6 +61,8 @@ def test_upgrade_keeps_v1_fields_and_adds_v2_analysis_skeleton() -> None:
         }
         if stage == "chords":
             expected["detected"] = None
+            expected["detected_input_hash"] = None
+            expected["detected_settings_hash"] = None
         assert upgraded["analysis"][stage] == expected
     assert upgraded["analysis"]["provenance"]["tool"] == "vgt"
 
@@ -314,8 +316,10 @@ def test_read_chords_style_correction_preserves_original_detected(tmp_path: Path
     """Mirrors what `vgt_read_chords.lua` does: overwrite only
     `value.segments` and set `human_verified`, leaving `detected` (and every
     other field the detector wrote) untouched -- the core guarantee #19
-    adds. A subsequent `analyze()` must not touch `detected` either, since
-    the stage is now human-verified."""
+    adds. A subsequent `analyze()` with unchanged audio/settings must not
+    recompute `detected` either -- it only tracks the current inputs, and
+    they haven't moved (see the sibling test below for the case where they
+    do)."""
     project = _project_copy(tmp_path)
     _write_v1_sidecar(project)
     first = analyze(project)
@@ -336,6 +340,35 @@ def test_read_chords_style_correction_preserves_original_detected(tmp_path: Path
     assert chords["human_verified"] is True
     assert chords["detected"] == original_detected
     assert chords["detected"]["segments"] != corrected_segments
+
+
+def test_detected_keeps_refreshing_against_current_settings_once_value_is_human_verified(tmp_path: Path) -> None:
+    """Per #19's design leaning: `detected` is the machine baseline and stays
+    live -- even once `value` is human-verified and frozen, a settings change
+    still recomputes `detected` (while `value`/`human_verified` don't move).
+    The detector is deterministic given the same audio, so the recomputed
+    `detected.segments` come out identical -- what's observable is that the
+    recompute actually ran, tracked by `detected_settings_hash` moving to the
+    new settings hash instead of staying pinned to the stale one."""
+    project = _project_copy(tmp_path)
+    _write_v1_sidecar(project)
+    analyze(project)
+
+    sidecar = read_sidecar(project)
+    stale_detected_settings_hash = sidecar["analysis"]["chords"]["detected_settings_hash"]
+    corrected_segments = [{"start_seconds": 0.0, "end_seconds": 1.0, "chord": "C:maj"}]
+    sidecar["analysis"]["chords"]["value"]["segments"] = corrected_segments
+    sidecar["analysis"]["chords"]["human_verified"] = True
+    write_sidecar(project, sidecar)
+
+    # Same audio, but different chord-detector settings -- `detected` should
+    # track this even though `value` is frozen by the human correction.
+    result = analyze(project, settings={"chords": {"note": "force-recompute"}})
+
+    chords = result["analysis"]["chords"]
+    assert chords["value"]["segments"] == corrected_segments
+    assert chords["human_verified"] is True
+    assert chords["detected_settings_hash"] != stale_detected_settings_hash
 
 
 def test_section_rename_and_boundary_nudge_survive_rerun(tmp_path: Path) -> None:

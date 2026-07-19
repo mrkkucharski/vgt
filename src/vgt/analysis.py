@@ -93,18 +93,41 @@ def _refresh_chords_stage(
     compute: Callable[[], Any],
     force: bool = False,
 ) -> dict[str, Any]:
-    """Like `sidecar.refresh_stage`, but also keeps `detected` in lockstep
-    with `value` on every actual recompute (there is only one detector call;
-    `detected` is just the pristine copy of its result). Once a human has
-    verified `value`, `refresh_stage`'s early return freezes the whole stage
-    -- including `detected` -- so the original detection a correction was
-    made from is preserved exactly, and re-analyzing never re-triggers the
-    detector (which would otherwise also overwrite the chord-sheet artifact
-    with a reading that no longer matches the corrected `value`)."""
-    refreshed = refresh_stage(stage, input_hash=input_hash, settings_hash=settings_hash, compute=compute, force=force)
-    if refreshed is stage:
+    """Like `sidecar.refresh_stage`, but tracks `detected` -- the pristine
+    machine-detection baseline -- independently of `value`.
+
+    Before a human verifies `value`, the two are recomputed together (there
+    is only one detector call; `detected` is just the pristine copy of its
+    result), same as `refresh_stage`.
+
+    Once a human has verified `value`, `refresh_stage` freezes it for good --
+    but `detected` keeps tracking the current audio/settings via its own
+    `detected_input_hash`/`detected_settings_hash` pair, recomputing whenever
+    those change (or `force`). `value` and `human_verified` are never touched
+    by that recompute; only `detected` moves, preserving the human's
+    correction while keeping the machine baseline current (#19)."""
+    if not stage.get("human_verified"):
+        refreshed = refresh_stage(stage, input_hash=input_hash, settings_hash=settings_hash, compute=compute, force=force)
+        if refreshed is stage:
+            return stage
+        return {
+            **refreshed,
+            "detected": copy.deepcopy(refreshed["value"]),
+            "detected_input_hash": input_hash,
+            "detected_settings_hash": settings_hash,
+        }
+
+    detected_is_current = (
+        stage.get("detected_input_hash") == input_hash and stage.get("detected_settings_hash") == settings_hash
+    )
+    if not force and detected_is_current:
         return stage
-    return {**refreshed, "detected": copy.deepcopy(refreshed["value"])}
+    return {
+        **stage,
+        "detected": compute(),
+        "detected_input_hash": input_hash,
+        "detected_settings_hash": settings_hash,
+    }
 
 
 def _tempo_beat_times(tempo_value: dict[str, Any] | None, source: Path) -> list[float]:

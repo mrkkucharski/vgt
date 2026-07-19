@@ -113,11 +113,12 @@ chord-label listing for by-eye verification.
 The `chords` stage stores two parallel chord lists: `value` (the effective,
 human-correctable chords used everywhere else — apply, the chord sheet) and
 `detected` (the pristine machine detection, untouched by corrections). With
-no corrections the two are equal. `detected` is refreshed by `vgt analyze`
-in lockstep with `value`; once `value` is human-verified it freezes, and
-`detected` freezes alongside it, preserving exactly the detection a
-correction was made from. Keeping both around is what makes a future
-"restore the original detection over this time range" action possible.
+no corrections the two are equal. Once `value` is human-verified it freezes
+for good, but `detected` keeps tracking the current reference audio and
+detector settings on every `vgt analyze` run — it's the machine baseline, so
+it stays live even while the human's `value` is frozen. Keeping both around
+is what makes a future "restore the original detection over this time
+range" action possible.
 
 ### Sections
 
