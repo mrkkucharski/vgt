@@ -1,31 +1,49 @@
 {
-  "current_issue": 21,
-  "session_id": "cf43142e-c623-4c95-825b-6b63eaf3f5c8",
-  "pid": 72858,
-  "process_started_at": "Sun Jul 19 12:24:23 2026",
-  "agent": "claude",
-  "started_at": "2026-07-19T10:24:22.427245+00:00",
-  "scheduler_stalls": {},
-  "budget": {
-    "window_start": "2026-07-19T05:45:06.823040+00:00",
-    "seconds_used": 559.0820659999999,
-    "dollars_used": 0.0,
-    "seconds_used_by_agent": {
-      "codex": 559.0820659999999
+  "current_issue": 25,
+  "session_id": "35893101-6a97-4c53-b9af-719f29f70398",
+  "pid": 80531,
+  "process_started_at": "Sun Jul 19 14:36:46 2026",
+  "agent": "codex",
+  "started_at": "2026-07-19T12:36:44.712836+00:00",
+  "scheduler_stalls": {
+    "deferred_passes": {
+      "budget": {
+        "first_seen_at": "2026-07-19T10:59:50.758838+00:00",
+        "last_seen_at": "2026-07-19T12:35:27.251276+00:00",
+        "consecutive_passes": 83
+      }
     }
+  },
+  "budget": {
+    "window_start": "2026-07-19T10:46:12.927177+00:00",
+    "seconds_used": 0.0,
+    "dollars_used": 0.0,
+    "seconds_used_by_agent": {}
   },
   "verification_followups": {
     "f0d8bfc9d2dc6da7a31609184e25c4d66d3986fd2340b33a83e98204fb86691e": "created"
   },
-  "role": "review",
-  "branch": "issue-21-unmute-the-vgt-chords-track-so-chord-lab",
-  "worktree_path": "/Users/marekkucharski/projects/.pm-worktrees/vgt/issue-21",
-  "pr_number": 24,
+  "role": "implement",
+  "branch": "issue-25-track-and-reconcile-only-vgt-owned-secti",
+  "worktree_path": "/Users/marekkucharski/projects/.pm-worktrees/vgt/issue-25",
+  "pr_number": null,
   "followup_generation": {
-    "fingerprint": "3d318dc82e3e7c229e211f23c3d3dae35d152b3d42d85d2cf62af1cf61a144a5",
+    "fingerprint": "21aabd4138fef85732e2ba4ed6fa65365084fb3986dac0b7f66d093f17bfed99",
     "items": {
-      "2351a08269633591788d14496ffa2fbde168f5cd2e02e24436860bc89b09af7b": {
-        "title": "Verify Phase 0 apply against a live REAPER project",
+      "58a644557c200cf86fc80c28daede3f77dddea837633b6f79802196ce75aafe0": {
+        "title": "Track and reconcile only vgt-owned section regions",
+        "status": "created"
+      },
+      "312859160e04491379c11f576d4b934502e00be0ad75d8034ca6a2cd5c8d9e14": {
+        "title": "Read renamed section regions back as verified corrections",
+        "status": "created"
+      },
+      "ff50f0ca90ccb59fa5c1a61b675ab575dea84c48a7bb0ff1e426ca3fff8eef7f": {
+        "title": "Safely refresh a vgt-created tempo map after analysis corrections",
+        "status": "created"
+      },
+      "745417e3412dd485618e7d16bb1fdb5db7f4c0bb5736c49908a6fc5c3623e781": {
+        "title": "Restore the required muted Chords track",
         "status": "created"
       }
     }
@@ -39,13 +57,13 @@
     "19": 2
   },
   "pending_transition": {
-    "issue": 21,
+    "issue": 25,
     "target": "working",
-    "event": "agent.review_started",
+    "event": "agent.started",
     "detail": {
-      "issue": 21,
-      "agent": "claude",
-      "pr": 24
+      "issue": 25,
+      "agent": "codex",
+      "branch": "issue-25-track-and-reconcile-only-vgt-owned-secti"
     },
     "cleanup": {}
   }
