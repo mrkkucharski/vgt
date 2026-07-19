@@ -39,7 +39,10 @@ def test_phase1_apply_reads_analysis_and_uses_only_reaper_api() -> None:
     assert 'SetMediaItemInfo_Value(item, "C_LOCK", 1)' in script
     assert 'local CHORDS_NAME = PREFIX .. " Chords"' in script
     assert 'local BEATS_NAME = PREFIX .. " Beats"' in script
-    assert "DeleteProjectMarkerByIndex" in script
+    assert "read_managed_region_ids" in script
+    assert "managed[region_id]" in script
+    assert "reaper.DeleteProjectMarker(0, region_id, true)" in script
+    assert '"managed_region_ids"' in script
 
 
 def test_beats_track_stays_muted_but_chords_track_is_created_unmuted() -> None:
@@ -88,6 +91,32 @@ def test_apply_preserves_analysis_json_with_braces_inside_strings(tmp_path: Path
     assert json.loads(result.stdout) == analysis
 
 
+def test_apply_removes_only_sidecar_recorded_region_ids(tmp_path: Path) -> None:
+    """A `[vgt]` name alone never grants vgt permission to delete a region."""
+    sidecar = tmp_path / "song.vgt"
+    sidecar.write_text(json.dumps({"managed_region_ids": [17]}))
+    script = APPLY_SCRIPT.read_text()
+    helpers_end = script.index("local function write_settings")
+    lua_program = "\n".join(
+        [
+            "local deleted = {}",
+            "local regions = {{id = 17, name = '[vgt] generated'}, {id = 18, name = '[vgt] user-created'}, {id = 19, name = 'user'}}",
+            "reaper = {}",
+            "function reaper.EnumProjects() return true, arg[1] end",
+            "function reaper.CountProjectMarkers() return #regions end",
+            "function reaper.EnumProjectMarkers3(_, index) local region = regions[index + 1]; return true, true, 0, 1, region.name, region.id, 0 end",
+            "function reaper.DeleteProjectMarker(_, id, is_region) deleted[#deleted + 1] = {id, is_region} end",
+            script[:helpers_end],
+            "remove_previous_managed_regions()",
+            "io.write(deleted[1][1], ':', tostring(deleted[1][2]), ':', #deleted)",
+        ]
+    )
+    result = subprocess.run(
+        ["lua", "-", str(tmp_path / "song.RPP")], input=lua_program, text=True, capture_output=True, check=True
+    )
+    assert result.stdout == "17:true:1"
+
+
 def test_live_verifier_requires_a_saved_baseline_and_is_read_only() -> None:
     script = VERIFY_SCRIPT.read_text()
     assert "--baseline" in script
@@ -105,6 +134,8 @@ def test_phase1_live_verifier_checks_fallback_and_has_an_opt_in_reaper_proof() -
     assert "[vgt] Beats" in script
     assert "read_text" in script
     assert "EnumProjectMarkers3" in script
+    assert "User-created region" in script
+    assert "managed_region_ids" in script
 
 
 def test_read_chords_only_reads_reaper_state_and_never_mutates_the_rpp() -> None:

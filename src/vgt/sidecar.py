@@ -14,6 +14,9 @@ Schema versions:
        migrated by backfilling `detected` from `value` (best effort -- if a
        human had already corrected `value` under v2, the true original is
        gone and the backfill just seeds `detected` with the corrected chords).
+  4 -- `managed_region_ids` records identities for section regions created by
+       the ReaScript action. Older sidecars start with no recorded regions,
+       which safely preserves any existing region on their first re-apply.
 
 Every stage entry has the same shape:
   {
@@ -39,6 +42,11 @@ writes it. Unlike `value`, `detected` keeps tracking the current audio and
 settings via its own hash pair even once `value` is human-verified and
 frozen -- it is the machine baseline, so it stays live, while the human's
 `value` is what freezes (see `analysis.py`'s `_refresh_chords_stage`).
+
+Schema 4 adds `managed_region_ids`, the REAPER region IDs created by vgt.
+Older sidecars migrate with an empty list: without a prior identity record,
+vgt preserves every existing region, including `[vgt]`-named regions a user
+may have made.
 """
 
 from __future__ import annotations
@@ -48,7 +56,7 @@ from typing import Any, Callable
 import copy
 import json
 
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 4
 
 ANALYSIS_STAGES = ("tempo", "key", "sections", "chords")
 
@@ -90,6 +98,10 @@ def upgrade(data: dict[str, Any]) -> dict[str, Any]:
     """Return `data` with all older fields intact and a current-schema `analysis` block present."""
     upgraded = dict(data)
     upgraded["schema_version"] = SCHEMA_VERSION
+    # Region names are presentation, not ownership. Do not infer ownership
+    # from a `[vgt]` prefix while migrating an older sidecar.
+    managed_region_ids = upgraded.get("managed_region_ids")
+    upgraded["managed_region_ids"] = managed_region_ids if isinstance(managed_region_ids, list) else []
     analysis = dict(upgraded.get("analysis") or {})
     for stage in ANALYSIS_STAGES:
         if stage == "chords":

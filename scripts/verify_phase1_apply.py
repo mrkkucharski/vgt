@@ -27,12 +27,13 @@ from vgt.project import ProjectError, _track_blocks, locate_project, read_projec
 PREFIX = "[vgt]"
 CHORDS_NAME = f"{PREFIX} Chords"
 BEATS_NAME = f"{PREFIX} Beats"
+USER_REGION_NAME = f"{PREFIX} User-created region"
 REAPER = Path("/Applications/REAPER.app/Contents/MacOS/REAPER")
 APPLY = ROOT / "reascript" / "vgt_initialize.lua"
 _MUTE = re.compile(r"^\s*MUTESOLO\s+1\b", re.MULTILINE)
 _LOCK = re.compile(r"^\s*LOCK\s+1\b", re.MULTILINE)
 _TEMPO_MARKER = re.compile(r"^\s*PT\s+([-+.\d]+)\s+([-+.\d]+)", re.MULTILINE)
-_REGION = re.compile(r'^\s*MARKER\s+\d+\s+([-+.\d]+)\s+"(?P<name>\[vgt\].*)"', re.MULTILINE)
+_REGION = re.compile(r'^\s*MARKER\s+(?P<id>\d+)\s+(?P<start>[-+.\d]+)\s+"(?P<name>\[vgt\].*)"', re.MULTILINE)
 _ITEM_START = re.compile(r"^\s*<ITEM\s*$", re.MULTILINE)
 _POSITION = re.compile(r"^\s*POSITION\s+([-+.\d]+)", re.MULTILINE)
 _LENGTH = re.compile(r"^\s*LENGTH\s+([-+.\d]+)", re.MULTILINE)
@@ -105,7 +106,7 @@ def _original_snapshot(project_path: Path, baseline: object) -> tuple[str, ...]:
     return tuple(blocks[track.guid] for track in baseline.tracks)
 
 
-def verify(project_path: Path, baseline_path: Path, *, first_snapshot: dict[str, object] | None = None) -> dict[str, object]:
+def verify(project_path: Path, baseline_path: Path, *, first_snapshot: dict[str, object] | None = None, expect_user_region: bool = False) -> dict[str, object]:
     try:
         baseline = read_project(baseline_path)
         project = read_project(project_path)
@@ -124,7 +125,7 @@ def verify(project_path: Path, baseline_path: Path, *, first_snapshot: dict[str,
     except (OSError, json.JSONDecodeError) as error:
         raise VerificationError(f"cannot read a valid sidecar: {error}") from error
     analysis = sidecar.get("analysis")
-    if sidecar.get("schema_version") != 3 or not isinstance(analysis, dict):
+    if sidecar.get("schema_version") != 4 or not isinstance(analysis, dict):
         _fail("Phase 1 sidecar analysis is missing")
 
     rpp_text = project_path.read_text(encoding="utf-8", errors="replace")
@@ -148,8 +149,8 @@ def verify(project_path: Path, baseline_path: Path, *, first_snapshot: dict[str,
     if chord_guid is None:
         _fail(f"missing {CHORDS_NAME!r} track")
     chord_block = blocks[chord_guid]
-    if not _MUTE.search(chord_block):
-        _fail("[vgt] Chords is not muted")
+    if _MUTE.search(chord_block):
+        _fail("[vgt] Chords must stay unmuted so its labels are readable")
     chord_items = _blocks(chord_block, _ITEM_START)
     expected_chords = _expected_chords(analysis, reference_start)
     if len(chord_items) != len(expected_chords):
@@ -164,14 +165,21 @@ def verify(project_path: Path, baseline_path: Path, *, first_snapshot: dict[str,
         if actual_label != label:
             _fail(f"chord item label is {actual_label!r}, expected {label!r}")
 
+    managed_region_ids = sidecar.get("managed_region_ids")
+    if not isinstance(managed_region_ids, list) or any(not isinstance(region_id, int) for region_id in managed_region_ids) or len(set(managed_region_ids)) != len(managed_region_ids):
+        _fail("managed_region_ids is missing or contains duplicates")
+    actual_regions = [(int(match.group("id")), match.group("name"), float(match.group("start"))) for match in _REGION.finditer(rpp_text)]
+    actual_sections = [(name, start) for region_id, name, start in actual_regions if region_id in managed_region_ids]
     expected_sections = _expected_sections(analysis, reference_start)
-    actual_sections = [(match.group("name"), float(match.group(1))) for match in _REGION.finditer(rpp_text)]
     if len(actual_sections) != len(expected_sections):
         _fail("[vgt] section regions do not match sidecar sections")
     for actual, expected in zip(actual_sections, expected_sections):
         if actual[0] != expected[0]:
             _fail(f"section name is {actual[0]!r}, expected {expected[0]!r}")
         _same_time(actual[1], expected[1], f"section {expected[0]!r} start")
+    user_region_present = any(name == USER_REGION_NAME for _, name, _ in actual_regions)
+    if expect_user_region and not user_region_present:
+        _fail("the user-created [vgt] region was removed")
 
     mirror_guid = next((guid for guid in managed if names_by_guid.get(guid) == f"{PREFIX} Mirror"), None)
     if mirror_guid is None or any(not _TIME_BASED.search(item) for item in _blocks(blocks[mirror_guid], _ITEM_START)):
@@ -193,7 +201,7 @@ def verify(project_path: Path, baseline_path: Path, *, first_snapshot: dict[str,
         if not _MUTE.search(beat_block) or any(not _LOCK.search(item) for item in _blocks(beat_block, _ITEM_START)):
             _fail("[vgt] Beats is not muted with locked marker items")
 
-    result = {"original_blocks": original_blocks, "managed_names": tuple(names_by_guid[guid] for guid in managed), "regions": tuple(actual_sections), "tempo_markers": tuple(_TEMPO_MARKER.findall(rpp_text)), "tempo_map_applied": tempo_applied}
+    result = {"original_blocks": original_blocks, "managed_names": tuple(names_by_guid[guid] for guid in managed), "regions": tuple(actual_sections), "user_region_present": user_region_present, "tempo_markers": tuple(_TEMPO_MARKER.findall(rpp_text)), "tempo_map_applied": tempo_applied}
     if first_snapshot and {key: value for key, value in result.items() if key != "original_blocks"} != {key: value for key, value in first_snapshot.items() if key != "original_blocks"}:
         _fail("re-apply did not persist the same Phase 1 state")
     return result
@@ -203,7 +211,7 @@ def _analysis() -> dict[str, object]:
     return {"tempo": {"value": {"bpm": 100.0, "downbeat_offset_seconds": 0.0, "time_signature": "4/4", "mode": "constant"}}, "sections": {"value": [{"label": "intro", "start_seconds": 0.0, "end_seconds": 8.0}, {"label": "verse", "start_seconds": 8.0, "end_seconds": 16.0}]}, "chords": {"value": {"segments": [{"chord": "Am", "start_seconds": 0.0, "end_seconds": 2.4}, {"chord": "F", "start_seconds": 2.4, "end_seconds": 4.8}]}}}
 
 
-def _run_reaper(project: Path, run_dir: Path, *, existing_map: bool) -> list[tuple[str, float, float]]:
+def _run_reaper(project: Path, run_dir: Path, *, existing_map: bool, user_region: bool = False) -> list[tuple[str, float, float]]:
     select = run_dir / "select.lua"
     save = run_dir / "save.lua"
     report = run_dir / "regions.tsv"
@@ -224,6 +232,12 @@ def _run_reaper(project: Path, run_dir: Path, *, existing_map: bool) -> list[tup
         tempo = run_dir / "existing-tempo.lua"
         tempo.write_text("reaper.SetTempoTimeSigMarker(0, -1, 0, -1, -1, 140, 4, 4, false)\n", encoding="utf-8")
         arguments.append(str(tempo))
+    if user_region:
+        user_region_script = run_dir / "user-region.lua"
+        user_region_script.write_text(
+            f'reaper.AddProjectMarker2(0, true, 20, 24, "{USER_REGION_NAME}", -1, 0)\n', encoding="utf-8"
+        )
+        arguments.append(str(user_region_script))
     arguments.extend((str(select), str(APPLY), str(save)))
     subprocess.run(arguments, check=True, timeout=90)
     return [(name, float(start), float(end)) for name, start, end in (line.split("\t") for line in report.read_text(encoding="utf-8").splitlines())]
@@ -243,10 +257,10 @@ def run_live(baseline: Path) -> dict[str, object]:
             _run_reaper(project, run_dir, existing_map=existing_map)  # Phase 0 creates its sidecar.
             sidecar_path = project.with_suffix(".vgt")
             sidecar = json.loads(sidecar_path.read_text(encoding="utf-8"))
-            sidecar.update(schema_version=3, analysis=_analysis())
+            sidecar.update(schema_version=4, analysis=_analysis())
             sidecar_path.write_text(json.dumps(sidecar), encoding="utf-8")
-            api_sections = _run_reaper(project, run_dir, existing_map=False)
-            first = verify(project, baseline)
+            api_sections = [region for region in _run_reaper(project, run_dir, existing_map=False, user_region=True) if region[0] != USER_REGION_NAME]
+            first = verify(project, baseline, expect_user_region=True)
             # A pre-existing tempo map may display the reference item's RPP
             # position differently in seconds.  Its first section establishes
             # that live REAPER offset; all analysis boundaries must retain
@@ -261,8 +275,8 @@ def run_live(baseline: Path) -> dict[str, object]:
                     _fail(f"REAPER API section name differs: {actual!r} != {wanted!r}")
                 _same_time(actual[1], wanted[1], f"REAPER API section {wanted[0]!r} start")
                 _same_time(actual[2], wanted[2], f"REAPER API section {wanted[0]!r} end")
-            api_sections_again = _run_reaper(project, run_dir, existing_map=False)
-            outcomes[name] = verify(project, baseline, first_snapshot=first)
+            api_sections_again = [region for region in _run_reaper(project, run_dir, existing_map=False) if region[0] != USER_REGION_NAME]
+            outcomes[name] = verify(project, baseline, first_snapshot=first, expect_user_region=True)
             if api_sections_again != api_sections:
                 _fail("re-apply changed REAPER API section boundaries")
         return outcomes

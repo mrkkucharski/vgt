@@ -88,6 +88,15 @@ local function read_managed_guids()
   return guids
 end
 
+local function read_managed_region_ids()
+  local body = read_sidecar_body()
+  if not body then return {} end
+  local ids = {}
+  local array = body:match('"managed_region_ids"%s*:%s*%[(.-)%]') or ""
+  for id in array:gmatch("%-?%d+") do ids[tonumber(id)] = true end
+  return ids
+end
+
 local function prior_tempo_map_applied()
   local body = read_sidecar_body() or ""
   -- This flag is vgt's record that the current map was created during an
@@ -95,7 +104,7 @@ local function prior_tempo_map_applied()
   return body:match('"tempo_map_applied"%s*:%s*true') ~= nil
 end
 
--- The Python `vgt analyze` stage (schema v3) adds a top-level "analysis"
+-- The Python `vgt analyze` stage adds a top-level "analysis"
 -- object to the sidecar. This action is the sole writer of the sidecar's
 -- other fields, so it must round-trip that object verbatim on re-apply
 -- rather than silently dropping any analysis a user has already run.
@@ -365,45 +374,53 @@ local function add_beat_markers(track, tempo, reference_start, reference_end)
   end
 end
 
-local function remove_previous_vgt_regions()
+local function remove_previous_managed_regions()
+  local managed = read_managed_region_ids()
   for index = reaper.CountProjectMarkers(0) - 1, 0, -1 do
-    local _, is_region, _, _, name = reaper.EnumProjectMarkers3(0, index)
-    if is_region and name:sub(1, #PREFIX) == PREFIX then reaper.DeleteProjectMarkerByIndex(0, index) end
+    local _, is_region, _, _, _, region_id = reaper.EnumProjectMarkers3(0, index)
+    if is_region and managed[region_id] then reaper.DeleteProjectMarker(0, region_id, true) end
   end
 end
 
 local function add_sections(sections, reference_start)
+  local region_ids = {}
   if type(sections) ~= "table" then return end
   for _, section in ipairs(sections) do
     local start_time = reference_start + (tonumber(section.start_seconds) or 0)
     local end_time = reference_start + (tonumber(section.end_seconds) or 0)
     local label = tostring(section.label or section.name or "section")
-    if end_time > start_time then reaper.AddProjectMarker2(0, true, start_time, end_time, PREFIX .. " " .. label, -1, 0) end
+    if end_time > start_time then
+      region_ids[#region_ids + 1] = reaper.AddProjectMarker2(0, true, start_time, end_time, PREFIX .. " " .. label, -1, 0)
+    end
   end
+  return region_ids
 end
 
-local function write_settings(folder, managed_tracks, reference, tempo_map_applied)
-  -- Preserve any analysis the Python CLI already wrote (schema v3); a fresh
+local function write_settings(folder, managed_tracks, managed_region_ids, reference, tempo_map_applied)
+  -- Preserve any analysis the Python CLI already wrote (schema v4); a fresh
   -- sidecar with no prior analysis stays schema v1, matching Phase 0's
   -- long-standing on-disk format.
   local analysis = read_analysis_block()
   local prior_body = read_sidecar_body() or ""
   local prior_schema = tonumber(prior_body:match('"schema_version"%s*:%s*(%d+)')) or 3
-  local schema_version = analysis and math.max(prior_schema, 3) or 1
+  local schema_version = analysis and math.max(prior_schema, 4) or 1
   local analysis_field = analysis and ('\n  "analysis": ' .. analysis .. ",") or ""
 
   local file, error_message = io.open(sidecar_path(), "w")
   if not file then error(error_message) end
   local guids = {}
   for _, track in ipairs(managed_tracks) do guids[#guids + 1] = '"' .. reaper.GetTrackGUID(track) .. '"' end
+  local region_ids = {}
+  for _, region_id in ipairs(managed_region_ids) do region_ids[#region_ids + 1] = tostring(region_id) end
   file:write(string.format([[{
   "schema_version": %d,%s
   "managed_track_guids": [%s],
+  "managed_region_ids": [%s],
   "config": {"reference_track_name": "%s", "reference_track_guid": "%s", "folder_name": "%s", "mirror_name": "%s", "tempo_map_applied": %s}
 }
 ]],
     schema_version, analysis_field,
-    table.concat(guids, ", "),
+    table.concat(guids, ", "), table.concat(region_ids, ", "),
     escaped(track_name(reference)), reaper.GetTrackGUID(reference),
     escaped(PREFIX .. " " .. track_name(reference)), escaped(MIRROR_NAME), tempo_map_applied and "true" or "false"))
   file:close()
@@ -423,7 +440,7 @@ local function apply()
   reaper.PreventUIRefresh(1)
   local analysis = read_analysis()
   remove_previous_managed_tracks()
-  remove_previous_vgt_regions()
+  remove_previous_managed_regions()
 
   -- Re-resolve the reference by GUID: deleting the previous managed tracks can invalidate the pointer.
   reference = find_track_by_guid(reference_guid)
@@ -474,12 +491,12 @@ local function apply()
     managed_tracks[#managed_tracks + 1] = chords_track
   end
 
-  add_sections(analysis and analysis.sections and analysis.sections.value, reference_start)
+  local managed_region_ids = add_sections(analysis and analysis.sections and analysis.sections.value, reference_start) or {}
 
   -- The folder must close after every child we appended.
   reaper.SetMediaTrackInfo_Value(managed_tracks[#managed_tracks], "I_FOLDERDEPTH", -1)
 
-  write_settings(folder, managed_tracks, reference, tempo_map_applied)
+  write_settings(folder, managed_tracks, managed_region_ids, reference, tempo_map_applied)
   reaper.MarkProjectDirty(0)
   reaper.UpdateArrange()
   reaper.PreventUIRefresh(-1)
