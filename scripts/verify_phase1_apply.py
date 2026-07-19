@@ -155,8 +155,8 @@ def verify(project_path: Path, baseline_path: Path, *, first_snapshot: dict[str,
     if len(chord_items) != len(expected_chords):
         _fail("[vgt] Chords item count does not match sidecar chord segments")
     for item, (label, start, end) in zip(chord_items, expected_chords):
-        if not _LOCK.search(item):
-            _fail("[vgt] Chords contains an unlocked label item")
+        if _LOCK.search(item):
+            _fail("[vgt] Chords contains a locked label item; chord items must stay editable")
         _same_time(_number(item, _POSITION, "POSITION"), start, f"chord {label!r} start")
         _same_time(_number(item, _LENGTH, "LENGTH"), end - start, f"chord {label!r} length")
         name = _TAKE_NAME.search(item)

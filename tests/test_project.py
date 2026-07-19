@@ -37,3 +37,15 @@ def test_requires_explicit_path_when_multiple_projects(tmp_path: Path) -> None:
 def test_bare_cli_invocation_inspects_an_explicit_project(capsys: pytest.CaptureFixture[str]) -> None:
     assert main([str(FIXTURE)]) == 0
     assert json.loads(capsys.readouterr().out)["sample_rate"] == 44100
+
+
+def test_apply_command_points_to_the_apply_reascript(capsys: pytest.CaptureFixture[str]) -> None:
+    assert main(["apply", str(FIXTURE)]) == 2
+    assert "reascript/vgt_initialize.lua" in capsys.readouterr().err
+
+
+def test_read_chords_command_points_to_the_read_chords_reascript(capsys: pytest.CaptureFixture[str]) -> None:
+    assert main(["read-chords", str(FIXTURE)]) == 2
+    err = capsys.readouterr().err
+    assert "reascript/vgt_read_chords.lua" in err
+    assert "human-verified" in err

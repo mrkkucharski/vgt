@@ -18,6 +18,11 @@ def _parser() -> argparse.ArgumentParser:
     inspect.add_argument("project", nargs="?", help="Path to a .RPP project (defaults to cwd's only .RPP).")
     apply = subparsers.add_parser("apply", help="Prepare the open project through the bundled ReaScript action.")
     apply.add_argument("project", nargs="?", help="Path to a .RPP project (defaults to cwd's only .RPP).")
+    read_chords = subparsers.add_parser(
+        "read-chords",
+        help="Read corrected chord items from the [vgt] Chords track in REAPER back into the .vgt sidecar as human-verified.",
+    )
+    read_chords.add_argument("project", nargs="?", help="Path to a .RPP project (defaults to cwd's only .RPP).")
     analyze_parser = subparsers.add_parser(
         "analyze", help="Detect tempo/key/sections/chords for the reference track and persist them to the .vgt sidecar."
     )
@@ -34,7 +39,7 @@ def main(argv: list[str] | None = None) -> int:
     # Phase 0's primary invocation is `vgt [project.rpp]`; retain explicit
     # subcommands for scripts that want to state their intent.
     arguments = list(sys.argv[1:] if argv is None else argv)
-    if not arguments or arguments[0] not in {"inspect", "apply", "analyze", "-h", "--help"}:
+    if not arguments or arguments[0] not in {"inspect", "apply", "read-chords", "analyze", "-h", "--help"}:
         arguments.insert(0, "inspect")
     args = _parser().parse_args(arguments)
     try:
@@ -50,11 +55,18 @@ def main(argv: list[str] | None = None) -> int:
 
             print(json.dumps(analyze(project, progress=report, force=args.force), indent=2))
             return 0
-        # Deliberately no RPP text-edit fallback: only the ReaScript mutates projects.
+        # Deliberately no RPP/sidecar text-edit fallback for these commands:
+        # only the ReaScript actions mutate REAPER projects or read live
+        # REAPER item state back into the sidecar.
+        script = "vgt_read_chords.lua" if args.command == "read-chords" else "vgt_initialize.lua"
+        description = (
+            "reads the [vgt] Chords track's items back into the .vgt sidecar as human-verified"
+            if args.command == "read-chords"
+            else "creates/updates the adjacent .vgt sidecar (named after the project, e.g. 'Reaper Project.vgt')"
+        )
         print(
-            f"Open {project} in REAPER, then run reascript/vgt_initialize.lua from REAPER's Action List. "
-            "That action uses REAPER's API and creates/updates the adjacent .vgt sidecar "
-            "(named after the project, e.g. 'Reaper Project.vgt').",
+            f"Open {project} in REAPER, then run reascript/{script} from REAPER's Action List. "
+            f"That action uses REAPER's API and {description}.",
             file=sys.stderr,
         )
         return 2
