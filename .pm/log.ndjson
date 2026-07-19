@@ -3742,3 +3742,15 @@
 {"ts": "2026-07-19T16:20:02.658399+00:00", "project": "vgt", "event": "orchestrator.no_capacity", "detail": {"message": "work is available, but scheduler capacity or budget headroom is exhausted"}}
 {"ts": "2026-07-19T16:21:13.710358+00:00", "project": "vgt", "event": "issue.closed_labels_cleaned", "detail": {"issue": 27, "removed": ["status:working"]}}
 {"ts": "2026-07-19T16:21:14.104978+00:00", "project": "vgt", "event": "worktree.cleaned_up", "detail": {"issue": 27, "branch": "issue-27-safely-refresh-a-vgt-created-tempo-map-a", "worktree": "/Users/marekkucharski/projects/.pm-worktrees/vgt/issue-27"}}
+{"ts": "2026-07-19T16:21:19.691754+00:00", "project": "vgt", "event": "agent.started", "detail": {"issue": 28, "agent": "claude", "branch": "issue-28-restore-the-required-muted-chords-track", "pid": 94667, "process_started_at": "Sun Jul 19 18:21:17 2026"}}
+{"ts": "2026-07-19T16:21:19.712502+00:00", "project": "vgt", "event": "orchestrator.pass_outcome", "detail": {"outcomes": ["deferred", "scheduled"], "scheduled": 1, "followups_created": 0}}
+{"ts": "2026-07-19T16:22:28.513183+00:00", "project": "vgt", "event": "orchestrator.pass_outcome", "detail": {"outcomes": ["deferred"], "scheduled": 0, "followups_created": 0}}
+{"ts": "2026-07-19T16:22:28.513462+00:00", "project": "vgt", "event": "orchestrator.no_capacity", "detail": {"message": "work is available, but scheduler capacity or budget headroom is exhausted"}}
+{"ts": "2026-07-19T16:23:37.306074+00:00", "project": "vgt", "event": "orchestrator.pass_outcome", "detail": {"outcomes": ["deferred"], "scheduled": 0, "followups_created": 0}}
+{"ts": "2026-07-19T16:23:37.306498+00:00", "project": "vgt", "event": "orchestrator.no_capacity", "detail": {"message": "work is available, but scheduler capacity or budget headroom is exhausted"}}
+{"ts": "2026-07-19T16:24:45.596008+00:00", "project": "vgt", "event": "orchestrator.pass_outcome", "detail": {"outcomes": ["deferred"], "scheduled": 0, "followups_created": 0}}
+{"ts": "2026-07-19T16:24:45.596166+00:00", "project": "vgt", "event": "orchestrator.no_capacity", "detail": {"message": "work is available, but scheduler capacity or budget headroom is exhausted"}}
+{"ts": "2026-07-19T16:25:53.658065+00:00", "project": "vgt", "event": "orchestrator.pass_outcome", "detail": {"outcomes": ["deferred"], "scheduled": 0, "followups_created": 0}}
+{"ts": "2026-07-19T16:25:53.658229+00:00", "project": "vgt", "event": "orchestrator.no_capacity", "detail": {"message": "work is available, but scheduler capacity or budget headroom is exhausted"}}
+{"ts": "2026-07-19T16:27:01.414957+00:00", "project": "vgt", "event": "agent.ready_for_review", "detail": {"issue": 28, "agent": "claude", "role": "implement"}}
+{"ts": "2026-07-19T16:27:07.434622+00:00", "project": "vgt", "event": "pr.created", "detail": {"issue": 28, "pr": 32, "branch": "issue-28-restore-the-required-muted-chords-track"}}
