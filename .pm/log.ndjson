@@ -4145,3 +4145,13 @@
 {"ts": "2026-07-19T20:35:04.169755+00:00", "project": "vgt", "event": "orchestrator.pass_outcome", "detail": {"outcomes": ["deferred"], "scheduled": 0, "followups_created": 0}}
 {"ts": "2026-07-19T20:35:04.170330+00:00", "project": "vgt", "event": "orchestrator.no_capacity", "detail": {"message": "work is available, but scheduler capacity or budget headroom is exhausted"}}
 {"ts": "2026-07-19T20:36:15.848711+00:00", "project": "vgt", "event": "pr.created", "detail": {"issue": 34, "pr": 38, "branch": "issue-34-remove-read-chords-command-once-sync-rep"}}
+{"ts": "2026-07-19T20:36:19.278683+00:00", "project": "vgt", "event": "agent.review_started", "detail": {"issue": 34, "agent": "codex", "pr": 38, "pid": 7909, "process_started_at": "Sun Jul 19 22:36:17 2026"}}
+{"ts": "2026-07-19T20:36:19.280735+00:00", "project": "vgt", "event": "scheduler.stall_cleared", "detail": {"category": "deferred_passes", "reason": "budget", "first_seen_at": "2026-07-19T18:59:18.774631+00:00", "last_seen_at": "2026-07-19T20:35:04.166355+00:00", "consecutive_passes": 83}}
+{"ts": "2026-07-19T20:36:19.292316+00:00", "project": "vgt", "event": "orchestrator.pass_outcome", "detail": {"outcomes": ["deferred", "scheduled"], "scheduled": 1, "followups_created": 0}}
+{"ts": "2026-07-19T20:37:27.845668+00:00", "project": "vgt", "event": "orchestrator.pass_outcome", "detail": {"outcomes": ["deferred"], "scheduled": 0, "followups_created": 0}}
+{"ts": "2026-07-19T20:37:27.846003+00:00", "project": "vgt", "event": "orchestrator.no_capacity", "detail": {"message": "work is available, but scheduler capacity or budget headroom is exhausted"}}
+{"ts": "2026-07-19T20:38:37.011171+00:00", "project": "vgt", "event": "orchestrator.pass_outcome", "detail": {"outcomes": ["deferred"], "scheduled": 0, "followups_created": 0}}
+{"ts": "2026-07-19T20:38:37.011644+00:00", "project": "vgt", "event": "orchestrator.no_capacity", "detail": {"message": "work is available, but scheduler capacity or budget headroom is exhausted"}}
+{"ts": "2026-07-19T20:39:46.898774+00:00", "project": "vgt", "event": "issue.closed_labels_cleaned", "detail": {"issue": 34, "removed": ["status:working"]}}
+{"ts": "2026-07-19T20:39:47.320985+00:00", "project": "vgt", "event": "worktree.cleaned_up", "detail": {"issue": 34, "branch": "issue-34-remove-read-chords-command-once-sync-rep", "worktree": "/Users/marekkucharski/projects/.pm-worktrees/vgt/issue-34"}}
+{"ts": "2026-07-19T20:39:54.845099+00:00", "project": "vgt", "event": "orchestrator.issue_selected", "detail": {"issue": 36, "method": "local_priorities"}}

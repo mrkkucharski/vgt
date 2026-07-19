@@ -1,19 +1,11 @@
 {
-  "current_issue": 34,
-  "session_id": "9fef6824-91cd-4461-a97c-7f96e9f70671",
-  "pid": 7909,
-  "process_started_at": "Sun Jul 19 22:36:17 2026",
+  "current_issue": 36,
+  "session_id": "4b0926c7-e89a-49d1-8cc4-e35cc84434f1",
+  "pid": 8558,
+  "process_started_at": "Sun Jul 19 22:39:58 2026",
   "agent": "codex",
-  "started_at": "2026-07-19T20:36:15.850616+00:00",
-  "scheduler_stalls": {
-    "deferred_passes": {
-      "budget": {
-        "first_seen_at": "2026-07-19T18:59:18.774631+00:00",
-        "last_seen_at": "2026-07-19T20:35:04.166355+00:00",
-        "consecutive_passes": 83
-      }
-    }
-  },
+  "started_at": "2026-07-19T20:39:56.532264+00:00",
+  "scheduler_stalls": {},
   "budget": {
     "window_start": "2026-07-19T15:46:21.062958+00:00",
     "seconds_used": 0.0,
@@ -23,10 +15,10 @@
   "verification_followups": {
     "f0d8bfc9d2dc6da7a31609184e25c4d66d3986fd2340b33a83e98204fb86691e": "created"
   },
-  "role": "review",
-  "branch": "issue-34-remove-read-chords-command-once-sync-rep",
-  "worktree_path": "/Users/marekkucharski/projects/.pm-worktrees/vgt/issue-34",
-  "pr_number": 38,
+  "role": "implement",
+  "branch": "issue-36-unmute-the-vgt-beats-track-so-its-beat-m",
+  "worktree_path": "/Users/marekkucharski/projects/.pm-worktrees/vgt/issue-36",
+  "pr_number": null,
   "followup_generation": {
     "fingerprint": "21aabd4138fef85732e2ba4ed6fa65365084fb3986dac0b7f66d093f17bfed99",
     "items": {
@@ -57,13 +49,13 @@
     "19": 2
   },
   "pending_transition": {
-    "issue": 34,
+    "issue": 36,
     "target": "working",
-    "event": "agent.review_started",
+    "event": "agent.started",
     "detail": {
-      "issue": 34,
+      "issue": 36,
       "agent": "codex",
-      "pr": 38
+      "branch": "issue-36-unmute-the-vgt-beats-track-so-its-beat-m"
     },
     "cleanup": {}
   }
