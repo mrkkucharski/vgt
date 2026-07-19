@@ -2673,3 +2673,10 @@
 {"ts": "2026-07-19T10:20:43.243906+00:00", "project": "vgt", "event": "orchestrator.no_capacity", "detail": {"message": "work is available, but scheduler capacity or budget headroom is exhausted"}}
 {"ts": "2026-07-19T10:21:53.795019+00:00", "project": "vgt", "event": "issue.closed_labels_cleaned", "detail": {"issue": 20, "removed": ["status:working"]}}
 {"ts": "2026-07-19T10:21:54.143160+00:00", "project": "vgt", "event": "worktree.cleaned_up", "detail": {"issue": 20, "branch": "issue-20-add-vgt-status-command-summarize-sidecar", "worktree": "/Users/marekkucharski/projects/.pm-worktrees/vgt/issue-20"}}
+{"ts": "2026-07-19T10:22:00.025109+00:00", "project": "vgt", "event": "agent.started", "detail": {"issue": 21, "agent": "claude", "branch": "issue-21-unmute-the-vgt-chords-track-so-chord-lab", "pid": 72542, "process_started_at": "Sun Jul 19 12:21:58 2026"}}
+{"ts": "2026-07-19T10:22:00.026952+00:00", "project": "vgt", "event": "scheduler.fairness_override", "detail": {"issue": 21, "role": "implement", "max_consecutive_priority_starts": 3, "priority_starts_since_implementation": 0}}
+{"ts": "2026-07-19T10:22:00.045598+00:00", "project": "vgt", "event": "orchestrator.pass_outcome", "detail": {"outcomes": ["deferred", "scheduled"], "scheduled": 1, "followups_created": 0}}
+{"ts": "2026-07-19T10:23:08.777408+00:00", "project": "vgt", "event": "orchestrator.pass_outcome", "detail": {"outcomes": ["deferred"], "scheduled": 0, "followups_created": 0}}
+{"ts": "2026-07-19T10:23:08.777601+00:00", "project": "vgt", "event": "orchestrator.no_capacity", "detail": {"message": "work is available, but scheduler capacity or budget headroom is exhausted"}}
+{"ts": "2026-07-19T10:24:16.482322+00:00", "project": "vgt", "event": "agent.ready_for_review", "detail": {"issue": 21, "agent": "claude", "role": "implement"}}
+{"ts": "2026-07-19T10:24:22.426023+00:00", "project": "vgt", "event": "pr.created", "detail": {"issue": 21, "pr": 24, "branch": "issue-21-unmute-the-vgt-chords-track-so-chord-lab"}}
