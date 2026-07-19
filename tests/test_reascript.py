@@ -36,11 +36,19 @@ def test_phase1_apply_reads_analysis_and_uses_only_reaper_api() -> None:
     assert "SetTempoTimeSigMarker" in script
     assert "AddProjectMarker2" in script
     assert '"C_BEATATTACHMODE", 0' in script
-    assert '"B_MUTE", 1' in script
     assert 'SetMediaItemInfo_Value(item, "C_LOCK", 1)' in script
     assert 'local CHORDS_NAME = PREFIX .. " Chords"' in script
     assert 'local BEATS_NAME = PREFIX .. " Beats"' in script
     assert "DeleteProjectMarkerByIndex" in script
+
+
+def test_beats_track_stays_muted_but_chords_track_is_created_unmuted() -> None:
+    script = APPLY_SCRIPT.read_text()
+    # Issue #21: the chords track has no audio, so muting it only made its
+    # (dark-on-dark) labels unreadable. Beats keeps its default muted behavior.
+    assert 'reaper.SetMediaTrackInfo_Value(track, "B_MUTE", muted == false and 0 or 1)' in script
+    assert "add_locked_muted_track(insert_at + 2, BEATS_NAME)" in script
+    assert "add_locked_muted_track(reaper.CountTracks(0), CHORDS_NAME, false)" in script
 
 
 def test_chord_items_are_added_unlocked_so_they_stay_editable() -> None:
