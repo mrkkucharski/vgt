@@ -6,10 +6,15 @@ local PREFIX = "[vgt]"
 local MIRROR_NAME = PREFIX .. " Mirror"
 local CHORDS_NAME = PREFIX .. " Chords"
 local BEATS_NAME = PREFIX .. " Beats"
+local CLICK_NAME = PREFIX .. " Click"
 
 local function project_path()
   local _, path = reaper.EnumProjects(-1, "")
   return path
+end
+
+local function project_dir()
+  return project_path():match("^(.*[/\\])") or ""
 end
 
 local function sidecar_path()
@@ -434,6 +439,31 @@ local function offer_beats_track(index, tempo, reference_start, reference_end, m
   managed_tracks[#managed_tracks + 1] = beats
 end
 
+-- Imports the rendered click WAV (analysis.tempo.value.click_artifact_path,
+-- a filename alongside the sidecar) as a muted audio track, so it never
+-- surprises the user with playback -- unlike Beats/Chords, which are read
+-- rather than heard, this one only needs to exist for the user to unmute it.
+-- Absent gracefully if `vgt analyze` has not produced the artifact yet.
+local function add_click_track(index, tempo, reference_start, managed_tracks)
+  local filename = tempo.click_artifact_path
+  if not filename or filename == "" then return end
+  local click_path = project_dir() .. tostring(filename)
+  local probe = io.open(click_path, "rb")
+  if not probe then return end
+  probe:close()
+  local source = reaper.PCM_Source_CreateFromFile(click_path)
+  if not source then return end
+  local click_track = add_locked_track(index, CLICK_NAME, true)
+  local item = reaper.AddMediaItemToTrack(click_track)
+  reaper.SetMediaItemInfo_Value(item, "D_POSITION", reference_start)
+  reaper.SetMediaItemInfo_Value(item, "D_LENGTH", reaper.GetMediaSourceLength(source))
+  -- Tempo maps must never stretch vgt-owned audio.
+  reaper.SetMediaItemInfo_Value(item, "C_BEATATTACHMODE", 0)
+  local take = reaper.AddTakeToMediaItem(item)
+  reaper.SetMediaItemTake_Source(take, source)
+  managed_tracks[#managed_tracks + 1] = click_track
+end
+
 local function remove_previous_managed_regions()
   local managed = read_managed_region_ids()
   for index = reaper.CountProjectMarkers(0) - 1, 0, -1 do
@@ -572,6 +602,10 @@ local function apply()
       tempo_data_fp = ""
       offer_beats_track(insert_at + 2, tempo, reference_start, reference_end, managed_tracks)
     end
+  end
+
+  if type(tempo) == "table" then
+    add_click_track(reaper.CountTracks(0), tempo, reference_start, managed_tracks)
   end
 
   local chords = analysis and analysis.chords and analysis.chords.value

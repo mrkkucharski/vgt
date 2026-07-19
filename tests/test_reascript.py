@@ -64,6 +64,77 @@ def test_chord_items_are_added_unlocked_so_they_stay_editable() -> None:
     assert "if locked ~= false then reaper.SetMediaItemInfo_Value(item, \"C_LOCK\", 1) end" in script
 
 
+def test_click_track_is_muted_and_named_distinctly_from_beats() -> None:
+    script = APPLY_SCRIPT.read_text()
+    assert 'local CLICK_NAME = PREFIX .. " Click"' in script
+    assert "add_locked_track(index, CLICK_NAME, true)" in script
+    assert "add_click_track(reaper.CountTracks(0), tempo, reference_start, managed_tracks)" in script
+
+
+def _click_track_lua_mock(rpp_path: Path) -> str:
+    return "\n".join(
+        [
+            "reaper = {}",
+            "function reaper.EnumProjects(idx, buf) return true, arg[1] end",
+            "local tracks = {}",
+            "function reaper.InsertTrackAtIndex(index, defaults) tracks[index + 1] = {index = index, name = nil, mute = 0} end",
+            "function reaper.GetTrack(proj, index) return tracks[index + 1] end",
+            "function reaper.GetSetMediaTrackInfo_String(track, key, value, set) if key == 'P_NAME' and set then track.name = value end end",
+            "function reaper.SetMediaTrackInfo_Value(track, key, value) if key == 'B_MUTE' then track.mute = value end end",
+            "function reaper.PCM_Source_CreateFromFile(path) return {path = path} end",
+            "function reaper.GetMediaSourceLength(source) return 2.5, false end",
+            "local items = {}",
+            "function reaper.AddMediaItemToTrack(track) local item = {track = track, values = {}}; items[#items + 1] = item; return item end",
+            "function reaper.SetMediaItemInfo_Value(item, key, value) item.values[key] = value end",
+            "function reaper.AddTakeToMediaItem(item) local take = {}; item.take = take; return take end",
+            "function reaper.SetMediaItemTake_Source(take, source) take.source = source end",
+            "_G.__items = items",
+            "_G.__tracks = tracks",
+        ]
+    )
+
+
+def test_add_click_track_imports_the_rendered_click_wav_muted(tmp_path: Path) -> None:
+    rpp = tmp_path / "song.RPP"
+    click_wav = tmp_path / "song.vgt-tempo-click.wav"
+    click_wav.write_bytes(b"RIFF....WAVEfmt ")
+
+    script = APPLY_SCRIPT.read_text()
+    helpers_end = script.index("local function remove_previous_managed_regions()")
+    lua_program = "\n".join(
+        [
+            _click_track_lua_mock(rpp),
+            script[:helpers_end],
+            "local managed_tracks = {}",
+            "add_click_track(5, {click_artifact_path = 'song.vgt-tempo-click.wav'}, 1.5, managed_tracks)",
+            "local track = __tracks[6]",
+            "local item = __items[1]",
+            "io.write(track.name, ':', track.mute, ':', item.values.D_POSITION, ':', item.values.D_LENGTH, ':', item.values.C_BEATATTACHMODE, ':', #managed_tracks)",
+        ]
+    )
+    result = subprocess.run(["lua", "-", str(rpp)], input=lua_program, text=True, capture_output=True, check=True)
+    assert result.stdout == "[vgt] Click:1:1.5:2.5:0:1"
+
+
+def test_add_click_track_is_absent_when_no_click_artifact_exists(tmp_path: Path) -> None:
+    """Only added when `vgt analyze` has produced the click WAV -- absent gracefully otherwise."""
+    rpp = tmp_path / "song.RPP"
+
+    script = APPLY_SCRIPT.read_text()
+    helpers_end = script.index("local function remove_previous_managed_regions()")
+    lua_program = "\n".join(
+        [
+            _click_track_lua_mock(rpp),
+            script[:helpers_end],
+            "local managed_tracks = {}",
+            "add_click_track(5, {click_artifact_path = 'song.vgt-tempo-click.wav'}, 1.5, managed_tracks)",
+            "io.write(#managed_tracks, ':', #__tracks, ':', #__items)",
+        ]
+    )
+    result = subprocess.run(["lua", "-", str(rpp)], input=lua_program, text=True, capture_output=True, check=True)
+    assert result.stdout == "0:0:0"
+
+
 def test_apply_preserves_analysis_json_with_braces_inside_strings(tmp_path: Path) -> None:
     """The Lua sidecar reader must not mistake corrected text for JSON syntax."""
     sidecar = tmp_path / "song.vgt"
