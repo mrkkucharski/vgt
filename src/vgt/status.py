@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Any
 
 from .project import ProjectError, track_source_path
-from .sidecar import ANALYSIS_STAGES, sidecar_path
+from .sidecar import ANALYSIS_STAGES, DETECTED_SPLIT_STAGES, sidecar_path
 
 
 class StatusError(ValueError):
@@ -149,7 +149,7 @@ def format_status(status: dict[str, Any]) -> str:
         detail = stage["summary"] or "missing"
         if stage["present"]:
             detail += f", {stage['state']}"
-            if name == "chords" and stage["detected_present"]:
+            if name in DETECTED_SPLIT_STAGES and stage["detected_present"]:
                 detail += ", detected baseline present"
         lines.append(f"  {name}: {detail}")
     timestamps = status["timestamps"]

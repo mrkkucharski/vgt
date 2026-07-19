@@ -27,7 +27,15 @@ from .chords import ChordDetectionError, chord_sheet_path, detect_chords as _det
 from .key import KeyDetectionError, detect_key as _detect_key
 from .project import ProjectError, locate_project, track_source_path
 from .sections import SectionDetectionError, detect_sections as _detect_sections, render_section_timeline, section_timeline_path
-from .sidecar import ANALYSIS_STAGES, SidecarError, read_sidecar, refresh_stage, stage_is_current, write_sidecar
+from .sidecar import (
+    ANALYSIS_STAGES,
+    SidecarError,
+    DETECTED_SPLIT_STAGES,
+    read_sidecar,
+    refresh_stage,
+    stage_is_current,
+    write_sidecar,
+)
 from .tempo import TempoDetectionError, build_tempo_grid, click_artifact_path, detect_beats, render_click
 
 
@@ -72,21 +80,35 @@ def detect_key(project_path: Path, source: Path, settings: dict[str, Any], analy
         raise AnalysisError(str(exc)) from exc
 
 
-def detect_sections(project_path: Path, source: Path, settings: dict[str, Any], analysis: dict[str, Any]) -> list[Any]:
+def detect_sections(
+    project_path: Path,
+    source: Path,
+    settings: dict[str, Any],
+    analysis: dict[str, Any],
+    *,
+    render_artifact: bool = True,
+) -> list[Any]:
     """Section boundaries + generic labels (see sections.py), plus a
     plain-text section-timeline artifact rendered next to the sidecar for
-    by-eye verification."""
+    by-eye verification.
+
+    `render_artifact=False` skips writing that artifact: used when this is
+    only refreshing the `detected` baseline of an already human-verified
+    stage (see `_refresh_stage_with_detected`), so the on-disk
+    `.vgt-sections.txt` -- reflecting the effective, human-corrected `value`
+    -- isn't silently overwritten with the raw machine detection the human
+    corrected away from."""
     del analysis
     try:
         sections_value = _detect_sections(source, settings)
     except SectionDetectionError as exc:
         raise AnalysisError(str(exc)) from exc
-    if sections_value:
+    if sections_value and render_artifact:
         render_section_timeline(sections_value, section_timeline_path(project_path))
     return sections_value
 
 
-def _refresh_chords_stage(
+def _refresh_stage_with_detected(
     stage: dict[str, Any],
     *,
     input_hash: str,
@@ -96,7 +118,8 @@ def _refresh_chords_stage(
     analyzed_at: str | None = None,
 ) -> dict[str, Any]:
     """Like `sidecar.refresh_stage`, but tracks `detected` -- the pristine
-    machine-detection baseline -- independently of `value`.
+    machine-detection baseline -- independently of `value`. Used for the
+    `chords` and `sections` stages (`sidecar.DETECTED_SPLIT_STAGES`).
 
     Before a human verifies `value`, the two are recomputed together (there
     is only one detector call; `detected` is just the pristine copy of its
@@ -164,7 +187,7 @@ def detect_chords(
 
     `render_artifact=False` skips writing that artifact: used when this is
     only refreshing the `detected` baseline of an already human-verified
-    stage (see `_refresh_chords_stage`), so the on-disk `.vgt-chords.txt` --
+    stage (see `_refresh_stage_with_detected`), so the on-disk `.vgt-chords.txt` --
     documented as reflecting the effective, human-corrected `value` -- isn't
     silently overwritten with the raw machine detection the human corrected
     away from."""
@@ -239,7 +262,7 @@ def analyze(
         stage_settings = settings.get(stage, {})
         settings_hash = _hash_settings(stage_settings)
         if analysis[stage].get("human_verified"):
-            if stage == "chords" and (
+            if stage in DETECTED_SPLIT_STAGES and (
                 force
                 or analysis[stage].get("detected_input_hash") != input_hash
                 or analysis[stage].get("detected_settings_hash") != settings_hash
@@ -253,7 +276,7 @@ def analyze(
             emit(f"[{position}/{total}] {stage} — re-analyzing (forced)…")
         else:
             emit(f"[{position}/{total}] {stage} — analyzing…")
-        refresh = _refresh_chords_stage if stage == "chords" else refresh_stage
+        refresh = _refresh_stage_with_detected if stage in DETECTED_SPLIT_STAGES else refresh_stage
         analysis[stage] = refresh(
             analysis[stage],
             input_hash=input_hash,

@@ -17,6 +17,11 @@ Schema versions:
   4 -- `managed_region_ids` records identities for section regions created by
        the ReaScript action. Older sidecars start with no recorded regions,
        which safely preserves any existing region on their first re-apply.
+  5 -- The `sections` stage gains the same `detected`/`value` split as
+       `chords` (#19's follow-up, consumed by `vgt sync`, see #33): a human
+       correction to `value` never destroys the original detected section
+       boundaries. Existing v4 sidecars are migrated the same way as v2 -> v3
+       chords were: `detected` is backfilled from `value` (best effort).
 
 Every stage entry has the same shape:
   {
@@ -31,17 +36,17 @@ A human correction is applied by setting "value" and "human_verified": true;
 `refresh_stage` then leaves it untouched on every later re-run regardless of
 whether the input or settings hash changed.
 
-The `chords` stage additionally carries:
+The `chords` and `sections` stages additionally carry:
   {
-    "detected": <machine-detected chords, independent of human corrections>,
+    "detected": <machine-detected value, independent of human corrections>,
     "detected_input_hash": str | null,    # hash `detected` was last computed against
     "detected_settings_hash": str | null,
   }
-`detected` is never touched by `read-chords`; only `vgt analyze`'s detector
-writes it. Unlike `value`, `detected` keeps tracking the current audio and
+`detected` is never touched by `vgt sync`; only `vgt analyze`'s detectors
+write it. Unlike `value`, `detected` keeps tracking the current audio and
 settings via its own hash pair even once `value` is human-verified and
 frozen -- it is the machine baseline, so it stays live, while the human's
-`value` is what freezes (see `analysis.py`'s `_refresh_chords_stage`).
+`value` is what freezes (see `analysis.py`'s `_refresh_stage_with_detected`).
 
 Schema 4 adds `managed_region_ids`, the REAPER region IDs created by vgt.
 Older sidecars migrate with an empty list: without a prior identity record,
@@ -56,9 +61,13 @@ from typing import Any, Callable
 import copy
 import json
 
-SCHEMA_VERSION = 4
+SCHEMA_VERSION = 5
 
 ANALYSIS_STAGES = ("tempo", "key", "sections", "chords")
+
+# Stages that carry the detected/value split (#19): a human correction to
+# `value` never overwrites the pristine machine detection kept in `detected`.
+DETECTED_SPLIT_STAGES = ("sections", "chords")
 
 
 class SidecarError(ValueError):
@@ -81,7 +90,7 @@ def _empty_stage() -> dict[str, Any]:
     }
 
 
-def _empty_chords_stage() -> dict[str, Any]:
+def _empty_detected_split_stage() -> dict[str, Any]:
     return {**_empty_stage(), "detected": None, "detected_input_hash": None, "detected_settings_hash": None}
 
 
@@ -104,12 +113,13 @@ def upgrade(data: dict[str, Any]) -> dict[str, Any]:
     upgraded["managed_region_ids"] = managed_region_ids if isinstance(managed_region_ids, list) else []
     analysis = dict(upgraded.get("analysis") or {})
     for stage in ANALYSIS_STAGES:
-        if stage == "chords":
-            merged = {**_empty_chords_stage(), **(analysis.get(stage) or {})}
+        if stage in DETECTED_SPLIT_STAGES:
+            merged = {**_empty_detected_split_stage(), **(analysis.get(stage) or {})}
             if merged["detected"] is None and merged["value"] is not None:
-                # v2 -> v3 migration: best-effort backfill, see module docstring.
-                # Assume `detected` was last computed alongside `value`, so it
-                # inherits `value`'s hash pair rather than starting stale.
+                # Best-effort backfill, see module docstring (v2 -> v3 for
+                # chords, v4 -> v5 for sections). Assume `detected` was last
+                # computed alongside `value`, so it inherits `value`'s hash
+                # pair rather than starting stale.
                 merged["detected"] = copy.deepcopy(merged["value"])
                 merged["detected_input_hash"] = merged["input_hash"]
                 merged["detected_settings_hash"] = merged["settings_hash"]

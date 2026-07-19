@@ -6,8 +6,7 @@ import subprocess
 VERIFY_SCRIPT = Path(__file__).parents[1] / "scripts" / "verify_phase0_apply.py"
 PHASE1_VERIFY_SCRIPT = Path(__file__).parents[1] / "scripts" / "verify_phase1_apply.py"
 APPLY_SCRIPT = Path(__file__).parents[1] / "reascript" / "vgt_initialize.lua"
-READ_CHORDS_SCRIPT = Path(__file__).parents[1] / "reascript" / "vgt_read_chords.lua"
-READ_SECTIONS_SCRIPT = Path(__file__).parents[1] / "reascript" / "vgt_read_sections.lua"
+SYNC_SCRIPT = Path(__file__).parents[1] / "reascript" / "vgt_sync.lua"
 
 
 def test_apply_uses_reaper_api_and_never_edits_rpp_text() -> None:
@@ -216,10 +215,10 @@ def test_phase1_live_verifier_has_an_opt_in_tempo_refresh_proof() -> None:
     assert "SetTempoTimeSigMarker(0, 0, 0, -1, -1, 155, 3, 4, false)" in script
 
 
-def test_read_chords_only_reads_reaper_state_and_never_mutates_the_rpp() -> None:
-    script = READ_CHORDS_SCRIPT.read_text()
+def test_sync_only_reads_reaper_state_and_never_mutates_the_rpp() -> None:
+    script = SYNC_SCRIPT.read_text()
     # This action's sole job is REAPER-state -> sidecar bookkeeping; it must
-    # never touch project/track/item state through the REAPER API.
+    # never touch project/track/item/region state through the REAPER API.
     for forbidden in (
         "reaper.InsertTrackAtIndex",
         "reaper.DeleteTrack",
@@ -227,42 +226,32 @@ def test_read_chords_only_reads_reaper_state_and_never_mutates_the_rpp() -> None
         "reaper.SetMediaItemInfo_Value",
         "reaper.SetTempoTimeSigMarker",
         "reaper.AddProjectMarker2",
+        "reaper.DeleteProjectMarker",
         "reaper.MarkProjectDirty",
     ):
         assert forbidden not in script
 
 
-def test_read_chords_only_touches_the_vgt_owned_chords_track() -> None:
-    script = READ_CHORDS_SCRIPT.read_text()
+def test_sync_only_touches_vgt_owned_chords_track_and_regions() -> None:
+    script = SYNC_SCRIPT.read_text()
     assert 'local CHORDS_NAME = PREFIX .. " Chords"' in script
-    # Ownership is checked by GUID against the sidecar's managed_track_guids,
-    # not just by name, so a same-named user track is never touched.
+    # Ownership is checked by identity -- GUID for the chords track, region ID
+    # for regions -- against the sidecar's managed_track_guids /
+    # managed_region_ids, not just by name, so same-named user objects are
+    # never touched.
     assert "managed[reaper.GetTrackGUID(track)]" in script
+    assert "read_managed_region_ids" in script
+    assert "managed[region_id]" in script
+    assert "reaper.EnumProjectMarkers3" in script
 
 
-def test_read_chords_reports_success_without_a_blocking_dialog() -> None:
-    script = READ_CHORDS_SCRIPT.read_text()
+def test_sync_reports_success_without_a_blocking_dialog() -> None:
+    script = SYNC_SCRIPT.read_text()
     # A ShowMessageBox on the success path would block headless/automated
     # runs waiting for a click that never comes (see vgt_initialize.lua,
     # which only shows one on failure); success uses ShowConsoleMsg instead.
     assert "reaper.ShowConsoleMsg" in script
     assert script.count("reaper.ShowMessageBox") == 1
-
-
-def test_read_sections_only_reads_recorded_vgt_regions_and_never_mutates_the_rpp() -> None:
-    script = READ_SECTIONS_SCRIPT.read_text()
-    assert "read_managed_region_ids" in script
-    assert "managed[region_id]" in script
-    assert "reaper.EnumProjectMarkers3" in script
-    for forbidden in (
-        "reaper.InsertTrackAtIndex",
-        "reaper.DeleteTrack",
-        "reaper.DeleteProjectMarker",
-        "reaper.AddProjectMarker2",
-        "reaper.SetMediaItemInfo_Value",
-        "reaper.MarkProjectDirty",
-    ):
-        assert forbidden not in script
 
 
 def _run_lua_module(script: str, rpp_path: Path, program: str) -> subprocess.CompletedProcess[str]:
@@ -276,10 +265,12 @@ def _run_lua_module(script: str, rpp_path: Path, program: str) -> subprocess.Com
     )
 
 
-def test_read_chords_writes_corrected_segments_as_human_verified(tmp_path: Path) -> None:
-    """End-to-end: fake REAPER items on [vgt] Chords, relative to a reference
-    track's start, round-trip into sidecar segments -- other analysis stages
-    and sidecar fields are left byte-identical."""
+def test_sync_writes_corrected_chords_and_sections_in_one_invocation(tmp_path: Path) -> None:
+    """End-to-end: fake REAPER [vgt] Chords items and [vgt]-owned regions,
+    relative to a reference track's start, round-trip into sidecar segments
+    and sections in a single `sync()` call -- other analysis stages and
+    sidecar fields are left byte-identical, and each stage's own `detected`
+    baseline is untouched (#19, extended to sections by #33)."""
     rpp = tmp_path / "song.RPP"
     sidecar = tmp_path / "song.vgt"
     chords_guid = "{AAAAAAAA-1111-2222-3333-444444444444}"
@@ -291,15 +282,23 @@ def test_read_chords_writes_corrected_segments_as_human_verified(tmp_path: Path)
             "value": {"segments": [{"start_seconds": 0.0, "end_seconds": 1.0, "chord": "Am"}], "vocabulary": "maj_min", "backend": "librosa"},
             "detected": {"segments": [{"start_seconds": 0.0, "end_seconds": 1.0, "chord": "Am"}], "vocabulary": "maj_min", "backend": "librosa"},
             "human_verified": False,
-            "input_hash": "old-hash",
-            "settings_hash": "old-settings",
+            "input_hash": "old-chords-hash",
+            "settings_hash": "old-chords-settings",
+        },
+        "sections": {
+            "value": [{"label": "A", "start_seconds": 0.0, "end_seconds": 2.0}],
+            "detected": [{"label": "A", "start_seconds": 0.0, "end_seconds": 2.0}],
+            "human_verified": False,
+            "input_hash": "old-sections-hash",
+            "settings_hash": "old-sections-settings",
         },
     }
     sidecar.write_text(
         json.dumps(
             {
-                "schema_version": 3,
+                "schema_version": 5,
                 "managed_track_guids": [chords_guid, other_guid],
+                "managed_region_ids": [17, 18],
                 "config": {"reference_track_guid": reference_guid},
                 "analysis": analysis,
             }
@@ -314,6 +313,11 @@ local tracks = {{
     {{position = 11.5, length = 1.5, take_name = "F"}},
   }}}},
   {{guid = "{other_guid}", name = "[vgt] Mirror", items = {{}}}},
+}}
+local regions = {{
+  {{id = 17, start = 10.5, finish = 12.0, name = "[vgt] Verse {{A}}"}},
+  {{id = 18, start = 12.0, finish = 14.25, name = "Chorus"}},
+  {{id = 19, start = 14.25, finish = 16.0, name = "[vgt] User region"}},
 }}
 
 reaper = {{}}
@@ -331,16 +335,22 @@ function reaper.GetMediaItemInfo_Value(item, key)
 end
 function reaper.GetActiveTake(item) return item end
 function reaper.GetTakeName(item) return item.take_name end
+function reaper.CountProjectMarkers() return #regions end
+function reaper.EnumProjectMarkers3(_, index)
+  local region = regions[index + 1]
+  return true, true, region.start, region.finish, region.name, region.id, 0
+end
 local messages = {{}}
 function reaper.ShowConsoleMsg(msg) messages[#messages + 1] = msg end
 _G.__messages = messages
 """
 
-    result = _run_lua_module(READ_CHORDS_SCRIPT.read_text(), rpp, lua_mock + "\nread_chords()\nio.write(__messages[1])")
+    result = _run_lua_module(SYNC_SCRIPT.read_text(), rpp, lua_mock + "\nsync()\nio.write(__messages[1])")
     assert result.returncode == 0, result.stderr
-    assert "read 2 chord item(s)" in result.stdout
+    assert "synced 2 chord item(s) and 2 section region(s)" in result.stdout
 
     data = json.loads(sidecar.read_text())
+
     assert data["analysis"]["chords"] == {
         "value": {
             "segments": [
@@ -352,18 +362,34 @@ _G.__messages = messages
         },
         "detected": analysis["chords"]["detected"],
         "human_verified": True,
-        "input_hash": "old-hash",
-        "settings_hash": "old-settings",
+        "input_hash": "old-chords-hash",
+        "settings_hash": "old-chords-settings",
         "verified_at": data["analysis"]["chords"]["verified_at"],
     }
     assert data["analysis"]["chords"]["verified_at"].endswith("Z")
-    # `detected` (the original machine detection) is untouched by the correction.
+
+    assert data["analysis"]["sections"] == {
+        "value": [
+            {"label": "Verse {A}", "start_seconds": 0.5, "end_seconds": 2.0},
+            {"label": "Chorus", "start_seconds": 2.0, "end_seconds": 4.25},
+        ],
+        "detected": analysis["sections"]["detected"],
+        "human_verified": True,
+        "input_hash": "old-sections-hash",
+        "settings_hash": "old-sections-settings",
+        "verified_at": data["analysis"]["sections"]["verified_at"],
+    }
+    assert data["analysis"]["sections"]["verified_at"].endswith("Z")
+
+    # Each stage's own `detected` (the original machine detection) is
+    # untouched by the correction, and the untouched tempo stage round-trips
+    # byte-for-byte in structure.
     assert data["analysis"]["chords"]["detected"] == analysis["chords"]["detected"]
-    # The tempo stage (untouched) round-trips byte-for-byte in structure.
+    assert data["analysis"]["sections"]["detected"] == analysis["sections"]["detected"]
     assert data["analysis"]["tempo"] == analysis["tempo"]
 
 
-def test_read_chords_fails_clearly_when_no_chords_track_exists(tmp_path: Path) -> None:
+def test_sync_fails_clearly_when_no_chords_track_exists(tmp_path: Path) -> None:
     rpp = tmp_path / "song.RPP"
     sidecar = tmp_path / "song.vgt"
     sidecar.write_text(json.dumps({"schema_version": 2, "managed_track_guids": [], "config": {"reference_track_guid": "{X}"}, "analysis": {}}))
@@ -379,79 +405,7 @@ _G.__messages = messages
 """
     # Run the full script, including its xpcall driver, so a missing-track
     # error is reported through ShowMessageBox exactly as it would be live.
-    full_program = "\n".join([lua_mock, READ_CHORDS_SCRIPT.read_text(), "io.write(__messages[1] or '')"])
+    full_program = "\n".join([lua_mock, SYNC_SCRIPT.read_text(), "io.write(__messages[1] or '')"])
     result = subprocess.run(["lua", "-", str(rpp)], input=full_program, text=True, capture_output=True)
     assert result.returncode == 0, result.stderr
     assert "No [vgt] Chords track found" in result.stdout
-
-
-def test_read_sections_writes_only_owned_renamed_regions_as_human_verified(tmp_path: Path) -> None:
-    """Read region corrections by identity, retaining a rename even if it
-    dropped the visual `[vgt]` prefix, while leaving all other regions out."""
-    rpp = tmp_path / "song.RPP"
-    sidecar = tmp_path / "song.vgt"
-    reference_guid = "{CCCCCCCC-1111-2222-3333-444444444444}"
-    analysis = {
-        "tempo": {"value": {"bpm": 120.0}, "human_verified": True},
-        "sections": {
-            "value": [{"label": "A", "start_seconds": 0.0, "end_seconds": 2.0}],
-            "human_verified": False,
-            "input_hash": "old-hash",
-            "settings_hash": "old-settings",
-            "analyzed_at": "2026-07-19T10:00:00Z",
-            "verified_at": None,
-        },
-    }
-    sidecar.write_text(
-        json.dumps(
-            {
-                "schema_version": 4,
-                "managed_region_ids": [17, 18],
-                "config": {"reference_track_guid": reference_guid},
-                "analysis": analysis,
-            }
-        )
-    )
-    lua_mock = '''
-local tracks = {{guid = "REFERENCE_GUID", items = {{position = 10.0, length = 5.0}}}}
-local regions = {
-  {id = 17, start = 10.5, finish = 12.0, name = "[vgt] Verse {A} \\\"human_verified\\\""},
-  {id = 18, start = 12.0, finish = 14.25, name = "Chorus"},
-  {id = 19, start = 14.25, finish = 16.0, name = "[vgt] User region"},
-}
-reaper = {}
-function reaper.EnumProjects() return true, arg[1] end
-function reaper.CountTracks() return #tracks end
-function reaper.GetTrack(_, index) return tracks[index + 1] end
-function reaper.GetTrackGUID(track) return track.guid end
-function reaper.CountTrackMediaItems(track) return #track.items end
-function reaper.GetTrackMediaItem(track, index) return track.items[index + 1] end
-function reaper.GetMediaItemInfo_Value(item, key)
-  if key == "D_POSITION" then return item.position end
-  error("unexpected key " .. key)
-end
-function reaper.CountProjectMarkers() return #regions end
-function reaper.EnumProjectMarkers3(_, index)
-  local region = regions[index + 1]
-  return true, true, region.start, region.finish, region.name, region.id, 0
-end
-local messages = {}
-function reaper.ShowConsoleMsg(message) messages[#messages + 1] = message end
-_G.__messages = messages
-'''.replace("REFERENCE_GUID", reference_guid)
-    result = _run_lua_module(
-        READ_SECTIONS_SCRIPT.read_text(), rpp, lua_mock + "\nread_sections()\nio.write(__messages[1])"
-    )
-    assert result.returncode == 0, result.stderr
-    assert "read 2 section region(s)" in result.stdout
-
-    data = json.loads(sidecar.read_text())
-    sections = data["analysis"]["sections"]
-    assert sections["value"] == [
-        {"label": 'Verse {A} "human_verified"', "start_seconds": 0.5, "end_seconds": 2.0},
-        {"label": "Chorus", "start_seconds": 2.0, "end_seconds": 4.25},
-    ]
-    assert sections["human_verified"] is True
-    assert sections["verified_at"].endswith("Z")
-    assert sections["input_hash"] == "old-hash"
-    assert data["analysis"]["tempo"] == analysis["tempo"]

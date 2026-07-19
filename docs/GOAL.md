@@ -67,10 +67,12 @@ Phase 1 delivers:
     re-apply refreshes a vgt-created map with newly detected/corrected tempo data as long as the live map is
     still demonstrably the one vgt wrote (a fingerprint recorded in the sidecar proves it); the moment a human
     edits it by hand, vgt never touches it again and falls back to the non-invasive beat-marker track instead;
-  - `[vgt]` **section regions** (intro/verse/chorus/…), renamable by the user;
+  - `[vgt]` **section regions** (intro/verse/chorus/…), renamable and movable by the user;
   - a **muted `[vgt] Chords`** track carrying the beat-aligned chord labels as text items, editable on the
-    timeline and read back into the sidecar as human-verified corrections (see README's "Correcting chords in
-    REAPER").
+    timeline;
+  - a single **`vgt sync`** action reads both the edited chord items and the edited section regions back into
+    the sidecar as human-verified corrections in one invocation, without disturbing the machine-detected values
+    each stage keeps alongside them (see README's "Correcting chords and sections in REAPER").
 
 **Out of scope for phase 1** (deferred to later phases): stem separation, guitar MIDI reference generation,
 practice controls (stem muting / looping / tempo-ramp), and performance scoring. The full song-prep pipeline in
