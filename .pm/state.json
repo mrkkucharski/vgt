@@ -1,10 +1,10 @@
 {
   "current_issue": 27,
-  "session_id": "ce8e5631-f941-44fb-8480-3c9a2bfcb7e0",
-  "pid": 92303,
-  "process_started_at": "Sun Jul 19 17:52:21 2026",
+  "session_id": "957099d1-c08f-4ef2-9569-0a0f029e5988",
+  "pid": 94215,
+  "process_started_at": "Sun Jul 19 18:16:34 2026",
   "agent": "claude",
-  "started_at": "2026-07-19T15:52:20.250147+00:00",
+  "started_at": "2026-07-19T16:16:33.494496+00:00",
   "scheduler_stalls": {},
   "budget": {
     "window_start": "2026-07-19T15:46:21.062958+00:00",
@@ -15,10 +15,10 @@
   "verification_followups": {
     "f0d8bfc9d2dc6da7a31609184e25c4d66d3986fd2340b33a83e98204fb86691e": "created"
   },
-  "role": "implement",
+  "role": "review",
   "branch": "issue-27-safely-refresh-a-vgt-created-tempo-map-a",
   "worktree_path": "/Users/marekkucharski/projects/.pm-worktrees/vgt/issue-27",
-  "pr_number": null,
+  "pr_number": 31,
   "followup_generation": {
     "fingerprint": "21aabd4138fef85732e2ba4ed6fa65365084fb3986dac0b7f66d093f17bfed99",
     "items": {
@@ -51,11 +51,11 @@
   "pending_transition": {
     "issue": 27,
     "target": "working",
-    "event": "agent.started",
+    "event": "agent.review_started",
     "detail": {
       "issue": 27,
       "agent": "claude",
-      "branch": "issue-27-safely-refresh-a-vgt-created-tempo-map-a"
+      "pr": 31
     },
     "cleanup": {}
   }
