@@ -1,11 +1,19 @@
 {
   "current_issue": 19,
-  "session_id": "c6449256-2b7b-4509-ab23-1fd3f6da84f3",
-  "pid": 59012,
-  "process_started_at": "Sun Jul 19 08:46:21 2026",
-  "agent": "claude",
-  "started_at": "2026-07-19T06:46:20.511755+00:00",
-  "scheduler_stalls": {},
+  "session_id": "665e8cca-9a3b-43d5-ac4e-9e01173df9b7",
+  "pid": 65201,
+  "process_started_at": "Sun Jul 19 10:35:58 2026",
+  "agent": "codex",
+  "started_at": "2026-07-19T08:35:57.084990+00:00",
+  "scheduler_stalls": {
+    "deferred_passes": {
+      "budget": {
+        "first_seen_at": "2026-07-19T06:55:36.084647+00:00",
+        "last_seen_at": "2026-07-19T08:34:47.250657+00:00",
+        "consecutive_passes": 86
+      }
+    }
+  },
   "budget": {
     "window_start": "2026-07-19T05:45:06.823040+00:00",
     "seconds_used": 347.764992,
@@ -17,7 +25,7 @@
   "verification_followups": {
     "f0d8bfc9d2dc6da7a31609184e25c4d66d3986fd2340b33a83e98204fb86691e": "created"
   },
-  "role": "fix",
+  "role": "review",
   "branch": "issue-19-preserve-originally-detected-chords-alon",
   "worktree_path": "/Users/marekkucharski/projects/.pm-worktrees/vgt/issue-19",
   "pr_number": 22,
@@ -41,11 +49,11 @@
   "pending_transition": {
     "issue": 19,
     "target": "working",
-    "event": "agent.fix_started",
+    "event": "agent.review_started",
     "detail": {
       "issue": 19,
-      "agent": "claude",
-      "fix_count": 1
+      "agent": "codex",
+      "pr": 22
     },
     "cleanup": {}
   }
