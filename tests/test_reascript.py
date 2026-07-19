@@ -7,6 +7,7 @@ VERIFY_SCRIPT = Path(__file__).parents[1] / "scripts" / "verify_phase0_apply.py"
 PHASE1_VERIFY_SCRIPT = Path(__file__).parents[1] / "scripts" / "verify_phase1_apply.py"
 APPLY_SCRIPT = Path(__file__).parents[1] / "reascript" / "vgt_initialize.lua"
 READ_CHORDS_SCRIPT = Path(__file__).parents[1] / "reascript" / "vgt_read_chords.lua"
+READ_SECTIONS_SCRIPT = Path(__file__).parents[1] / "reascript" / "vgt_read_sections.lua"
 
 
 def test_apply_uses_reaper_api_and_never_edits_rpp_text() -> None:
@@ -171,6 +172,22 @@ def test_read_chords_reports_success_without_a_blocking_dialog() -> None:
     assert script.count("reaper.ShowMessageBox") == 1
 
 
+def test_read_sections_only_reads_recorded_vgt_regions_and_never_mutates_the_rpp() -> None:
+    script = READ_SECTIONS_SCRIPT.read_text()
+    assert "read_managed_region_ids" in script
+    assert "managed[region_id]" in script
+    assert "reaper.EnumProjectMarkers3" in script
+    for forbidden in (
+        "reaper.InsertTrackAtIndex",
+        "reaper.DeleteTrack",
+        "reaper.DeleteProjectMarker",
+        "reaper.AddProjectMarker2",
+        "reaper.SetMediaItemInfo_Value",
+        "reaper.MarkProjectDirty",
+    ):
+        assert forbidden not in script
+
+
 def _run_lua_module(script: str, rpp_path: Path, program: str) -> subprocess.CompletedProcess[str]:
     driver_start = script.index("local ok, error_message = xpcall")
     module = script[:driver_start]
@@ -289,3 +306,75 @@ _G.__messages = messages
     result = subprocess.run(["lua", "-", str(rpp)], input=full_program, text=True, capture_output=True)
     assert result.returncode == 0, result.stderr
     assert "No [vgt] Chords track found" in result.stdout
+
+
+def test_read_sections_writes_only_owned_renamed_regions_as_human_verified(tmp_path: Path) -> None:
+    """Read region corrections by identity, retaining a rename even if it
+    dropped the visual `[vgt]` prefix, while leaving all other regions out."""
+    rpp = tmp_path / "song.RPP"
+    sidecar = tmp_path / "song.vgt"
+    reference_guid = "{CCCCCCCC-1111-2222-3333-444444444444}"
+    analysis = {
+        "tempo": {"value": {"bpm": 120.0}, "human_verified": True},
+        "sections": {
+            "value": [{"label": "A", "start_seconds": 0.0, "end_seconds": 2.0}],
+            "human_verified": False,
+            "input_hash": "old-hash",
+            "settings_hash": "old-settings",
+            "analyzed_at": "2026-07-19T10:00:00Z",
+            "verified_at": None,
+        },
+    }
+    sidecar.write_text(
+        json.dumps(
+            {
+                "schema_version": 4,
+                "managed_region_ids": [17, 18],
+                "config": {"reference_track_guid": reference_guid},
+                "analysis": analysis,
+            }
+        )
+    )
+    lua_mock = '''
+local tracks = {{guid = "REFERENCE_GUID", items = {{position = 10.0, length = 5.0}}}}
+local regions = {
+  {id = 17, start = 10.5, finish = 12.0, name = "[vgt] Verse {A} \\\"human_verified\\\""},
+  {id = 18, start = 12.0, finish = 14.25, name = "Chorus"},
+  {id = 19, start = 14.25, finish = 16.0, name = "[vgt] User region"},
+}
+reaper = {}
+function reaper.EnumProjects() return true, arg[1] end
+function reaper.CountTracks() return #tracks end
+function reaper.GetTrack(_, index) return tracks[index + 1] end
+function reaper.GetTrackGUID(track) return track.guid end
+function reaper.CountTrackMediaItems(track) return #track.items end
+function reaper.GetTrackMediaItem(track, index) return track.items[index + 1] end
+function reaper.GetMediaItemInfo_Value(item, key)
+  if key == "D_POSITION" then return item.position end
+  error("unexpected key " .. key)
+end
+function reaper.CountProjectMarkers() return #regions end
+function reaper.EnumProjectMarkers3(_, index)
+  local region = regions[index + 1]
+  return true, true, region.start, region.finish, region.name, region.id, 0
+end
+local messages = {}
+function reaper.ShowConsoleMsg(message) messages[#messages + 1] = message end
+_G.__messages = messages
+'''.replace("REFERENCE_GUID", reference_guid)
+    result = _run_lua_module(
+        READ_SECTIONS_SCRIPT.read_text(), rpp, lua_mock + "\nread_sections()\nio.write(__messages[1])"
+    )
+    assert result.returncode == 0, result.stderr
+    assert "read 2 section region(s)" in result.stdout
+
+    data = json.loads(sidecar.read_text())
+    sections = data["analysis"]["sections"]
+    assert sections["value"] == [
+        {"label": 'Verse {A} "human_verified"', "start_seconds": 0.5, "end_seconds": 2.0},
+        {"label": "Chorus", "start_seconds": 2.0, "end_seconds": 4.25},
+    ]
+    assert sections["human_verified"] is True
+    assert sections["verified_at"].endswith("Z")
+    assert sections["input_hash"] == "old-hash"
+    assert data["analysis"]["tempo"] == analysis["tempo"]

@@ -204,6 +204,18 @@ From then on: `vgt analyze` skips the chords stage (human-verified stages are
 never recomputed), and re-running the apply ReaScript repaints `[vgt] Chords`
 identically from the corrected sidecar — the round trip is idempotent.
 
+## Correcting sections in REAPER
+
+Rename or move the regions vgt created for detected sections, then run
+[reascript/vgt_read_sections.lua](reascript/vgt_read_sections.lua) from
+REAPER's Action List (or `vgt read-sections [project.rpp]` for the CLI
+pointer). The action reads only region IDs in the sidecar's
+`managed_region_ids`, never any other project region — including a user region
+whose name starts with `[vgt]`. It writes the edited labels and boundaries to
+`analysis.sections.value` as human-verified, relative to the reference item.
+Those corrections are kept by later `vgt analyze` runs and re-applied as fresh
+`[vgt]` regions.
+
 ## Check vgt state
 
 `vgt status [project.rpp]` is read-only: it prints the project and sidecar,
