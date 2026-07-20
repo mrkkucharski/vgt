@@ -135,6 +135,24 @@ def test_preflight_uses_uploaded_duration_when_local_decoder_cannot_read_source(
     assert paths == ["/api/v1/upload/", "/api/v1/limits/minutes_left/"]
 
 
+def test_preflight_reuses_an_unexpired_checkpointed_upload(tmp_path: Path) -> None:
+    source = tmp_path / "source.wav"
+    source.write_bytes(_wav_bytes())
+    paths: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        paths.append(request.url.path)
+        assert request.url.path == "/api/v1/limits/minutes_left/"
+        return httpx.Response(200, json={"minutes_left": 1})
+
+    state = {"source_id": "source-1", "source_expires": 4102444800, "source_duration_seconds": 6}
+    separator = LalalSeparator(license_key=LICENSE_KEY, client=_client(handler))
+    result = separator.preflight(sources=[(source, 5)], source_states=[state])
+
+    assert result == [state]
+    assert paths == ["/api/v1/limits/minutes_left/"]
+
+
 def test_expired_task_reconstructs_with_a_new_durable_identity(tmp_path: Path) -> None:
     source = tmp_path / "source.wav"
     source.write_bytes(_wav_bytes())

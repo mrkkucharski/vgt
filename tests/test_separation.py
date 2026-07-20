@@ -104,12 +104,21 @@ class _PreflightRecordingSeparator(_SourceRecordingSeparator):
         super().__init__()
         self.preflight_sources: list[tuple[Path, int]] = []
 
-    def preflight(self, *, sources: list[tuple[Path, int]]) -> list[dict[str, Any]]:
+    def preflight(
+        self,
+        *,
+        sources: list[tuple[Path, int]],
+        source_states: list[dict[str, Any]],
+        checkpoint: Callable[[int, dict[str, Any]], None],
+    ) -> list[dict[str, Any]]:
         self.preflight_sources = sources
-        return [
+        states = [
             {"source_id": f"preflight-upload-{index}", "source_expires": 4102444800, "source_duration_seconds": 42}
             for index, _entry in enumerate(sources, start=1)
         ]
+        for index, state in enumerate(states):
+            checkpoint(index, state)
+        return states
 
 
 def test_build_recipe_fixed_dag_shape() -> None:

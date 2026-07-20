@@ -633,13 +633,18 @@ def separate(
         # LALAL separation preserves timeline duration, and this conservative
         # gate prevents starting a partial recipe without coverage for step 5.
         preflight_sources = list(preflight_counts.items())
-        preflight_states = preflight(sources=preflight_sources)
-        if not isinstance(preflight_states, list):
-            preflight_states = []
-        for (preflight_source, _count), preflight_state in zip(preflight_sources, preflight_states, strict=True):
-            if not isinstance(preflight_state, dict) or not preflight_state.get("source_id"):
-                continue
-            preflight_sha256 = hash_audio_content(preflight_source)
+        preflight_source_hashes = [hash_audio_content(candidate) for candidate, _count in preflight_sources]
+        # Seed the credit gate with each candidate's existing upload identity.
+        # This is essential: polling/resume must not turn a harmless credit
+        # check into a fresh upload every invocation.  The real backend is the
+        # final authority on expiry and replaces only expired identities.
+        existing_preflight_states = [
+            _shared_source_state(stems["operations"], source_hash)
+            for source_hash in preflight_source_hashes
+        ]
+
+        def checkpoint_preflight_source(index: int, state: dict[str, Any]) -> None:
+            preflight_sha256 = preflight_source_hashes[index]
             for operation_id in OPERATION_ORDER:
                 op_def = recipe[operation_id]
                 record = stems["operations"][operation_id]
@@ -661,10 +666,23 @@ def separate(
                     record["source_sha256"] = operation_source_sha
                     record["backend_state"] = {
                         **(record.get("backend_state") or {}),
-                        **preflight_state,
+                        **state,
                     }
-                    persist()
-                    break
+            persist()
+
+        preflight_states = preflight(
+            sources=preflight_sources,
+            source_states=existing_preflight_states,
+            checkpoint=checkpoint_preflight_source,
+        )
+        if not isinstance(preflight_states, list):
+            preflight_states = []
+        for index, (preflight_sha256, preflight_state) in enumerate(
+            zip(preflight_source_hashes, preflight_states, strict=True)
+        ):
+            if not isinstance(preflight_state, dict) or not preflight_state.get("source_id"):
+                continue
+            checkpoint_preflight_source(index, preflight_state)
 
     total = len(OPERATION_ORDER)
     errors: list[str] = []

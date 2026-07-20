@@ -107,6 +107,8 @@ class LalalSeparator:
         source: Path | None = None,
         outstanding_operations: int | None = None,
         sources: list[tuple[Path, int]] | None = None,
+        source_states: list[dict[str, Any]] | None = None,
+        checkpoint: Callable[[int, dict[str, Any]], None] | None = None,
     ) -> dict[str, Any] | list[dict[str, Any]]:
         """Refuse before any paid task when credits cannot cover this run.
 
@@ -121,13 +123,22 @@ class LalalSeparator:
             if source is None or outstanding_operations is None:
                 raise TypeError("preflight requires source/outstanding_operations or sources")
             sources = [(source, outstanding_operations)]
+        if source_states is not None and len(source_states) != len(sources):
+            raise ValueError("source_states must correspond to sources")
         uploads: list[dict[str, Any]] = []
         needed = 0.0
-        for candidate, count in sources:
+        for index, (candidate, count) in enumerate(sources):
             if count <= 0:
                 continue
-            uploaded: dict[str, Any] = {}
-            self._upload(candidate, uploaded, lambda _: None)
+            # A prior preflight or split may already have checkpointed this
+            # free upload.  Reuse it (including its authoritative duration)
+            # while it is live; only _upload decides an identity has expired.
+            uploaded = dict(source_states[index]) if source_states is not None else {}
+            self._upload(
+                candidate,
+                uploaded,
+                lambda update, index=index: checkpoint(index, update) if checkpoint is not None else None,
+            )
             duration = uploaded.get("source_duration_seconds")
             if not isinstance(duration, (int, float)) or duration <= 0:
                 raise LalalError("LALAL upload did not provide a usable source duration; no tasks were submitted")
