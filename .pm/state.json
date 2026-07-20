@@ -1,10 +1,10 @@
 {
   "current_issue": 48,
-  "session_id": "f7cbadff-c8cd-4465-9ea2-cab12539b952",
-  "pid": 60186,
-  "process_started_at": "Mon Jul 20 17:04:18 2026",
+  "session_id": "4df36079-83f1-4419-89b7-27c741aa6efe",
+  "pid": 60412,
+  "process_started_at": "Mon Jul 20 17:05:31 2026",
   "agent": "codex",
-  "started_at": "2026-07-20T15:04:16.847527+00:00",
+  "started_at": "2026-07-20T15:05:29.814309+00:00",
   "scheduler_stalls": {
     "malformed_responses": {
       "followup_issues": {
@@ -16,23 +16,25 @@
     "blocked_issues": {
       "46": {
         "first_seen_at": "2026-07-20T14:30:14.802185+00:00",
-        "last_seen_at": "2026-07-20T15:03:04.355216+00:00",
-        "consecutive_passes": 30,
+        "last_seen_at": "2026-07-20T15:04:20.573099+00:00",
+        "consecutive_passes": 31,
         "title": "M1-C: CLI wiring + partial-success semantics for stem separation"
       },
       "47": {
         "first_seen_at": "2026-07-20T14:46:30.421730+00:00",
-        "last_seen_at": "2026-07-20T15:03:04.354802+00:00",
-        "consecutive_passes": 16,
+        "last_seen_at": "2026-07-20T15:04:20.572614+00:00",
+        "consecutive_passes": 17,
         "title": "M1-D: ReaScript import of stem tracks into the project"
       }
     }
   },
   "budget": {
     "window_start": "2026-07-20T15:04:13.826389+00:00",
-    "seconds_used": 0.0,
+    "seconds_used": 71.322806,
     "dollars_used": 0.0,
-    "seconds_used_by_agent": {}
+    "seconds_used_by_agent": {
+      "codex": 71.322806
+    }
   },
   "verification_followups": {
     "f0d8bfc9d2dc6da7a31609184e25c4d66d3986fd2340b33a83e98204fb86691e": "created"
