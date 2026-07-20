@@ -295,6 +295,10 @@ def analyze(
             force=force,
             analyzed_at=datetime.now(UTC).isoformat().replace("+00:00", "Z"),
         )
+        # A later detector or the paid separation stage may fail.  Each local
+        # success therefore becomes durable immediately, not only at the end
+        # of a full analysis run.
+        write_sidecar(project_path, sidecar)
     emit("writing sidecar")
     analysis["provenance"] = {
         "tool": "vgt",
