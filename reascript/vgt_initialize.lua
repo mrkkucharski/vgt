@@ -502,13 +502,19 @@ local function stems_lease_is_live(stems)
   return timestamp ~= nil and utc_now - timestamp >= 0 and utc_now - timestamp < STEM_LEASE_TIMEOUT_SECONDS
 end
 
+-- `artifact.file` is stored relative to the song folder -- the same form the
+-- separator writes (see separation.py's artifact_path) -- so it always carries
+-- its own `vgt/<namespace>/` prefix. Rebuilding that prefix here and demanding
+-- an exact match is what keeps the import confined to the committed namespace.
 local function valid_stem_artifact(artifact, expected_filename, artifact_namespace)
   if type(artifact) ~= "table" or type(artifact.file) ~= "string" then return nil, "sidecar record is missing file" end
-  if artifact.file ~= expected_filename then return nil, "sidecar file is outside the expected stem namespace" end
   if not artifact_namespace or artifact_namespace == "" or artifact_namespace:find("[\\/]") or artifact_namespace:find("%.%.") then
     return nil, "sidecar artifact namespace is invalid"
   end
-  local path = project_dir() .. "vgt/" .. artifact_namespace .. "/" .. artifact.file
+  if artifact.file ~= "vgt/" .. artifact_namespace .. "/" .. expected_filename then
+    return nil, "sidecar file is outside the expected stem namespace"
+  end
+  local path = project_dir() .. artifact.file
   local file = io.open(path, "rb")
   if not file then return nil, "WAV is missing" end
   local size = file:seek("end")

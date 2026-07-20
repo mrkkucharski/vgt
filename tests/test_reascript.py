@@ -168,7 +168,8 @@ def test_add_stem_tracks_imports_only_committed_namespace_wavs_time_based_and_of
 
     script = APPLY_SCRIPT.read_text()
     helpers_end = script.index("local function remove_previous_managed_regions()")
-    artifacts = ", ".join(f"{name} = {{file = 'stems/{filename}', size_bytes = 16, duration_seconds = 2.5}}" for name, filename in (
+    # `file` carries the song-folder-relative path the separator commits.
+    artifacts = ", ".join(f"{name} = {{file = 'vgt/song-abc123/stems/{filename}', size_bytes = 16, duration_seconds = 2.5}}" for name, filename in (
         ("vocals", "vocals.wav"), ("instrumental", "instrumental.wav"), ("bass", "bass.wav"),
         ("drums", "drums.wav"), ("guitar", "guitar.wav"), ("backing", "backing-no-guitar.wav"),
     ))
@@ -185,6 +186,36 @@ def test_add_stem_tracks_imports_only_committed_namespace_wavs_time_based_and_of
         "[vgt] Vocals:12.25:2.5:0;[vgt] Instrumental:12.25:2.5:0;[vgt] Bass:12.25:2.5:0;"
         "[vgt] Drums:12.25:2.5:0;[vgt] Guitar:12.25:2.5:0;[vgt] Backing (no guitar):12.25:2.5:0;#6"
     )
+
+
+def test_add_stem_tracks_accepts_the_file_form_the_separator_actually_commits(tmp_path: Path) -> None:
+    """The Lua reader and the Python writer must agree on how `artifact.file`
+    is spelled. Deriving the fixture from separation.py rather than restating
+    the reader's own convention is what makes this catch a drift between them
+    -- a hand-written fixture just re-encodes whichever side is wrong."""
+    from vgt.separation import ARTIFACT_FILENAMES, stems_dir
+
+    rpp = tmp_path / "song.RPP"
+    namespace = "song-abc123"
+    committed = stems_dir(rpp, namespace) / ARTIFACT_FILENAMES["vocals"]
+    committed.parent.mkdir(parents=True)
+    committed.write_bytes(b"RIFF....WAVEfmt ")
+    recorded_file = str(committed.relative_to(rpp.parent))
+
+    script = APPLY_SCRIPT.read_text()
+    helpers_end = script.index("local function remove_previous_managed_regions()")
+    lua_program = "\n".join([
+        _click_track_lua_mock(rpp),
+        "function reaper.ShowConsoleMsg(message) io.stderr:write(message) end",
+        script[:helpers_end],
+        "local managed_tracks = {}",
+        f"add_stem_tracks(3, {{artifact_namespace = '{namespace}', artifacts = {{vocals = "
+        f"{{file = '{recorded_file}', size_bytes = 16, duration_seconds = 2.5}}}}}}, 0, managed_tracks)",
+        "io.write(#managed_tracks, ':', __tracks[4].name)",
+    ])
+    result = subprocess.run(["lua", "-", str(rpp)], input=lua_program, text=True, capture_output=True, check=True)
+    assert "outside the expected stem namespace" not in result.stderr
+    assert result.stdout == "1:[vgt] Vocals"
 
 
 def test_add_stem_tracks_skips_missing_or_outside_namespace_artifacts_with_a_warning(tmp_path: Path) -> None:
