@@ -1,27 +1,24 @@
 {
-  "current_issue": 60,
-  "session_id": "da276577-24ad-482a-ab26-93a7f70b5f70",
-  "pid": 77746,
-  "process_started_at": "Mon Jul 20 21:58:44 2026",
-  "agent": "claude",
-  "started_at": "2026-07-20T19:58:42.627346+00:00",
+  "current_issue": 61,
+  "session_id": "e0f4cfbb-2b3c-46af-a524-817e1376c4e9",
+  "pid": 78434,
+  "process_started_at": "Mon Jul 20 22:09:55 2026",
+  "agent": "codex",
+  "started_at": "2026-07-20T20:09:53.684148+00:00",
   "scheduler_stalls": {},
   "budget": {
-    "window_start": "2026-07-20T15:04:13.826389+00:00",
-    "seconds_used": 680.039031,
-    "dollars_used": 0.6868155999999999,
-    "seconds_used_by_agent": {
-      "codex": 274.996764,
-      "claude": 405.042267
-    }
+    "window_start": "2026-07-20T20:09:51.136591+00:00",
+    "seconds_used": 0.0,
+    "dollars_used": 0.0,
+    "seconds_used_by_agent": {}
   },
   "verification_followups": {
     "f0d8bfc9d2dc6da7a31609184e25c4d66d3986fd2340b33a83e98204fb86691e": "created"
   },
-  "role": "review",
-  "branch": "issue-60-make-stem-separation-hold-and-honor-a-du",
-  "worktree_path": "/Users/marekkucharski/projects/.pm-worktrees/vgt/issue-60",
-  "pr_number": 63,
+  "role": "implement",
+  "branch": "issue-61-require-an-explicit-persisted-guitar-typ",
+  "worktree_path": "/Users/marekkucharski/projects/.pm-worktrees/vgt/issue-61",
+  "pr_number": null,
   "followup_generation": {
     "fingerprint": "a839174ad7a3dea2709c3f7707e88c301581b3c8016bf908ee2a469e49f23771",
     "items": {
@@ -47,13 +44,13 @@
     "46": 1
   },
   "pending_transition": {
-    "issue": 60,
+    "issue": 61,
     "target": "working",
-    "event": "agent.review_started",
+    "event": "agent.started",
     "detail": {
-      "issue": 60,
-      "agent": "claude",
-      "pr": 63
+      "issue": 61,
+      "agent": "codex",
+      "branch": "issue-61-require-an-explicit-persisted-guitar-typ"
     },
     "cleanup": {}
   }
