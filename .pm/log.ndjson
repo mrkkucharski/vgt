@@ -5735,3 +5735,15 @@
 {"ts": "2026-07-20T17:37:30.368888+00:00", "project": "vgt", "event": "orchestrator.no_capacity", "detail": {"message": "work is available, but scheduler capacity or budget headroom is exhausted"}}
 {"ts": "2026-07-20T17:38:36.309661+00:00", "project": "vgt", "event": "agent.ready_for_review", "detail": {"issue": 47, "agent": "codex", "role": "implement"}}
 {"ts": "2026-07-20T17:38:41.312986+00:00", "project": "vgt", "event": "pr.created", "detail": {"issue": 47, "pr": 53, "branch": "issue-47-m1-d-reascript-import-of-stem-tracks-int"}}
+{"ts": "2026-07-20T17:38:45.227526+00:00", "project": "vgt", "event": "agent.review_started", "detail": {"issue": 47, "agent": "claude", "pr": 53, "pid": 68449, "process_started_at": "Mon Jul 20 19:38:43 2026"}}
+{"ts": "2026-07-20T17:38:45.243639+00:00", "project": "vgt", "event": "orchestrator.pass_outcome", "detail": {"outcomes": ["deferred", "scheduled"], "scheduled": 1, "followups_created": 0}}
+{"ts": "2026-07-20T17:39:51.178288+00:00", "project": "vgt", "event": "orchestrator.pass_outcome", "detail": {"outcomes": ["deferred"], "scheduled": 0, "followups_created": 0}}
+{"ts": "2026-07-20T17:39:51.178588+00:00", "project": "vgt", "event": "orchestrator.no_capacity", "detail": {"message": "work is available, but scheduler capacity or budget headroom is exhausted"}}
+{"ts": "2026-07-20T17:40:57.152106+00:00", "project": "vgt", "event": "orchestrator.pass_outcome", "detail": {"outcomes": ["deferred"], "scheduled": 0, "followups_created": 0}}
+{"ts": "2026-07-20T17:40:57.152375+00:00", "project": "vgt", "event": "orchestrator.no_capacity", "detail": {"message": "work is available, but scheduler capacity or budget headroom is exhausted"}}
+{"ts": "2026-07-20T17:42:03.201927+00:00", "project": "vgt", "event": "orchestrator.pass_outcome", "detail": {"outcomes": ["deferred"], "scheduled": 0, "followups_created": 0}}
+{"ts": "2026-07-20T17:42:03.202510+00:00", "project": "vgt", "event": "orchestrator.no_capacity", "detail": {"message": "work is available, but scheduler capacity or budget headroom is exhausted"}}
+{"ts": "2026-07-20T17:43:09.630460+00:00", "project": "vgt", "event": "orchestrator.pass_outcome", "detail": {"outcomes": ["deferred"], "scheduled": 0, "followups_created": 0}}
+{"ts": "2026-07-20T17:43:09.631055+00:00", "project": "vgt", "event": "orchestrator.no_capacity", "detail": {"message": "work is available, but scheduler capacity or budget headroom is exhausted"}}
+{"ts": "2026-07-20T17:44:17.751899+00:00", "project": "vgt", "event": "issue.closed_labels_cleaned", "detail": {"issue": 47, "removed": ["status:working"]}}
+{"ts": "2026-07-20T17:44:18.167915+00:00", "project": "vgt", "event": "worktree.cleaned_up", "detail": {"issue": 47, "branch": "issue-47-m1-d-reascript-import-of-stem-tracks-int", "worktree": "/Users/marekkucharski/projects/.pm-worktrees/vgt/issue-47"}}
