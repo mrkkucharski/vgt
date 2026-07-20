@@ -4323,3 +4323,11 @@
 {"ts": "2026-07-20T10:26:18.505764+00:00", "project": "vgt", "event": "orchestrator.no_capacity", "detail": {"message": "work is available, but scheduler capacity or budget headroom is exhausted"}}
 {"ts": "2026-07-20T10:27:25.693350+00:00", "project": "vgt", "event": "agent.process_identity_mismatch", "detail": {"issue": 44, "pid": 41639, "expected_process_started_at": "Mon Jul 20 12:22:58 2026", "observed_process_started_at": null, "role": "implement"}}
 {"ts": "2026-07-20T10:27:27.093716+00:00", "project": "vgt", "event": "agent.crashed", "detail": {"issue": 44, "agent": "claude", "exit_code": null, "role": "implement"}}
+{"ts": "2026-07-20T10:27:30.934090+00:00", "project": "vgt", "event": "agent.started", "detail": {"issue": 44, "agent": "claude", "branch": "issue-44-m1-e-consolidate-vgt-artifacts-under-a-v", "pid": 41979, "process_started_at": "Mon Jul 20 12:27:29 2026"}}
+{"ts": "2026-07-20T10:27:30.968712+00:00", "project": "vgt", "event": "orchestrator.pass_outcome", "detail": {"outcomes": ["deferred", "scheduled"], "scheduled": 1, "followups_created": 0}}
+{"ts": "2026-07-20T10:28:37.153528+00:00", "project": "vgt", "event": "orchestrator.pass_outcome", "detail": {"outcomes": ["deferred"], "scheduled": 0, "followups_created": 0}}
+{"ts": "2026-07-20T10:28:37.153799+00:00", "project": "vgt", "event": "orchestrator.no_capacity", "detail": {"message": "work is available, but scheduler capacity or budget headroom is exhausted"}}
+{"ts": "2026-07-20T10:29:43.011368+00:00", "project": "vgt", "event": "orchestrator.pass_outcome", "detail": {"outcomes": ["deferred"], "scheduled": 0, "followups_created": 0}}
+{"ts": "2026-07-20T10:29:43.011635+00:00", "project": "vgt", "event": "orchestrator.no_capacity", "detail": {"message": "work is available, but scheduler capacity or budget headroom is exhausted"}}
+{"ts": "2026-07-20T10:30:50.688490+00:00", "project": "vgt", "event": "agent.process_identity_mismatch", "detail": {"issue": 44, "pid": 41979, "expected_process_started_at": "Mon Jul 20 12:27:29 2026", "observed_process_started_at": null, "role": "implement"}}
+{"ts": "2026-07-20T10:30:52.262879+00:00", "project": "vgt", "event": "agent.crashed", "detail": {"issue": 44, "agent": "claude", "exit_code": null, "role": "implement"}}
