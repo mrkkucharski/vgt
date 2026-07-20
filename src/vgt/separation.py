@@ -558,6 +558,30 @@ def separate(
     persist()
 
     source_sha256 = hash_audio_content(source)
+    # LALAL's credit check is a run-level gate: it must happen before this
+    # loop starts any of the outstanding paid operations.  It intentionally
+    # remains optional on the thin protocol so FakeSeparator stays wholly
+    # network-free; the real backend supplies this capability.
+    outstanding = 0
+    for operation_id in OPERATION_ORDER:
+        op_def = recipe[operation_id]
+        if op_def.spec.source_role == "instrumental":
+            instrumental_record = stems["artifacts"].get("instrumental")
+            operation_source_sha = instrumental_record.get("sha256") if instrumental_record else None
+        else:
+            operation_source_sha = source_sha256
+        if not _operation_is_current(
+            project_path,
+            stems["operations"][operation_id],
+            source_sha256=operation_source_sha,
+            current_spec_hash=spec_hash(op_def.spec),
+            artifacts=stems["artifacts"],
+        ):
+            outstanding += 1
+    preflight = getattr(backend, "preflight", None)
+    if outstanding and callable(preflight):
+        preflight(source=source, outstanding_operations=outstanding)
+
     total = len(OPERATION_ORDER)
     errors: list[str] = []
     for position, operation_id in enumerate(OPERATION_ORDER, start=1):
