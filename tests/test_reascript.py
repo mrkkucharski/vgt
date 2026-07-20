@@ -31,6 +31,14 @@ def test_apply_asks_for_a_reference_track_and_names_the_folder_after_it() -> Non
     assert "copy_file_backed_items(reference, mirror)" in script
 
 
+def test_apply_declares_and_persists_guitar_type_with_an_automation_override() -> None:
+    script = APPLY_SCRIPT.read_text()
+    assert 'reaper.GetExtState("vgt", "guitar_type")' in script
+    assert 'gfx.showmenu("Electric|Acoustic")' in script
+    assert '"guitar_type": "%s"' in script
+    assert "local guitar_type = choose_guitar_type()" in script
+
+
 def test_phase1_apply_reads_analysis_and_uses_only_reaper_api() -> None:
     script = APPLY_SCRIPT.read_text()
     assert "decode_json" in script

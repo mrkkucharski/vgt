@@ -18,6 +18,7 @@ from vgt.separation import (
     build_recipe,
     hash_audio_content,
     separate,
+    separation_preview,
     spec_hash,
     stems_dir,
 )
@@ -147,6 +148,28 @@ def test_guitar_type_only_changes_the_two_guitar_specs() -> None:
 def test_invalid_guitar_type_rejected() -> None:
     with pytest.raises(SeparationError):
         build_recipe("banjo")
+
+
+def test_paid_separation_never_defaults_an_undeclared_guitar_type(tmp_path: Path) -> None:
+    project = _project_copy(tmp_path)
+    _write_v1_sidecar(project)
+
+    with pytest.raises(SeparationError, match="declared guitar type is required"):
+        separation_preview(project)
+    with pytest.raises(SeparationError, match="declared guitar type is required"):
+        separate(project, FakeSeparator())
+
+
+def test_reascript_config_guitar_declaration_is_used_by_separation(tmp_path: Path) -> None:
+    project = _project_copy(tmp_path)
+    _write_v1_sidecar(project)
+    sidecar = read_sidecar(project)
+    sidecar["config"]["guitar_type"] = "acoustic"
+    write_sidecar(project, sidecar)
+
+    result = separate(project, FakeSeparator())
+
+    assert result["analysis"]["stems"]["guitar_type"] == "acoustic"
 
 
 def test_full_run_completes_all_five_operations_and_six_artifacts(tmp_path: Path) -> None:

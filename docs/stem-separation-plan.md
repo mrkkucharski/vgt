@@ -244,8 +244,8 @@ clean. (If a user chooses to version their own project, adding their own
   menu asks Electric / Acoustic and stores the answer in sidecar config; the
   `vgt/guitar_type` ExtState can supply it for automation. The CLI's
   `--guitar` overrides and persists it. With neither flag nor persisted value,
-  an interactive CLI prompts; a non-interactive CLI falls back to `electric`
-  and reports that choice. A persisted value prevents duplicate prompts.
+  an interactive CLI prompts; non-interactive use must supply `--guitar`
+  rather than silently defaulting. A persisted value prevents duplicate prompts.
   Changing it invalidates only the original-guitar and backing operations (two
   charges), not vocals, instrumental, bass, or drums.
 - Add a stable `artifact_namespace` and an `analysis.stems` block with

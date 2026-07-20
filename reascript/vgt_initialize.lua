@@ -92,6 +92,35 @@ local function read_sidecar_body()
   return body
 end
 
+-- Guitar type is a declaration, never an inference.  An automation caller
+-- may set vgt/guitar_type to electric or acoustic; otherwise first use asks
+-- once and persists the answer in the sidecar config.
+local function persisted_guitar_type()
+  local body = read_sidecar_body() or ""
+  local value = body:match('"guitar_type"%s*:%s*"([^"]+)"')
+  if value == "electric" or value == "acoustic" then return value end
+  return nil
+end
+
+local function choose_guitar_type()
+  local forced = reaper.GetExtState("vgt", "guitar_type")
+  if forced ~= "" then
+    if forced ~= "electric" and forced ~= "acoustic" then
+      error("vgt guitar_type ExtState must be electric or acoustic: " .. forced)
+    end
+    return forced
+  end
+  local existing = persisted_guitar_type()
+  if existing then return existing end
+  gfx.init("vgt: choose the guitar type", 0, 0)
+  gfx.x, gfx.y = gfx.mouse_x, gfx.mouse_y
+  local choice = gfx.showmenu("Electric|Acoustic")
+  gfx.quit()
+  if choice == 1 then return "electric" end
+  if choice == 2 then return "acoustic" end
+  return nil
+end
+
 local function read_managed_guids()
   local body = read_sidecar_body()
   if not body then return {} end
@@ -586,7 +615,7 @@ local function add_sections(sections, reference_start)
   return region_ids
 end
 
-local function write_settings(folder, managed_tracks, managed_region_ids, reference, tempo_map_applied, tempo_map_fingerprint, tempo_data_fp)
+local function write_settings(folder, managed_tracks, managed_region_ids, reference, tempo_map_applied, tempo_map_fingerprint, tempo_data_fp, guitar_type)
   -- Preserve any analysis the Python CLI already wrote (schema v4); a fresh
   -- sidecar with no prior analysis stays schema v1, matching Phase 0's
   -- long-standing on-disk format.
@@ -611,14 +640,14 @@ local function write_settings(folder, managed_tracks, managed_region_ids, refere
   "schema_version": %d,%s
   "managed_track_guids": [%s],
   "managed_region_ids": [%s],
-  "config": {"reference_track_name": "%s", "reference_track_guid": "%s", "folder_name": "%s", "mirror_name": "%s", "tempo_map_applied": %s, "tempo_map_fingerprint": "%s", "tempo_data_fingerprint": "%s"}
+  "config": {"reference_track_name": "%s", "reference_track_guid": "%s", "folder_name": "%s", "mirror_name": "%s", "tempo_map_applied": %s, "tempo_map_fingerprint": "%s", "tempo_data_fingerprint": "%s", "guitar_type": "%s"}
 }
 ]],
     schema_version, analysis_field,
     table.concat(guids, ", "), table.concat(region_ids, ", "),
     escaped(track_name(reference)), reaper.GetTrackGUID(reference),
     escaped(PREFIX .. " " .. track_name(reference)), escaped(MIRROR_NAME), tempo_map_applied and "true" or "false",
-    escaped(tempo_map_fingerprint or ""), escaped(tempo_data_fp or "")))
+    escaped(tempo_map_fingerprint or ""), escaped(tempo_data_fp or ""), escaped(guitar_type)))
   file:close()
   local renamed, rename_error = os.rename(temporary_path, sidecar_path())
   if not renamed then
@@ -636,6 +665,11 @@ local function apply()
     warn("stem separation is in progress; retry after it finishes")
     return
   end
+
+  -- Ask before touching the project so dismissing either declaration menu
+  -- leaves both REAPER and the sidecar unchanged.
+  local guitar_type = choose_guitar_type()
+  if not guitar_type then return end
 
   -- Choose the reference before mutating anything, so cancelling leaves the project untouched.
   local reference = choose_reference(candidate_tracks())
@@ -755,7 +789,7 @@ local function apply()
   -- The folder must close after every child we appended.
   reaper.SetMediaTrackInfo_Value(managed_tracks[#managed_tracks], "I_FOLDERDEPTH", -1)
 
-  write_settings(folder, managed_tracks, managed_region_ids, reference, tempo_map_applied, tempo_map_fingerprint, tempo_data_fp)
+  write_settings(folder, managed_tracks, managed_region_ids, reference, tempo_map_applied, tempo_map_fingerprint, tempo_data_fp, guitar_type)
   reaper.MarkProjectDirty(0)
   reaper.UpdateArrange()
   reaper.PreventUIRefresh(-1)

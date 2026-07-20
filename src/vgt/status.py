@@ -195,7 +195,7 @@ def build_status(project_path: Path) -> dict[str, Any]:
         },
         "stems": {
             "backend": stems.get("backend"), "api_version": stems.get("api_version"),
-            "guitar_type": stems.get("guitar_type"), "artifact_namespace": stems.get("artifact_namespace"),
+            "guitar_type": stems.get("guitar_type") or config.get("guitar_type"), "artifact_namespace": stems.get("artifact_namespace"),
             "human_verified": bool(stems.get("human_verified")), "verified_at": stems.get("verified_at"),
             "operations": stem_operation_status, "artifacts": stem_artifact_status,
         },
@@ -235,7 +235,7 @@ def format_status(status: dict[str, Any]) -> str:
     stems = status["stems"]
     lines += [
         "Stems:",
-        f"  guitar type: {stems['guitar_type'] or 'electric (default)'}; quality: {'human-verified' if stems['human_verified'] else 'not human-verified'}",
+        f"  guitar type: {stems['guitar_type'] or 'not declared'}; quality: {'human-verified' if stems['human_verified'] else 'not human-verified'}",
         "  Operations:",
     ]
     for name, operation in stems["operations"].items():
