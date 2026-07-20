@@ -79,6 +79,48 @@ class _RecordingSeparator:
         return self.inner.split(source, out_dir, spec, resume_state=resume_state, checkpoint=checkpoint)
 
 
+class _SourceRecordingSeparator:
+    """Small network-free model of LALAL's upload reuse behavior."""
+
+    name = "lalal"
+    api_version = "v1"
+
+    def __init__(self) -> None:
+        self.resume_states: list[dict[str, Any]] = []
+        self._inner = FakeSeparator()
+
+    def split(self, source: Path, out_dir: Path, spec, *, resume_state, checkpoint) -> SplitResult:
+        state = dict(resume_state or {})
+        self.resume_states.append(state)
+        if not state.get("source_id"):
+            checkpoint({"source_id": f"upload-{len(self.resume_states)}", "source_expires": 4102444800})
+        return self._inner.split(source, out_dir, spec, resume_state=resume_state, checkpoint=checkpoint)
+
+
+class _PreflightRecordingSeparator(_SourceRecordingSeparator):
+    """Records the run-level credit gate without making network calls."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.preflight_sources: list[tuple[Path, int]] = []
+
+    def preflight(
+        self,
+        *,
+        sources: list[tuple[Path, int]],
+        source_states: list[dict[str, Any]],
+        checkpoint: Callable[[int, dict[str, Any]], None],
+    ) -> list[dict[str, Any]]:
+        self.preflight_sources = sources
+        states = [
+            {"source_id": f"preflight-upload-{index}", "source_expires": 4102444800, "source_duration_seconds": 42}
+            for index, _entry in enumerate(sources, start=1)
+        ]
+        for index, state in enumerate(states):
+            checkpoint(index, state)
+        return states
+
+
 def test_build_recipe_fixed_dag_shape() -> None:
     recipe = build_recipe("electric")
     assert set(recipe) == set(OPERATION_ORDER)
@@ -146,6 +188,45 @@ def test_full_run_completes_all_five_operations_and_six_artifacts(tmp_path: Path
     work_dir = stems_dir(project, namespace) / "_work"
     for operation_id in OPERATION_ORDER:
         assert not (work_dir / operation_id).exists()  # per-operation scratch dirs are cleaned up after commit
+
+
+def test_operations_reuse_uploads_only_for_identical_source_bytes(tmp_path: Path) -> None:
+    project = _project_copy(tmp_path)
+    _write_v1_sidecar(project)
+    backend = _SourceRecordingSeparator()
+
+    separate(project, backend, guitar_type="electric")
+
+    # vocals creates the original upload; the other three original-source
+    # operations reuse it. The cascade consumes different (instrumental)
+    # bytes, so it gets the recipe's one other upload.
+    assert [state.get("source_id") for state in backend.resume_states] == [
+        None,
+        "upload-1",
+        "upload-1",
+        "upload-1",
+        None,
+    ]
+
+
+def test_preflight_reserves_all_five_operations_and_reuses_its_original_upload(tmp_path: Path) -> None:
+    project = _project_copy(tmp_path)
+    _write_v1_sidecar(project)
+    backend = _PreflightRecordingSeparator()
+
+    separate(project, backend, guitar_type="electric")
+
+    # Before the first split, the full recipe is priced as five source
+    # durations; the cascade is reserved against the original's duration
+    # until its instrumental source exists. The preflight upload is then the
+    # shared original upload, not a throwaway third upload.
+    assert [count for _path, count in backend.preflight_sources] == [5]
+    assert [state.get("source_id") for state in backend.resume_states[:4]] == [
+        "preflight-upload-1",
+        "preflight-upload-1",
+        "preflight-upload-1",
+        "preflight-upload-1",
+    ]
 
 
 def test_second_run_is_fully_cached_no_backend_calls(tmp_path: Path) -> None:

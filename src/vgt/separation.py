@@ -391,6 +391,27 @@ def _operation_is_current(
     return _artifacts_on_disk(project_path, record, artifacts)
 
 
+def _shared_source_state(operations: dict[str, Any], source_sha256: str) -> dict[str, Any]:
+    """Return a reusable remote-upload identity for these exact source bytes.
+
+    LALAL uploads are independent of a split task.  The four original-source
+    operations must therefore share one upload rather than uploading the same
+    original four times.  Upload metadata lives in per-operation opaque state
+    (so the Separator protocol stays deliberately small); this helper copies
+    only the source identity, never an operation's idempotency key or task id.
+    An expired identity is copied too: the backend is the authority on expiry
+    and will replace only that source upload when needed.
+    """
+    source_fields = ("source_id", "source_expires", "source_duration_seconds")
+    for record in operations.values():
+        if record.get("source_sha256") != source_sha256:
+            continue
+        backend_state = record.get("backend_state") or {}
+        if backend_state.get("source_id"):
+            return {field: backend_state[field] for field in source_fields if field in backend_state}
+    return {}
+
+
 def _run_operation(
     *,
     project_path: Path,
@@ -428,12 +449,24 @@ def _run_operation(
     # be reused as if it were for this one.
     matches_prior_attempt = record.get("source_sha256") == source_sha256 and record.get("spec_hash") == current_spec_hash
     resumable = matches_prior_attempt and bool(record.get("backend_state"))
-    resume_state = dict(record.get("backend_state") or {}) if resumable else None
+    resume_state = dict(record.get("backend_state") or {}) if resumable else {}
+    # A fresh operation against bytes another operation already uploaded may
+    # reuse that upload.  Do not borrow task state: each paid operation still
+    # has its own UUID and task identity.
+    if not resume_state.get("source_id"):
+        resume_state.update(_shared_source_state(operations, source_sha256))
     if resumable:
         emit(f"{op_def.operation_id}: resuming previous attempt")
     else:
         emit(f"{op_def.operation_id}: starting")
-        record["backend_state"] = {}
+        # A preflight/shared upload is not task state, but it is still a
+        # durable remote identity. Preserve it while starting this operation
+        # so the eventual completed record remains reusable by sibling splits.
+        record["backend_state"] = {
+            field: resume_state[field]
+            for field in ("source_id", "source_expires", "source_duration_seconds")
+            if field in resume_state
+        }
 
     record["status"] = "in_progress"
     record["source_sha256"] = source_sha256
@@ -453,7 +486,7 @@ def _run_operation(
     work_dir = stems_dir(project_path, namespace) / "_work" / op_def.operation_id
     try:
         try:
-            result = backend.split(source_path, work_dir, op_def.spec, resume_state=resume_state, checkpoint=checkpoint)
+            result = backend.split(source_path, work_dir, op_def.spec, resume_state=resume_state or None, checkpoint=checkpoint)
         except Exception as exc:  # noqa: BLE001 -- recorded, then re-raised for the caller
             record["status"] = "error"
             record["error"] = str(exc)
@@ -493,6 +526,7 @@ def _run_operation(
 
     record["status"] = "completed"
     record["outputs"] = committed
+    record["backend_state"] = {**record.get("backend_state", {}), **result.backend_state}
     record["effective_presets"] = result.effective_presets
     record["completed_at"] = _now()
     record["error"] = None
@@ -555,6 +589,98 @@ def separate(
     persist()
 
     source_sha256 = hash_audio_content(source)
+    # LALAL's credit check is a run-level gate: it must happen before this
+    # loop starts any of the outstanding paid operations.  It intentionally
+    # remains optional on the thin protocol so FakeSeparator stays wholly
+    # network-free; the real backend supplies this capability.
+    outstanding = 0
+    preflight_counts: dict[Path, int] = {}
+    for operation_id in OPERATION_ORDER:
+        op_def = recipe[operation_id]
+        if op_def.spec.source_role == "instrumental":
+            instrumental_record = stems["artifacts"].get("instrumental")
+            operation_source_sha = instrumental_record.get("sha256") if instrumental_record else None
+        else:
+            operation_source_sha = source_sha256
+        if not _operation_is_current(
+            project_path,
+            stems["operations"][operation_id],
+            source_sha256=operation_source_sha,
+            current_spec_hash=spec_hash(op_def.spec),
+            artifacts=stems["artifacts"],
+        ):
+            outstanding += 1
+            # The instrumental cascade normally has the same timeline as the
+            # original, but when it is already local we can upload and price
+            # that exact source instead.  When it is not local yet, reserve
+            # its eventual charge against the original's authoritative
+            # duration before allowing the preceding vocal task to start.
+            if op_def.spec.source_role == "instrumental" and instrumental_record:
+                candidate = artifact_path(project_path, instrumental_record)
+            else:
+                candidate = source
+            preflight_counts[candidate] = preflight_counts.get(candidate, 0) + 1
+    preflight = getattr(backend, "preflight", None)
+    if outstanding and callable(preflight):
+        # LALAL preflight uploads the original solely to obtain its
+        # authoritative duration.  Persist that free remote identity before
+        # any paid split and let the original-source operations share it.
+        # A single source duration is deliberately charged once per
+        # outstanding operation, including the eventual instrumental cascade:
+        # LALAL separation preserves timeline duration, and this conservative
+        # gate prevents starting a partial recipe without coverage for step 5.
+        preflight_sources = list(preflight_counts.items())
+        preflight_source_hashes = [hash_audio_content(candidate) for candidate, _count in preflight_sources]
+        # Seed the credit gate with each candidate's existing upload identity.
+        # This is essential: polling/resume must not turn a harmless credit
+        # check into a fresh upload every invocation.  The real backend is the
+        # final authority on expiry and replaces only expired identities.
+        existing_preflight_states = [
+            _shared_source_state(stems["operations"], source_hash)
+            for source_hash in preflight_source_hashes
+        ]
+
+        def checkpoint_preflight_source(index: int, state: dict[str, Any]) -> None:
+            preflight_sha256 = preflight_source_hashes[index]
+            for operation_id in OPERATION_ORDER:
+                op_def = recipe[operation_id]
+                record = stems["operations"][operation_id]
+                if op_def.spec.source_role == "instrumental":
+                    artifact = stems["artifacts"].get("instrumental")
+                    operation_source_sha = artifact.get("sha256") if artifact else source_sha256
+                else:
+                    operation_source_sha = source_sha256
+                if (
+                    operation_source_sha == preflight_sha256
+                    and not _operation_is_current(
+                        project_path,
+                        record,
+                        source_sha256=operation_source_sha,
+                        current_spec_hash=spec_hash(op_def.spec),
+                        artifacts=stems["artifacts"],
+                    )
+                ):
+                    record["source_sha256"] = operation_source_sha
+                    record["backend_state"] = {
+                        **(record.get("backend_state") or {}),
+                        **state,
+                    }
+            persist()
+
+        preflight_states = preflight(
+            sources=preflight_sources,
+            source_states=existing_preflight_states,
+            checkpoint=checkpoint_preflight_source,
+        )
+        if not isinstance(preflight_states, list):
+            preflight_states = []
+        for index, (preflight_sha256, preflight_state) in enumerate(
+            zip(preflight_source_hashes, preflight_states, strict=True)
+        ):
+            if not isinstance(preflight_state, dict) or not preflight_state.get("source_id"):
+                continue
+            checkpoint_preflight_source(index, preflight_state)
+
     total = len(OPERATION_ORDER)
     errors: list[str] = []
     for position, operation_id in enumerate(OPERATION_ORDER, start=1):
