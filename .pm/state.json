@@ -1,13 +1,13 @@
 {
-  "current_issue": 37,
-  "session_id": "c04c4f56-757f-442c-a2d6-e68266480ed4",
-  "pid": 9945,
-  "process_started_at": "Sun Jul 19 22:52:56 2026",
+  "current_issue": 41,
+  "session_id": "690b64af-cc41-486c-baf2-af26a350e3fa",
+  "pid": 26244,
+  "process_started_at": "Mon Jul 20 06:40:24 2026",
   "agent": "claude",
-  "started_at": "2026-07-19T20:52:55.071659+00:00",
+  "started_at": "2026-07-20T04:40:22.697728+00:00",
   "scheduler_stalls": {},
   "budget": {
-    "window_start": "2026-07-19T20:52:51.483524+00:00",
+    "window_start": "2026-07-20T04:40:18.557409+00:00",
     "seconds_used": 0.0,
     "dollars_used": 0.0,
     "seconds_used_by_agent": {}
@@ -15,10 +15,10 @@
   "verification_followups": {
     "f0d8bfc9d2dc6da7a31609184e25c4d66d3986fd2340b33a83e98204fb86691e": "created"
   },
-  "role": "review",
-  "branch": "issue-37-import-the-rendered-click-wav-as-a-muted",
-  "worktree_path": "/Users/marekkucharski/projects/.pm-worktrees/vgt/issue-37",
-  "pr_number": 40,
+  "role": "implement",
+  "branch": "issue-41-problem-in-initialization",
+  "worktree_path": "/Users/marekkucharski/projects/.pm-worktrees/vgt/issue-41",
+  "pr_number": null,
   "followup_generation": {
     "fingerprint": "21aabd4138fef85732e2ba4ed6fa65365084fb3986dac0b7f66d093f17bfed99",
     "items": {
@@ -49,13 +49,13 @@
     "19": 2
   },
   "pending_transition": {
-    "issue": 37,
+    "issue": 41,
     "target": "working",
-    "event": "agent.review_started",
+    "event": "agent.started",
     "detail": {
-      "issue": 37,
+      "issue": 41,
       "agent": "claude",
-      "pr": 40
+      "branch": "issue-41-problem-in-initialization"
     },
     "cleanup": {}
   }
