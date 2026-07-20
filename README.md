@@ -1,6 +1,8 @@
 # vgt
 
-Phase 0 of virtual guitar teacher: safe REAPER project plumbing. It reads an RPP project from the command line and uses a REAPER ReaScript action to add a small, vgt-owned practice area.
+Virtual guitar teacher for non-destructively preparing REAPER projects for
+practice. vgt analyzes a chosen reference mix, separates practice stems with
+LALAL.AI, and uses a REAPER ReaScript to add its own `[vgt]`-managed tracks.
 
 ## Install and inspect
 
@@ -151,6 +153,67 @@ artifact** — `vgt/<namespace>/sections.txt`, under the project's `vgt/`
 subfolder — so the detected structure can be checked by eye; it is vgt-owned
 and regenerated each run, not committed alongside the project.
 
+## Separate practice stems (Phase 2)
+
+Stem separation is available only through the LALAL.AI v1 backend. Configure
+`LALAL_LICENSE_KEY` in your shell or secret manager (never in a sidecar,
+command history, fixture, or log), then declare whether the reference's guitar
+is electric or acoustic:
+
+```sh
+vgt analyze --guitar electric "$PROJECT"
+```
+
+The command first saves the local tempo/key/sections/chords analysis, then
+performs only the missing LALAL work. There is currently **no offline
+backend**: Demucs, UVR, RoFormer, and similar local separation options are
+explicitly deferred. If LALAL is unavailable or the key is missing, the local
+analysis remains saved and the command reports the stem failure.
+
+The paid recipe is fixed: five split operations produce these six artifacts.
+
+| Operation | Source | Kept artifact(s) |
+| --- | --- | --- |
+| vocals | original mix | `vocals`, `instrumental` |
+| bass | original mix | `bass` |
+| drums | original mix | `drums` |
+| declared electric/acoustic guitar | original mix | `guitar` |
+| declared electric/acoustic guitar | `instrumental` | `backing` (no guitar) |
+
+The final guitar-on-instrumental operation is the recipe's only cascade; every
+other split uses the original mix. vgt checkpoints each operation in the
+project's sidecar and validates its WAV artifacts before treating them as
+cached. Re-running resumes incomplete work and reuses valid cached operations,
+so it does not intentionally submit the same paid work twice.
+
+`--force` is safe for normal analysis maintenance: it recomputes local analysis
+only and **never spends LALAL credits**. To deliberately repeat paid stem
+operations, use `--force-stems`. vgt shows the outstanding operation count and,
+after LALAL's free preflight, its current balance and duration-based estimate
+before asking for confirmation. Non-interactive use additionally requires the
+explicit `--accept-stem-cost` acknowledgment:
+
+```sh
+vgt analyze --guitar acoustic --force-stems --accept-stem-cost "$PROJECT"
+```
+
+Generated output is project-local, not stored in this repository. The sidecar
+records a stable namespace, and all generated artifacts stay below
+`<project-folder>/vgt/<namespace>/` (including `stems/vocals.wav`,
+`instrumental.wav`, `bass.wav`, `drums.wav`, `guitar.wav`, and
+`backing-no-guitar.wav`). This keeps the media project-relative when the song
+folder is moved or backed up.
+
+After separation, run the same initialization ReaScript from **Actions → Show
+action list → ReaScript: Load** again. Alongside the mirror and Phase 1
+annotations, it imports the valid artifacts additively as `[vgt] Vocals`,
+`[vgt] Instrumental`, `[vgt] Bass`, `[vgt] Drums`, `[vgt] Guitar`, and `[vgt]
+Backing (no guitar)` tracks. Re-applying reconciles only vgt-owned tracks.
+
+The live LALAL check is deliberately opt-in and never runs in CI because it
+uses account credits. Account owners can follow the
+[manual LALAL API v1 smoke-test procedure](docs/lalal-v1-smoke-test.md).
+
 ## Apply analysis (Phase 1)
 
 Run the same ReaScript again after `vgt analyze`. It reads the sidecar and adds
@@ -223,7 +286,10 @@ the corrected sidecar — the round trip is idempotent.
 
 `vgt status [project.rpp]` is read-only: it prints the project and sidecar,
 reference track/source-file availability, managed area, each analysis stage,
-timestamps, and the click/chord-sheet/section-timeline artifacts. In
+timestamps, and the click/chord-sheet/section-timeline artifacts. It also
+shows the selected guitar type; the five stem operations (including cached,
+pending, in-progress, remote, or error state); and the six local stem artifact
+paths and validity state. It never exposes the LALAL license key. In
 particular, the `chords` line says whether it is only machine-detected or
 human-corrected. Old sidecars that predate timestamps show `unknown` rather
 than being changed.

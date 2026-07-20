@@ -1,7 +1,7 @@
 [project]
 name = "vgt"
 version = "0.1.0"
-description = "Non-destructive REAPER project plumbing for virtual guitar teacher"
+description = "Non-destructive REAPER analysis and LALAL.AI stem separation for guitar practice"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
