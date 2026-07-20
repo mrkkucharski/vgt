@@ -47,7 +47,7 @@ Shipped:
   the reference, names the managed folder after it (`[vgt] <reference track name>`), and mirrors that one track's
   media into the managed area.
 
-### Phase 1 — Reference analysis *(current)*
+### Phase 1 — Reference analysis *(delivered)*
 
 Analyze the chosen reference track — **the full mix; no stem separation yet** — and record what vgt learns about
 the song, both in the sidecar and as `[vgt]`-owned objects in the project. From the reference audio, detect:
@@ -74,10 +74,31 @@ Phase 1 delivers:
     the sidecar as human-verified corrections in one invocation, without disturbing the machine-detected values
     each stage keeps alongside them (see README's "Correcting chords and sections in REAPER").
 
-**Out of scope for phase 1** (deferred to later phases): stem separation, guitar MIDI reference generation,
-practice controls (stem muting / looping / tempo-ramp), and performance scoring. The full song-prep pipeline in
-[phase1-song-prep-plan.md](phase1-song-prep-plan.md) is the longer-range roadmap; phase 1 here is its analysis
-slice with separation and the MIDI reference intentionally deferred.
+**Phase 1 was the analysis slice** of the [phase1-song-prep-plan.md](phase1-song-prep-plan.md) roadmap.
+Stem separation — deferred out of phase 1 — is now **Phase 2** (below). Guitar MIDI reference generation,
+practice controls (stem muting / looping / tempo-ramp), and performance scoring remain deferred to later phases.
+
+### Phase 2 — Stem separation *(current)*
+
+Separate the reference track into practice stems using **LALAL.AI as the sole backend** — offline separation
+(Demucs/UVR/RoFormer) is explicitly deferred. Reproducing the user's proven manual workflow, vgt produces six
+artifacts via five paid split operations, isolating each **reference** stem from the **original** mix (with one
+deliberate cascade for the guitarless practice bed) and loading them as `[vgt]` tracks. The full design — LALAL
+API v1 contract, the fixed recipe, durability / no-double-charge invariants, artifact layout, and acceptance
+criteria — is in [stem-separation-plan.md](stem-separation-plan.md). Phase 2 delivers:
+- **six stems** — `vocals`, `instrumental` (mix − vocals), `bass`, `drums`, `guitar` (electric/acoustic,
+  user-declared), and `backing (no guitar)`;
+- **a LALAL v1 backend** behind a thin `Separator` seam, authenticated only by the `LALAL_LICENSE_KEY`
+  environment variable (never persisted or logged), with idempotency-keyed, durably-checkpointed operations so
+  paid work is never repeated or double-charged;
+- **a `stems` block in the sidecar** — per-operation and per-artifact provenance, content-hash cache identity,
+  and a stable per-project artifact namespace under a `vgt/` subfolder next to the RPP;
+- **six `[vgt]` stem tracks** imported additively and idempotently with project-relative media paths;
+- **cost-safe CLI semantics** — ordinary `vgt analyze --force` never spends credits; repeating paid work
+  requires an explicit `--force-stems` with a cost preview and confirmation.
+
+**Out of scope for phase 2** (deferred to later phases): offline separation (UVR / RoFormer / Demucs), guitar
+MIDI reference generation, practice controls (stem muting / looping / tempo-ramp), and performance scoring.
 
 ## Requirements
 
