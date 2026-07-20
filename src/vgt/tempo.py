@@ -15,6 +15,8 @@ from pathlib import Path
 from typing import Any
 import statistics
 
+from .sidecar import artifact_namespace_dir
+
 # A global constant-BPM fit's RMS residual, as a fraction of one beat
 # interval, below which the grid is reported as a single constant tempo
 # rather than a piecewise-linear map. Detector jitter alone (frame
@@ -180,10 +182,12 @@ def build_tempo_grid(
     return grid
 
 
-def click_artifact_path(project_path: Path) -> Path:
-    """Verification artifact lives next to the sidecar, not inside the
-    project's own Media folder -- it is vgt-owned, not part of the song."""
-    return project_path.with_name(f"{project_path.stem}.vgt-tempo-click.wav")
+def click_artifact_path(project_path: Path, namespace: str) -> Path:
+    """Verification artifact lives under the project's `vgt/<namespace>/`
+    folder, not inside its own Media folder -- it is vgt-owned, regenerable,
+    not part of the song (see docs/stem-separation-plan.md's Artifact
+    layout)."""
+    return artifact_namespace_dir(project_path, namespace) / "tempo-click.wav"
 
 
 def render_click(source: Path, beat_times: list[float], destination: Path) -> Path:

@@ -7,7 +7,14 @@ import pytest
 from vgt import analysis as analysis_module
 from vgt.analysis import AnalysisError, analyze
 from vgt.cli import main
-from vgt.sidecar import ANALYSIS_STAGES, read_sidecar, upgrade, write_sidecar
+from vgt.sidecar import (
+    ANALYSIS_STAGES,
+    artifact_namespace_dir,
+    ensure_artifact_namespace,
+    read_sidecar,
+    upgrade,
+    write_sidecar,
+)
 
 
 FIXTURE_DIR = Path(__file__).parents[1] / "test" / "Reaper Project"
@@ -137,6 +144,56 @@ def test_upgrade_does_not_clobber_an_existing_detected_field() -> None:
     assert upgraded["analysis"]["chords"]["detected"]["segments"][0]["chord"] == "G"
 
 
+def test_first_namespace_migrates_only_exact_known_legacy_analysis_artifacts(tmp_path: Path) -> None:
+    project = tmp_path / "song.RPP"
+    legacy_click = tmp_path / "song.vgt-tempo-click.wav"
+    legacy_chords = tmp_path / "song.vgt-chords.txt"
+    legacy_sections = tmp_path / "song.vgt-sections.txt"
+    legacy_click.write_bytes(b"click")
+    legacy_chords.write_text("chords")
+    legacy_sections.write_text("sections")
+    unrelated = tmp_path / "song.vgt-not-ours.txt"
+    unrelated.write_text("leave me alone")
+    sidecar = upgrade(
+        {
+            "schema_version": 5,
+            "analysis": {
+                "tempo": {"value": {"click_artifact_path": legacy_click.name}},
+                "chords": {"value": {"chord_sheet_path": legacy_chords.name}},
+                "sections": {"value": [{"label": "A"}]},
+            },
+        }
+    )
+
+    namespace = ensure_artifact_namespace(sidecar, project)
+    destination = artifact_namespace_dir(project, namespace)
+
+    assert (destination / "tempo-click.wav").read_bytes() == b"click"
+    assert (destination / "chords.txt").read_text() == "chords"
+    assert (destination / "sections.txt").read_text() == "sections"
+    assert sidecar["analysis"]["tempo"]["value"]["click_artifact_path"] == "tempo-click.wav"
+    assert sidecar["analysis"]["chords"]["value"]["chord_sheet_path"] == "chords.txt"
+    assert unrelated.read_text() == "leave me alone"
+    # Copying is deliberately non-destructive: legacy files are harmless
+    # orphans until an explicit cleanup command owns their removal.
+    assert legacy_click.is_file()
+    assert legacy_chords.is_file()
+    assert legacy_sections.is_file()
+
+
+def test_first_namespace_leaves_unrecognized_legacy_paths_unmodified(tmp_path: Path) -> None:
+    project = tmp_path / "song.RPP"
+    unknown = tmp_path / "custom-click.wav"
+    unknown.write_bytes(b"custom")
+    sidecar = upgrade({"analysis": {"tempo": {"value": {"click_artifact_path": unknown.name}}}})
+
+    namespace = ensure_artifact_namespace(sidecar, project)
+
+    assert sidecar["analysis"]["tempo"]["value"]["click_artifact_path"] == unknown.name
+    assert not artifact_namespace_dir(project, namespace).exists()
+    assert unknown.read_bytes() == b"custom"
+
+
 def test_analyze_requires_an_existing_sidecar(tmp_path: Path) -> None:
     project = _project_copy(tmp_path)
 
@@ -166,7 +223,10 @@ def test_analyze_writes_v2_sidecar_with_skeleton_and_provenance(tmp_path: Path) 
     assert tempo["mode"] in {"constant", "piecewise"}
     assert tempo["backend"] in {"madmom", "librosa"}
     assert len(tempo["beat_times"]) > 1
-    click_artifact = project.with_name(tempo["click_artifact_path"])
+    namespace = result["analysis"]["stems"]["artifact_namespace"]
+    assert namespace
+    namespace_dir = artifact_namespace_dir(project, namespace)
+    click_artifact = namespace_dir / tempo["click_artifact_path"]
     assert click_artifact.is_file()
 
     key = result["analysis"]["key"]["value"]
@@ -183,7 +243,7 @@ def test_analyze_writes_v2_sidecar_with_skeleton_and_provenance(tmp_path: Path) 
     for earlier, later in zip(sections, sections[1:]):
         assert earlier["end_seconds"] == later["start_seconds"]
         assert earlier["label"]
-    timeline = project.with_name(f"{project.stem}.vgt-sections.txt")
+    timeline = namespace_dir / "sections.txt"
     assert timeline.is_file()
 
     chords = result["analysis"]["chords"]["value"]
@@ -196,7 +256,7 @@ def test_analyze_writes_v2_sidecar_with_skeleton_and_provenance(tmp_path: Path) 
         # not some independently detected grid.
         assert segment["start_seconds"] in tempo_beat_times
         assert segment["end_seconds"] in tempo_beat_times
-    chord_sheet = project.with_name(chords["chord_sheet_path"])
+    chord_sheet = namespace_dir / chords["chord_sheet_path"]
     assert chord_sheet.is_file()
 
     # No correction has been made yet, so `detected` mirrors `value` exactly.
@@ -225,7 +285,11 @@ def test_stage_cache_only_refreshes_the_stage_with_changed_settings(
 
     def detector(stage: str):
         def detect(
-            _project_path: Path, _source: Path, _settings: dict[str, object], _analysis: dict[str, object]
+            _project_path: Path,
+            _source: Path,
+            _settings: dict[str, object],
+            _analysis: dict[str, object],
+            _namespace: str,
         ) -> dict[str, str]:
             calls[stage] += 1
             return {"stage": stage}
@@ -400,7 +464,7 @@ def test_detected_keeps_refreshing_against_current_settings_once_value_is_human_
 
 
 def test_refreshing_detected_after_verification_does_not_overwrite_chord_sheet_artifact(tmp_path: Path) -> None:
-    """The `.vgt-chords.txt` chord-sheet artifact documents the effective,
+    """The `chords.txt` chord-sheet artifact documents the effective,
     human-corrected `value` (see README's Chords section), not the machine
     baseline. Refreshing `detected` after `value` is human-verified must not
     re-render that file with the raw new detection -- otherwise the on-disk
@@ -411,7 +475,8 @@ def test_refreshing_detected_after_verification_does_not_overwrite_chord_sheet_a
     _write_v1_sidecar(project)
     first = analyze(project)
 
-    chord_sheet = project.with_name(first["analysis"]["chords"]["value"]["chord_sheet_path"])
+    namespace = first["analysis"]["stems"]["artifact_namespace"]
+    chord_sheet = artifact_namespace_dir(project, namespace) / first["analysis"]["chords"]["value"]["chord_sheet_path"]
     contents_before_correction = chord_sheet.read_text(encoding="utf-8")
 
     sidecar = read_sidecar(project)

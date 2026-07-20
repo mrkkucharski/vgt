@@ -95,7 +95,9 @@ from typing import Any, Callable
 import copy
 import json
 import os
+import shutil
 import tempfile
+import uuid
 
 SCHEMA_VERSION = 6
 
@@ -113,6 +115,69 @@ class SidecarError(ValueError):
 def sidecar_path(project_path: str | Path) -> Path:
     path = Path(project_path)
     return path.with_suffix(".vgt")
+
+
+def artifact_namespace_dir(project_path: str | Path, namespace: str) -> Path:
+    """Directory for `namespace`'s regenerable artifacts: `vgt/<namespace>/`
+    next to the project (see docs/stem-separation-plan.md's Artifact
+    layout). The `.vgt` sidecar itself stays adjacent to the RPP, not here."""
+    return Path(project_path).parent / "vgt" / namespace
+
+
+def ensure_artifact_namespace(sidecar: dict[str, Any], project_path: str | Path) -> str:
+    """Return `sidecar`'s stable artifact namespace, generating and
+    persisting one into `analysis.stems` on first use.
+
+    On that first use, migrate only the three exact filenames vgt used before
+    the namespace layout.  Their presence is proof of vgt ownership; no glob
+    search is performed, and unknown files are left alone.  Never regenerate
+    the namespace once set, even if the project is later renamed (see module
+    docstring, schema 6)."""
+    stems = sidecar["analysis"]["stems"]
+    namespace = stems.get("artifact_namespace")
+    if namespace is None:
+        namespace = f"{Path(project_path).stem}-{uuid.uuid4().hex[:8]}"
+        stems["artifact_namespace"] = namespace
+        _migrate_legacy_analysis_artifacts(sidecar, Path(project_path), namespace)
+    return namespace
+
+
+def _migrate_legacy_analysis_artifacts(sidecar: dict[str, Any], project_path: Path, namespace: str) -> None:
+    """Copy known pre-namespace analysis artifacts into ``namespace``.
+
+    Metadata is changed only for the exact filenames emitted by prior vgt
+    releases.  This retains harmless legacy orphans and never mistakes an
+    arbitrary user file for a vgt artifact.
+    """
+    analysis = sidecar["analysis"]
+    legacy_dir = project_path.parent
+    destination_dir = artifact_namespace_dir(project_path, namespace)
+    expected = {
+        "click_artifact_path": f"{project_path.stem}.vgt-tempo-click.wav",
+        "chord_sheet_path": f"{project_path.stem}.vgt-chords.txt",
+    }
+    artifacts: list[tuple[Path, str]] = []
+
+    tempo_value = analysis["tempo"].get("value")
+    if isinstance(tempo_value, dict) and tempo_value.get("click_artifact_path") == expected["click_artifact_path"]:
+        artifacts.append((legacy_dir / expected["click_artifact_path"], "tempo-click.wav"))
+        tempo_value["click_artifact_path"] = "tempo-click.wav"
+
+    chords_value = analysis["chords"].get("value")
+    if isinstance(chords_value, dict) and chords_value.get("chord_sheet_path") == expected["chord_sheet_path"]:
+        artifacts.append((legacy_dir / expected["chord_sheet_path"], "chords.txt"))
+        chords_value["chord_sheet_path"] = "chords.txt"
+
+    # Unlike click/chords, old section timelines had no sidecar path field.
+    # A non-null stage value is the exact schema-level evidence that vgt had
+    # produced this fixed filename.
+    if analysis["sections"].get("value") is not None:
+        artifacts.append((legacy_dir / f"{project_path.stem}.vgt-sections.txt", "sections.txt"))
+
+    for legacy_path, filename in artifacts:
+        if legacy_path.is_file():
+            destination_dir.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(legacy_path, destination_dir / filename)
 
 
 def _empty_stage() -> dict[str, Any]:

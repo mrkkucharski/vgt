@@ -31,6 +31,7 @@ from .sidecar import (
     ANALYSIS_STAGES,
     SidecarError,
     DETECTED_SPLIT_STAGES,
+    ensure_artifact_namespace,
     read_sidecar,
     refresh_stage,
     stage_is_current,
@@ -55,16 +56,18 @@ def hash_source_file(path: Path) -> str:
     return hashlib.sha256(digest.encode("utf-8")).hexdigest()
 
 
-def detect_tempo(project_path: Path, source: Path, settings: dict[str, Any], analysis: dict[str, Any]) -> dict[str, Any]:
+def detect_tempo(
+    project_path: Path, source: Path, settings: dict[str, Any], analysis: dict[str, Any], namespace: str
+) -> dict[str, Any]:
     """BPM, downbeat offset, time signature, tempo-map mode/residual, and the
     raw detected beat times (see tempo.py) -- the last of these is the shared
-    grid `detect_chords` snaps to -- plus a click-only verification
-    artifact rendered next to the sidecar."""
+    grid `detect_chords` snaps to -- plus a click-only verification artifact
+    rendered under the project's `vgt/<namespace>/` folder."""
     del analysis  # tempo runs first; nothing upstream to read yet
     try:
         beat_times, beat_positions, backend = detect_beats(source)
         grid = build_tempo_grid(beat_times, beat_positions, backend, settings)
-        artifact = render_click(source, beat_times, click_artifact_path(project_path))
+        artifact = render_click(source, beat_times, click_artifact_path(project_path, namespace))
     except TempoDetectionError as exc:
         raise AnalysisError(str(exc)) from exc
     grid["click_artifact_path"] = artifact.name
@@ -72,8 +75,10 @@ def detect_tempo(project_path: Path, source: Path, settings: dict[str, Any], ana
     return grid
 
 
-def detect_key(project_path: Path, source: Path, settings: dict[str, Any], analysis: dict[str, Any]) -> dict[str, Any]:
-    del project_path, analysis
+def detect_key(
+    project_path: Path, source: Path, settings: dict[str, Any], analysis: dict[str, Any], namespace: str
+) -> dict[str, Any]:
+    del project_path, analysis, namespace
     try:
         return _detect_key(source, settings)
     except KeyDetectionError as exc:
@@ -85,18 +90,19 @@ def detect_sections(
     source: Path,
     settings: dict[str, Any],
     analysis: dict[str, Any],
+    namespace: str,
     *,
     render_artifact: bool = True,
 ) -> list[Any]:
     """Section boundaries + generic labels (see sections.py), plus a
-    plain-text section-timeline artifact rendered next to the sidecar for
-    by-eye verification.
+    plain-text section-timeline artifact rendered under the project's
+    `vgt/<namespace>/` folder for by-eye verification.
 
     `render_artifact=False` skips writing that artifact: used when this is
     only refreshing the `detected` baseline of an already human-verified
     stage (see `_refresh_stage_with_detected`), so the on-disk
-    `.vgt-sections.txt` -- reflecting the effective, human-corrected `value`
-    -- isn't silently overwritten with the raw machine detection the human
+    `sections.txt` -- reflecting the effective, human-corrected `value` --
+    isn't silently overwritten with the raw machine detection the human
     corrected away from."""
     del analysis
     try:
@@ -104,7 +110,7 @@ def detect_sections(
     except SectionDetectionError as exc:
         raise AnalysisError(str(exc)) from exc
     if sections_value and render_artifact:
-        render_section_timeline(sections_value, section_timeline_path(project_path))
+        render_section_timeline(sections_value, section_timeline_path(project_path, namespace))
     return sections_value
 
 
@@ -178,16 +184,17 @@ def detect_chords(
     source: Path,
     settings: dict[str, Any],
     analysis: dict[str, Any],
+    namespace: str,
     *,
     render_artifact: bool = True,
 ) -> dict[str, Any]:
     """Beat-aligned maj/min chord segments (see chords.py), snapped to the
     tempo stage's shared beat grid, plus a chord-sheet text artifact rendered
-    next to the sidecar for by-eye verification.
+    under the project's `vgt/<namespace>/` folder for by-eye verification.
 
     `render_artifact=False` skips writing that artifact: used when this is
     only refreshing the `detected` baseline of an already human-verified
-    stage (see `_refresh_stage_with_detected`), so the on-disk `.vgt-chords.txt` --
+    stage (see `_refresh_stage_with_detected`), so the on-disk `chords.txt` --
     documented as reflecting the effective, human-corrected `value` -- isn't
     silently overwritten with the raw machine detection the human corrected
     away from."""
@@ -196,7 +203,7 @@ def detect_chords(
         chords_value = _detect_chords(source, beat_times, settings)
     except ChordDetectionError as exc:
         raise AnalysisError(str(exc)) from exc
-    artifact_path = chord_sheet_path(project_path)
+    artifact_path = chord_sheet_path(project_path, namespace)
     if render_artifact:
         render_chord_sheet(chords_value, artifact_path)
     chords_value["chord_sheet_path"] = artifact_path.name
@@ -257,6 +264,7 @@ def analyze(
 
     input_hash = hash_source_file(source)
     analysis = sidecar["analysis"]
+    namespace = ensure_artifact_namespace(sidecar, project_path)
     total = len(ANALYSIS_STAGES)
     for position, stage in enumerate(ANALYSIS_STAGES, start=1):
         stage_settings = settings.get(stage, {})
@@ -282,7 +290,7 @@ def analyze(
             input_hash=input_hash,
             settings_hash=settings_hash,
             compute=lambda stage=stage, stage_settings=stage_settings, **kwargs: _DETECTORS[stage](
-                project_path, source, stage_settings, analysis, **kwargs
+                project_path, source, stage_settings, analysis, namespace, **kwargs
             ),
             force=force,
             analyzed_at=datetime.now(UTC).isoformat().replace("+00:00", "Z"),

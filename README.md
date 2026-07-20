@@ -71,9 +71,9 @@ piecewise-linear tempo map (mode + residual are both recorded):
   downbeats, so time signature falls back to a `time_signature_hint`
   setting (or `4/4`) rather than a detected bar length.
 
-Every run also renders a **click-only artifact** — `<project>.vgt-tempo-click.wav`,
-next to the sidecar — a bare click on the detected beat grid (the reference
-audio is not mixed in) so the grid can be checked by ear or lined up against
+Every run also renders a **click-only artifact** — `vgt/<namespace>/tempo-click.wav`,
+under the project's `vgt/` subfolder — a bare click on the detected beat grid (the
+reference audio is not mixed in) so the grid can be checked by ear or lined up against
 the reference in REAPER; it is vgt-owned and regenerated each run, not
 committed alongside the project.
 The tempo stage's `value` also stores the raw detected `beat_times` — the
@@ -109,8 +109,9 @@ collapse to their nearest maj/min match — so every result is flagged
 `"vocabulary": "maj_min"`.
 
 Every run that (re)computes `value` also renders a **chord-sheet artifact** —
-`<project>.vgt-chords.txt`, next to the sidecar — a plain-text timestamp +
-chord-label listing of `value`, for by-eye verification.
+`vgt/<namespace>/chords.txt`, under the project's `vgt/` subfolder — a
+plain-text timestamp + chord-label listing of `value`, for by-eye
+verification.
 
 The `chords` stage stores two parallel chord lists: `value` (the effective,
 human-correctable chords used everywhere else — apply, the chord sheet) and
@@ -146,9 +147,9 @@ spanning the track end-to-end:
 Labels are intentionally generic — renaming them (`"A"` → `"chorus"`) is a
 normal correction, not a failure, and (like every other stage) persists once
 `human_verified: true` is set. Every run also renders a **section-timeline
-artifact** — `<project>.vgt-sections.txt`, next to the sidecar — so the
-detected structure can be checked by eye; it is vgt-owned and regenerated
-each run, not committed alongside the project.
+artifact** — `vgt/<namespace>/sections.txt`, under the project's `vgt/`
+subfolder — so the detected structure can be checked by eye; it is vgt-owned
+and regenerated each run, not committed alongside the project.
 
 ## Apply analysis (Phase 1)
 

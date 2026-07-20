@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Any
 
 from .project import ProjectError, track_source_path
-from .sidecar import ANALYSIS_STAGES, DETECTED_SPLIT_STAGES, sidecar_path
+from .sidecar import ANALYSIS_STAGES, DETECTED_SPLIT_STAGES, artifact_namespace_dir, sidecar_path
 
 
 class StatusError(ValueError):
@@ -52,14 +52,23 @@ def _latest_timestamp(timestamps: list[Any]) -> str | None:
 
 
 def _artifact_paths(project_path: Path, analysis: dict[str, Any]) -> dict[str, Path | None]:
+    """Regenerable analysis artifacts live under `vgt/<namespace>/` next to
+    the project (see docs/stem-separation-plan.md's Artifact layout); until
+    an `artifact_namespace` has been recorded (i.e. before `vgt analyze` has
+    ever run), none of these paths can be known."""
+    stems = analysis.get("stems") if isinstance(analysis.get("stems"), dict) else {}
+    namespace = stems.get("artifact_namespace")
+    if not namespace:
+        return {"click": None, "chord_sheet": None, "section_timeline": None}
+    namespace_dir = artifact_namespace_dir(project_path, namespace)
     tempo = analysis.get("tempo") or {}
     chords = analysis.get("chords") or {}
     names = {
         "click": (tempo.get("value") or {}).get("click_artifact_path") if isinstance(tempo, dict) else None,
         "chord_sheet": (chords.get("value") or {}).get("chord_sheet_path") if isinstance(chords, dict) else None,
-        "section_timeline": f"{project_path.stem}.vgt-sections.txt",
+        "section_timeline": "sections.txt",
     }
-    return {name: project_path.with_name(filename) if isinstance(filename, str) else None for name, filename in names.items()}
+    return {name: namespace_dir / filename if isinstance(filename, str) else None for name, filename in names.items()}
 
 
 def build_status(project_path: Path) -> dict[str, Any]:
