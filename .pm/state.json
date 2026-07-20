@@ -1,16 +1,23 @@
 {
-  "current_issue": 44,
-  "session_id": "2613a63b-bc73-4e6d-9ca0-a21ee22db583",
-  "pid": 45338,
-  "process_started_at": "Mon Jul 20 13:24:56 2026",
+  "current_issue": 45,
+  "session_id": "a7fb9ea1-10df-4e0b-a588-e50290768cb7",
+  "pid": 50385,
+  "process_started_at": "Mon Jul 20 15:22:12 2026",
   "agent": "codex",
-  "started_at": "2026-07-20T11:24:54.736172+00:00",
+  "started_at": "2026-07-20T13:22:10.685167+00:00",
   "scheduler_stalls": {
     "malformed_responses": {
       "followup_issues": {
         "first_seen_at": "2026-07-20T05:00:14.322263+00:00",
         "last_seen_at": "2026-07-20T05:00:14.322263+00:00",
         "consecutive_passes": 1
+      }
+    },
+    "deferred_passes": {
+      "budget": {
+        "first_seen_at": "2026-07-20T11:28:21.432766+00:00",
+        "last_seen_at": "2026-07-20T13:20:54.882814+00:00",
+        "consecutive_passes": 99
       }
     }
   },
@@ -26,10 +33,10 @@
   "verification_followups": {
     "f0d8bfc9d2dc6da7a31609184e25c4d66d3986fd2340b33a83e98204fb86691e": "created"
   },
-  "role": "fix",
-  "branch": "issue-44-m1-e-consolidate-vgt-artifacts-under-a-v",
-  "worktree_path": "/Users/marekkucharski/projects/.pm-worktrees/vgt/issue-44",
-  "pr_number": 50,
+  "role": "implement",
+  "branch": "issue-45-m1-b-lalal-api-v1-backend-lalalseparator",
+  "worktree_path": "/Users/marekkucharski/projects/.pm-worktrees/vgt/issue-45",
+  "pr_number": null,
   "followup_generation": {
     "fingerprint": "21aabd4138fef85732e2ba4ed6fa65365084fb3986dac0b7f66d093f17bfed99",
     "items": {
@@ -61,13 +68,13 @@
     "44": 1
   },
   "pending_transition": {
-    "issue": 44,
+    "issue": 45,
     "target": "working",
-    "event": "agent.fix_started",
+    "event": "agent.started",
     "detail": {
-      "issue": 44,
+      "issue": 45,
       "agent": "codex",
-      "fix_count": 1
+      "branch": "issue-45-m1-b-lalal-api-v1-backend-lalalseparator"
     },
     "cleanup": {}
   }
