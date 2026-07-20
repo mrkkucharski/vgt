@@ -56,6 +56,9 @@ Schema versions:
        Operation/artifact records are created lazily by `separation.py`, so
        `upgrade()` only guarantees the fixed top-level shape above -- the
        orchestrator, not this module, owns the recipe (per the plan).
+  7 -- `analysis.stems.in_progress` is a durable, heartbeat-refreshed lease
+       held by Python for the lifetime of a paid separation run.  ReaScript
+       refuses a live lease and safely treats an expired one as stale.
 
 Every stage entry has the same shape:
   {
@@ -93,13 +96,16 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any, Callable
 import copy
+from datetime import UTC, datetime, timedelta
+import fcntl
 import json
 import os
 import shutil
 import tempfile
 import uuid
 
-SCHEMA_VERSION = 6
+SCHEMA_VERSION = 7
+STEMS_LEASE_TIMEOUT = timedelta(minutes=30)
 
 ANALYSIS_STAGES = ("tempo", "key", "sections", "chords")
 
@@ -202,6 +208,10 @@ def _empty_stems_block() -> dict[str, Any]:
         "recipe_version": None,
         "guitar_type": None,
         "artifact_namespace": None,
+        # A durable, short-lived ownership record for the paid separator.
+        # It is deliberately inside ``stems`` so ReaScript can read it while
+        # remaining oblivious to Python's implementation details.
+        "in_progress": None,
         "operations": {},
         "artifacts": {},
         "human_verified": False,
@@ -264,6 +274,104 @@ def write_sidecar(project_path: str | Path, data: dict[str, Any]) -> None:
     except BaseException:
         Path(tmp_path).unlink(missing_ok=True)
         raise
+
+
+def _read_sidecar_unlocked(project_path: str | Path) -> dict[str, Any]:
+    path = sidecar_path(project_path)
+    if not path.is_file():
+        raise SidecarError(f"No .vgt sidecar found at {path}; run the Phase 0 apply action first.")
+    return upgrade(json.loads(path.read_text(encoding="utf-8")))
+
+
+def atomic_update_sidecar(project_path: str | Path, update: Callable[[dict[str, Any]], None]) -> dict[str, Any]:
+    """Atomically read, merge, and replace a sidecar.
+
+    Python writers use an advisory sibling lock and always reread immediately
+    before writing.  This keeps a local-analysis update from replacing a
+    separator checkpoint written by another Python process.  The ReaScript
+    lease prevents its separate writer from entering this critical period.
+    """
+    path = sidecar_path(project_path)
+    lock_path = path.with_name(f".{path.name}.lock")
+    with lock_path.open("a+", encoding="utf-8") as lock:
+        fcntl.flock(lock.fileno(), fcntl.LOCK_EX)
+        try:
+            data = _read_sidecar_unlocked(project_path)
+            update(data)
+            write_sidecar(project_path, data)
+            return data
+        finally:
+            fcntl.flock(lock.fileno(), fcntl.LOCK_UN)
+
+
+def update_analysis(project_path: str | Path, update: Callable[[dict[str, Any]], None]) -> dict[str, Any]:
+    """Atomically update only Python-owned data below ``analysis``.
+
+    Top-level fields are owned by the ReaScript and are intentionally kept
+    byte-for-value from the most recently read sidecar.
+    """
+    return atomic_update_sidecar(project_path, lambda data: update(data["analysis"]))
+
+
+def _lease_time(value: object) -> datetime | None:
+    if not isinstance(value, str):
+        return None
+    try:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    return parsed if parsed.tzinfo else parsed.replace(tzinfo=UTC)
+
+
+def stems_lease_is_live(stems: dict[str, Any], *, now: datetime | None = None) -> bool:
+    lease = stems.get("in_progress")
+    heartbeat = _lease_time(lease.get("heartbeat_at")) if isinstance(lease, dict) else None
+    current = now or datetime.now(UTC)
+    return heartbeat is not None and timedelta(0) <= current - heartbeat < STEMS_LEASE_TIMEOUT
+
+
+def acquire_stems_lease(project_path: str | Path, owner_id: str | None = None) -> tuple[dict[str, Any], str]:
+    """Claim the durable separation lease, replacing only a stale lease."""
+    owner = owner_id or uuid.uuid4().hex
+    now = datetime.now(UTC).isoformat().replace("+00:00", "Z")
+
+    def claim(analysis: dict[str, Any]) -> None:
+        stems = analysis["stems"]
+        if stems_lease_is_live(stems):
+            raise SidecarError("Stem separation is already in progress; retry after it finishes.")
+        stems["in_progress"] = {"owner_id": owner, "started_at": now, "heartbeat_at": now}
+
+    return update_analysis(project_path, claim), owner
+
+
+def update_stems_under_lease(project_path: str | Path, stems: dict[str, Any], owner_id: str) -> dict[str, Any]:
+    """Persist a separator checkpoint and refresh its lease heartbeat."""
+    now = datetime.now(UTC).isoformat().replace("+00:00", "Z")
+
+    def update(analysis: dict[str, Any]) -> None:
+        current = analysis["stems"]
+        lease = current.get("in_progress")
+        if not isinstance(lease, dict) or lease.get("owner_id") != owner_id:
+            raise SidecarError("Stem separation lease was lost; refusing to submit or checkpoint work.")
+        replacement = copy.deepcopy(stems)
+        replacement["in_progress"] = {
+            "owner_id": owner_id,
+            "started_at": lease.get("started_at", now),
+            "heartbeat_at": now,
+        }
+        analysis["stems"] = replacement
+
+    return update_analysis(project_path, update)
+
+
+def release_stems_lease(project_path: str | Path, owner_id: str) -> dict[str, Any]:
+    """Clear our lease without ever clearing a newer owner's lease."""
+    def release(analysis: dict[str, Any]) -> None:
+        lease = analysis["stems"].get("in_progress")
+        if isinstance(lease, dict) and lease.get("owner_id") == owner_id:
+            analysis["stems"]["in_progress"] = None
+
+    return update_analysis(project_path, release)
 
 
 def stage_is_current(stage: dict[str, Any], *, input_hash: str, settings_hash: str) -> bool:

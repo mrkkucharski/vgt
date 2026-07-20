@@ -6,7 +6,7 @@ import wave
 
 import pytest
 
-from vgt.sidecar import read_sidecar
+from vgt.sidecar import read_sidecar, update_analysis, write_sidecar
 from vgt.separation import (
     ARTIFACT_FILENAMES,
     OPERATION_ORDER,
@@ -188,6 +188,68 @@ def test_full_run_completes_all_five_operations_and_six_artifacts(tmp_path: Path
     work_dir = stems_dir(project, namespace) / "_work"
     for operation_id in OPERATION_ORDER:
         assert not (work_dir / operation_id).exists()  # per-operation scratch dirs are cleaned up after commit
+
+
+def test_live_project_lease_refuses_a_second_separator_before_submission(tmp_path: Path) -> None:
+    project = _project_copy(tmp_path)
+    _write_v1_sidecar(project)
+    from vgt.sidecar import acquire_stems_lease, release_stems_lease
+
+    _claimed, owner = acquire_stems_lease(project)
+    backend = _RecordingSeparator(FakeSeparator())
+    try:
+        with pytest.raises(SeparationError, match="already in progress"):
+            separate(project, backend, guitar_type="electric")
+    finally:
+        release_stems_lease(project, owner)
+    assert backend.calls == []
+
+
+def test_stale_project_lease_is_replaced_and_does_not_block_recovery(tmp_path: Path) -> None:
+    project = _project_copy(tmp_path)
+    _write_v1_sidecar(project)
+    sidecar = read_sidecar(project)
+    sidecar["analysis"]["stems"]["in_progress"] = {
+        "owner_id": "crashed-process",
+        "started_at": "2000-01-01T00:00:00Z",
+        "heartbeat_at": "2000-01-01T00:00:00Z",
+    }
+    write_sidecar(project, sidecar)
+
+    result = separate(project, FakeSeparator(), guitar_type="electric")
+
+    assert result["analysis"]["stems"]["in_progress"] is None
+    assert all(result["analysis"]["stems"]["operations"][op]["status"] == "completed" for op in OPERATION_ORDER)
+
+
+def test_analysis_update_during_split_preserves_paid_checkpoint(tmp_path: Path) -> None:
+    project = _project_copy(tmp_path)
+    _write_v1_sidecar(project)
+
+    class ConcurrentAnalysisSeparator:
+        name = "fake"
+        api_version = "fake-v1"
+
+        def __init__(self) -> None:
+            self.inner = FakeSeparator()
+            self.did_update = False
+
+        def split(self, source: Path, out_dir: Path, spec, *, resume_state, checkpoint) -> SplitResult:
+            if not self.did_update:
+                self.did_update = True
+                # Model a local detector finishing while LALAL has an active
+                # paid task.  It changes only its own analysis stage.
+                checkpoint({"task_id": f"paid-{spec.stem}", "idempotency_key": f"key-{spec.stem}"})
+                update_analysis(project, lambda analysis: analysis["key"].update({"value": {"root": "A"}}))
+                checkpointed = read_sidecar(project)["analysis"]["stems"]["operations"]["vocals-original"]
+                assert checkpointed["backend_state"]["task_id"] == "paid-vocals"
+            result = self.inner.split(source, out_dir, spec, resume_state=resume_state, checkpoint=checkpoint)
+            return result
+
+    result = separate(project, ConcurrentAnalysisSeparator(), guitar_type="electric")
+
+    assert result["analysis"]["key"]["value"] == {"root": "A"}
+    assert result["analysis"]["stems"]["operations"]["vocals-original"]["status"] == "completed"
 
 
 def test_operations_reuse_uploads_only_for_identical_source_bytes(tmp_path: Path) -> None:

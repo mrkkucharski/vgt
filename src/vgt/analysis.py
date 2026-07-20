@@ -35,7 +35,7 @@ from .sidecar import (
     read_sidecar,
     refresh_stage,
     stage_is_current,
-    write_sidecar,
+    update_analysis,
 )
 from .tempo import TempoDetectionError, build_tempo_grid, click_artifact_path, detect_beats, render_click
 
@@ -265,6 +265,13 @@ def analyze(
     input_hash = hash_source_file(source)
     analysis = sidecar["analysis"]
     namespace = ensure_artifact_namespace(sidecar, project_path)
+    # Namespace allocation is Python-owned stem metadata, but do not replace
+    # an existing operation/artifact index while recording it.
+    def persist_namespace(current: dict[str, Any]) -> None:
+        if current["stems"].get("artifact_namespace") is None:
+            current["stems"]["artifact_namespace"] = namespace
+
+    update_analysis(project_path, persist_namespace)
     total = len(ANALYSIS_STAGES)
     for position, stage in enumerate(ANALYSIS_STAGES, start=1):
         stage_settings = settings.get(stage, {})
@@ -298,7 +305,13 @@ def analyze(
         # A later detector or the paid separation stage may fail.  Each local
         # success therefore becomes durable immediately, not only at the end
         # of a full analysis run.
-        write_sidecar(project_path, sidecar)
+        # Merge only this detector's result.  A separator may be refreshing a
+        # paid-operation checkpoint concurrently; never replace its stems
+        # block with the snapshot this analysis run started with.
+        update_analysis(
+            project_path,
+            lambda current, stage=stage: current.__setitem__(stage, copy.deepcopy(analysis[stage])),
+        )
     emit("writing sidecar")
     analysis["provenance"] = {
         "tool": "vgt",
@@ -307,5 +320,8 @@ def analyze(
         "reference_source_path": str(source),
     }
 
-    write_sidecar(project_path, sidecar)
-    return sidecar
+    persisted = update_analysis(
+        project_path,
+        lambda current: current.__setitem__("provenance", copy.deepcopy(analysis["provenance"])),
+    )
+    return persisted
