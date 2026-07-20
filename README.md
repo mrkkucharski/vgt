@@ -24,9 +24,10 @@ uv run pytest -q
 ```
 
 GitHub Actions runs this same command on Python 3.11 for every push and pull
-request in [the test workflow](.github/workflows/tests.yml). The suite uses
-mocked LALAL v1 fixtures; CI does not receive credentials or make live LALAL
-API calls.
+request in [the test workflow](.github/workflows/tests.yml). It installs Lua
+for the ReaScript fixture tests, then installs the locked Python environment
+with uv. The suite uses mocked LALAL v1 fixtures; CI does not receive
+credentials or make live LALAL API calls.
 
 ## Apply inside REAPER
 

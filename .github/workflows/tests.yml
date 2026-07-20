@@ -16,5 +16,7 @@ jobs:
         with:
           python-version: "3.11"
       - uses: astral-sh/setup-uv@v5
+      - name: Install Lua for ReaScript fixture tests
+        run: sudo apt-get update && sudo apt-get install --yes lua5.4
       - run: uv sync --frozen
       - run: uv run pytest -q
