@@ -127,3 +127,18 @@ def test_cancel_and_delete_use_v1_endpoints_only() -> None:
     separator.cancel(["task-1"])
     separator.delete("source-1")
     assert paths == ["/api/v1/cancel/", "/api/v1/delete/"]
+
+
+def test_reconstruction_pins_the_effective_auto_model() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        payload = json.loads(request.content)
+        assert payload["presets"]["splitter"] == "Perseus"
+        return httpx.Response(200, json={"task_id": "replacement-task"})
+
+    state = {
+        "source_id": "source-1", "source_expires": 4102444800,
+        "effective_presets": {"splitter": "Perseus"},
+    }
+    separator = LalalSeparator(license_key=LICENSE_KEY, client=_client(handler))
+    separator._submit(state, build_recipe("electric")["bass-original"].spec, lambda _: None)
+    assert state["task_id"] == "replacement-task"

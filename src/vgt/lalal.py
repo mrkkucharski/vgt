@@ -156,12 +156,21 @@ class LalalSeparator:
         state["idempotency_key"] = state.get("idempotency_key") or str(uuid.uuid4())
         state["submission_started"] = True
         checkpoint(state)
+        # If a prior completed result has to be reconstructed (for example a
+        # retained local file was lost), preserve the concrete model chosen by
+        # LALAL's ``auto`` mode. That avoids making a mismatched vocal/back
+        # pair with a later auto-model selection.
+        splitter = spec.splitter
+        if splitter == "auto":
+            recorded_splitter = (state.get("effective_presets") or {}).get("splitter")
+            if isinstance(recorded_splitter, str) and recorded_splitter:
+                splitter = recorded_splitter
         payload = {
             "source_id": state["source_id"],
             "idempotency_key": state["idempotency_key"],
             "presets": {
                 "stem": spec.stem,
-                "splitter": spec.splitter,
+                "splitter": splitter,
                 "dereverb_enabled": spec.dereverb_enabled,
                 "extraction_level": spec.extraction_level,
                 "encoder_format": "wav",
