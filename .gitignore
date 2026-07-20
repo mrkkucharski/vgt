@@ -19,3 +19,8 @@ __pycache__/
 # layout); real user projects live outside this repo, so this is scoped to
 # the checked-in fixture only.
 test/**/vgt/
+
+# Orchestrator run transcripts: raw agent JSONL, ~6.7MB and growing, larger
+# than the source tree itself. Kept on disk for post-mortems, but the durable
+# record lives in .pm/log.ndjson, the issue threads, and git history.
+.pm/runs/
