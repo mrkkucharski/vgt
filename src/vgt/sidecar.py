@@ -96,6 +96,7 @@ import copy
 import json
 import os
 import tempfile
+import uuid
 
 SCHEMA_VERSION = 6
 
@@ -113,6 +114,26 @@ class SidecarError(ValueError):
 def sidecar_path(project_path: str | Path) -> Path:
     path = Path(project_path)
     return path.with_suffix(".vgt")
+
+
+def artifact_namespace_dir(project_path: str | Path, namespace: str) -> Path:
+    """Directory for `namespace`'s regenerable artifacts: `vgt/<namespace>/`
+    next to the project (see docs/stem-separation-plan.md's Artifact
+    layout). The `.vgt` sidecar itself stays adjacent to the RPP, not here."""
+    return Path(project_path).parent / "vgt" / namespace
+
+
+def ensure_artifact_namespace(sidecar: dict[str, Any], project_path: str | Path) -> str:
+    """Return `sidecar`'s stable artifact namespace, generating and
+    persisting one into `analysis.stems` on first use. Never regenerated
+    once set, even if the project is later renamed (see module docstring,
+    schema 6)."""
+    stems = sidecar["analysis"]["stems"]
+    namespace = stems.get("artifact_namespace")
+    if namespace is None:
+        namespace = f"{Path(project_path).stem}-{uuid.uuid4().hex[:8]}"
+        stems["artifact_namespace"] = namespace
+    return namespace
 
 
 def _empty_stage() -> dict[str, Any]:

@@ -46,7 +46,13 @@ import wave
 
 from .analysis import reference_source_path
 from .project import ProjectError, locate_project
-from .sidecar import SidecarError, read_sidecar, write_sidecar
+from .sidecar import (
+    SidecarError,
+    artifact_namespace_dir,
+    ensure_artifact_namespace,
+    read_sidecar,
+    write_sidecar,
+)
 
 RECIPE_VERSION = 1
 
@@ -329,16 +335,8 @@ def _validate_wav(path: Path) -> float:
     return frames / rate
 
 
-def artifact_namespace_dir(project_path: Path, namespace: str) -> Path:
-    return project_path.parent / "vgt" / namespace
-
-
 def stems_dir(project_path: Path, namespace: str) -> Path:
     return artifact_namespace_dir(project_path, namespace) / "stems"
-
-
-def _generate_namespace(project_path: Path) -> str:
-    return f"{project_path.stem}-{uuid.uuid4().hex[:8]}"
 
 
 def _now() -> str:
@@ -543,8 +541,7 @@ def separate(
     stems["backend"] = backend.name
     stems["api_version"] = backend.api_version
     stems["recipe_version"] = RECIPE_VERSION
-    namespace = stems.get("artifact_namespace") or _generate_namespace(project_path)
-    stems["artifact_namespace"] = namespace
+    namespace = ensure_artifact_namespace(sidecar, project_path)
 
     def persist() -> None:
         write_sidecar(project_path, sidecar)

@@ -19,11 +19,14 @@ def _project_copy(tmp_path: Path) -> Path:
 
 def test_status_reports_analysis_corrections_artifacts_and_json(tmp_path: Path, capsys) -> None:
     project = _project_copy(tmp_path)
-    project.with_name(f"{project.stem}.vgt-tempo-click.wav").write_bytes(b"click")
-    project.with_name(f"{project.stem}.vgt-chords.txt").write_text("chords")
-    project.with_name(f"{project.stem}.vgt-sections.txt").write_text("sections")
+    namespace = f"{project.stem}-abc123"
+    namespace_dir = project.parent / "vgt" / namespace
+    namespace_dir.mkdir(parents=True)
+    (namespace_dir / "tempo-click.wav").write_bytes(b"click")
+    (namespace_dir / "chords.txt").write_text("chords")
+    (namespace_dir / "sections.txt").write_text("sections")
     project.with_suffix(".vgt").write_text(json.dumps({
-        "schema_version": 3,
+        "schema_version": 6,
         "managed_track_guids": ["{A}", "{B}"],
         "config": {
             "reference_track_name": "The Seven Rivers (Full March - 3_00)",
@@ -33,10 +36,11 @@ def test_status_reports_analysis_corrections_artifacts_and_json(tmp_path: Path, 
             "tempo_map_applied": True,
         },
         "analysis": {
-            "tempo": {"value": {"bpm": 120, "time_signature": "4/4", "click_artifact_path": f"{project.stem}.vgt-tempo-click.wav"}, "analyzed_at": "2026-07-19T10:00:00Z"},
+            "tempo": {"value": {"bpm": 120, "time_signature": "4/4", "click_artifact_path": "tempo-click.wav"}, "analyzed_at": "2026-07-19T10:00:00Z"},
             "key": {"value": {"root": "A#", "scale": "minor"}, "analyzed_at": "2026-07-19T10:00:00Z"},
             "sections": {"value": [{}, {}], "analyzed_at": "2026-07-19T10:00:00Z"},
-            "chords": {"value": {"segments": [{}, {}], "chord_sheet_path": f"{project.stem}.vgt-chords.txt"}, "detected": {"segments": [{}, {}, {}]}, "human_verified": True, "analyzed_at": "2026-07-19T10:00:00Z", "verified_at": "2026-07-19T11:00:00Z"},
+            "chords": {"value": {"segments": [{}, {}], "chord_sheet_path": "chords.txt"}, "detected": {"segments": [{}, {}, {}]}, "human_verified": True, "analyzed_at": "2026-07-19T10:00:00Z", "verified_at": "2026-07-19T11:00:00Z"},
+            "stems": {"artifact_namespace": namespace},
         },
     }))
 

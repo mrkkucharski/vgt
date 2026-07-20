@@ -68,7 +68,7 @@ def test_click_track_is_muted_and_named_distinctly_from_beats() -> None:
     script = APPLY_SCRIPT.read_text()
     assert 'local CLICK_NAME = PREFIX .. " Click"' in script
     assert "add_locked_track(index, CLICK_NAME, true)" in script
-    assert "add_click_track(reaper.CountTracks(0), tempo, reference_start, managed_tracks)" in script
+    assert "add_click_track(reaper.CountTracks(0), tempo, reference_start, managed_tracks, artifact_namespace)" in script
 
 
 def _click_track_lua_mock(rpp_path: Path) -> str:
@@ -96,7 +96,9 @@ def _click_track_lua_mock(rpp_path: Path) -> str:
 
 def test_add_click_track_imports_the_rendered_click_wav_muted(tmp_path: Path) -> None:
     rpp = tmp_path / "song.RPP"
-    click_wav = tmp_path / "song.vgt-tempo-click.wav"
+    namespace_dir = tmp_path / "vgt" / "song-abc123"
+    namespace_dir.mkdir(parents=True)
+    click_wav = namespace_dir / "tempo-click.wav"
     click_wav.write_bytes(b"RIFF....WAVEfmt ")
 
     script = APPLY_SCRIPT.read_text()
@@ -106,7 +108,7 @@ def test_add_click_track_imports_the_rendered_click_wav_muted(tmp_path: Path) ->
             _click_track_lua_mock(rpp),
             script[:helpers_end],
             "local managed_tracks = {}",
-            "add_click_track(5, {click_artifact_path = 'song.vgt-tempo-click.wav'}, 1.5, managed_tracks)",
+            "add_click_track(5, {click_artifact_path = 'tempo-click.wav'}, 1.5, managed_tracks, 'song-abc123')",
             "local track = __tracks[6]",
             "local item = __items[1]",
             "io.write(track.name, ':', track.mute, ':', item.values.D_POSITION, ':', item.values.D_LENGTH, ':', item.values.C_BEATATTACHMODE, ':', #managed_tracks)",
@@ -127,7 +129,28 @@ def test_add_click_track_is_absent_when_no_click_artifact_exists(tmp_path: Path)
             _click_track_lua_mock(rpp),
             script[:helpers_end],
             "local managed_tracks = {}",
-            "add_click_track(5, {click_artifact_path = 'song.vgt-tempo-click.wav'}, 1.5, managed_tracks)",
+            "add_click_track(5, {click_artifact_path = 'tempo-click.wav'}, 1.5, managed_tracks, 'song-abc123')",
+            "io.write(#managed_tracks, ':', #__tracks, ':', #__items)",
+        ]
+    )
+    result = subprocess.run(["lua", "-", str(rpp)], input=lua_program, text=True, capture_output=True, check=True)
+    assert result.stdout == "0:0:0"
+
+
+def test_add_click_track_is_absent_when_no_artifact_namespace_recorded(tmp_path: Path) -> None:
+    """Absent gracefully when the sidecar has no `artifact_namespace` yet (pre-#44 sidecars, or before the
+    first `vgt analyze` run), even if a same-named file happens to sit next to the RPP."""
+    rpp = tmp_path / "song.RPP"
+    (tmp_path / "tempo-click.wav").write_bytes(b"RIFF....WAVEfmt ")
+
+    script = APPLY_SCRIPT.read_text()
+    helpers_end = script.index("local function remove_previous_managed_regions()")
+    lua_program = "\n".join(
+        [
+            _click_track_lua_mock(rpp),
+            script[:helpers_end],
+            "local managed_tracks = {}",
+            "add_click_track(5, {click_artifact_path = 'tempo-click.wav'}, 1.5, managed_tracks, nil)",
             "io.write(#managed_tracks, ':', #__tracks, ':', #__items)",
         ]
     )

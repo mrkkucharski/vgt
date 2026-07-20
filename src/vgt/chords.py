@@ -21,6 +21,8 @@ import bisect
 from pathlib import Path
 from typing import Any
 
+from .sidecar import artifact_namespace_dir
+
 _PITCH_CLASSES = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"]
 _NO_CHORD = "N"
 
@@ -255,10 +257,12 @@ def detect_chords(source: Path, beat_times: list[float], settings: dict[str, Any
     }
 
 
-def chord_sheet_path(project_path: Path) -> Path:
-    """Verification artifact lives next to the sidecar, not inside the
-    project's own Media folder -- it is vgt-owned, not part of the song."""
-    return project_path.with_name(f"{project_path.stem}.vgt-chords.txt")
+def chord_sheet_path(project_path: Path, namespace: str) -> Path:
+    """Verification artifact lives under the project's `vgt/<namespace>/`
+    folder, not inside its own Media folder -- it is vgt-owned, regenerable,
+    not part of the song (see docs/stem-separation-plan.md's Artifact
+    layout)."""
+    return artifact_namespace_dir(project_path, namespace) / "chords.txt"
 
 
 def _format_timestamp(seconds: float) -> str:

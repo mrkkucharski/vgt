@@ -440,14 +440,17 @@ local function offer_beats_track(index, tempo, reference_start, reference_end, m
 end
 
 -- Imports the rendered click WAV (analysis.tempo.value.click_artifact_path,
--- a filename alongside the sidecar) as a muted audio track, so it never
--- surprises the user with playback -- unlike Beats/Chords, which are read
--- rather than heard, this one only needs to exist for the user to unmute it.
--- Absent gracefully if `vgt analyze` has not produced the artifact yet.
-local function add_click_track(index, tempo, reference_start, managed_tracks)
+-- a filename under the project's vgt/<namespace>/ folder, see
+-- docs/stem-separation-plan.md's Artifact layout) as a muted audio track, so
+-- it never surprises the user with playback -- unlike Beats/Chords, which
+-- are read rather than heard, this one only needs to exist for the user to
+-- unmute it. Absent gracefully if `vgt analyze` has not produced the
+-- artifact yet, or if no namespace has been recorded yet.
+local function add_click_track(index, tempo, reference_start, managed_tracks, artifact_namespace)
   local filename = tempo.click_artifact_path
   if not filename or filename == "" then return end
-  local click_path = project_dir() .. tostring(filename)
+  if not artifact_namespace or artifact_namespace == "" then return end
+  local click_path = project_dir() .. "vgt/" .. tostring(artifact_namespace) .. "/" .. tostring(filename)
   local probe = io.open(click_path, "rb")
   if not probe then return end
   probe:close()
@@ -558,6 +561,7 @@ local function apply()
   local managed_tracks = {folder, mirror}
   local reference_start, reference_end = reference_start_and_end(reference)
   local tempo = analysis and analysis.tempo and analysis.tempo.value
+  local artifact_namespace = analysis and analysis.stems and analysis.stems.artifact_namespace
   local tempo_map_applied = prior_tempo_map_applied()
   local tempo_map_fingerprint = ""
   local tempo_data_fp = ""
@@ -605,7 +609,7 @@ local function apply()
   end
 
   if type(tempo) == "table" then
-    add_click_track(reaper.CountTracks(0), tempo, reference_start, managed_tracks)
+    add_click_track(reaper.CountTracks(0), tempo, reference_start, managed_tracks, artifact_namespace)
   end
 
   local chords = analysis and analysis.chords and analysis.chords.value

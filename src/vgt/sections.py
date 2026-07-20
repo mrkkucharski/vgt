@@ -17,6 +17,8 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
+from .sidecar import artifact_namespace_dir
+
 # Segments shorter than this are merged into a neighbor -- avoids spurious
 # boundaries from novelty jitter producing sub-bar "sections".
 _MIN_SECTION_SECONDS = 4.0
@@ -207,10 +209,12 @@ def detect_sections(source: Path, settings: dict[str, Any] | None = None) -> lis
     return sections
 
 
-def section_timeline_path(project_path: Path) -> Path:
-    """Verification artifact lives next to the sidecar, not inside the
-    project's own Media folder -- it is vgt-owned, not part of the song."""
-    return project_path.with_name(f"{project_path.stem}.vgt-sections.txt")
+def section_timeline_path(project_path: Path, namespace: str) -> Path:
+    """Verification artifact lives under the project's `vgt/<namespace>/`
+    folder, not inside its own Media folder -- it is vgt-owned, regenerable,
+    not part of the song (see docs/stem-separation-plan.md's Artifact
+    layout)."""
+    return artifact_namespace_dir(project_path, namespace) / "sections.txt"
 
 
 def _format_timestamp(seconds: float) -> str:
