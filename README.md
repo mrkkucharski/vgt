@@ -289,6 +289,15 @@ From then on: `vgt analyze` skips the chords and sections stages
 ReaScript repaints `[vgt] Chords` and the section regions identically from
 the corrected sidecar — the round trip is idempotent.
 
+The correction round trip also has a disposable real-REAPER verifier. It
+copies the included fixture, applies deterministic analysis, edits a chord
+item and section region through REAPER's API, runs `vgt sync`, saves, and
+checks that the human corrections changed only `value`, not `detected`:
+
+```sh
+uv run python scripts/verify_phase1_sync.py --run-live
+```
+
 ## Check vgt state
 
 `vgt status [project.rpp]` is read-only: it prints the project and sidecar,

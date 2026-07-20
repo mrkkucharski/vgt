@@ -6,6 +6,7 @@ import subprocess
 VERIFY_SCRIPT = Path(__file__).parents[1] / "scripts" / "verify_phase0_apply.py"
 PHASE1_VERIFY_SCRIPT = Path(__file__).parents[1] / "scripts" / "verify_phase1_apply.py"
 STEM_VERIFY_SCRIPT = Path(__file__).parents[1] / "scripts" / "verify_stem_apply.py"
+SYNC_VERIFY_SCRIPT = Path(__file__).parents[1] / "scripts" / "verify_phase1_sync.py"
 APPLY_SCRIPT = Path(__file__).parents[1] / "reascript" / "vgt_initialize.lua"
 SYNC_SCRIPT = Path(__file__).parents[1] / "reascript" / "vgt_sync.lua"
 
@@ -454,6 +455,18 @@ def test_sync_reports_success_without_a_blocking_dialog() -> None:
     # which only shows one on failure); success uses ShowConsoleMsg instead.
     assert "reaper.ShowConsoleMsg" in script
     assert script.count("reaper.ShowMessageBox") == 1
+
+
+def test_phase1_sync_has_an_opt_in_live_reaper_round_trip_verifier() -> None:
+    script = SYNC_VERIFY_SCRIPT.read_text()
+    assert "--run-live" in script
+    assert "shutil.copytree" in script
+    assert "vgt_sync.lua" in script
+    assert "SetMediaItemInfo_Value" in script
+    assert "SetProjectMarker3" in script
+    assert "human_verified" in script
+    assert 'stage.get("detected") != baseline_analysis[stage_name]["detected"]' in script
+    assert "Main_SaveProject" in script
 
 
 def _run_lua_module(script: str, rpp_path: Path, program: str) -> subprocess.CompletedProcess[str]:
