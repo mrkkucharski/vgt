@@ -1,23 +1,24 @@
 {
   "current_issue": 65,
-  "session_id": "a34ebc57-3479-426b-ab5b-0f2ba081f4a4",
-  "pid": 84400,
-  "process_started_at": "Mon Jul 20 23:14:48 2026",
+  "session_id": "fcd3599d-6578-4b60-aa57-5554f7d779d0",
+  "pid": 84753,
+  "process_started_at": "Mon Jul 20 23:17:06 2026",
   "agent": "codex",
-  "started_at": "2026-07-20T21:14:46.429846+00:00",
+  "started_at": "2026-07-20T21:17:05.234594+00:00",
   "scheduler_stalls": {},
   "budget": {
     "window_start": "2026-07-20T20:09:51.136591+00:00",
-    "seconds_used": 599.984396,
+    "seconds_used": 736.493579,
     "dollars_used": 1.2713944,
     "seconds_used_by_agent": {
-      "claude": 599.984396
+      "claude": 599.984396,
+      "codex": 136.509183
     }
   },
   "verification_followups": {
     "f0d8bfc9d2dc6da7a31609184e25c4d66d3986fd2340b33a83e98204fb86691e": "created"
   },
-  "role": "review",
+  "role": "fix",
   "branch": "issue-65-add-ci-coverage-for-the-full-offline-tes",
   "worktree_path": "/Users/marekkucharski/projects/.pm-worktrees/vgt/issue-65",
   "pr_number": 69,
@@ -47,16 +48,17 @@
     "19": 2,
     "44": 1,
     "45": 3,
-    "46": 1
+    "46": 1,
+    "65": 1
   },
   "pending_transition": {
     "issue": 65,
     "target": "working",
-    "event": "agent.review_started",
+    "event": "agent.fix_started",
     "detail": {
       "issue": 65,
       "agent": "codex",
-      "pr": 69
+      "fix_count": 1
     },
     "cleanup": {}
   }
