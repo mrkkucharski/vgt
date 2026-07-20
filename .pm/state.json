@@ -1,10 +1,10 @@
 {
   "current_issue": 47,
-  "session_id": "278c3c5e-e88b-4de9-baa1-02a395eee6e0",
-  "pid": 58571,
-  "process_started_at": "Mon Jul 20 16:44:03 2026",
+  "session_id": "18c1b0ba-8f4d-4328-9232-cd7c4bbffcc7",
+  "pid": 58792,
+  "process_started_at": "Mon Jul 20 16:45:16 2026",
   "agent": "codex",
-  "started_at": "2026-07-20T14:44:00.536705+00:00",
+  "started_at": "2026-07-20T14:45:14.375161+00:00",
   "scheduler_stalls": {
     "malformed_responses": {
       "followup_issues": {
@@ -16,19 +16,19 @@
     "blocked_issues": {
       "46": {
         "first_seen_at": "2026-07-20T14:30:14.802185+00:00",
-        "last_seen_at": "2026-07-20T14:42:43.764349+00:00",
-        "consecutive_passes": 12,
+        "last_seen_at": "2026-07-20T14:44:05.213965+00:00",
+        "consecutive_passes": 13,
         "title": "M1-C: CLI wiring + partial-success semantics for stem separation"
       }
     }
   },
   "budget": {
     "window_start": "2026-07-20T09:47:00.432069+00:00",
-    "seconds_used": 2974.8791810000007,
+    "seconds_used": 3047.2143150000006,
     "dollars_used": 8.310016599999999,
     "seconds_used_by_agent": {
       "claude": 2008.597864,
-      "codex": 966.281317
+      "codex": 1038.6164509999999
     }
   },
   "verification_followups": {
