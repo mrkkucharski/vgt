@@ -5027,3 +5027,13 @@
 {"ts": "2026-07-20T14:06:50.792093+00:00", "project": "vgt", "event": "agent.branch_mismatch", "detail": {"issue": 44, "phase": "review", "branch": "issue-45-m1-b-lalal-api-v1-backend-lalalseparator", "worktree_path": "/Users/marekkucharski/projects/.pm-worktrees/vgt/issue-45"}}
 {"ts": "2026-07-20T14:06:50.800247+00:00", "project": "vgt", "event": "agent.branch_recovered", "detail": {"issue": 44, "phase": "review", "branch": "issue-44-m1-e-consolidate-vgt-artifacts-under-a-v"}}
 {"ts": "2026-07-20T14:06:51.221816+00:00", "project": "vgt", "event": "pr.found", "detail": {"issue": 44, "pr": 50, "branch": "issue-44-m1-e-consolidate-vgt-artifacts-under-a-v"}}
+{"ts": "2026-07-20T14:06:55.293682+00:00", "project": "vgt", "event": "agent.review_started", "detail": {"issue": 44, "agent": "codex", "pr": 50, "pid": 54397, "process_started_at": "Mon Jul 20 16:06:52 2026"}}
+{"ts": "2026-07-20T14:06:55.294808+00:00", "project": "vgt", "event": "scheduler.stall_cleared", "detail": {"category": "deferred_passes", "reason": "budget", "first_seen_at": "2026-07-20T13:25:50.090015+00:00", "last_seen_at": "2026-07-20T13:56:11.676708+00:00", "consecutive_passes": 29}}
+{"ts": "2026-07-20T14:06:55.304457+00:00", "project": "vgt", "event": "orchestrator.pass_outcome", "detail": {"outcomes": ["deferred", "scheduled"], "scheduled": 1, "followups_created": 0}}
+{"ts": "2026-07-20T14:08:01.689301+00:00", "project": "vgt", "event": "orchestrator.pass_outcome", "detail": {"outcomes": ["deferred"], "scheduled": 0, "followups_created": 0}}
+{"ts": "2026-07-20T14:08:01.689548+00:00", "project": "vgt", "event": "orchestrator.no_capacity", "detail": {"message": "work is available, but scheduler capacity or budget headroom is exhausted"}}
+{"ts": "2026-07-20T14:09:08.229224+00:00", "project": "vgt", "event": "orchestrator.pass_outcome", "detail": {"outcomes": ["deferred"], "scheduled": 0, "followups_created": 0}}
+{"ts": "2026-07-20T14:09:08.230079+00:00", "project": "vgt", "event": "orchestrator.no_capacity", "detail": {"message": "work is available, but scheduler capacity or budget headroom is exhausted"}}
+{"ts": "2026-07-20T14:10:16.819285+00:00", "project": "vgt", "event": "issue.closed_labels_cleaned", "detail": {"issue": 44, "removed": ["status:working"]}}
+{"ts": "2026-07-20T14:10:17.240572+00:00", "project": "vgt", "event": "worktree.cleaned_up", "detail": {"issue": 44, "branch": "issue-44-m1-e-consolidate-vgt-artifacts-under-a-v", "worktree": "/Users/marekkucharski/projects/.pm-worktrees/vgt/issue-44"}}
+{"ts": "2026-07-20T14:10:25.254093+00:00", "project": "vgt", "event": "orchestrator.issue_selected", "detail": {"issue": 45, "method": "local_priorities"}}
