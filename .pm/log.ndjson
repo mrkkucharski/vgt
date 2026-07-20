@@ -5037,3 +5037,17 @@
 {"ts": "2026-07-20T14:10:16.819285+00:00", "project": "vgt", "event": "issue.closed_labels_cleaned", "detail": {"issue": 44, "removed": ["status:working"]}}
 {"ts": "2026-07-20T14:10:17.240572+00:00", "project": "vgt", "event": "worktree.cleaned_up", "detail": {"issue": 44, "branch": "issue-44-m1-e-consolidate-vgt-artifacts-under-a-v", "worktree": "/Users/marekkucharski/projects/.pm-worktrees/vgt/issue-44"}}
 {"ts": "2026-07-20T14:10:25.254093+00:00", "project": "vgt", "event": "orchestrator.issue_selected", "detail": {"issue": 45, "method": "local_priorities"}}
+{"ts": "2026-07-20T14:10:30.572744+00:00", "project": "vgt", "event": "agent.started", "detail": {"issue": 45, "agent": "codex", "branch": "issue-45-m1-b-lalal-api-v1-backend-lalalseparator", "pid": 54991, "process_started_at": "Mon Jul 20 16:10:28 2026"}}
+{"ts": "2026-07-20T14:10:30.590621+00:00", "project": "vgt", "event": "orchestrator.pass_outcome", "detail": {"outcomes": ["deferred", "scheduled"], "scheduled": 1, "followups_created": 0}}
+{"ts": "2026-07-20T14:11:37.103195+00:00", "project": "vgt", "event": "orchestrator.pass_outcome", "detail": {"outcomes": ["deferred"], "scheduled": 0, "followups_created": 0}}
+{"ts": "2026-07-20T14:11:37.103511+00:00", "project": "vgt", "event": "orchestrator.no_capacity", "detail": {"message": "work is available, but scheduler capacity or budget headroom is exhausted"}}
+{"ts": "2026-07-20T14:12:43.712313+00:00", "project": "vgt", "event": "orchestrator.pass_outcome", "detail": {"outcomes": ["deferred"], "scheduled": 0, "followups_created": 0}}
+{"ts": "2026-07-20T14:12:43.712816+00:00", "project": "vgt", "event": "orchestrator.no_capacity", "detail": {"message": "work is available, but scheduler capacity or budget headroom is exhausted"}}
+{"ts": "2026-07-20T14:13:50.233194+00:00", "project": "vgt", "event": "orchestrator.pass_outcome", "detail": {"outcomes": ["deferred"], "scheduled": 0, "followups_created": 0}}
+{"ts": "2026-07-20T14:13:50.233654+00:00", "project": "vgt", "event": "orchestrator.no_capacity", "detail": {"message": "work is available, but scheduler capacity or budget headroom is exhausted"}}
+{"ts": "2026-07-20T14:14:56.953530+00:00", "project": "vgt", "event": "orchestrator.pass_outcome", "detail": {"outcomes": ["deferred"], "scheduled": 0, "followups_created": 0}}
+{"ts": "2026-07-20T14:14:56.954076+00:00", "project": "vgt", "event": "orchestrator.no_capacity", "detail": {"message": "work is available, but scheduler capacity or budget headroom is exhausted"}}
+{"ts": "2026-07-20T14:16:04.083711+00:00", "project": "vgt", "event": "orchestrator.pass_outcome", "detail": {"outcomes": ["deferred"], "scheduled": 0, "followups_created": 0}}
+{"ts": "2026-07-20T14:16:04.084481+00:00", "project": "vgt", "event": "orchestrator.no_capacity", "detail": {"message": "work is available, but scheduler capacity or budget headroom is exhausted"}}
+{"ts": "2026-07-20T14:17:10.461467+00:00", "project": "vgt", "event": "agent.ready_for_review", "detail": {"issue": 45, "agent": "codex", "role": "implement"}}
+{"ts": "2026-07-20T14:17:16.354187+00:00", "project": "vgt", "event": "pr.created", "detail": {"issue": 45, "pr": 51, "branch": "issue-45-m1-b-lalal-api-v1-backend-lalalseparator"}}
