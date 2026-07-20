@@ -1,10 +1,10 @@
 {
-  "current_issue": 57,
-  "session_id": "9db4709b-f643-4616-b768-0423fd9c7ee6",
-  "pid": 75766,
-  "process_started_at": "Mon Jul 20 21:37:31 2026",
-  "agent": "claude",
-  "started_at": "2026-07-20T19:37:29.567149+00:00",
+  "current_issue": 60,
+  "session_id": "783172a5-9669-4cc4-99ad-826bb2263907",
+  "pid": 76864,
+  "process_started_at": "Mon Jul 20 21:47:33 2026",
+  "agent": "codex",
+  "started_at": "2026-07-20T19:47:32.315636+00:00",
   "scheduler_stalls": {},
   "budget": {
     "window_start": "2026-07-20T15:04:13.826389+00:00",
@@ -18,19 +18,19 @@
   "verification_followups": {
     "f0d8bfc9d2dc6da7a31609184e25c4d66d3986fd2340b33a83e98204fb86691e": "created"
   },
-  "role": "review",
-  "branch": "issue-57-run-opt-in-lalal-v1-smoke-test-on-owned",
-  "worktree_path": "/Users/marekkucharski/projects/.pm-worktrees/vgt/issue-57",
-  "pr_number": 59,
+  "role": "implement",
+  "branch": "issue-60-make-stem-separation-hold-and-honor-a-du",
+  "worktree_path": "/Users/marekkucharski/projects/.pm-worktrees/vgt/issue-60",
+  "pr_number": null,
   "followup_generation": {
-    "fingerprint": "eaa1c8eb83b29432c37f1a6455cafde3892427c205b6a23c005870525ec76500",
+    "fingerprint": "a839174ad7a3dea2709c3f7707e88c301581b3c8016bf908ee2a469e49f23771",
     "items": {
-      "9b7e6f4005977f32b7c763761628151bdd1bc5419978386e0ab9cbff0a7c26a1": {
-        "title": "Run opt-in LALAL v1 smoke test on owned audio",
+      "f1e4463df872b69e7c70c2f45ea8ba8210fb96da9e00dd5165547dd9f2da4850": {
+        "title": "Make stem separation hold and honor a durable sidecar lease",
         "status": "created"
       },
-      "106c4fdfdf33660489a98c130d1d94cbc0e8fad20e6c286cdb83f2e9d224a900": {
-        "title": "Evaluate real LALAL stems on owned golden songs",
+      "c2837d5d2723bb1434de4395083907644a2440207e08758b5217920a28514cd8": {
+        "title": "Require an explicit persisted guitar type before paid separation",
         "status": "created"
       }
     }
@@ -47,13 +47,13 @@
     "46": 1
   },
   "pending_transition": {
-    "issue": 57,
+    "issue": 60,
     "target": "working",
-    "event": "agent.review_started",
+    "event": "agent.started",
     "detail": {
-      "issue": 57,
-      "agent": "claude",
-      "pr": 59
+      "issue": 60,
+      "agent": "codex",
+      "branch": "issue-60-make-stem-separation-hold-and-honor-a-du"
     },
     "cleanup": {}
   }
