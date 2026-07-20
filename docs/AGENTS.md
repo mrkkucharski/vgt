@@ -9,11 +9,12 @@ rules live.
 ## Project overview
 
 **vgt** (virtual guitar teacher) is a CLI that prepares REAPER projects for
-guitar practice. This project is **phase 0**: locate/open a REAPER project,
-store vgt's own state next to it, create a `[vgt]`-managed area, and add one
-track that mirrors the original song — all non-destructively and idempotently.
-See `docs/GOAL.md` for the exact scope and `docs/phase1-song-prep-plan.md` for
-where this is heading (out of scope now).
+guitar practice. Delivered work covers project plumbing, reference analysis,
+and LALAL.AI stem separation; vgt persists its own state beside the project and
+uses a `[vgt]`-managed REAPER area for its mirrored reference, annotations, and
+stems — all non-destructively and idempotently. See `docs/GOAL.md` for the
+exact phase scope and `docs/stem-separation-plan.md` for the fixed Phase 2
+recipe and its LALAL-only limitation.
 
 ## Environment assumptions
 
