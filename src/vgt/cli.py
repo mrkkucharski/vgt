@@ -10,7 +10,7 @@ import sys
 from .analysis import AnalysisError, analyze
 from .lalal import LalalError, LalalSeparator
 from .project import ProjectError, locate_project, read_project
-from .separation import GUITAR_TYPES, SeparationError, separate, separation_preview
+from .separation import GUITAR_TYPES, SeparationError, declared_guitar_type, separate, separation_preview
 from .sidecar import read_sidecar, write_sidecar
 from .status import StatusError, build_status, format_status
 
@@ -53,6 +53,15 @@ def _parser() -> argparse.ArgumentParser:
     return parser
 
 
+def _prompt_for_guitar_type() -> str:
+    """Get an unambiguous declaration without making automation guess."""
+    while True:
+        answer = input("Guitar type for stem separation (electric/acoustic): ").strip().lower()
+        if answer in GUITAR_TYPES:
+            return answer
+        print("Please enter 'electric' or 'acoustic'.", file=sys.stderr)
+
+
 def main(argv: list[str] | None = None) -> int:
     # Phase 0's primary invocation is `vgt [project.rpp]`; retain explicit
     # subcommands for scripts that want to state their intent.
@@ -74,11 +83,26 @@ def main(argv: list[str] | None = None) -> int:
             # `--force` is intentionally local-only.  Paid work can only be
             # refreshed through the separate, conspicuous --force-stems path.
             local_result = analyze(project, progress=report, force=args.force)
-            if args.guitar:
-                local_result["analysis"]["stems"]["guitar_type"] = args.guitar
+            try:
+                resolved_guitar_type = declared_guitar_type(local_result, args.guitar)
+            except SeparationError:
+                if not sys.stdin.isatty():
+                    raise AnalysisError(
+                        "A declared guitar type is required in non-interactive mode; use --guitar electric or --guitar acoustic."
+                    )
+                resolved_guitar_type = _prompt_for_guitar_type()
+
+            # Keep the ReaScript first-run setting and the stem cache setting
+            # aligned.  The CLI override is deliberately persistent.
+            if (
+                local_result["analysis"]["stems"].get("guitar_type") != resolved_guitar_type
+                or local_result.get("config", {}).get("guitar_type") != resolved_guitar_type
+            ):
+                local_result["analysis"]["stems"]["guitar_type"] = resolved_guitar_type
+                local_result.setdefault("config", {})["guitar_type"] = resolved_guitar_type
                 write_sidecar(project, local_result)
 
-            preview = separation_preview(project, guitar_type=args.guitar, force=args.force_stems)
+            preview = separation_preview(project, guitar_type=resolved_guitar_type, force=args.force_stems)
             cached = preview["cached_operations"]
             outstanding = preview["outstanding_operations"]
             report(
@@ -116,7 +140,7 @@ def main(argv: list[str] | None = None) -> int:
                     result = separate(
                         project,
                         backend,
-                        guitar_type=args.guitar,
+                        guitar_type=resolved_guitar_type,
                         force=args.force_stems,
                         progress=report,
                         before_submit=confirm_paid_refresh if args.force_stems else None,

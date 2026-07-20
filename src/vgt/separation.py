@@ -86,6 +86,23 @@ class SeparationError(ValueError):
     """The project, its sidecar, or a split request cannot be processed."""
 
 
+def declared_guitar_type(sidecar: dict[str, Any], override: str | None = None) -> str:
+    """Resolve the explicit guitar declaration required for paid work.
+
+    REAPER records its first-run answer in ``config`` before an analysis block
+    exists.  The stem workflow stores the canonical value in ``analysis.stems``;
+    retaining the config fallback makes those two entry points interoperable.
+    """
+    stems = sidecar["analysis"]["stems"]
+    config = sidecar.get("config") or {}
+    value = override or stems.get("guitar_type") or config.get("guitar_type")
+    if value not in GUITAR_TYPES:
+        if value is None:
+            raise SeparationError("A declared guitar type is required; use --guitar electric or --guitar acoustic.")
+        raise SeparationError(f"guitar_type must be one of {GUITAR_TYPES}, got {value!r}")
+    return value
+
+
 @dataclass(frozen=True)
 class SplitSpec:
     """One paid split operation. `keep` names which side(s) of the split are
@@ -406,7 +423,7 @@ def separation_preview(
     if not source.is_file():
         raise SeparationError(f"Reference source file not found: {source}")
     stems = sidecar["analysis"]["stems"]
-    resolved_guitar_type = guitar_type or stems.get("guitar_type") or "electric"
+    resolved_guitar_type = declared_guitar_type(sidecar, guitar_type)
     recipe = build_recipe(resolved_guitar_type)
     original_sha = hash_audio_content(source)
     operations: list[dict[str, Any]] = []
@@ -618,9 +635,7 @@ def _separate_under_lease(
         raise SeparationError(f"Reference source file not found: {source}")
 
     stems = sidecar["analysis"]["stems"]
-    resolved_guitar_type = guitar_type or stems.get("guitar_type") or "electric"
-    if resolved_guitar_type not in GUITAR_TYPES:
-        raise SeparationError(f"guitar_type must be one of {GUITAR_TYPES}, got {resolved_guitar_type!r}")
+    resolved_guitar_type = declared_guitar_type(sidecar, guitar_type)
     stems["guitar_type"] = resolved_guitar_type
     stems["backend"] = backend.name
     stems["api_version"] = backend.api_version

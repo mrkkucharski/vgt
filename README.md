@@ -164,6 +164,13 @@ is electric or acoustic:
 vgt analyze --guitar electric "$PROJECT"
 ```
 
+The first `vgt_initialize.lua` run also asks **Electric** or **Acoustic** and
+persists the choice. Automation can set the `vgt`/`guitar_type` ExtState to
+`electric` or `acoustic` before running that action. The CLI's `--guitar`
+overrides and persists either saved value. If no value exists, an interactive
+CLI prompts; non-interactive use must pass `--guitar` — it never silently
+defaults before spending credits.
+
 The command first saves the local tempo/key/sections/chords analysis, then
 performs only the missing LALAL work. There is currently **no offline
 backend**: Demucs, UVR, RoFormer, and similar local separation options are

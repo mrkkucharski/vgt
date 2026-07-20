@@ -557,7 +557,7 @@ def test_cli_analyze_preserves_local_results_when_lalal_is_unavailable(
     _write_v1_sidecar(project)
     monkeypatch.delenv("LALAL_LICENSE_KEY", raising=False)
 
-    assert main(["analyze", str(project)]) == 2
+    assert main(["analyze", "--guitar", "electric", str(project)]) == 2
 
     captured = capsys.readouterr()
     output = json.loads(captured.out)
@@ -574,6 +574,38 @@ def test_cli_force_stems_requires_explicit_noninteractive_acknowledgment(
     monkeypatch.delenv("LALAL_LICENSE_KEY", raising=False)
     monkeypatch.setattr(sys.stdin, "isatty", lambda: False)
 
-    assert main(["analyze", "--force-stems", str(project)]) == 2
+    assert main(["analyze", "--guitar", "electric", "--force-stems", str(project)]) == 2
 
     assert "requires --accept-stem-cost" in capsys.readouterr().err
+
+
+def test_cli_requires_a_guitar_declaration_in_noninteractive_mode(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    project = _project_copy(tmp_path)
+    _write_v1_sidecar(project)
+    monkeypatch.setattr(sys.stdin, "isatty", lambda: False)
+
+    assert main(["analyze", str(project)]) == 2
+
+    captured = capsys.readouterr()
+    assert "declared guitar type is required in non-interactive mode" in captured.err
+    # The free analysis remains a durable partial success even though paid
+    # work was correctly refused before contacting LALAL.
+    assert read_sidecar(project)["analysis"]["tempo"]["value"] is not None
+
+
+def test_cli_interactive_guitar_declaration_is_persisted(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    project = _project_copy(tmp_path)
+    _write_v1_sidecar(project)
+    monkeypatch.setattr(sys.stdin, "isatty", lambda: True)
+    monkeypatch.setattr("builtins.input", lambda _prompt: "acoustic")
+    monkeypatch.delenv("LALAL_LICENSE_KEY", raising=False)
+
+    assert main(["analyze", str(project)]) == 2
+
+    sidecar = read_sidecar(project)
+    assert sidecar["config"]["guitar_type"] == "acoustic"
+    assert sidecar["analysis"]["stems"]["guitar_type"] == "acoustic"
