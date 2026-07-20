@@ -4295,3 +4295,21 @@
 {"ts": "2026-07-20T10:13:50.886523+00:00", "project": "vgt", "event": "issue.closed_labels_cleaned", "detail": {"issue": 43, "removed": ["status:working"]}}
 {"ts": "2026-07-20T10:13:51.188987+00:00", "project": "vgt", "event": "worktree.cleaned_up", "detail": {"issue": 43, "branch": "issue-43-m1-a-operation-model-separator-seam-fake", "worktree": "/Users/marekkucharski/projects/.pm-worktrees/vgt/issue-43"}}
 {"ts": "2026-07-20T10:13:59.583986+00:00", "project": "vgt", "event": "orchestrator.issue_selected", "detail": {"issue": 44, "method": "local_priorities"}}
+{"ts": "2026-07-20T10:14:04.666767+00:00", "project": "vgt", "event": "agent.started", "detail": {"issue": 44, "agent": "claude", "branch": "issue-44-m1-e-consolidate-vgt-artifacts-under-a-v", "pid": 41005, "process_started_at": "Mon Jul 20 12:14:02 2026"}}
+{"ts": "2026-07-20T10:14:04.684076+00:00", "project": "vgt", "event": "orchestrator.pass_outcome", "detail": {"outcomes": ["deferred", "scheduled"], "scheduled": 1, "followups_created": 0}}
+{"ts": "2026-07-20T10:15:10.935777+00:00", "project": "vgt", "event": "orchestrator.pass_outcome", "detail": {"outcomes": ["deferred"], "scheduled": 0, "followups_created": 0}}
+{"ts": "2026-07-20T10:15:10.936341+00:00", "project": "vgt", "event": "orchestrator.no_capacity", "detail": {"message": "work is available, but scheduler capacity or budget headroom is exhausted"}}
+{"ts": "2026-07-20T10:16:17.079578+00:00", "project": "vgt", "event": "orchestrator.pass_outcome", "detail": {"outcomes": ["deferred"], "scheduled": 0, "followups_created": 0}}
+{"ts": "2026-07-20T10:16:17.080060+00:00", "project": "vgt", "event": "orchestrator.no_capacity", "detail": {"message": "work is available, but scheduler capacity or budget headroom is exhausted"}}
+{"ts": "2026-07-20T10:17:23.498123+00:00", "project": "vgt", "event": "orchestrator.pass_outcome", "detail": {"outcomes": ["deferred"], "scheduled": 0, "followups_created": 0}}
+{"ts": "2026-07-20T10:17:23.498614+00:00", "project": "vgt", "event": "orchestrator.no_capacity", "detail": {"message": "work is available, but scheduler capacity or budget headroom is exhausted"}}
+{"ts": "2026-07-20T10:18:29.643876+00:00", "project": "vgt", "event": "orchestrator.pass_outcome", "detail": {"outcomes": ["deferred"], "scheduled": 0, "followups_created": 0}}
+{"ts": "2026-07-20T10:18:29.644375+00:00", "project": "vgt", "event": "orchestrator.no_capacity", "detail": {"message": "work is available, but scheduler capacity or budget headroom is exhausted"}}
+{"ts": "2026-07-20T10:19:35.734285+00:00", "project": "vgt", "event": "orchestrator.pass_outcome", "detail": {"outcomes": ["deferred"], "scheduled": 0, "followups_created": 0}}
+{"ts": "2026-07-20T10:19:35.734814+00:00", "project": "vgt", "event": "orchestrator.no_capacity", "detail": {"message": "work is available, but scheduler capacity or budget headroom is exhausted"}}
+{"ts": "2026-07-20T10:20:41.832396+00:00", "project": "vgt", "event": "orchestrator.pass_outcome", "detail": {"outcomes": ["deferred"], "scheduled": 0, "followups_created": 0}}
+{"ts": "2026-07-20T10:20:41.833209+00:00", "project": "vgt", "event": "orchestrator.no_capacity", "detail": {"message": "work is available, but scheduler capacity or budget headroom is exhausted"}}
+{"ts": "2026-07-20T10:21:47.896855+00:00", "project": "vgt", "event": "orchestrator.pass_outcome", "detail": {"outcomes": ["deferred"], "scheduled": 0, "followups_created": 0}}
+{"ts": "2026-07-20T10:21:47.897744+00:00", "project": "vgt", "event": "orchestrator.no_capacity", "detail": {"message": "work is available, but scheduler capacity or budget headroom is exhausted"}}
+{"ts": "2026-07-20T10:22:55.404065+00:00", "project": "vgt", "event": "agent.process_identity_mismatch", "detail": {"issue": 44, "pid": 41005, "expected_process_started_at": "Mon Jul 20 12:14:02 2026", "observed_process_started_at": null, "role": "implement"}}
+{"ts": "2026-07-20T10:22:56.963901+00:00", "project": "vgt", "event": "agent.crashed", "detail": {"issue": 44, "agent": "claude", "exit_code": null, "role": "implement"}}
