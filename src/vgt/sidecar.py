@@ -22,6 +22,40 @@ Schema versions:
        correction to `value` never destroys the original detected section
        boundaries. Existing v4 sidecars are migrated the same way as v2 -> v3
        chords were: `detected` is backfilled from `value` (best effort).
+  6 -- `analysis` gains a `stems` block (M1, see `separation.py`) alongside
+       tempo/key/sections/chords. Unlike those stages, `stems` is not one
+       cached value: it owns the fixed five-operation split DAG and the
+       six-artifact index the DAG produces. Its shape is:
+         {
+           "backend": str | null,             # e.g. "fake", "lalal"
+           "api_version": str | null,
+           "recipe_version": int | null,
+           "guitar_type": "electric" | "acoustic" | null,
+           "artifact_namespace": str | null,  # stable, never regenerated once set
+           "operations": {
+             "<operation_id>": {
+               "source_role": str, "source_sha256": str | null, "spec_hash": str | null,
+               "requested_presets": dict, "effective_presets": dict,
+               "backend_state": dict,         # backend-opaque; published via `checkpoint`
+               "status": "pending" | "in_progress" | "completed" | "error",
+               "outputs": list[str],          # artifact names this operation owns
+               "completed_at": str | null, "error": str | null,
+             }, ...
+           },
+           "artifacts": {
+             "<artifact_name>": {
+               "operation": str, "side": "stem" | "back", "file": str,
+               "sha256": str, "size_bytes": int, "duration_seconds": float,
+               "separated_at": str,
+             }, ...
+           },
+           "human_verified": bool,  # quality metadata only -- never revives a
+                                     # stale/missing output, see separation.py.
+           "verified_at": str | null,
+         }
+       Operation/artifact records are created lazily by `separation.py`, so
+       `upgrade()` only guarantees the fixed top-level shape above -- the
+       orchestrator, not this module, owns the recipe (per the plan).
 
 Every stage entry has the same shape:
   {
@@ -60,8 +94,10 @@ from pathlib import Path
 from typing import Any, Callable
 import copy
 import json
+import os
+import tempfile
 
-SCHEMA_VERSION = 5
+SCHEMA_VERSION = 6
 
 ANALYSIS_STAGES = ("tempo", "key", "sections", "chords")
 
@@ -92,6 +128,20 @@ def _empty_stage() -> dict[str, Any]:
 
 def _empty_detected_split_stage() -> dict[str, Any]:
     return {**_empty_stage(), "detected": None, "detected_input_hash": None, "detected_settings_hash": None}
+
+
+def _empty_stems_block() -> dict[str, Any]:
+    return {
+        "backend": None,
+        "api_version": None,
+        "recipe_version": None,
+        "guitar_type": None,
+        "artifact_namespace": None,
+        "operations": {},
+        "artifacts": {},
+        "human_verified": False,
+        "verified_at": None,
+    }
 
 
 def read_sidecar(project_path: str | Path) -> dict[str, Any]:
@@ -127,13 +177,28 @@ def upgrade(data: dict[str, Any]) -> dict[str, Any]:
         else:
             analysis[stage] = {**_empty_stage(), **(analysis.get(stage) or {})}
     analysis.setdefault("provenance", {"tool": "vgt", "version": None, "settings": {}})
+    stems = {**_empty_stems_block(), **(analysis.get("stems") or {})}
+    stems["operations"] = dict(stems.get("operations") or {})
+    stems["artifacts"] = dict(stems.get("artifacts") or {})
+    analysis["stems"] = stems
     upgraded["analysis"] = analysis
     return upgraded
 
 
 def write_sidecar(project_path: str | Path, data: dict[str, Any]) -> None:
+    """Write the sidecar via temp-file + atomic replace so a crash mid-write
+    never leaves a partially-written `.vgt` behind (required for the
+    separation stage's paid, must-not-double-charge checkpoints; harmless
+    for every other stage)."""
     path = sidecar_path(project_path)
-    path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
+    fd, tmp_path = tempfile.mkstemp(dir=str(path.parent), prefix=f".{path.name}.", suffix=".tmp")
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            handle.write(json.dumps(data, indent=2) + "\n")
+        os.replace(tmp_path, path)
+    except BaseException:
+        Path(tmp_path).unlink(missing_ok=True)
+        raise
 
 
 def stage_is_current(stage: dict[str, Any], *, input_hash: str, settings_hash: str) -> bool:

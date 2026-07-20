@@ -49,7 +49,7 @@ def test_upgrade_keeps_v1_fields_and_adds_v2_analysis_skeleton() -> None:
 
     upgraded = upgrade(v1)
 
-    assert upgraded["schema_version"] == 5
+    assert upgraded["schema_version"] == 6
     assert upgraded["managed_region_ids"] == []
     assert upgraded["managed_track_guids"] == ["{AAAA}", "{BBBB}"]
     assert upgraded["config"] == {"reference_track_guid": REFERENCE_GUID}
@@ -150,7 +150,7 @@ def test_analyze_writes_v2_sidecar_with_skeleton_and_provenance(tmp_path: Path) 
 
     result = analyze(project)
 
-    assert result["schema_version"] == 5
+    assert result["schema_version"] == 6
     assert result["managed_track_guids"] == ["{AAAA}", "{BBBB}"]  # phase 0 fields intact
     for stage in ANALYSIS_STAGES:
         assert result["analysis"][stage]["input_hash"] is not None
@@ -491,4 +491,4 @@ def test_cli_analyze_invocation(tmp_path: Path, capsys: pytest.CaptureFixture[st
     assert main(["analyze", str(project)]) == 0
 
     output = json.loads(capsys.readouterr().out)
-    assert output["schema_version"] == 5
+    assert output["schema_version"] == 6
