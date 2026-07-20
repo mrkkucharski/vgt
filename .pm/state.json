@@ -1,10 +1,10 @@
 {
-  "current_issue": 46,
-  "session_id": "16e2a35b-7daa-4c17-bca1-82660ac444a6",
-  "pid": 56952,
-  "process_started_at": "Mon Jul 20 16:28:58 2026",
+  "current_issue": 45,
+  "session_id": "3c9f14af-393f-4ca8-b684-71addb428fff",
+  "pid": 57175,
+  "process_started_at": "Mon Jul 20 16:30:10 2026",
   "agent": "codex",
-  "started_at": "2026-07-20T14:28:55.758109+00:00",
+  "started_at": "2026-07-20T14:30:09.414284+00:00",
   "scheduler_stalls": {
     "malformed_responses": {
       "followup_issues": {
@@ -26,9 +26,9 @@
   "verification_followups": {
     "f0d8bfc9d2dc6da7a31609184e25c4d66d3986fd2340b33a83e98204fb86691e": "created"
   },
-  "role": "implement",
-  "branch": "issue-46-m1-c-cli-wiring-partial-success-semantic",
-  "worktree_path": "/Users/marekkucharski/projects/.pm-worktrees/vgt/issue-46",
+  "role": "fix",
+  "branch": "issue-45-m1-b-lalal-api-v1-backend-lalalseparator",
+  "worktree_path": "/Users/marekkucharski/projects/.pm-worktrees/vgt/issue-45",
   "pr_number": null,
   "followup_generation": {
     "fingerprint": "21aabd4138fef85732e2ba4ed6fa65365084fb3986dac0b7f66d093f17bfed99",
@@ -59,16 +59,16 @@
     "11": 1,
     "19": 2,
     "44": 1,
-    "45": 1
+    "45": 2
   },
   "pending_transition": {
-    "issue": 46,
+    "issue": 45,
     "target": "working",
-    "event": "agent.started",
+    "event": "agent.fix_started",
     "detail": {
-      "issue": 46,
+      "issue": 45,
       "agent": "codex",
-      "branch": "issue-46-m1-c-cli-wiring-partial-success-semantic"
+      "fix_count": 2
     },
     "cleanup": {}
   }
