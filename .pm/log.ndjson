@@ -4896,3 +4896,9 @@
 {"ts": "2026-07-20T13:20:54.953975+00:00", "project": "vgt", "event": "orchestrator.pass_outcome", "detail": {"outcomes": ["deferred"], "scheduled": 0, "followups_created": 0}}
 {"ts": "2026-07-20T13:20:54.954228+00:00", "project": "vgt", "event": "orchestrator.no_capacity", "detail": {"message": "work is available, but scheduler capacity or budget headroom is exhausted"}}
 {"ts": "2026-07-20T13:22:08.961171+00:00", "project": "vgt", "event": "orchestrator.issue_selected", "detail": {"issue": 45, "method": "local_priorities"}}
+{"ts": "2026-07-20T13:22:15.271510+00:00", "project": "vgt", "event": "agent.started", "detail": {"issue": 45, "agent": "codex", "branch": "issue-45-m1-b-lalal-api-v1-backend-lalalseparator", "pid": 50385, "process_started_at": "Mon Jul 20 15:22:12 2026"}}
+{"ts": "2026-07-20T13:22:15.273748+00:00", "project": "vgt", "event": "scheduler.stall_cleared", "detail": {"category": "deferred_passes", "reason": "budget", "first_seen_at": "2026-07-20T11:28:21.432766+00:00", "last_seen_at": "2026-07-20T13:20:54.882814+00:00", "consecutive_passes": 99}}
+{"ts": "2026-07-20T13:22:15.274006+00:00", "project": "vgt", "event": "scheduler.fairness_override", "detail": {"issue": 45, "role": "implement", "max_consecutive_priority_starts": 3, "priority_starts_since_implementation": 0}}
+{"ts": "2026-07-20T13:22:15.289734+00:00", "project": "vgt", "event": "orchestrator.pass_outcome", "detail": {"outcomes": ["deferred", "scheduled"], "scheduled": 1, "followups_created": 0}}
+{"ts": "2026-07-20T13:23:22.705308+00:00", "project": "vgt", "event": "agent.process_identity_mismatch", "detail": {"issue": 45, "pid": 50385, "expected_process_started_at": "Mon Jul 20 15:22:12 2026", "observed_process_started_at": null, "role": "implement"}}
+{"ts": "2026-07-20T13:23:24.437050+00:00", "project": "vgt", "event": "agent.crashed", "detail": {"issue": 45, "agent": "codex", "exit_code": null, "role": "implement"}}
