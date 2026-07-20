@@ -8,20 +8,20 @@ import wave
 import httpx
 import pytest
 
-from vgt.lalal import AmbiguousSubmissionError, InsufficientMinutesError, LalalSeparator
+from vgt.lalal import AmbiguousSubmissionError, InsufficientMinutesError, LalalError, LalalSeparator
 from vgt.separation import build_recipe
 
 
 LICENSE_KEY = "test-license-key-must-never-leak"
 
 
-def _wav_bytes() -> bytes:
+def _wav_bytes(seconds: float = 0.1) -> bytes:
     output = BytesIO()
     with wave.open(output, "wb") as handle:
         handle.setnchannels(1)
         handle.setsampwidth(2)
         handle.setframerate(8000)
-        handle.writeframes(b"\x00\x00" * 800)
+        handle.writeframes(b"\x00\x00" * int(8000 * seconds))
     return output.getvalue()
 
 
@@ -31,7 +31,7 @@ def _client(handler) -> httpx.Client:
 
 def test_v1_split_uploads_submits_polls_and_streams_wavs(tmp_path: Path) -> None:
     seen: list[httpx.Request] = []
-    wav = _wav_bytes()
+    wav = _wav_bytes(6)
 
     def handler(request: httpx.Request) -> httpx.Response:
         seen.append(request)
@@ -108,12 +108,88 @@ def test_preflight_refuses_insufficient_minutes_before_paid_work(tmp_path: Path)
     source.write_bytes(_wav_bytes())
 
     def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/api/v1/upload/":
+            return httpx.Response(200, json={"id": "source-1", "duration": 6, "expires": 4102444800})
         assert request.url.path == "/api/v1/limits/minutes_left/"
         return httpx.Response(200, json={"minutes_left": 0})
 
     separator = LalalSeparator(license_key=LICENSE_KEY, client=_client(handler))
     with pytest.raises(InsufficientMinutesError):
         separator.preflight(source=source, outstanding_operations=5)
+
+
+def test_preflight_uses_uploaded_duration_when_local_decoder_cannot_read_source(tmp_path: Path) -> None:
+    source = tmp_path / "source.unknown"
+    source.write_bytes(b"not locally decodable")
+    paths: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        paths.append(request.url.path)
+        if request.url.path == "/api/v1/upload/":
+            return httpx.Response(200, json={"id": "source-1", "duration": 120, "expires": 4102444800})
+        return httpx.Response(200, json={"minutes_left": 9.9})
+
+    separator = LalalSeparator(license_key=LICENSE_KEY, client=_client(handler))
+    with pytest.raises(InsufficientMinutesError):
+        separator.preflight(source=source, outstanding_operations=5)
+    assert paths == ["/api/v1/upload/", "/api/v1/limits/minutes_left/"]
+
+
+def test_expired_task_reconstructs_with_a_new_durable_identity(tmp_path: Path) -> None:
+    source = tmp_path / "source.wav"
+    source.write_bytes(_wav_bytes())
+    wav = _wav_bytes()
+    submitted: list[dict] = []
+    checks = 0
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal checks
+        if request.url.path == "/api/v1/check/":
+            checks += 1
+            if checks == 1:
+                return httpx.Response(404)
+            return httpx.Response(200, json={"result": {"replacement": {
+                "status": "success", "presets": {"splitter": "Perseus"},
+                "result": {"duration": 0.1, "tracks": [{"type": "stem", "url": "https://download.test/stem"}]},
+            }}})
+        if request.url.path == "/api/v1/split/stem_separator/":
+            submitted.append(json.loads(request.content))
+            return httpx.Response(200, json={"task_id": "replacement"})
+        assert request.url.host == "download.test"
+        return httpx.Response(200, content=wav, headers={"Content-Length": str(len(wav))})
+
+    initial = {"source_id": "source-1", "source_expires": 4102444800, "task_id": "expired", "idempotency_key": "old"}
+    checkpoints: list[dict] = []
+    separator = LalalSeparator(license_key=LICENSE_KEY, client=_client(handler), sleep=lambda _: None)
+    result = separator.split(source, tmp_path / "out", build_recipe("electric")["bass-original"].spec,
+                             resume_state=initial, checkpoint=lambda state: checkpoints.append(dict(state)))
+
+    assert result.backend_state["expired_task_id"] == "expired"
+    assert result.backend_state["task_id"] == "replacement"
+    assert submitted[0]["idempotency_key"] != "old"
+    assert any(state.get("status") == "reconstructing" and state.get("idempotency_key") != "old" for state in checkpoints)
+
+
+def test_download_rejects_wav_with_implausible_task_duration(tmp_path: Path) -> None:
+    source = tmp_path / "source.wav"
+    source.write_bytes(_wav_bytes())
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/api/v1/upload/":
+            return httpx.Response(200, json={"id": "source-1", "duration": 0.1, "expires": 4102444800})
+        if request.url.path == "/api/v1/split/stem_separator/":
+            return httpx.Response(200, json={"task_id": "task-1"})
+        if request.url.path == "/api/v1/check/":
+            return httpx.Response(200, json={"result": {"task-1": {
+                "status": "success", "result": {"duration": 60, "tracks": [{"type": "stem", "url": "https://download.test/stem"}]},
+            }}})
+        return httpx.Response(200, content=_wav_bytes(), headers={"Content-Length": str(len(_wav_bytes()))})
+
+    separator = LalalSeparator(license_key=LICENSE_KEY, client=_client(handler))
+    with pytest.raises(LalalError, match="duration is implausible"):
+        separator.split(source, tmp_path / "out", build_recipe("electric")["bass-original"].spec,
+                        resume_state=None, checkpoint=lambda _: None)
+    assert not (tmp_path / "out" / "stem.wav").exists()
 
 
 def test_cancel_and_delete_use_v1_endpoints_only() -> None:

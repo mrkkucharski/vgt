@@ -16,7 +16,6 @@ import uuid
 import wave
 
 import httpx
-import soundfile as sf
 
 from .separation import SplitResult, SplitSpec
 
@@ -35,6 +34,10 @@ class AmbiguousSubmissionError(LalalError):
 
 class InsufficientMinutesError(LalalError):
     """The account cannot cover all outstanding paid operations."""
+
+
+class TaskExpiredError(LalalError):
+    """A known remote task can no longer be checked or downloaded."""
 
 
 class LalalSeparator:
@@ -98,28 +101,46 @@ class LalalSeparator:
         except (KeyError, TypeError, ValueError):
             return True
 
-    @staticmethod
-    def _local_duration_seconds(source: Path) -> float:
-        try:
-            info = sf.info(str(source))
-            return info.frames / info.samplerate
-        except (RuntimeError, OSError, ZeroDivisionError):
-            # This is only an early safety estimate.  LALAL's upload duration
-            # becomes authoritative before the operation is submitted.
-            return 0.0
-
-    def preflight(self, *, source: Path, outstanding_operations: int) -> None:
+    def preflight(
+        self,
+        *,
+        source: Path | None = None,
+        outstanding_operations: int | None = None,
+        sources: list[tuple[Path, int]] | None = None,
+    ) -> dict[str, Any] | list[dict[str, Any]]:
         """Refuse before any paid task when credits cannot cover this run.
 
-        WAV sources provide an exact local estimate. Other formats are checked
-        again against LALAL's authoritative upload duration before submission.
+        The upload is free, and its returned duration is the only estimate we
+        trust.  This deliberately happens before a split submission so a
+        format local decoders cannot read can never turn a zero-minute estimate
+        into paid work.  The caller persists the returned source identity for
+        the recipe's shared original upload.
         """
+        legacy_single_source = sources is None
+        if sources is None:
+            if source is None or outstanding_operations is None:
+                raise TypeError("preflight requires source/outstanding_operations or sources")
+            sources = [(source, outstanding_operations)]
+        uploads: list[dict[str, Any]] = []
+        needed = 0.0
+        for candidate, count in sources:
+            if count <= 0:
+                continue
+            uploaded: dict[str, Any] = {}
+            self._upload(candidate, uploaded, lambda _: None)
+            duration = uploaded.get("source_duration_seconds")
+            if not isinstance(duration, (int, float)) or duration <= 0:
+                raise LalalError("LALAL upload did not provide a usable source duration; no tasks were submitted")
+            uploads.append(uploaded)
+            needed += float(duration) * count / 60.0
+        if not uploads:
+            return {} if legacy_single_source else []
         minutes_left = float(self._request("POST", "/api/v1/limits/minutes_left/").json()["minutes_left"])
-        needed = self._local_duration_seconds(source) * outstanding_operations / 60.0
-        if needed and minutes_left < needed:
+        if minutes_left < needed:
             raise InsufficientMinutesError(
                 f"LALAL has {minutes_left:.2f} minutes left but this run needs {needed:.2f}; no tasks were submitted"
             )
+        return uploads[0] if legacy_single_source else uploads
 
     def _upload(self, source: Path, state: dict[str, Any], checkpoint: Callable[[dict[str, Any]], None]) -> dict[str, Any]:
         if state.get("source_id") and not self._expired(state):
@@ -195,7 +216,12 @@ class LalalSeparator:
         checkpoint(state)  # task identity is durable before any polling/download
 
     def _check(self, task_id: str) -> dict[str, Any]:
-        response = self._request("POST", "/api/v1/check/", json={"task_ids": [task_id]})
+        try:
+            response = self._request("POST", "/api/v1/check/", json={"task_ids": [task_id]})
+        except LalalError as exc:
+            if "HTTP 404" in str(exc) or "HTTP 410" in str(exc):
+                raise TaskExpiredError("LALAL task has expired") from exc
+            raise
         try:
             return response.json()["result"][task_id]
         except (KeyError, TypeError) as exc:
@@ -220,6 +246,8 @@ class LalalSeparator:
             checkpoint(state)
             if status == "success":
                 return result
+            if status in {"expired", "not_found"}:
+                raise TaskExpiredError("LALAL task has expired")
             if status in {"error", "cancelled", "server_error"}:
                 raise LalalError(f"LALAL task {status}: {self._redact(result.get('error', 'no details'))}")
             if status != "progress":
@@ -227,7 +255,7 @@ class LalalSeparator:
             self._sleep(delay)
             delay = min(delay * 2, self.poll_max_seconds)
 
-    def _download(self, url: str, destination: Path) -> bool:
+    def _download(self, url: str, destination: Path, expected_duration_seconds: float) -> bool:
         part = destination.with_suffix(destination.suffix + ".part")
         try:
             with self._client.stream("GET", url) as response:
@@ -247,6 +275,13 @@ class LalalSeparator:
                 with wave.open(str(part), "rb") as handle:
                     if handle.getnframes() <= 0 or handle.getframerate() <= 0:
                         raise LalalError("LALAL download has no readable WAV audio")
+                    actual_duration = handle.getnframes() / handle.getframerate()
+                    # The service duration is rounded, while WAV metadata is
+                    # exact.  Permit modest codec/container rounding but not a
+                    # truncated or unrelated file.
+                    tolerance = max(1.0, expected_duration_seconds * 0.10)
+                    if abs(actual_duration - expected_duration_seconds) > tolerance:
+                        raise LalalError("LALAL download WAV duration is implausible for the completed task")
             except (wave.Error, EOFError, OSError) as exc:
                 raise LalalError("LALAL download is not a readable WAV file") from exc
             part.replace(destination)
@@ -274,8 +309,29 @@ class LalalSeparator:
             )
         self._upload(source, state, checkpoint)
         self._submit(state, spec, checkpoint)
-        result = self._poll(state["task_id"], checkpoint, state)
+        try:
+            result = self._poll(state["task_id"], checkpoint, state)
+        except TaskExpiredError:
+            # This split is being called only because its required local
+            # artifact is missing/corrupt.  A 24-hour-expired task cannot be
+            # recovered, so explicitly reconstruct it with a new durable UUID
+            # rather than silently treating the old identity as resumable.
+            old_task_id = state.pop("task_id")
+            state.pop("submission_started", None)
+            state["expired_task_id"] = old_task_id
+            state["idempotency_key"] = str(uuid.uuid4())
+            state["status"] = "reconstructing"
+            checkpoint(state)
+            self._upload(source, state, checkpoint)
+            self._submit(state, spec, checkpoint)
+            result = self._poll(state["task_id"], checkpoint, state)
         tracks = {track.get("type"): track.get("url") for track in result.get("result", {}).get("tracks", [])}
+        try:
+            expected_duration = float(result["result"]["duration"])
+        except (KeyError, TypeError, ValueError) as exc:
+            raise LalalError("LALAL completed task did not provide a usable duration") from exc
+        if expected_duration <= 0:
+            raise LalalError("LALAL completed task did not provide a usable duration")
         out_dir.mkdir(parents=True, exist_ok=True)
         outputs: dict[str, Path] = {}
         for side in spec.keep:
@@ -283,11 +339,11 @@ class LalalSeparator:
             if not isinstance(url, str):
                 raise LalalError(f"LALAL completed task without required {side} track")
             target = out_dir / f"{side}.wav"
-            if not self._download(url, target):
+            if not self._download(url, target, expected_duration):
                 result = self._poll(state["task_id"], checkpoint, state)
                 tracks = {track.get("type"): track.get("url") for track in result.get("result", {}).get("tracks", [])}
                 refreshed = tracks.get(side)
-                if not isinstance(refreshed, str) or not self._download(refreshed, target):
+                if not isinstance(refreshed, str) or not self._download(refreshed, target, expected_duration):
                     raise LalalError("LALAL download URL expired and could not be refreshed")
             outputs[side] = target
         state["status"] = "completed"

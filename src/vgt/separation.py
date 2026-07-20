@@ -461,7 +461,14 @@ def _run_operation(
         emit(f"{op_def.operation_id}: resuming previous attempt")
     else:
         emit(f"{op_def.operation_id}: starting")
-        record["backend_state"] = {}
+        # A preflight/shared upload is not task state, but it is still a
+        # durable remote identity. Preserve it while starting this operation
+        # so the eventual completed record remains reusable by sibling splits.
+        record["backend_state"] = {
+            field: resume_state[field]
+            for field in ("source_id", "source_expires", "source_duration_seconds")
+            if field in resume_state
+        }
 
     record["status"] = "in_progress"
     record["source_sha256"] = source_sha256
@@ -521,6 +528,7 @@ def _run_operation(
 
     record["status"] = "completed"
     record["outputs"] = committed
+    record["backend_state"] = {**record.get("backend_state", {}), **result.backend_state}
     record["effective_presets"] = result.effective_presets
     record["completed_at"] = _now()
     record["error"] = None
@@ -589,6 +597,7 @@ def separate(
     # remains optional on the thin protocol so FakeSeparator stays wholly
     # network-free; the real backend supplies this capability.
     outstanding = 0
+    preflight_counts: dict[Path, int] = {}
     for operation_id in OPERATION_ORDER:
         op_def = recipe[operation_id]
         if op_def.spec.source_role == "instrumental":
@@ -604,9 +613,58 @@ def separate(
             artifacts=stems["artifacts"],
         ):
             outstanding += 1
+            # The instrumental cascade normally has the same timeline as the
+            # original, but when it is already local we can upload and price
+            # that exact source instead.  When it is not local yet, reserve
+            # its eventual charge against the original's authoritative
+            # duration before allowing the preceding vocal task to start.
+            if op_def.spec.source_role == "instrumental" and instrumental_record:
+                candidate = artifact_path(project_path, instrumental_record)
+            else:
+                candidate = source
+            preflight_counts[candidate] = preflight_counts.get(candidate, 0) + 1
     preflight = getattr(backend, "preflight", None)
     if outstanding and callable(preflight):
-        preflight(source=source, outstanding_operations=outstanding)
+        # LALAL preflight uploads the original solely to obtain its
+        # authoritative duration.  Persist that free remote identity before
+        # any paid split and let the original-source operations share it.
+        # A single source duration is deliberately charged once per
+        # outstanding operation, including the eventual instrumental cascade:
+        # LALAL separation preserves timeline duration, and this conservative
+        # gate prevents starting a partial recipe without coverage for step 5.
+        preflight_sources = list(preflight_counts.items())
+        preflight_states = preflight(sources=preflight_sources)
+        if not isinstance(preflight_states, list):
+            preflight_states = []
+        for (preflight_source, _count), preflight_state in zip(preflight_sources, preflight_states, strict=True):
+            if not isinstance(preflight_state, dict) or not preflight_state.get("source_id"):
+                continue
+            preflight_sha256 = hash_audio_content(preflight_source)
+            for operation_id in OPERATION_ORDER:
+                op_def = recipe[operation_id]
+                record = stems["operations"][operation_id]
+                if op_def.spec.source_role == "instrumental":
+                    artifact = stems["artifacts"].get("instrumental")
+                    operation_source_sha = artifact.get("sha256") if artifact else source_sha256
+                else:
+                    operation_source_sha = source_sha256
+                if (
+                    operation_source_sha == preflight_sha256
+                    and not _operation_is_current(
+                        project_path,
+                        record,
+                        source_sha256=operation_source_sha,
+                        current_spec_hash=spec_hash(op_def.spec),
+                        artifacts=stems["artifacts"],
+                    )
+                ):
+                    record["source_sha256"] = operation_source_sha
+                    record["backend_state"] = {
+                        **(record.get("backend_state") or {}),
+                        **preflight_state,
+                    }
+                    persist()
+                    break
 
     total = len(OPERATION_ORDER)
     errors: list[str] = []

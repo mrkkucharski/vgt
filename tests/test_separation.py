@@ -97,6 +97,21 @@ class _SourceRecordingSeparator:
         return self._inner.split(source, out_dir, spec, resume_state=resume_state, checkpoint=checkpoint)
 
 
+class _PreflightRecordingSeparator(_SourceRecordingSeparator):
+    """Records the run-level credit gate without making network calls."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.preflight_sources: list[tuple[Path, int]] = []
+
+    def preflight(self, *, sources: list[tuple[Path, int]]) -> list[dict[str, Any]]:
+        self.preflight_sources = sources
+        return [
+            {"source_id": f"preflight-upload-{index}", "source_expires": 4102444800, "source_duration_seconds": 42}
+            for index, _entry in enumerate(sources, start=1)
+        ]
+
+
 def test_build_recipe_fixed_dag_shape() -> None:
     recipe = build_recipe("electric")
     assert set(recipe) == set(OPERATION_ORDER)
@@ -182,6 +197,26 @@ def test_operations_reuse_uploads_only_for_identical_source_bytes(tmp_path: Path
         "upload-1",
         "upload-1",
         None,
+    ]
+
+
+def test_preflight_reserves_all_five_operations_and_reuses_its_original_upload(tmp_path: Path) -> None:
+    project = _project_copy(tmp_path)
+    _write_v1_sidecar(project)
+    backend = _PreflightRecordingSeparator()
+
+    separate(project, backend, guitar_type="electric")
+
+    # Before the first split, the full recipe is priced as five source
+    # durations; the cascade is reserved against the original's duration
+    # until its instrumental source exists. The preflight upload is then the
+    # shared original upload, not a throwaway third upload.
+    assert [count for _path, count in backend.preflight_sources] == [5]
+    assert [state.get("source_id") for state in backend.resume_states[:4]] == [
+        "preflight-upload-1",
+        "preflight-upload-1",
+        "preflight-upload-1",
+        "preflight-upload-1",
     ]
 
 
