@@ -5,6 +5,7 @@ import subprocess
 
 VERIFY_SCRIPT = Path(__file__).parents[1] / "scripts" / "verify_phase0_apply.py"
 PHASE1_VERIFY_SCRIPT = Path(__file__).parents[1] / "scripts" / "verify_phase1_apply.py"
+STEM_VERIFY_SCRIPT = Path(__file__).parents[1] / "scripts" / "verify_stem_apply.py"
 APPLY_SCRIPT = Path(__file__).parents[1] / "reascript" / "vgt_initialize.lua"
 SYNC_SCRIPT = Path(__file__).parents[1] / "reascript" / "vgt_sync.lua"
 
@@ -158,6 +159,65 @@ def test_add_click_track_is_absent_when_no_artifact_namespace_recorded(tmp_path:
     assert result.stdout == "0:0:0"
 
 
+def test_add_stem_tracks_imports_only_committed_namespace_wavs_time_based_and_offset(tmp_path: Path) -> None:
+    rpp = tmp_path / "song.RPP"
+    stems_dir = tmp_path / "vgt" / "song-abc123" / "stems"
+    stems_dir.mkdir(parents=True)
+    for filename in ("vocals.wav", "instrumental.wav", "bass.wav", "drums.wav", "guitar.wav", "backing-no-guitar.wav"):
+        (stems_dir / filename).write_bytes(b"RIFF....WAVEfmt ")
+
+    script = APPLY_SCRIPT.read_text()
+    helpers_end = script.index("local function remove_previous_managed_regions()")
+    artifacts = ", ".join(f"{name} = {{file = 'stems/{filename}', size_bytes = 16, duration_seconds = 2.5}}" for name, filename in (
+        ("vocals", "vocals.wav"), ("instrumental", "instrumental.wav"), ("bass", "bass.wav"),
+        ("drums", "drums.wav"), ("guitar", "guitar.wav"), ("backing", "backing-no-guitar.wav"),
+    ))
+    lua_program = "\n".join([
+        _click_track_lua_mock(rpp),
+        script[:helpers_end],
+        "local managed_tracks = {}",
+        f"add_stem_tracks(3, {{artifact_namespace = 'song-abc123', artifacts = {{{artifacts}}}}}, 12.25, managed_tracks)",
+        "for i = 4, 9 do local track = __tracks[i]; local item = __items[i - 3]; io.write(track.name, ':', item.values.D_POSITION, ':', item.values.D_LENGTH, ':', item.values.C_BEATATTACHMODE, ';') end",
+        "io.write('#', #managed_tracks)",
+    ])
+    result = subprocess.run(["lua", "-", str(rpp)], input=lua_program, text=True, capture_output=True, check=True)
+    assert result.stdout == (
+        "[vgt] Vocals:12.25:2.5:0;[vgt] Instrumental:12.25:2.5:0;[vgt] Bass:12.25:2.5:0;"
+        "[vgt] Drums:12.25:2.5:0;[vgt] Guitar:12.25:2.5:0;[vgt] Backing (no guitar):12.25:2.5:0;#6"
+    )
+
+
+def test_add_stem_tracks_skips_missing_or_outside_namespace_artifacts_with_a_warning(tmp_path: Path) -> None:
+    rpp = tmp_path / "song.RPP"
+    script = APPLY_SCRIPT.read_text()
+    helpers_end = script.index("local function remove_previous_managed_regions()")
+    lua_program = "\n".join([
+        _click_track_lua_mock(rpp),
+        "function reaper.ShowConsoleMsg(message) io.stderr:write(message) end",
+        script[:helpers_end],
+        "local managed_tracks = {}",
+        "add_stem_tracks(3, {artifact_namespace = 'song-abc123', artifacts = {vocals = {file = '../user.wav'}}}, 0, managed_tracks)",
+        "io.write(#managed_tracks, ':', #__tracks, ':', #__items)",
+    ])
+    result = subprocess.run(["lua", "-", str(rpp)], input=lua_program, text=True, capture_output=True, check=True)
+    assert result.stdout == "0:0:0"
+    assert "skipping stem vocals: sidecar file is outside the expected stem namespace" in result.stderr
+
+
+def test_live_stem_lease_is_detected_without_mutating_the_project(tmp_path: Path) -> None:
+    script = APPLY_SCRIPT.read_text()
+    helpers_end = script.index("local function remove_previous_managed_regions()")
+    lua_program = "\n".join([
+        "reaper = {}",
+        script[:helpers_end],
+        "local now = os.date('!*t')",
+        "local stamp = string.format('%04d-%02d-%02dT%02d:%02d:%02dZ', now.year, now.month, now.day, now.hour, now.min, now.sec)",
+        "io.write(tostring(stems_lease_is_live({in_progress = {heartbeat_at = stamp}})), ':', tostring(stems_lease_is_live({in_progress = {heartbeat_at = '2000-01-01T00:00:00Z'}})))",
+    ])
+    result = subprocess.run(["lua", "-", str(tmp_path / "song.RPP")], input=lua_program, text=True, capture_output=True, check=True)
+    assert result.stdout == "true:false"
+
+
 def test_apply_preserves_analysis_json_with_braces_inside_strings(tmp_path: Path) -> None:
     """The Lua sidecar reader must not mistake corrected text for JSON syntax."""
     sidecar = tmp_path / "song.vgt"
@@ -306,6 +366,16 @@ def test_phase1_live_verifier_has_an_opt_in_tempo_refresh_proof() -> None:
     assert "def run_live_tempo_refresh(" in script
     assert "tempo_map_fingerprint" in script
     assert "SetTempoTimeSigMarker(0, 0, 0, -1, -1, 155, 3, 4, false)" in script
+
+
+def test_stem_live_verifier_requires_saved_rpp_relative_path_proof_and_reapply() -> None:
+    script = STEM_VERIFY_SCRIPT.read_text()
+    assert "--run-live" in script
+    assert "Main_SaveProject" in script
+    assert "vgt/stem-proof/stems/" in script
+    assert "Path(files[0]).is_absolute()" in script
+    assert "_run_reaper(project, root)" in script
+    assert "verify(project, baseline, prior_snapshot=snapshot)" in script
 
 
 def test_sync_only_reads_reaper_state_and_never_mutates_the_rpp() -> None:

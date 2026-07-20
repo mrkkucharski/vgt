@@ -7,6 +7,15 @@ local MIRROR_NAME = PREFIX .. " Mirror"
 local CHORDS_NAME = PREFIX .. " Chords"
 local BEATS_NAME = PREFIX .. " Beats"
 local CLICK_NAME = PREFIX .. " Click"
+local STEM_TRACKS = {
+  {artifact = "vocals", filename = "stems/vocals.wav", name = PREFIX .. " Vocals"},
+  {artifact = "instrumental", filename = "stems/instrumental.wav", name = PREFIX .. " Instrumental"},
+  {artifact = "bass", filename = "stems/bass.wav", name = PREFIX .. " Bass"},
+  {artifact = "drums", filename = "stems/drums.wav", name = PREFIX .. " Drums"},
+  {artifact = "guitar", filename = "stems/guitar.wav", name = PREFIX .. " Guitar"},
+  {artifact = "backing", filename = "stems/backing-no-guitar.wav", name = PREFIX .. " Backing (no guitar)"},
+}
+local STEM_LEASE_TIMEOUT_SECONDS = 30 * 60
 
 local function project_path()
   local _, path = reaper.EnumProjects(-1, "")
@@ -467,6 +476,88 @@ local function add_click_track(index, tempo, reference_start, managed_tracks, ar
   managed_tracks[#managed_tracks + 1] = click_track
 end
 
+local function warn(message)
+  reaper.ShowConsoleMsg("vgt: " .. message .. "\n")
+end
+
+-- Separation can take several minutes and is the Python process's exclusive
+-- sidecar-writing window.  A current heartbeat (or, for older producers, the
+-- start timestamp) means we must leave both the project and sidecar alone.
+-- Timestamps are UTC ISO-8601, which is deliberately parsed without relying
+-- on a machine-local timezone.
+local function utc_timestamp_seconds(value)
+  if type(value) ~= "string" then return nil end
+  local year, month, day, hour, minute, second = value:match("^(%d%d%d%d)%-(%d%d)%-(%d%d)T(%d%d):(%d%d):(%d%d)Z$")
+  if not year then return nil end
+  return os.time({year = tonumber(year), month = tonumber(month), day = tonumber(day), hour = tonumber(hour), min = tonumber(minute), sec = tonumber(second), isdst = false})
+end
+
+local function stems_lease_is_live(stems)
+  local lease = type(stems) == "table" and stems.in_progress or nil
+  if type(lease) ~= "table" then return false end
+  local timestamp = utc_timestamp_seconds(lease.heartbeat_at or lease.heartbeat or lease.started_at or lease.start)
+  -- `os.time(table)` uses the local timezone.  Interpret both ends the same
+  -- way so the elapsed-time comparison remains UTC-correct on every host.
+  local utc_now = os.time(os.date("!*t"))
+  return timestamp ~= nil and utc_now - timestamp >= 0 and utc_now - timestamp < STEM_LEASE_TIMEOUT_SECONDS
+end
+
+local function valid_stem_artifact(artifact, expected_filename, artifact_namespace)
+  if type(artifact) ~= "table" or type(artifact.file) ~= "string" then return nil, "sidecar record is missing file" end
+  if artifact.file ~= expected_filename then return nil, "sidecar file is outside the expected stem namespace" end
+  if not artifact_namespace or artifact_namespace == "" or artifact_namespace:find("[\\/]") or artifact_namespace:find("%.%.") then
+    return nil, "sidecar artifact namespace is invalid"
+  end
+  local path = project_dir() .. "vgt/" .. artifact_namespace .. "/" .. artifact.file
+  local file = io.open(path, "rb")
+  if not file then return nil, "WAV is missing" end
+  local size = file:seek("end")
+  file:seek("set", 0)
+  local header = file:read(12) or ""
+  file:close()
+  if type(artifact.size_bytes) ~= "number" or artifact.size_bytes <= 0 or size ~= artifact.size_bytes then
+    return nil, "WAV size does not match its committed artifact record"
+  end
+  if type(artifact.duration_seconds) ~= "number" or artifact.duration_seconds <= 0 then
+    return nil, "WAV duration is invalid in its committed artifact record"
+  end
+  if header:sub(1, 4) ~= "RIFF" or header:sub(9, 12) ~= "WAVE" then return nil, "WAV header is invalid" end
+  return path
+end
+
+-- Import only the six records that the separator committed into its own
+-- namespace.  The API gets an absolute local path, but saving the project is
+-- what causes REAPER to serialize it project-relative; the live verifier
+-- checks that persisted behavior separately.
+local function add_stem_tracks(index, stems, reference_start, managed_tracks)
+  if type(stems) ~= "table" then return end
+  local artifacts = stems.artifacts
+  local artifact_namespace = stems.artifact_namespace
+  if type(artifacts) ~= "table" then return end
+  if next(artifacts) == nil then return end -- separation has not produced any outputs yet.
+  for _, definition in ipairs(STEM_TRACKS) do
+    local path, reason = valid_stem_artifact(artifacts[definition.artifact], definition.filename, artifact_namespace)
+    if not path then
+      warn("skipping stem " .. definition.artifact .. ": " .. reason)
+    else
+      local source = reaper.PCM_Source_CreateFromFile(path)
+      if not source then
+        warn("skipping stem " .. definition.artifact .. ": REAPER could not open WAV")
+      else
+        local stem_track = add_locked_track(index, definition.name, false)
+        local item = reaper.AddMediaItemToTrack(stem_track)
+        reaper.SetMediaItemInfo_Value(item, "D_POSITION", reference_start)
+        reaper.SetMediaItemInfo_Value(item, "D_LENGTH", reaper.GetMediaSourceLength(source))
+        reaper.SetMediaItemInfo_Value(item, "C_BEATATTACHMODE", 0)
+        local take = reaper.AddTakeToMediaItem(item)
+        reaper.SetMediaItemTake_Source(take, source)
+        managed_tracks[#managed_tracks + 1] = stem_track
+        index = index + 1
+      end
+    end
+  end
+end
+
 local function remove_previous_managed_regions()
   local managed = read_managed_region_ids()
   for index = reaper.CountProjectMarkers(0) - 1, 0, -1 do
@@ -524,6 +615,12 @@ local function apply()
   local path = project_path()
   if path == "" then error("Save the REAPER project before running vgt Phase 0.") end
 
+  local analysis = read_analysis()
+  if analysis and stems_lease_is_live(analysis.stems) then
+    warn("stem separation is in progress; retry after it finishes")
+    return
+  end
+
   -- Choose the reference before mutating anything, so cancelling leaves the project untouched.
   local reference = choose_reference(candidate_tracks())
   if not reference then return end
@@ -532,7 +629,6 @@ local function apply()
 
   reaper.Undo_BeginBlock()
   reaper.PreventUIRefresh(1)
-  local analysis = read_analysis()
   remove_previous_managed_tracks()
   remove_previous_managed_regions()
 
@@ -611,6 +707,8 @@ local function apply()
   if type(tempo) == "table" then
     add_click_track(reaper.CountTracks(0), tempo, reference_start, managed_tracks, artifact_namespace)
   end
+
+  add_stem_tracks(reaper.CountTracks(0), analysis and analysis.stems, reference_start, managed_tracks)
 
   local chords = analysis and analysis.chords and analysis.chords.value
   local segments = type(chords) == "table" and (chords.segments or chords) or nil
