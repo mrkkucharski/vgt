@@ -1,10 +1,10 @@
 {
   "current_issue": 66,
-  "session_id": "6db1bb2d-3ed8-4887-bd70-3bc70326a403",
-  "pid": 80480,
-  "process_started_at": "Mon Jul 20 22:31:05 2026",
-  "agent": "codex",
-  "started_at": "2026-07-20T20:31:04.377171+00:00",
+  "session_id": "67221d34-35b0-4005-b2c2-d53da950a41a",
+  "pid": 81494,
+  "process_started_at": "Mon Jul 20 22:43:22 2026",
+  "agent": "claude",
+  "started_at": "2026-07-20T20:43:20.827671+00:00",
   "scheduler_stalls": {},
   "budget": {
     "window_start": "2026-07-20T20:09:51.136591+00:00",
@@ -15,10 +15,10 @@
   "verification_followups": {
     "f0d8bfc9d2dc6da7a31609184e25c4d66d3986fd2340b33a83e98204fb86691e": "created"
   },
-  "role": "implement",
+  "role": "review",
   "branch": "issue-66-add-a-live-reaper-verifier-for-vgt-sync",
   "worktree_path": "/Users/marekkucharski/projects/.pm-worktrees/vgt/issue-66",
-  "pr_number": null,
+  "pr_number": 68,
   "followup_generation": {
     "fingerprint": "71c63f065a33718d76704b02fc07bebfd2dd591df8a3b818d11f1e4be2ba5384",
     "items": {
@@ -50,11 +50,11 @@
   "pending_transition": {
     "issue": 66,
     "target": "working",
-    "event": "agent.started",
+    "event": "agent.review_started",
     "detail": {
       "issue": 66,
-      "agent": "codex",
-      "branch": "issue-66-add-a-live-reaper-verifier-for-vgt-sync"
+      "agent": "claude",
+      "pr": 68
     },
     "cleanup": {}
   }
