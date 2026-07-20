@@ -393,6 +393,27 @@ def _operation_is_current(
     return _artifacts_on_disk(project_path, record, artifacts)
 
 
+def _shared_source_state(operations: dict[str, Any], source_sha256: str) -> dict[str, Any]:
+    """Return a reusable remote-upload identity for these exact source bytes.
+
+    LALAL uploads are independent of a split task.  The four original-source
+    operations must therefore share one upload rather than uploading the same
+    original four times.  Upload metadata lives in per-operation opaque state
+    (so the Separator protocol stays deliberately small); this helper copies
+    only the source identity, never an operation's idempotency key or task id.
+    An expired identity is copied too: the backend is the authority on expiry
+    and will replace only that source upload when needed.
+    """
+    source_fields = ("source_id", "source_expires", "source_duration_seconds")
+    for record in operations.values():
+        if record.get("source_sha256") != source_sha256:
+            continue
+        backend_state = record.get("backend_state") or {}
+        if backend_state.get("source_id"):
+            return {field: backend_state[field] for field in source_fields if field in backend_state}
+    return {}
+
+
 def _run_operation(
     *,
     project_path: Path,
@@ -430,7 +451,12 @@ def _run_operation(
     # be reused as if it were for this one.
     matches_prior_attempt = record.get("source_sha256") == source_sha256 and record.get("spec_hash") == current_spec_hash
     resumable = matches_prior_attempt and bool(record.get("backend_state"))
-    resume_state = dict(record.get("backend_state") or {}) if resumable else None
+    resume_state = dict(record.get("backend_state") or {}) if resumable else {}
+    # A fresh operation against bytes another operation already uploaded may
+    # reuse that upload.  Do not borrow task state: each paid operation still
+    # has its own UUID and task identity.
+    if not resume_state.get("source_id"):
+        resume_state.update(_shared_source_state(operations, source_sha256))
     if resumable:
         emit(f"{op_def.operation_id}: resuming previous attempt")
     else:
@@ -455,7 +481,7 @@ def _run_operation(
     work_dir = stems_dir(project_path, namespace) / "_work" / op_def.operation_id
     try:
         try:
-            result = backend.split(source_path, work_dir, op_def.spec, resume_state=resume_state, checkpoint=checkpoint)
+            result = backend.split(source_path, work_dir, op_def.spec, resume_state=resume_state or None, checkpoint=checkpoint)
         except Exception as exc:  # noqa: BLE001 -- recorded, then re-raised for the caller
             record["status"] = "error"
             record["error"] = str(exc)

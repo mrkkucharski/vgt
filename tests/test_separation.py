@@ -79,6 +79,24 @@ class _RecordingSeparator:
         return self.inner.split(source, out_dir, spec, resume_state=resume_state, checkpoint=checkpoint)
 
 
+class _SourceRecordingSeparator:
+    """Small network-free model of LALAL's upload reuse behavior."""
+
+    name = "lalal"
+    api_version = "v1"
+
+    def __init__(self) -> None:
+        self.resume_states: list[dict[str, Any]] = []
+        self._inner = FakeSeparator()
+
+    def split(self, source: Path, out_dir: Path, spec, *, resume_state, checkpoint) -> SplitResult:
+        state = dict(resume_state or {})
+        self.resume_states.append(state)
+        if not state.get("source_id"):
+            checkpoint({"source_id": f"upload-{len(self.resume_states)}", "source_expires": 4102444800})
+        return self._inner.split(source, out_dir, spec, resume_state=resume_state, checkpoint=checkpoint)
+
+
 def test_build_recipe_fixed_dag_shape() -> None:
     recipe = build_recipe("electric")
     assert set(recipe) == set(OPERATION_ORDER)
@@ -146,6 +164,25 @@ def test_full_run_completes_all_five_operations_and_six_artifacts(tmp_path: Path
     work_dir = stems_dir(project, namespace) / "_work"
     for operation_id in OPERATION_ORDER:
         assert not (work_dir / operation_id).exists()  # per-operation scratch dirs are cleaned up after commit
+
+
+def test_operations_reuse_uploads_only_for_identical_source_bytes(tmp_path: Path) -> None:
+    project = _project_copy(tmp_path)
+    _write_v1_sidecar(project)
+    backend = _SourceRecordingSeparator()
+
+    separate(project, backend, guitar_type="electric")
+
+    # vocals creates the original upload; the other three original-source
+    # operations reuse it. The cascade consumes different (instrumental)
+    # bytes, so it gets the recipe's one other upload.
+    assert [state.get("source_id") for state in backend.resume_states] == [
+        None,
+        "upload-1",
+        "upload-1",
+        "upload-1",
+        None,
+    ]
 
 
 def test_second_run_is_fully_cached_no_backend_calls(tmp_path: Path) -> None:
