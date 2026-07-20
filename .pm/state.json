@@ -1,10 +1,10 @@
 {
   "current_issue": 46,
-  "session_id": "4e5fb16c-c208-45f5-a3f8-11c52493941f",
-  "pid": 65910,
-  "process_started_at": "Mon Jul 20 19:11:34 2026",
+  "session_id": "6699685b-a355-422e-a32b-e5a5d4295b37",
+  "pid": 66291,
+  "process_started_at": "Mon Jul 20 19:15:00 2026",
   "agent": "codex",
-  "started_at": "2026-07-20T17:11:33.106360+00:00",
+  "started_at": "2026-07-20T17:14:59.097219+00:00",
   "scheduler_stalls": {
     "malformed_responses": {
       "followup_issues": {
@@ -16,31 +16,31 @@
     "blocked_issues": {
       "47": {
         "first_seen_at": "2026-07-20T14:46:30.421730+00:00",
-        "last_seen_at": "2026-07-20T17:10:23.616654+00:00",
-        "consecutive_passes": 130,
+        "last_seen_at": "2026-07-20T17:13:49.241317+00:00",
+        "consecutive_passes": 133,
         "title": "M1-D: ReaScript import of stem tracks into the project"
       },
       "48": {
         "first_seen_at": "2026-07-20T15:06:44.348708+00:00",
-        "last_seen_at": "2026-07-20T17:10:23.615194+00:00",
-        "consecutive_passes": 112,
+        "last_seen_at": "2026-07-20T17:13:49.240423+00:00",
+        "consecutive_passes": 115,
         "title": "M1-F: Stem-separation evaluation pass on golden songs"
       }
     }
   },
   "budget": {
     "window_start": "2026-07-20T15:04:13.826389+00:00",
-    "seconds_used": 476.365073,
+    "seconds_used": 680.039031,
     "dollars_used": 0.6868155999999999,
     "seconds_used_by_agent": {
-      "codex": 71.322806,
+      "codex": 274.996764,
       "claude": 405.042267
     }
   },
   "verification_followups": {
     "f0d8bfc9d2dc6da7a31609184e25c4d66d3986fd2340b33a83e98204fb86691e": "created"
   },
-  "role": "review",
+  "role": "fix",
   "branch": "issue-46-m1-c-cli-wiring-partial-success-semantic",
   "worktree_path": "/Users/marekkucharski/projects/.pm-worktrees/vgt/issue-46",
   "pr_number": 52,
@@ -73,16 +73,17 @@
     "11": 1,
     "19": 2,
     "44": 1,
-    "45": 3
+    "45": 3,
+    "46": 1
   },
   "pending_transition": {
     "issue": 46,
     "target": "working",
-    "event": "agent.review_started",
+    "event": "agent.fix_started",
     "detail": {
       "issue": 46,
       "agent": "codex",
-      "pr": 52
+      "fix_count": 1
     },
     "cleanup": {}
   }
