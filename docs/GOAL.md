@@ -100,6 +100,11 @@ criteria — is in [stem-separation-plan.md](stem-separation-plan.md). Phase 2 d
 **Out of scope for phase 2** (deferred to later phases): offline separation (UVR / RoFormer / Demucs), guitar
 MIDI reference generation, practice controls (stem muting / looping / tempo-ramp), and performance scoring.
 
+**Not an agent task.** Subjective quality evaluation of real LALAL stems on the user's own golden songs
+(listening for interference/damage, judging electric-vs-acoustic and `extraction_level` quality) is performed
+by the user, not by an autonomous agent — it requires human ears and owned audio. Do **not** create issues for
+this; the user runs it directly and folds findings back into the docs.
+
 ## Requirements
 
 - **Non-destructive.** Never overwrite, rename, delete, or modify any track or object vgt did not create.

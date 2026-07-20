@@ -340,19 +340,23 @@ clean. (If a user chooses to version their own project, adding their own
   harmless legacy orphans remain unless an explicit cleanup action identifies
   them. Land this before B and D so both learn only the final layout.
 
-### F — Evaluation pass (priority:low, S)
+### F — Evaluation pass (user-owned, not an agent task)
 
 - On the golden songs, listen for interference/damage in the LALAL guitar and
   backing stems; note electric-vs-acoustic, effective splitter, and
   `extraction_level` (`deep_extraction` vs `clear_cut`) quality in a findings
   doc. Feeds the deferred M7 evaluation.
+- **This is a human-listening task the user performs directly** — it needs human
+  ears and owned audio, so it is not tracked as an autonomous-agent issue. Do not
+  create or re-create an issue for it.
 
 ## 4. Sequencing & risks
 
-- Order: **A → E → B → C → D → F**. A establishes the operation/cache contract
-  with no external dependency; E fixes paths before outputs exist; B is the only
-  network-touching piece; C supplies durable stage orchestration; D consumes the
-  final sidecar/path contract; F evaluates real output.
+- Order: **A → E → B → C → D**, then **F** as a user-run evaluation once real
+  output exists. A establishes the operation/cache contract with no external
+  dependency; E fixes paths before outputs exist; B is the only network-touching
+  piece; C supplies durable stage orchestration; D consumes the final
+  sidecar/path contract; F (user-owned, not an agent issue) evaluates real output.
 - **Secrets**: `LALAL_LICENSE_KEY` is environment-only — documented in the
   README, never in the repo or the sidecar.
 - **Cost is deliberately higher, not accidental**: five operations per song is the
