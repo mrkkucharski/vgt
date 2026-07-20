@@ -57,7 +57,7 @@ def test_upgrade_keeps_v1_fields_and_adds_v2_analysis_skeleton() -> None:
 
     upgraded = upgrade(v1)
 
-    assert upgraded["schema_version"] == 6
+    assert upgraded["schema_version"] == 7
     assert upgraded["managed_region_ids"] == []
     assert upgraded["managed_track_guids"] == ["{AAAA}", "{BBBB}"]
     assert upgraded["config"] == {"reference_track_guid": REFERENCE_GUID}
@@ -208,7 +208,7 @@ def test_analyze_writes_v2_sidecar_with_skeleton_and_provenance(tmp_path: Path) 
 
     result = analyze(project)
 
-    assert result["schema_version"] == 6
+    assert result["schema_version"] == 7
     assert result["managed_track_guids"] == ["{AAAA}", "{BBBB}"]  # phase 0 fields intact
     for stage in ANALYSIS_STAGES:
         assert result["analysis"][stage]["input_hash"] is not None
@@ -561,7 +561,7 @@ def test_cli_analyze_preserves_local_results_when_lalal_is_unavailable(
 
     captured = capsys.readouterr()
     output = json.loads(captured.out)
-    assert output["schema_version"] == 6
+    assert output["schema_version"] == 7
     assert output["analysis"]["tempo"]["value"] is not None
     assert "local tempo/key/sections/chords analysis was saved" in captured.err
 

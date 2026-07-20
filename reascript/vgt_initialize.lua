@@ -596,7 +596,12 @@ local function write_settings(folder, managed_tracks, managed_region_ids, refere
   local schema_version = analysis and math.max(prior_schema, 4) or 1
   local analysis_field = analysis and ('\n  "analysis": ' .. analysis .. ",") or ""
 
-  local file, error_message = io.open(sidecar_path(), "w")
+  -- Write a complete replacement beside the sidecar, then rename it into
+  -- place.  Python uses the same replace discipline for paid-operation
+  -- checkpoints; a crash can therefore leave either complete version, never
+  -- a truncated JSON document.
+  local temporary_path = sidecar_path() .. ".tmp"
+  local file, error_message = io.open(temporary_path, "w")
   if not file then error(error_message) end
   local guids = {}
   for _, track in ipairs(managed_tracks) do guids[#guids + 1] = '"' .. reaper.GetTrackGUID(track) .. '"' end
@@ -615,6 +620,11 @@ local function write_settings(folder, managed_tracks, managed_region_ids, refere
     escaped(PREFIX .. " " .. track_name(reference)), escaped(MIRROR_NAME), tempo_map_applied and "true" or "false",
     escaped(tempo_map_fingerprint or ""), escaped(tempo_data_fp or "")))
   file:close()
+  local renamed, rename_error = os.rename(temporary_path, sidecar_path())
+  if not renamed then
+    os.remove(temporary_path)
+    error(rename_error)
+  end
 end
 
 local function apply()
@@ -632,6 +642,16 @@ local function apply()
   if not reference then return end
   local reference_guid = reaper.GetTrackGUID(reference)
   local folder_name = PREFIX .. " " .. track_name(reference)
+
+  -- Choosing a reference may involve an interactive pause. Check again
+  -- immediately before the first project mutation so a separator that began
+  -- while the menu was open wins cleanly rather than having its sidecar
+  -- checkpoint overwritten by this apply.
+  analysis = read_analysis()
+  if analysis and stems_lease_is_live(analysis.stems) then
+    warn("stem separation is in progress; retry after it finishes")
+    return
+  end
 
   reaper.Undo_BeginBlock()
   reaper.PreventUIRefresh(1)

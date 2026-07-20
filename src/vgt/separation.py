@@ -49,9 +49,11 @@ from .project import ProjectError, locate_project
 from .sidecar import (
     SidecarError,
     artifact_namespace_dir,
+    acquire_stems_lease,
     ensure_artifact_namespace,
     read_sidecar,
-    write_sidecar,
+    release_stems_lease,
+    update_stems_under_lease,
 )
 
 RECIPE_VERSION = 1
@@ -577,7 +579,7 @@ def _run_operation(
     emit(f"{op_def.operation_id}: completed ({', '.join(committed)})")
 
 
-def separate(
+def _separate_under_lease(
     project: str | Path | None,
     backend: Separator,
     *,
@@ -585,6 +587,7 @@ def separate(
     force: bool = False,
     progress: Callable[[str], None] | None = None,
     before_submit: Callable[[int], None] | None = None,
+    lease_owner: str,
 ) -> dict[str, Any]:
     """Run (or resume/refresh) the fixed five-operation split recipe for
     `project` against `backend`, persisting durable checkpoints into the
@@ -625,7 +628,11 @@ def separate(
     namespace = ensure_artifact_namespace(sidecar, project_path)
 
     def persist() -> None:
-        write_sidecar(project_path, sidecar)
+        # Always reread and merge this subtree under the lease.  Local
+        # analysis may update another analysis stage while a split is polling;
+        # it must not erase a paid operation's task-id checkpoint, and it
+        # cannot cause this owner to write after losing its lease.
+        update_stems_under_lease(project_path, stems, lease_owner)
 
     recipe = build_recipe(resolved_guitar_type)
     # Every fixed operation gets a visible "pending" record up front (e.g.
@@ -781,3 +788,40 @@ def separate(
     if errors:
         raise SeparationError("; ".join(errors))
     return sidecar
+
+
+def separate(
+    project: str | Path | None,
+    backend: Separator,
+    *,
+    guitar_type: str | None = None,
+    force: bool = False,
+    progress: Callable[[str], None] | None = None,
+    before_submit: Callable[[int], None] | None = None,
+) -> dict[str, Any]:
+    """Run separation while holding the durable, heartbeat-refreshed lease.
+
+    The claim is made before preflight/upload or any split submission.  A
+    crash leaves it behind for the timeout window; a normal success or failure
+    always clears it, so ReaScript may safely apply the settled sidecar.
+    """
+    project_path = locate_project(project)
+    try:
+        _claimed, owner = acquire_stems_lease(project_path)
+    except SidecarError as exc:
+        raise SeparationError(str(exc)) from exc
+    try:
+        _separate_under_lease(
+            project_path,
+            backend,
+            guitar_type=guitar_type,
+            force=force,
+            progress=progress,
+            before_submit=before_submit,
+            lease_owner=owner,
+        )
+    finally:
+        # Ownership check inside release means a stale process can never erase
+        # a replacement owner's lease.
+        release_stems_lease(project_path, owner)
+    return read_sidecar(project_path)
