@@ -1,10 +1,10 @@
 {
-  "current_issue": 55,
-  "session_id": "48ade5f5-eff8-416e-93c0-2137a4bcdbbf",
-  "pid": 72542,
-  "process_started_at": "Mon Jul 20 21:01:14 2026",
+  "current_issue": 54,
+  "session_id": "b167e380-8ce1-4f23-a47f-39cc91a537f1",
+  "pid": 72796,
+  "process_started_at": "Mon Jul 20 21:02:26 2026",
   "agent": "codex",
-  "started_at": "2026-07-20T19:01:12.735087+00:00",
+  "started_at": "2026-07-20T19:02:25.010079+00:00",
   "scheduler_stalls": {},
   "budget": {
     "window_start": "2026-07-20T15:04:13.826389+00:00",
@@ -19,8 +19,8 @@
     "f0d8bfc9d2dc6da7a31609184e25c4d66d3986fd2340b33a83e98204fb86691e": "created"
   },
   "role": "implement",
-  "branch": "issue-55-evaluate-real-lalal-stems-on-golden-song",
-  "worktree_path": "/Users/marekkucharski/projects/.pm-worktrees/vgt/issue-55",
+  "branch": "issue-54-document-the-phase-2-stem-separation-wor",
+  "worktree_path": "/Users/marekkucharski/projects/.pm-worktrees/vgt/issue-54",
   "pr_number": null,
   "followup_generation": {
     "fingerprint": "dd18acc66169faee4a79613fd4a167d0358ae5a1da0a62752d68ffbc760f4c41",
@@ -47,13 +47,13 @@
     "46": 1
   },
   "pending_transition": {
-    "issue": 55,
+    "issue": 54,
     "target": "working",
     "event": "agent.started",
     "detail": {
-      "issue": 55,
+      "issue": 54,
       "agent": "codex",
-      "branch": "issue-55-evaluate-real-lalal-stems-on-golden-song"
+      "branch": "issue-54-document-the-phase-2-stem-separation-wor"
     },
     "cleanup": {}
   }

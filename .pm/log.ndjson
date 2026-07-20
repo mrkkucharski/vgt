@@ -5888,3 +5888,5 @@
 {"ts": "2026-07-20T18:59:58.763072+00:00", "project": "vgt", "event": "orchestrator.pass_outcome", "detail": {"outcomes": ["follow-ups-created"], "scheduled": 0, "followups_created": 2}}
 {"ts": "2026-07-20T18:59:58.763363+00:00", "project": "vgt", "event": "orchestrator.pass_completed", "detail": {"message": "scheduler pass completed project completion or follow-up work"}}
 {"ts": "2026-07-20T19:01:11.048458+00:00", "project": "vgt", "event": "orchestrator.issue_selected", "detail": {"issue": 55, "method": "local_priorities"}}
+{"ts": "2026-07-20T19:01:16.269822+00:00", "project": "vgt", "event": "agent.started", "detail": {"issue": 55, "agent": "codex", "branch": "issue-55-evaluate-real-lalal-stems-on-golden-song", "pid": 72542, "process_started_at": "Mon Jul 20 21:01:14 2026"}}
+{"ts": "2026-07-20T19:01:16.286087+00:00", "project": "vgt", "event": "orchestrator.pass_outcome", "detail": {"outcomes": ["deferred", "scheduled"], "scheduled": 1, "followups_created": 0}}
