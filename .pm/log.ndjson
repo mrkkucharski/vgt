@@ -4282,3 +4282,16 @@
 {"ts": "2026-07-20T10:07:03.469540+00:00", "project": "vgt", "event": "orchestrator.no_capacity", "detail": {"message": "work is available, but scheduler capacity or budget headroom is exhausted"}}
 {"ts": "2026-07-20T10:08:09.791199+00:00", "project": "vgt", "event": "agent.ready_for_review", "detail": {"issue": 43, "agent": "claude", "role": "implement"}}
 {"ts": "2026-07-20T10:08:15.547395+00:00", "project": "vgt", "event": "pr.created", "detail": {"issue": 43, "pr": 49, "branch": "issue-43-m1-a-operation-model-separator-seam-fake"}}
+{"ts": "2026-07-20T10:08:18.954738+00:00", "project": "vgt", "event": "agent.review_started", "detail": {"issue": 43, "agent": "claude", "pr": 49, "pid": 40545, "process_started_at": "Mon Jul 20 12:08:17 2026"}}
+{"ts": "2026-07-20T10:08:18.971744+00:00", "project": "vgt", "event": "orchestrator.pass_outcome", "detail": {"outcomes": ["deferred", "scheduled"], "scheduled": 1, "followups_created": 0}}
+{"ts": "2026-07-20T10:09:25.092478+00:00", "project": "vgt", "event": "orchestrator.pass_outcome", "detail": {"outcomes": ["deferred"], "scheduled": 0, "followups_created": 0}}
+{"ts": "2026-07-20T10:09:25.092765+00:00", "project": "vgt", "event": "orchestrator.no_capacity", "detail": {"message": "work is available, but scheduler capacity or budget headroom is exhausted"}}
+{"ts": "2026-07-20T10:10:30.835588+00:00", "project": "vgt", "event": "orchestrator.pass_outcome", "detail": {"outcomes": ["deferred"], "scheduled": 0, "followups_created": 0}}
+{"ts": "2026-07-20T10:10:30.835856+00:00", "project": "vgt", "event": "orchestrator.no_capacity", "detail": {"message": "work is available, but scheduler capacity or budget headroom is exhausted"}}
+{"ts": "2026-07-20T10:11:36.947203+00:00", "project": "vgt", "event": "orchestrator.pass_outcome", "detail": {"outcomes": ["deferred"], "scheduled": 0, "followups_created": 0}}
+{"ts": "2026-07-20T10:11:36.947486+00:00", "project": "vgt", "event": "orchestrator.no_capacity", "detail": {"message": "work is available, but scheduler capacity or budget headroom is exhausted"}}
+{"ts": "2026-07-20T10:12:43.017499+00:00", "project": "vgt", "event": "orchestrator.pass_outcome", "detail": {"outcomes": ["deferred"], "scheduled": 0, "followups_created": 0}}
+{"ts": "2026-07-20T10:12:43.018046+00:00", "project": "vgt", "event": "orchestrator.no_capacity", "detail": {"message": "work is available, but scheduler capacity or budget headroom is exhausted"}}
+{"ts": "2026-07-20T10:13:50.886523+00:00", "project": "vgt", "event": "issue.closed_labels_cleaned", "detail": {"issue": 43, "removed": ["status:working"]}}
+{"ts": "2026-07-20T10:13:51.188987+00:00", "project": "vgt", "event": "worktree.cleaned_up", "detail": {"issue": 43, "branch": "issue-43-m1-a-operation-model-separator-seam-fake", "worktree": "/Users/marekkucharski/projects/.pm-worktrees/vgt/issue-43"}}
+{"ts": "2026-07-20T10:13:59.583986+00:00", "project": "vgt", "event": "orchestrator.issue_selected", "detail": {"issue": 44, "method": "local_priorities"}}
