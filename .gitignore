@@ -20,7 +20,9 @@ __pycache__/
 # the checked-in fixture only.
 test/**/vgt/
 
-# Orchestrator run transcripts: raw agent JSONL, ~6.7MB and growing, larger
-# than the source tree itself. Kept on disk for post-mortems, but the durable
-# record lives in .pm/log.ndjson, the issue threads, and git history.
+# Orchestrator logs: raw per-run agent transcripts and the event stream. Both are
+# written locally and grow without bound; neither is read back from the repo (the
+# event stream is mirrored to the orchestrator's own logs dir), so they are kept
+# on disk for post-mortems but never versioned. `.pm/state.json` stays tracked.
 .pm/runs/
+.pm/log.ndjson
