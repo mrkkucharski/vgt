@@ -15,6 +15,19 @@ vgt "test/Reaper Project/Reaper Project.RPP"
 
 `vgt [project.rpp]` (or the explicit `vgt inspect [project.rpp]`) accepts an explicit `.RPP` path. Without one it selects the only `.RPP` in the current directory; it refuses to guess if there are zero or multiple projects. It reports the project's sample rate, tempo/time signature, and track names/GUIDs.
 
+## Tests and CI
+
+Run the full offline test suite locally with:
+
+```sh
+uv run pytest -q
+```
+
+GitHub Actions runs this same command on Python 3.11 for every push and pull
+request in [the test workflow](.github/workflows/tests.yml). The suite uses
+mocked LALAL v1 fixtures; CI does not receive credentials or make live LALAL
+API calls.
+
 ## Apply inside REAPER
 
 Open and save the target project in REAPER 7.x. In **Actions → Show action list → ReaScript: Load**, load [reascript/vgt_initialize.lua](reascript/vgt_initialize.lua), then run it.
