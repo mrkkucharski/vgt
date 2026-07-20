@@ -4313,3 +4313,13 @@
 {"ts": "2026-07-20T10:21:47.897744+00:00", "project": "vgt", "event": "orchestrator.no_capacity", "detail": {"message": "work is available, but scheduler capacity or budget headroom is exhausted"}}
 {"ts": "2026-07-20T10:22:55.404065+00:00", "project": "vgt", "event": "agent.process_identity_mismatch", "detail": {"issue": 44, "pid": 41005, "expected_process_started_at": "Mon Jul 20 12:14:02 2026", "observed_process_started_at": null, "role": "implement"}}
 {"ts": "2026-07-20T10:22:56.963901+00:00", "project": "vgt", "event": "agent.crashed", "detail": {"issue": 44, "agent": "claude", "exit_code": null, "role": "implement"}}
+{"ts": "2026-07-20T10:23:00.568781+00:00", "project": "vgt", "event": "agent.started", "detail": {"issue": 44, "agent": "claude", "branch": "issue-44-m1-e-consolidate-vgt-artifacts-under-a-v", "pid": 41639, "process_started_at": "Mon Jul 20 12:22:58 2026"}}
+{"ts": "2026-07-20T10:23:00.606252+00:00", "project": "vgt", "event": "orchestrator.pass_outcome", "detail": {"outcomes": ["deferred", "scheduled"], "scheduled": 1, "followups_created": 0}}
+{"ts": "2026-07-20T10:24:06.434654+00:00", "project": "vgt", "event": "orchestrator.pass_outcome", "detail": {"outcomes": ["deferred"], "scheduled": 0, "followups_created": 0}}
+{"ts": "2026-07-20T10:24:06.434918+00:00", "project": "vgt", "event": "orchestrator.no_capacity", "detail": {"message": "work is available, but scheduler capacity or budget headroom is exhausted"}}
+{"ts": "2026-07-20T10:25:12.476526+00:00", "project": "vgt", "event": "orchestrator.pass_outcome", "detail": {"outcomes": ["deferred"], "scheduled": 0, "followups_created": 0}}
+{"ts": "2026-07-20T10:25:12.476799+00:00", "project": "vgt", "event": "orchestrator.no_capacity", "detail": {"message": "work is available, but scheduler capacity or budget headroom is exhausted"}}
+{"ts": "2026-07-20T10:26:18.505468+00:00", "project": "vgt", "event": "orchestrator.pass_outcome", "detail": {"outcomes": ["deferred"], "scheduled": 0, "followups_created": 0}}
+{"ts": "2026-07-20T10:26:18.505764+00:00", "project": "vgt", "event": "orchestrator.no_capacity", "detail": {"message": "work is available, but scheduler capacity or budget headroom is exhausted"}}
+{"ts": "2026-07-20T10:27:25.693350+00:00", "project": "vgt", "event": "agent.process_identity_mismatch", "detail": {"issue": 44, "pid": 41639, "expected_process_started_at": "Mon Jul 20 12:22:58 2026", "observed_process_started_at": null, "role": "implement"}}
+{"ts": "2026-07-20T10:27:27.093716+00:00", "project": "vgt", "event": "agent.crashed", "detail": {"issue": 44, "agent": "claude", "exit_code": null, "role": "implement"}}
