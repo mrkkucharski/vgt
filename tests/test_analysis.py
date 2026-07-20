@@ -7,7 +7,14 @@ import pytest
 from vgt import analysis as analysis_module
 from vgt.analysis import AnalysisError, analyze
 from vgt.cli import main
-from vgt.sidecar import ANALYSIS_STAGES, artifact_namespace_dir, read_sidecar, upgrade, write_sidecar
+from vgt.sidecar import (
+    ANALYSIS_STAGES,
+    artifact_namespace_dir,
+    ensure_artifact_namespace,
+    read_sidecar,
+    upgrade,
+    write_sidecar,
+)
 
 
 FIXTURE_DIR = Path(__file__).parents[1] / "test" / "Reaper Project"
@@ -135,6 +142,56 @@ def test_upgrade_does_not_clobber_an_existing_detected_field() -> None:
     upgraded = upgrade(v3)
 
     assert upgraded["analysis"]["chords"]["detected"]["segments"][0]["chord"] == "G"
+
+
+def test_first_namespace_migrates_only_exact_known_legacy_analysis_artifacts(tmp_path: Path) -> None:
+    project = tmp_path / "song.RPP"
+    legacy_click = tmp_path / "song.vgt-tempo-click.wav"
+    legacy_chords = tmp_path / "song.vgt-chords.txt"
+    legacy_sections = tmp_path / "song.vgt-sections.txt"
+    legacy_click.write_bytes(b"click")
+    legacy_chords.write_text("chords")
+    legacy_sections.write_text("sections")
+    unrelated = tmp_path / "song.vgt-not-ours.txt"
+    unrelated.write_text("leave me alone")
+    sidecar = upgrade(
+        {
+            "schema_version": 5,
+            "analysis": {
+                "tempo": {"value": {"click_artifact_path": legacy_click.name}},
+                "chords": {"value": {"chord_sheet_path": legacy_chords.name}},
+                "sections": {"value": [{"label": "A"}]},
+            },
+        }
+    )
+
+    namespace = ensure_artifact_namespace(sidecar, project)
+    destination = artifact_namespace_dir(project, namespace)
+
+    assert (destination / "tempo-click.wav").read_bytes() == b"click"
+    assert (destination / "chords.txt").read_text() == "chords"
+    assert (destination / "sections.txt").read_text() == "sections"
+    assert sidecar["analysis"]["tempo"]["value"]["click_artifact_path"] == "tempo-click.wav"
+    assert sidecar["analysis"]["chords"]["value"]["chord_sheet_path"] == "chords.txt"
+    assert unrelated.read_text() == "leave me alone"
+    # Copying is deliberately non-destructive: legacy files are harmless
+    # orphans until an explicit cleanup command owns their removal.
+    assert legacy_click.is_file()
+    assert legacy_chords.is_file()
+    assert legacy_sections.is_file()
+
+
+def test_first_namespace_leaves_unrecognized_legacy_paths_unmodified(tmp_path: Path) -> None:
+    project = tmp_path / "song.RPP"
+    unknown = tmp_path / "custom-click.wav"
+    unknown.write_bytes(b"custom")
+    sidecar = upgrade({"analysis": {"tempo": {"value": {"click_artifact_path": unknown.name}}}})
+
+    namespace = ensure_artifact_namespace(sidecar, project)
+
+    assert sidecar["analysis"]["tempo"]["value"]["click_artifact_path"] == unknown.name
+    assert not artifact_namespace_dir(project, namespace).exists()
+    assert unknown.read_bytes() == b"custom"
 
 
 def test_analyze_requires_an_existing_sidecar(tmp_path: Path) -> None:
