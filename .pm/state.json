@@ -1,20 +1,11 @@
 {
-  "current_issue": 54,
-  "session_id": "fc704b81-bc44-4438-a777-a57beb424345",
-  "pid": 73536,
-  "process_started_at": "Mon Jul 20 21:20:01 2026",
-  "agent": "claude",
-  "started_at": "2026-07-20T19:19:59.865035+00:00",
-  "scheduler_stalls": {
-    "blocked_issues": {
-      "55": {
-        "first_seen_at": "2026-07-20T19:02:28.423502+00:00",
-        "last_seen_at": "2026-07-20T19:03:34.495804+00:00",
-        "consecutive_passes": 2,
-        "title": "Evaluate real LALAL stems on golden songs"
-      }
-    }
-  },
+  "current_issue": 57,
+  "session_id": "78e18dfc-e910-4dbb-a71e-ae7d9e5ea03e",
+  "pid": 74492,
+  "process_started_at": "Mon Jul 20 21:24:00 2026",
+  "agent": "codex",
+  "started_at": "2026-07-20T19:23:58.536992+00:00",
+  "scheduler_stalls": {},
   "budget": {
     "window_start": "2026-07-20T15:04:13.826389+00:00",
     "seconds_used": 680.039031,
@@ -27,19 +18,19 @@
   "verification_followups": {
     "f0d8bfc9d2dc6da7a31609184e25c4d66d3986fd2340b33a83e98204fb86691e": "created"
   },
-  "role": "review",
-  "branch": "issue-54-document-the-phase-2-stem-separation-wor",
-  "worktree_path": "/Users/marekkucharski/projects/.pm-worktrees/vgt/issue-54",
-  "pr_number": 56,
+  "role": "implement",
+  "branch": "issue-57-run-opt-in-lalal-v1-smoke-test-on-owned",
+  "worktree_path": "/Users/marekkucharski/projects/.pm-worktrees/vgt/issue-57",
+  "pr_number": null,
   "followup_generation": {
-    "fingerprint": "dd18acc66169faee4a79613fd4a167d0358ae5a1da0a62752d68ffbc760f4c41",
+    "fingerprint": "eaa1c8eb83b29432c37f1a6455cafde3892427c205b6a23c005870525ec76500",
     "items": {
-      "21bfdc4f968c8ce8afba7089c573471e41e50a58f42278174d495ef9e121f414": {
-        "title": "Document the Phase 2 stem-separation workflow",
+      "9b7e6f4005977f32b7c763761628151bdd1bc5419978386e0ab9cbff0a7c26a1": {
+        "title": "Run opt-in LALAL v1 smoke test on owned audio",
         "status": "created"
       },
-      "da831b675c4753dcdad5bb78f29d59a2bc9287d7dff16878ba7ad91b8db27638": {
-        "title": "Evaluate real LALAL stems on golden songs",
+      "106c4fdfdf33660489a98c130d1d94cbc0e8fad20e6c286cdb83f2e9d224a900": {
+        "title": "Evaluate real LALAL stems on owned golden songs",
         "status": "created"
       }
     }
@@ -56,13 +47,13 @@
     "46": 1
   },
   "pending_transition": {
-    "issue": 54,
+    "issue": 57,
     "target": "working",
-    "event": "agent.review_started",
+    "event": "agent.started",
     "detail": {
-      "issue": 54,
-      "agent": "claude",
-      "pr": 56
+      "issue": 57,
+      "agent": "codex",
+      "branch": "issue-57-run-opt-in-lalal-v1-smoke-test-on-owned"
     },
     "cleanup": {}
   }
