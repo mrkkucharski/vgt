@@ -1,10 +1,10 @@
 {
   "current_issue": 41,
-  "session_id": "b8e495a8-23df-478c-9e74-e2dfc9dceb9c",
-  "pid": 26659,
-  "process_started_at": "Mon Jul 20 06:45:06 2026",
-  "agent": "claude",
-  "started_at": "2026-07-20T04:45:04.716413+00:00",
+  "session_id": "7a6697f2-0a40-4c6b-9a51-3c89dcc716b7",
+  "pid": 26838,
+  "process_started_at": "Mon Jul 20 06:46:23 2026",
+  "agent": "codex",
+  "started_at": "2026-07-20T04:46:21.378307+00:00",
   "scheduler_stalls": {},
   "budget": {
     "window_start": "2026-07-20T04:40:18.557409+00:00",
@@ -17,10 +17,10 @@
   "verification_followups": {
     "f0d8bfc9d2dc6da7a31609184e25c4d66d3986fd2340b33a83e98204fb86691e": "created"
   },
-  "role": "implement",
+  "role": "review",
   "branch": "issue-41-problem-in-initialization",
   "worktree_path": "/Users/marekkucharski/projects/.pm-worktrees/vgt/issue-41",
-  "pr_number": null,
+  "pr_number": 42,
   "followup_generation": {
     "fingerprint": "21aabd4138fef85732e2ba4ed6fa65365084fb3986dac0b7f66d093f17bfed99",
     "items": {
@@ -53,11 +53,11 @@
   "pending_transition": {
     "issue": 41,
     "target": "working",
-    "event": "agent.started",
+    "event": "agent.review_started",
     "detail": {
       "issue": 41,
-      "agent": "claude",
-      "branch": "issue-41-problem-in-initialization"
+      "agent": "codex",
+      "pr": 42
     },
     "cleanup": {}
   }

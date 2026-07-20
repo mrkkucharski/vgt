@@ -4219,3 +4219,7 @@
 {"ts": "2026-07-20T04:43:52.438548+00:00", "project": "vgt", "event": "orchestrator.no_capacity", "detail": {"message": "work is available, but scheduler capacity or budget headroom is exhausted"}}
 {"ts": "2026-07-20T04:45:02.536834+00:00", "project": "vgt", "event": "agent.process_identity_mismatch", "detail": {"issue": 41, "pid": 26244, "expected_process_started_at": "Mon Jul 20 06:40:24 2026", "observed_process_started_at": null, "role": "implement"}}
 {"ts": "2026-07-20T04:45:04.714409+00:00", "project": "vgt", "event": "agent.crashed", "detail": {"issue": 41, "agent": "claude", "exit_code": null, "role": "implement"}}
+{"ts": "2026-07-20T04:45:07.984864+00:00", "project": "vgt", "event": "agent.started", "detail": {"issue": 41, "agent": "claude", "branch": "issue-41-problem-in-initialization", "pid": 26659, "process_started_at": "Mon Jul 20 06:45:06 2026"}}
+{"ts": "2026-07-20T04:45:08.009104+00:00", "project": "vgt", "event": "orchestrator.pass_outcome", "detail": {"outcomes": ["deferred", "scheduled"], "scheduled": 1, "followups_created": 0}}
+{"ts": "2026-07-20T04:46:16.146026+00:00", "project": "vgt", "event": "agent.ready_for_review", "detail": {"issue": 41, "agent": "claude", "role": "implement"}}
+{"ts": "2026-07-20T04:46:21.376906+00:00", "project": "vgt", "event": "pr.created", "detail": {"issue": 41, "pr": 42, "branch": "issue-41-problem-in-initialization"}}
