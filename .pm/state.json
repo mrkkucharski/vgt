@@ -1,10 +1,10 @@
 {
   "current_issue": 47,
-  "session_id": "6c3eafd1-a773-4b46-a380-20efb719cc95",
-  "pid": 67878,
-  "process_started_at": "Mon Jul 20 19:33:03 2026",
-  "agent": "codex",
-  "started_at": "2026-07-20T17:33:02.082504+00:00",
+  "session_id": "8c543567-f398-4689-b4a3-6a467592b93c",
+  "pid": 68449,
+  "process_started_at": "Mon Jul 20 19:38:43 2026",
+  "agent": "claude",
+  "started_at": "2026-07-20T17:38:41.314176+00:00",
   "scheduler_stalls": {
     "malformed_responses": {
       "followup_issues": {
@@ -26,10 +26,10 @@
   "verification_followups": {
     "f0d8bfc9d2dc6da7a31609184e25c4d66d3986fd2340b33a83e98204fb86691e": "created"
   },
-  "role": "implement",
+  "role": "review",
   "branch": "issue-47-m1-d-reascript-import-of-stem-tracks-int",
   "worktree_path": "/Users/marekkucharski/projects/.pm-worktrees/vgt/issue-47",
-  "pr_number": null,
+  "pr_number": 53,
   "followup_generation": {
     "fingerprint": "21aabd4138fef85732e2ba4ed6fa65365084fb3986dac0b7f66d093f17bfed99",
     "items": {
@@ -65,11 +65,11 @@
   "pending_transition": {
     "issue": 47,
     "target": "working",
-    "event": "agent.started",
+    "event": "agent.review_started",
     "detail": {
       "issue": 47,
-      "agent": "codex",
-      "branch": "issue-47-m1-d-reascript-import-of-stem-tracks-int"
+      "agent": "claude",
+      "pr": 53
     },
     "cleanup": {}
   }
