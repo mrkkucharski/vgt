@@ -1,10 +1,10 @@
 {
   "current_issue": 57,
-  "session_id": "78e18dfc-e910-4dbb-a71e-ae7d9e5ea03e",
-  "pid": 74492,
-  "process_started_at": "Mon Jul 20 21:24:00 2026",
-  "agent": "codex",
-  "started_at": "2026-07-20T19:23:58.536992+00:00",
+  "session_id": "9db4709b-f643-4616-b768-0423fd9c7ee6",
+  "pid": 75766,
+  "process_started_at": "Mon Jul 20 21:37:31 2026",
+  "agent": "claude",
+  "started_at": "2026-07-20T19:37:29.567149+00:00",
   "scheduler_stalls": {},
   "budget": {
     "window_start": "2026-07-20T15:04:13.826389+00:00",
@@ -18,10 +18,10 @@
   "verification_followups": {
     "f0d8bfc9d2dc6da7a31609184e25c4d66d3986fd2340b33a83e98204fb86691e": "created"
   },
-  "role": "implement",
+  "role": "review",
   "branch": "issue-57-run-opt-in-lalal-v1-smoke-test-on-owned",
   "worktree_path": "/Users/marekkucharski/projects/.pm-worktrees/vgt/issue-57",
-  "pr_number": null,
+  "pr_number": 59,
   "followup_generation": {
     "fingerprint": "eaa1c8eb83b29432c37f1a6455cafde3892427c205b6a23c005870525ec76500",
     "items": {
@@ -49,11 +49,11 @@
   "pending_transition": {
     "issue": 57,
     "target": "working",
-    "event": "agent.started",
+    "event": "agent.review_started",
     "detail": {
       "issue": 57,
-      "agent": "codex",
-      "branch": "issue-57-run-opt-in-lalal-v1-smoke-test-on-owned"
+      "agent": "claude",
+      "pr": 59
     },
     "cleanup": {}
   }
