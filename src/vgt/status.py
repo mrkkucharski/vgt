@@ -151,9 +151,10 @@ def build_status(project_path: Path) -> dict[str, Any]:
         backend_state = record.get("backend_state") if isinstance(record.get("backend_state"), dict) else {}
         state = record.get("status", "pending")
         if state == "completed":
-            state = "cached" if all(
+            outputs = record.get("outputs") if isinstance(record.get("outputs"), list) else []
+            state = "cached" if outputs and all(
                 stem_artifact_status[name]["state"] == "cached"
-                for name in record.get("outputs", [])
+                for name in outputs
                 if name in stem_artifact_status
             ) else "corrupt"
         elif state == "in_progress":
@@ -167,6 +168,8 @@ def build_status(project_path: Path) -> dict[str, Any]:
             "remote_state": backend_state.get("remote_status") or backend_state.get("status"),
             "requested_presets": record.get("requested_presets", {}),
             "effective_presets": record.get("effective_presets", {}),
+            "requested_splitter": (record.get("requested_presets") or {}).get("splitter"),
+            "effective_splitter": (record.get("effective_presets") or {}).get("splitter"),
             "error": record.get("error"),
             "outputs": record.get("outputs", []),
         }
@@ -241,6 +244,11 @@ def format_status(status: dict[str, Any]) -> str:
             detail += f", remote={operation['remote_state']}"
         if operation["error"]:
             detail += f", error={operation['error']}"
+        splitter = operation["requested_splitter"]
+        if splitter:
+            detail += f", splitter={splitter}"
+            if operation["effective_splitter"]:
+                detail += f"→{operation['effective_splitter']}"
         lines.append(f"    {name}: {detail}")
     lines.append("  Stem artifacts:")
     lines.extend(f"    {name}: {artifact['state']} ({artifact['path'] or 'unknown'})" for name, artifact in stems["artifacts"].items())

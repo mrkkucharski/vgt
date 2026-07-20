@@ -584,6 +584,7 @@ def separate(
     guitar_type: str | None = None,
     force: bool = False,
     progress: Callable[[str], None] | None = None,
+    before_submit: Callable[[int], None] | None = None,
 ) -> dict[str, Any]:
     """Run (or resume/refresh) the fixed five-operation split recipe for
     `project` against `backend`, persisting durable checkpoints into the
@@ -594,7 +595,10 @@ def separate(
     recomputes every operation regardless of cache, but a paid recompute is
     still gated by the caller -- this function does not itself decide
     whether spending is acceptable, matching the plan's `--force` vs
-    `--force-stems` split, which is CLI-layer (issue C)).
+    `--force-stems` split, which is CLI-layer (issue C)).  ``before_submit``
+    runs after LALAL's free, authoritative preflight and before the first
+    split submission, so a caller can obtain informed consent without a race
+    between the quote and the charge.
     """
     emit = progress or (lambda _message: None)
     project_path = locate_project(project)
@@ -730,6 +734,13 @@ def separate(
             if not isinstance(preflight_state, dict) or not preflight_state.get("source_id"):
                 continue
             checkpoint_preflight_source(index, preflight_state)
+
+    # The preflight above may upload a source but does not submit a paid task.
+    # Deliberately put the consent hook here, rather than in the CLI before
+    # `separate`, so its cost disclosure uses LALAL's uploaded duration and
+    # current minute balance.
+    if outstanding and before_submit is not None:
+        before_submit(outstanding)
 
     total = len(OPERATION_ORDER)
     errors: list[str] = []

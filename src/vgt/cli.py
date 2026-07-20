@@ -88,22 +88,38 @@ def main(argv: list[str] | None = None) -> int:
             )
             if args.force_stems:
                 report(
-                    f"PAID refresh preview: {len(outstanding)} operations will be submitted; "
-                    "LALAL will report the authoritative minute estimate and remaining balance before any submission."
+                    f"PAID refresh requested for {len(outstanding)} operations; "
+                    "LALAL's authoritative balance and minute estimate will be shown before confirmation."
                 )
                 if not args.accept_stem_cost:
                     if not sys.stdin.isatty():
                         raise AnalysisError("--force-stems in non-interactive mode requires --accept-stem-cost")
-                    answer = input(f"Repeat {len(outstanding)} paid LALAL split operations? Type 'yes' to continue: ")
-                    if answer.strip().lower() != "yes":
-                        raise AnalysisError("paid stem refresh cancelled")
             if not outstanding:
                 print(json.dumps(local_result, indent=2))
                 return 0
             try:
                 with LalalSeparator() as backend:
+                    def confirm_paid_refresh(operation_count: int) -> None:
+                        # `separate` invokes this only after the free LALAL
+                        # preflight has printed the current balance and the
+                        # duration-derived estimate, and before any split
+                        # request can be submitted.
+                        if not args.force_stems or args.accept_stem_cost:
+                            return
+                        answer = input(
+                            f"Repeat {operation_count} paid LALAL split operations at the displayed estimate? "
+                            "Type 'yes' to continue: "
+                        )
+                        if answer.strip().lower() != "yes":
+                            raise SeparationError("paid stem refresh cancelled")
+
                     result = separate(
-                        project, backend, guitar_type=args.guitar, force=args.force_stems, progress=report
+                        project,
+                        backend,
+                        guitar_type=args.guitar,
+                        force=args.force_stems,
+                        progress=report,
+                        before_submit=confirm_paid_refresh if args.force_stems else None,
                     )
             except (LalalError, SeparationError) as exc:
                 # Local detector results were atomically checkpointed before
