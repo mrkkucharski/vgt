@@ -611,7 +611,10 @@ local function apply()
   local chords = analysis and analysis.chords and analysis.chords.value
   local segments = type(chords) == "table" and (chords.segments or chords) or nil
   if type(segments) == "table" then
-    local chords_track = add_locked_track(reaper.CountTracks(0), CHORDS_NAME, true)
+    -- Like Beats, this is an item-label-only track: muting it would only
+    -- make the chord labels unreadable in REAPER, since there is no audio
+    -- on it to silence.
+    local chords_track = add_locked_track(reaper.CountTracks(0), CHORDS_NAME, false)
     for _, chord in ipairs(segments) do
       -- locked = false: chord items are the editing surface for corrections (see add_labeled_item).
       add_labeled_item(chords_track, reference_start + (tonumber(chord.start_seconds) or 0), reference_start + (tonumber(chord.end_seconds) or 0), tostring(chord.chord or chord.label or "N"), false)
