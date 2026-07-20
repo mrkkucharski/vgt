@@ -1,19 +1,11 @@
 {
-  "current_issue": 48,
-  "session_id": "e12108c7-6f12-454b-af30-7168a6ccf677",
-  "pid": 68850,
-  "process_started_at": "Mon Jul 20 19:44:22 2026",
+  "current_issue": 55,
+  "session_id": "48ade5f5-eff8-416e-93c0-2137a4bcdbbf",
+  "pid": 72542,
+  "process_started_at": "Mon Jul 20 21:01:14 2026",
   "agent": "codex",
-  "started_at": "2026-07-20T17:44:20.593884+00:00",
-  "scheduler_stalls": {
-    "malformed_responses": {
-      "followup_issues": {
-        "first_seen_at": "2026-07-20T05:00:14.322263+00:00",
-        "last_seen_at": "2026-07-20T05:00:14.322263+00:00",
-        "consecutive_passes": 1
-      }
-    }
-  },
+  "started_at": "2026-07-20T19:01:12.735087+00:00",
+  "scheduler_stalls": {},
   "budget": {
     "window_start": "2026-07-20T15:04:13.826389+00:00",
     "seconds_used": 680.039031,
@@ -27,26 +19,18 @@
     "f0d8bfc9d2dc6da7a31609184e25c4d66d3986fd2340b33a83e98204fb86691e": "created"
   },
   "role": "implement",
-  "branch": "issue-48-m1-f-stem-separation-evaluation-pass-on",
-  "worktree_path": "/Users/marekkucharski/projects/.pm-worktrees/vgt/issue-48",
+  "branch": "issue-55-evaluate-real-lalal-stems-on-golden-song",
+  "worktree_path": "/Users/marekkucharski/projects/.pm-worktrees/vgt/issue-55",
   "pr_number": null,
   "followup_generation": {
-    "fingerprint": "21aabd4138fef85732e2ba4ed6fa65365084fb3986dac0b7f66d093f17bfed99",
+    "fingerprint": "dd18acc66169faee4a79613fd4a167d0358ae5a1da0a62752d68ffbc760f4c41",
     "items": {
-      "58a644557c200cf86fc80c28daede3f77dddea837633b6f79802196ce75aafe0": {
-        "title": "Track and reconcile only vgt-owned section regions",
+      "21bfdc4f968c8ce8afba7089c573471e41e50a58f42278174d495ef9e121f414": {
+        "title": "Document the Phase 2 stem-separation workflow",
         "status": "created"
       },
-      "312859160e04491379c11f576d4b934502e00be0ad75d8034ca6a2cd5c8d9e14": {
-        "title": "Read renamed section regions back as verified corrections",
-        "status": "created"
-      },
-      "ff50f0ca90ccb59fa5c1a61b675ab575dea84c48a7bb0ff1e426ca3fff8eef7f": {
-        "title": "Safely refresh a vgt-created tempo map after analysis corrections",
-        "status": "created"
-      },
-      "745417e3412dd485618e7d16bb1fdb5db7f4c0bb5736c49908a6fc5c3623e781": {
-        "title": "Restore the required muted Chords track",
+      "da831b675c4753dcdad5bb78f29d59a2bc9287d7dff16878ba7ad91b8db27638": {
+        "title": "Evaluate real LALAL stems on golden songs",
         "status": "created"
       }
     }
@@ -63,13 +47,13 @@
     "46": 1
   },
   "pending_transition": {
-    "issue": 48,
+    "issue": 55,
     "target": "working",
     "event": "agent.started",
     "detail": {
-      "issue": 48,
+      "issue": 55,
       "agent": "codex",
-      "branch": "issue-48-m1-f-stem-separation-evaluation-pass-on"
+      "branch": "issue-55-evaluate-real-lalal-stems-on-golden-song"
     },
     "cleanup": {}
   }
