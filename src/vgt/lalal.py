@@ -68,6 +68,11 @@ class LalalSeparator:
         self._license_key = key
         self._client = client or httpx.Client(base_url=self.base_url, timeout=httpx.Timeout(60.0))
         self._sleep = sleep
+        self.last_preflight: dict[str, float] | None = None
+
+    def remaining_minutes(self) -> float:
+        """Return the account balance without submitting or uploading work."""
+        return float(self._request("POST", "/api/v1/limits/minutes_left/").json()["minutes_left"])
 
     def close(self) -> None:
         self._client.close()
@@ -146,7 +151,8 @@ class LalalSeparator:
             needed += float(duration) * count / 60.0
         if not uploads:
             return {} if legacy_single_source else []
-        minutes_left = float(self._request("POST", "/api/v1/limits/minutes_left/").json()["minutes_left"])
+        minutes_left = self.remaining_minutes()
+        self.last_preflight = {"minutes_left": minutes_left, "estimated_minutes": needed}
         if minutes_left < needed:
             raise InsufficientMinutesError(
                 f"LALAL has {minutes_left:.2f} minutes left but this run needs {needed:.2f}; no tasks were submitted"

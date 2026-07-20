@@ -229,6 +229,26 @@ def test_preflight_reserves_all_five_operations_and_reuses_its_original_upload(t
     ]
 
 
+def test_cost_consent_hook_runs_after_preflight_and_before_any_split(tmp_path: Path) -> None:
+    project = _project_copy(tmp_path)
+    _write_v1_sidecar(project)
+    backend = _PreflightRecordingSeparator()
+    disclosed: list[int] = []
+
+    def decline(operation_count: int) -> None:
+        disclosed.append(operation_count)
+        raise SeparationError("paid stem refresh cancelled")
+
+    with pytest.raises(SeparationError, match="cancelled"):
+        separate(project, backend, guitar_type="electric", before_submit=decline)
+
+    # Upload/preflight is free and establishes the exact quoted duration; no
+    # paid split may start until the callback returns.
+    assert disclosed == [5]
+    assert backend.preflight_sources
+    assert backend.resume_states == []
+
+
 def test_second_run_is_fully_cached_no_backend_calls(tmp_path: Path) -> None:
     project = _project_copy(tmp_path)
     _write_v1_sidecar(project)

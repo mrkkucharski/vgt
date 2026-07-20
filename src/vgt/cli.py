@@ -8,7 +8,10 @@ from pathlib import Path
 import sys
 
 from .analysis import AnalysisError, analyze
+from .lalal import LalalError, LalalSeparator
 from .project import ProjectError, locate_project, read_project
+from .separation import GUITAR_TYPES, SeparationError, separate, separation_preview
+from .sidecar import read_sidecar, write_sidecar
 from .status import StatusError, build_status, format_status
 
 
@@ -36,6 +39,14 @@ def _parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Recompute every stage, ignoring cached results (human-verified stages are still preserved).",
     )
+    analyze_parser.add_argument("--guitar", choices=GUITAR_TYPES, help="Persist and use the declared guitar type for stem separation.")
+    analyze_parser.add_argument(
+        "--force-stems", action="store_true", help="Deliberately repeat paid stem operations (requires cost confirmation)."
+    )
+    analyze_parser.add_argument(
+        "--accept-stem-cost", action="store_true",
+        help="Explicitly acknowledge the displayed paid stem-operation cost; required for non-interactive --force-stems.",
+    )
     status_parser = subparsers.add_parser("status", help="Summarize the read-only vgt sidecar state for a project.")
     status_parser.add_argument("project", nargs="?", help="Path to a .RPP project (defaults to cwd's only .RPP).")
     status_parser.add_argument("--json", action="store_true", help="Print the summary as JSON.")
@@ -60,7 +71,64 @@ def main(argv: list[str] | None = None) -> int:
                 # for `vgt analyze ... | jq` and file redirects.
                 print(f"vgt: {message}", file=sys.stderr, flush=True)
 
-            print(json.dumps(analyze(project, progress=report, force=args.force), indent=2))
+            # `--force` is intentionally local-only.  Paid work can only be
+            # refreshed through the separate, conspicuous --force-stems path.
+            local_result = analyze(project, progress=report, force=args.force)
+            if args.guitar:
+                local_result["analysis"]["stems"]["guitar_type"] = args.guitar
+                write_sidecar(project, local_result)
+
+            preview = separation_preview(project, guitar_type=args.guitar, force=args.force_stems)
+            cached = preview["cached_operations"]
+            outstanding = preview["outstanding_operations"]
+            report(
+                "stem recipe: "
+                f"cached operations ({len(cached)}): {', '.join(cached) or 'none'}; "
+                f"outstanding operations ({len(outstanding)}): {', '.join(outstanding) or 'none'}"
+            )
+            if args.force_stems:
+                report(
+                    f"PAID refresh requested for {len(outstanding)} operations; "
+                    "LALAL's authoritative balance and minute estimate will be shown before confirmation."
+                )
+                if not args.accept_stem_cost:
+                    if not sys.stdin.isatty():
+                        raise AnalysisError("--force-stems in non-interactive mode requires --accept-stem-cost")
+            if not outstanding:
+                print(json.dumps(local_result, indent=2))
+                return 0
+            try:
+                with LalalSeparator() as backend:
+                    def confirm_paid_refresh(operation_count: int) -> None:
+                        # `separate` invokes this only after the free LALAL
+                        # preflight has printed the current balance and the
+                        # duration-derived estimate, and before any split
+                        # request can be submitted.
+                        if not args.force_stems or args.accept_stem_cost:
+                            return
+                        answer = input(
+                            f"Repeat {operation_count} paid LALAL split operations at the displayed estimate? "
+                            "Type 'yes' to continue: "
+                        )
+                        if answer.strip().lower() != "yes":
+                            raise SeparationError("paid stem refresh cancelled")
+
+                    result = separate(
+                        project,
+                        backend,
+                        guitar_type=args.guitar,
+                        force=args.force_stems,
+                        progress=report,
+                        before_submit=confirm_paid_refresh if args.force_stems else None,
+                    )
+            except (LalalError, SeparationError) as exc:
+                # Local detector results were atomically checkpointed before
+                # the network stage.  Make that partial success explicit and
+                # preserve a pipe-friendly representation of it on stdout.
+                report(f"local tempo/key/sections/chords analysis was saved; stem separation failed: {exc}")
+                print(json.dumps(read_sidecar(project), indent=2))
+                return 2
+            print(json.dumps(result, indent=2))
             return 0
         if args.command == "status":
             status = build_status(project)
@@ -85,7 +153,7 @@ def main(argv: list[str] | None = None) -> int:
             file=sys.stderr,
         )
         return 2
-    except (ProjectError, AnalysisError, StatusError) as exc:
+    except (ProjectError, AnalysisError, StatusError, SeparationError) as exc:
         print(f"vgt: {exc}", file=sys.stderr)
         return 2
 

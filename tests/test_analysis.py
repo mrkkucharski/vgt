@@ -1,6 +1,7 @@
 from pathlib import Path
 import json
 import shutil
+import sys
 
 import pytest
 
@@ -549,11 +550,30 @@ def test_sync_style_correction_preserves_original_detected_sections(tmp_path: Pa
     assert sections["detected"] != corrected_sections
 
 
-def test_cli_analyze_invocation(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+def test_cli_analyze_preserves_local_results_when_lalal_is_unavailable(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
     project = _project_copy(tmp_path)
     _write_v1_sidecar(project)
+    monkeypatch.delenv("LALAL_LICENSE_KEY", raising=False)
 
-    assert main(["analyze", str(project)]) == 0
+    assert main(["analyze", str(project)]) == 2
 
-    output = json.loads(capsys.readouterr().out)
+    captured = capsys.readouterr()
+    output = json.loads(captured.out)
     assert output["schema_version"] == 6
+    assert output["analysis"]["tempo"]["value"] is not None
+    assert "local tempo/key/sections/chords analysis was saved" in captured.err
+
+
+def test_cli_force_stems_requires_explicit_noninteractive_acknowledgment(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    project = _project_copy(tmp_path)
+    _write_v1_sidecar(project)
+    monkeypatch.delenv("LALAL_LICENSE_KEY", raising=False)
+    monkeypatch.setattr(sys.stdin, "isatty", lambda: False)
+
+    assert main(["analyze", "--force-stems", str(project)]) == 2
+
+    assert "requires --accept-stem-cost" in capsys.readouterr().err

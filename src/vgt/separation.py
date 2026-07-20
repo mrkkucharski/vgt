@@ -391,6 +391,49 @@ def _operation_is_current(
     return _artifacts_on_disk(project_path, record, artifacts)
 
 
+def separation_preview(
+    project: str | Path | None, *, guitar_type: str | None = None, force: bool = False
+) -> dict[str, Any]:
+    """Return a read-only, operation-level cache view for the paid recipe."""
+    project_path = locate_project(project)
+    try:
+        sidecar = read_sidecar(project_path)
+        source = reference_source_path(project_path, sidecar)
+    except (SidecarError, ProjectError) as exc:
+        raise SeparationError(str(exc)) from exc
+    if not source.is_file():
+        raise SeparationError(f"Reference source file not found: {source}")
+    stems = sidecar["analysis"]["stems"]
+    resolved_guitar_type = guitar_type or stems.get("guitar_type") or "electric"
+    recipe = build_recipe(resolved_guitar_type)
+    original_sha = hash_audio_content(source)
+    operations: list[dict[str, Any]] = []
+    for operation_id in OPERATION_ORDER:
+        definition = recipe[operation_id]
+        record = stems["operations"].get(operation_id, {})
+        if definition.spec.source_role == "original":
+            source_sha = original_sha
+        else:
+            instrumental = stems["artifacts"].get("instrumental")
+            source_sha = instrumental.get("sha256") if isinstance(instrumental, dict) else None
+        current = bool(source_sha) and _operation_is_current(
+            project_path, record, source_sha256=source_sha, current_spec_hash=spec_hash(definition.spec), artifacts=stems["artifacts"]
+        )
+        operations.append({
+            "id": operation_id,
+            "state": "cached" if current and not force else "outstanding",
+            "cached": current and not force,
+            "source_role": definition.spec.source_role,
+            "requested_presets": definition.spec.to_dict(),
+        })
+    return {
+        "guitar_type": resolved_guitar_type,
+        "operations": operations,
+        "cached_operations": [item["id"] for item in operations if item["state"] == "cached"],
+        "outstanding_operations": [item["id"] for item in operations if item["state"] == "outstanding"],
+    }
+
+
 def _shared_source_state(operations: dict[str, Any], source_sha256: str) -> dict[str, Any]:
     """Return a reusable remote-upload identity for these exact source bytes.
 
@@ -448,7 +491,7 @@ def _run_operation(
     # backend_state -- a stale task id from a different request must never
     # be reused as if it were for this one.
     matches_prior_attempt = record.get("source_sha256") == source_sha256 and record.get("spec_hash") == current_spec_hash
-    resumable = matches_prior_attempt and bool(record.get("backend_state"))
+    resumable = not force and matches_prior_attempt and bool(record.get("backend_state"))
     resume_state = dict(record.get("backend_state") or {}) if resumable else {}
     # A fresh operation against bytes another operation already uploaded may
     # reuse that upload.  Do not borrow task state: each paid operation still
@@ -541,6 +584,7 @@ def separate(
     guitar_type: str | None = None,
     force: bool = False,
     progress: Callable[[str], None] | None = None,
+    before_submit: Callable[[int], None] | None = None,
 ) -> dict[str, Any]:
     """Run (or resume/refresh) the fixed five-operation split recipe for
     `project` against `backend`, persisting durable checkpoints into the
@@ -551,7 +595,10 @@ def separate(
     recomputes every operation regardless of cache, but a paid recompute is
     still gated by the caller -- this function does not itself decide
     whether spending is acceptable, matching the plan's `--force` vs
-    `--force-stems` split, which is CLI-layer (issue C)).
+    `--force-stems` split, which is CLI-layer (issue C)).  ``before_submit``
+    runs after LALAL's free, authoritative preflight and before the first
+    split submission, so a caller can obtain informed consent without a race
+    between the quote and the charge.
     """
     emit = progress or (lambda _message: None)
     project_path = locate_project(project)
@@ -602,7 +649,7 @@ def separate(
             operation_source_sha = instrumental_record.get("sha256") if instrumental_record else None
         else:
             operation_source_sha = source_sha256
-        if not _operation_is_current(
+        if force or not _operation_is_current(
             project_path,
             stems["operations"][operation_id],
             source_sha256=operation_source_sha,
@@ -672,6 +719,13 @@ def separate(
             source_states=existing_preflight_states,
             checkpoint=checkpoint_preflight_source,
         )
+        details = getattr(backend, "last_preflight", None)
+        if isinstance(details, dict):
+            emit(
+                "LALAL preflight: "
+                f"{details.get('minutes_left', 0):.2f} minutes remaining; "
+                f"estimated {details.get('estimated_minutes', 0):.2f} minutes for {outstanding} outstanding operations"
+            )
         if not isinstance(preflight_states, list):
             preflight_states = []
         for index, (preflight_sha256, preflight_state) in enumerate(
@@ -680,6 +734,13 @@ def separate(
             if not isinstance(preflight_state, dict) or not preflight_state.get("source_id"):
                 continue
             checkpoint_preflight_source(index, preflight_state)
+
+    # The preflight above may upload a source but does not submit a paid task.
+    # Deliberately put the consent hook here, rather than in the CLI before
+    # `separate`, so its cost disclosure uses LALAL's uploaded duration and
+    # current minute balance.
+    if outstanding and before_submit is not None:
+        before_submit(outstanding)
 
     total = len(OPERATION_ORDER)
     errors: list[str] = []

@@ -6,8 +6,10 @@ from datetime import datetime
 import json
 from pathlib import Path
 from typing import Any
+import wave
 
 from .project import ProjectError, track_source_path
+from .separation import ARTIFACT_FILENAMES, OPERATION_ORDER, artifact_path, hash_audio_content
 from .sidecar import ANALYSIS_STAGES, DETECTED_SPLIT_STAGES, artifact_namespace_dir, sidecar_path
 
 
@@ -115,6 +117,62 @@ def build_status(project_path: Path) -> dict[str, Any]:
         }
 
     artifacts = _artifact_paths(project_path, analysis)
+    stems = analysis.get("stems") if isinstance(analysis.get("stems"), dict) else {}
+    stem_artifacts = stems.get("artifacts") if isinstance(stems.get("artifacts"), dict) else {}
+    stem_operations = stems.get("operations") if isinstance(stems.get("operations"), dict) else {}
+
+    def stem_file_state(record: Any) -> tuple[str, str | None]:
+        if not isinstance(record, dict) or not isinstance(record.get("file"), str):
+            return "missing", None
+        candidate = artifact_path(project_path, record)
+        if not candidate.is_file():
+            return "missing", str(candidate)
+        try:
+            with wave.open(str(candidate), "rb") as handle:
+                valid_wav = handle.getnframes() > 0 and handle.getframerate() > 0
+            valid_hash = candidate.stat().st_size == record.get("size_bytes") and hash_audio_content(candidate) == record.get("sha256")
+        except (OSError, EOFError, wave.Error):
+            valid_wav = valid_hash = False
+        return ("cached" if valid_wav and valid_hash else "corrupt"), str(candidate)
+
+    stem_artifact_status: dict[str, Any] = {}
+    for name in ARTIFACT_FILENAMES:
+        record = stem_artifacts.get(name)
+        file_state, resolved_path = stem_file_state(record)
+        stem_artifact_status[name] = {
+            "state": file_state,
+            "path": resolved_path,
+            "operation": record.get("operation") if isinstance(record, dict) else None,
+            "side": record.get("side") if isinstance(record, dict) else None,
+        }
+    stem_operation_status: dict[str, Any] = {}
+    for operation_id in OPERATION_ORDER:
+        record = stem_operations.get(operation_id) if isinstance(stem_operations.get(operation_id), dict) else {}
+        backend_state = record.get("backend_state") if isinstance(record.get("backend_state"), dict) else {}
+        state = record.get("status", "pending")
+        if state == "completed":
+            outputs = record.get("outputs") if isinstance(record.get("outputs"), list) else []
+            state = "cached" if outputs and all(
+                stem_artifact_status[name]["state"] == "cached"
+                for name in outputs
+                if name in stem_artifact_status
+            ) else "corrupt"
+        elif state == "in_progress":
+            state = "in-progress"
+        elif state == "error":
+            state = "failed"
+        else:
+            state = "outstanding"
+        stem_operation_status[operation_id] = {
+            "state": state,
+            "remote_state": backend_state.get("remote_status") or backend_state.get("status"),
+            "requested_presets": record.get("requested_presets", {}),
+            "effective_presets": record.get("effective_presets", {}),
+            "requested_splitter": (record.get("requested_presets") or {}).get("splitter"),
+            "effective_splitter": (record.get("effective_presets") or {}).get("splitter"),
+            "error": record.get("error"),
+            "outputs": record.get("outputs", []),
+        }
     return {
         "project": {"path": str(project_path)},
         "sidecar": {"path": str(path), "exists": True, "readable": True, "schema_version": raw.get("schema_version")},
@@ -134,6 +192,12 @@ def build_status(project_path: Path) -> dict[str, Any]:
         "artifacts": {
             name: {"path": str(artifact) if artifact else None, "exists": artifact.is_file() if artifact else False}
             for name, artifact in artifacts.items()
+        },
+        "stems": {
+            "backend": stems.get("backend"), "api_version": stems.get("api_version"),
+            "guitar_type": stems.get("guitar_type"), "artifact_namespace": stems.get("artifact_namespace"),
+            "human_verified": bool(stems.get("human_verified")), "verified_at": stems.get("verified_at"),
+            "operations": stem_operation_status, "artifacts": stem_artifact_status,
         },
     }
 
@@ -168,4 +232,24 @@ def format_status(status: dict[str, Any]) -> str:
         "Artifacts:",
     ]
     lines.extend(f"  {name}: {'present' if artifact['exists'] else 'missing'} ({artifact['path'] or 'unknown'})" for name, artifact in status["artifacts"].items())
+    stems = status["stems"]
+    lines += [
+        "Stems:",
+        f"  guitar type: {stems['guitar_type'] or 'electric (default)'}; quality: {'human-verified' if stems['human_verified'] else 'not human-verified'}",
+        "  Operations:",
+    ]
+    for name, operation in stems["operations"].items():
+        detail = operation["state"]
+        if operation["remote_state"]:
+            detail += f", remote={operation['remote_state']}"
+        if operation["error"]:
+            detail += f", error={operation['error']}"
+        splitter = operation["requested_splitter"]
+        if splitter:
+            detail += f", splitter={splitter}"
+            if operation["effective_splitter"]:
+                detail += f"→{operation['effective_splitter']}"
+        lines.append(f"    {name}: {detail}")
+    lines.append("  Stem artifacts:")
+    lines.extend(f"    {name}: {artifact['state']} ({artifact['path'] or 'unknown'})" for name, artifact in stems["artifacts"].items())
     return "\n".join(lines)

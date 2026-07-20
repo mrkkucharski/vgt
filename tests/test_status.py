@@ -58,6 +58,11 @@ def test_status_reports_analysis_corrections_artifacts_and_json(tmp_path: Path, 
     assert status["reference_track"]["source_exists"] is True
     assert status["stages"]["chords"]["detected_present"] is True
     assert status["artifacts"]["section_timeline"]["exists"] is True
+    assert set(status["stems"]["operations"]) == {
+        "vocals-original", "bass-original", "drums-original", "guitar-original", "guitar-instrumental"
+    }
+    assert set(status["stems"]["artifacts"]) == {"vocals", "instrumental", "bass", "drums", "guitar", "backing"}
+    assert status["stems"]["artifacts"]["vocals"]["state"] == "missing"
 
 
 def test_status_handles_older_sidecars_and_missing_sidecars(tmp_path: Path, capsys) -> None:
