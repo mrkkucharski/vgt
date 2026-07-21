@@ -370,6 +370,64 @@ def test_transcription_tracks_follow_their_stems_and_are_unmuted_time_based(tmp_
     )
 
 
+def test_drumscript_record_imports_channel_10_polyphony_immediately_after_drums(tmp_path: Path) -> None:
+    """The generic reference-MIDI importer is also the drums contract.
+
+    This remains an offline Lua-stub test: it verifies the exact source handed
+    to REAPER, rather than trying to interpret MIDI in a live project.
+    """
+    rpp = tmp_path / "song.RPP"
+    namespace = tmp_path / "vgt" / "song-abc123"
+    (namespace / "stems").mkdir(parents=True)
+    (namespace / "transcription").mkdir()
+    (namespace / "stems" / "drums.wav").write_bytes(b"RIFF....WAVEfmt ")
+    # Two zero-delta note-ons on 0x99 are simultaneous GM percussion hits.
+    drum_midi = b"MThd\x00\x00\x00\x06\x00\x00\x00\x01\x01\xe0MTrk\x00\x00\x00\x0c\x00\x99\x24\x64\x00\x99\x26\x64\x00\xff\x2f\x00"
+    midi_path = namespace / "transcription" / "drums.mid"
+    midi_path.write_bytes(drum_midi)
+
+    script = APPLY_SCRIPT.read_text()
+    helpers_end = script.index("local function remove_previous_managed_regions()")
+    lua_program = "\n".join([
+        _click_track_lua_mock(rpp), script[:helpers_end], "local managed_tracks = {}",
+        "add_stem_tracks(0, {artifact_namespace = 'song-abc123', artifacts = {drums = {file = 'vgt/song-abc123/stems/drums.wav', size_bytes = 16, duration_seconds = 2.5}}}, {targets = {drums = {status = 'transcribed', midi_file = 'transcription/drums.mid', events_file = 'transcription/drums.json'}}}, 7.75, managed_tracks)",
+        "local item = __items[2]; io.write(__tracks[1].name, ';', __tracks[2].name, ':', item.values.D_POSITION, ':', item.values.C_BEATATTACHMODE, ':', item.take.source.path, ':', #managed_tracks)",
+    ])
+    result = subprocess.run(["lua", "-", str(rpp)], input=lua_program, text=True, capture_output=True, check=True)
+
+    assert result.stdout == f"[vgt] Drums;[vgt] Drums Ref (MIDI):7.75:0:{midi_path}:2"
+    # The importer receives the recorded artifact itself; it neither rewrites
+    # MIDI bytes nor has a MIDI-event transformation step that could collapse
+    # the simultaneous channel-10 hits.
+    assert midi_path.read_bytes() == drum_midi
+    assert b"\x00\x99\x24\x64\x00\x99\x26\x64" in midi_path.read_bytes()
+
+
+def test_removal_touches_only_the_recorded_vgt_drum_reference(tmp_path: Path) -> None:
+    """A stale managed drum reference is reconciled without touching lookalikes."""
+    rpp = tmp_path / "song.RPP"
+    sidecar = tmp_path / "song.vgt"
+    sidecar.write_text(json.dumps({"managed_track_guids": ["{A11CE-0001}"]}), encoding="utf-8")
+    script = APPLY_SCRIPT.read_text()
+    helpers_end = script.index("local function remove_previous_managed_regions()")
+    lua_program = "\n".join([
+        "local tracks = {{name = '[vgt] Drums Ref (MIDI)', guid = '{A11CE-0001}'}, {name = '[vgt] Drums Ref (MIDI)', guid = '{B00B-0002}'}, {name = 'User Drums', guid = '{C0DE-0003}'}}",
+        "reaper = {}",
+        "function reaper.EnumProjects() return true, arg[1] end",
+        "function reaper.CountTracks() return #tracks end",
+        "function reaper.GetTrack(_, index) return tracks[index + 1] end",
+        "function reaper.GetTrackGUID(track) return track.guid end",
+        "function reaper.GetTrackName(track) return true, track.name end",
+        "function reaper.DeleteTrack(track) for i, candidate in ipairs(tracks) do if candidate == track then table.remove(tracks, i); return end end end",
+        script[:helpers_end],
+        "remove_previous_managed_tracks()",
+        "for _, track in ipairs(tracks) do io.write(track.name, ':', track.guid, ';') end",
+    ])
+    result = subprocess.run(["lua", "-", str(rpp)], input=lua_program, text=True, capture_output=True, check=True)
+
+    assert result.stdout == "[vgt] Drums Ref (MIDI):{B00B-0002};User Drums:{C0DE-0003};"
+
+
 def test_transcription_skips_expected_states_and_appends_orphans_in_target_order(tmp_path: Path) -> None:
     rpp = tmp_path / "song.RPP"
     namespace = tmp_path / "vgt" / "song-abc123" / "transcription"
@@ -402,6 +460,21 @@ def test_transcription_rejects_outside_namespace_midi_path(tmp_path: Path) -> No
     assert "skipping transcription guitar: sidecar MIDI file is outside the expected transcription namespace" in result.stderr
 
 
+def test_drum_transcription_rejects_any_path_except_its_recorded_namespace_file(tmp_path: Path) -> None:
+    rpp = tmp_path / "song.RPP"
+    script = APPLY_SCRIPT.read_text()
+    helpers_end = script.index("local function remove_previous_managed_regions()")
+    lua_program = "\n".join([
+        _click_track_lua_mock(rpp), "function reaper.ShowConsoleMsg(message) io.stderr:write(message) end", script[:helpers_end], "local managed_tracks = {}",
+        "add_stem_tracks(0, {artifact_namespace = 'song-abc123', artifacts = {}}, {targets = {drums = {status = 'transcribed', midi_file = 'transcription/guitar.mid'}}}, 0, managed_tracks)",
+        "io.write(#managed_tracks, ':', #__tracks)",
+    ])
+    result = subprocess.run(["lua", "-", str(rpp)], input=lua_program, text=True, capture_output=True, check=True)
+
+    assert result.stdout == "0:0"
+    assert "skipping transcription drums: sidecar MIDI file is outside the expected transcription namespace" in result.stderr
+
+
 def test_transcription_import_source_and_opt_in_verifier_are_present() -> None:
     script = APPLY_SCRIPT.read_text()
     assert "local function add_reference_midi_track(index, target, transcription, reference_start, managed_tracks, artifact_namespace)" in script
@@ -409,6 +482,7 @@ def test_transcription_import_source_and_opt_in_verifier_are_present() -> None:
     assert "local midi_track = add_locked_track(index, PREFIX .. \" \" .. definition.label .. \" Ref (MIDI)\", false)" in script
     assert 'record.midi_file ~= expected_filename' in script
     assert "analysis and analysis.transcription" in script
+    assert script.index("remove_previous_managed_tracks()") < script.index("add_stem_tracks(reaper.CountTracks(0)")
     assert TRANSCRIPTION_VERIFY_SCRIPT.is_file()
 
 
