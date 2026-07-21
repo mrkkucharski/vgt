@@ -1,26 +1,26 @@
 {
-  "current_issue": 79,
-  "session_id": "6d6f43c5-b3e9-42f2-a8b0-6502e61e2e82",
-  "pid": 33521,
-  "process_started_at": "Tue Jul 21 14:55:26 2026",
+  "current_issue": 80,
+  "session_id": "3a9b9659-821a-4133-9123-e264a8df3a5e",
+  "pid": 33902,
+  "process_started_at": "Tue Jul 21 14:58:53 2026",
   "agent": "codex",
-  "started_at": "2026-07-21T12:55:24.111706+00:00",
+  "started_at": "2026-07-21T12:58:51.973544+00:00",
   "scheduler_stalls": {},
   "budget": {
     "window_start": "2026-07-21T11:44:16.758773+00:00",
-    "seconds_used": 681.668283,
+    "seconds_used": 886.3802969999999,
     "dollars_used": 0.0,
     "seconds_used_by_agent": {
-      "codex": 681.668283
+      "codex": 886.3802969999999
     }
   },
   "verification_followups": {
     "f0d8bfc9d2dc6da7a31609184e25c4d66d3986fd2340b33a83e98204fb86691e": "created"
   },
-  "role": "review",
-  "branch": "issue-79-t-b-basicpitchtranscriber-pinned-uvx-sub",
-  "worktree_path": "/Users/marekkucharski/projects/.pm-worktrees/vgt/issue-79",
-  "pr_number": 85,
+  "role": "implement",
+  "branch": "issue-80-t-d-reascript-import-of-vgt-ref-midi-tra",
+  "worktree_path": "/Users/marekkucharski/projects/.pm-worktrees/vgt/issue-80",
+  "pr_number": null,
   "followup_generation": {
     "fingerprint": "71c63f065a33718d76704b02fc07bebfd2dd591df8a3b818d11f1e4be2ba5384",
     "items": {
@@ -55,13 +55,13 @@
     "79": 1
   },
   "pending_transition": {
-    "issue": 79,
+    "issue": 80,
     "target": "working",
-    "event": "agent.review_started",
+    "event": "agent.started",
     "detail": {
-      "issue": 79,
+      "issue": 80,
       "agent": "codex",
-      "pr": 85
+      "branch": "issue-80-t-d-reascript-import-of-vgt-ref-midi-tra"
     },
     "cleanup": {}
   }
