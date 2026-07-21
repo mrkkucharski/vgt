@@ -1,36 +1,33 @@
 {
-  "current_issue": 76,
-  "session_id": "0989b9f6-21e9-4873-8f8c-ef83c553741c",
-  "pid": 16029,
-  "process_started_at": "Tue Jul 21 09:06:59 2026",
-  "agent": "codex",
-  "started_at": "2026-07-21T07:06:58.008719+00:00",
+  "current_issue": 78,
+  "session_id": "6a55f7fc-aa4c-4762-aa3c-e956ca658d05",
+  "pid": 27550,
+  "process_started_at": "Tue Jul 21 13:44:21 2026",
+  "agent": "claude",
+  "started_at": "2026-07-21T11:44:19.963851+00:00",
   "scheduler_stalls": {
     "blocked_issues": {
       "67": {
         "first_seen_at": "2026-07-20T21:40:34.197615+00:00",
-        "last_seen_at": "2026-07-21T07:05:48.778391+00:00",
-        "consecutive_passes": 511,
+        "last_seen_at": "2026-07-21T11:43:10.071703+00:00",
+        "consecutive_passes": 761,
         "title": "Run and record the complete live REAPER verification suite"
       }
     }
   },
   "budget": {
-    "window_start": "2026-07-21T04:42:16.777981+00:00",
-    "seconds_used": 2809.6558700000005,
-    "dollars_used": 4.2670951,
-    "seconds_used_by_agent": {
-      "claude": 1934.27971,
-      "codex": 875.37616
-    }
+    "window_start": "2026-07-21T11:44:16.758773+00:00",
+    "seconds_used": 0.0,
+    "dollars_used": 0.0,
+    "seconds_used_by_agent": {}
   },
   "verification_followups": {
     "f0d8bfc9d2dc6da7a31609184e25c4d66d3986fd2340b33a83e98204fb86691e": "created"
   },
-  "role": "review",
-  "branch": "issue-76-feat-support-opt-in-strings-and-keys-pia",
-  "worktree_path": "/Users/marekkucharski/projects/.pm-worktrees/vgt/issue-76",
-  "pr_number": 77,
+  "role": "implement",
+  "branch": "issue-78-t-a-transcription-stage-foundation-trans",
+  "worktree_path": "/Users/marekkucharski/projects/.pm-worktrees/vgt/issue-78",
+  "pr_number": null,
   "followup_generation": {
     "fingerprint": "71c63f065a33718d76704b02fc07bebfd2dd591df8a3b818d11f1e4be2ba5384",
     "items": {
@@ -63,13 +60,13 @@
     "76": 3
   },
   "pending_transition": {
-    "issue": 76,
+    "issue": 78,
     "target": "working",
-    "event": "agent.review_started",
+    "event": "agent.started",
     "detail": {
-      "issue": 76,
-      "agent": "codex",
-      "pr": 77
+      "issue": 78,
+      "agent": "claude",
+      "branch": "issue-78-t-a-transcription-stage-foundation-trans"
     },
     "cleanup": {}
   }
