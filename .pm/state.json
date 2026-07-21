@@ -1,48 +1,50 @@
 {
   "current_issue": 95,
-  "session_id": "d8d7d5be-d1cf-4183-83d7-47ccab94edb0",
-  "pid": 53816,
-  "process_started_at": "Tue Jul 21 20:59:22 2026",
-  "agent": "claude",
-  "started_at": "2026-07-21T18:59:21.541431+00:00",
+  "session_id": "03dd98ac-696a-4825-88dc-4e7437ff6cfd",
+  "pid": 54298,
+  "process_started_at": "Tue Jul 21 21:06:08 2026",
+  "agent": "codex",
+  "started_at": "2026-07-21T19:06:07.335732+00:00",
   "scheduler_stalls": {
     "blocked_issues": {
       "92": {
         "first_seen_at": "2026-07-21T18:09:53.229638+00:00",
-        "last_seen_at": "2026-07-21T18:58:09.771425+00:00",
-        "consecutive_passes": 44,
+        "last_seen_at": "2026-07-21T19:04:57.488089+00:00",
+        "consecutive_passes": 50,
         "title": "Practice C: integrate active-session handoff with initialization and document the workflow"
       },
       "91": {
         "first_seen_at": "2026-07-21T18:09:53.230089+00:00",
-        "last_seen_at": "2026-07-21T18:58:09.771818+00:00",
-        "consecutive_passes": 44,
+        "last_seen_at": "2026-07-21T19:04:57.488725+00:00",
+        "consecutive_passes": 50,
         "title": "Practice B: implement safe REAPER section-loop Start and Restore actions"
       },
       "90": {
         "first_seen_at": "2026-07-21T18:09:53.230437+00:00",
-        "last_seen_at": "2026-07-21T18:58:09.771988+00:00",
-        "consecutive_passes": 44,
+        "last_seen_at": "2026-07-21T19:04:57.488978+00:00",
+        "consecutive_passes": 50,
         "title": "Practice A: add sidecar practice-session state and pure reconciliation model"
       },
       "89": {
         "first_seen_at": "2026-07-21T18:09:53.230884+00:00",
-        "last_seen_at": "2026-07-21T18:58:09.772129+00:00",
-        "consecutive_passes": 44,
+        "last_seen_at": "2026-07-21T19:04:57.489177+00:00",
+        "consecutive_passes": 50,
         "title": "Define the first practice-workflow milestone"
       }
     }
   },
   "budget": {
     "window_start": "2026-07-21T17:38:55.585848+00:00",
-    "seconds_used": 0.0,
-    "dollars_used": 0.0,
-    "seconds_used_by_agent": {}
+    "seconds_used": 403.430638,
+    "dollars_used": 0.5792653,
+    "seconds_used_by_agent": {
+      "claude": 403.430638
+    }
   },
   "verification_followups": {
     "f0d8bfc9d2dc6da7a31609184e25c4d66d3986fd2340b33a83e98204fb86691e": "created"
   },
-  "role": "review",
+  "role": "fix",
   "branch": "issue-95-d-c-drum-event-metadata-cache-status-int",
   "worktree_path": "/Users/marekkucharski/projects/.pm-worktrees/vgt/issue-95",
   "pr_number": 101,
@@ -69,16 +71,17 @@
     "72": 4,
     "76": 3,
     "78": 2,
-    "79": 2
+    "79": 2,
+    "95": 1
   },
   "pending_transition": {
     "issue": 95,
     "target": "working",
-    "event": "agent.review_started",
+    "event": "agent.fix_started",
     "detail": {
       "issue": 95,
-      "agent": "claude",
-      "pr": 101
+      "agent": "codex",
+      "fix_count": 1
     },
     "cleanup": {}
   }
