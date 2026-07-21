@@ -1,16 +1,16 @@
 {
   "current_issue": 72,
-  "session_id": "a1e038c6-eddb-4602-ae12-6569e978681c",
-  "pid": 10179,
-  "process_started_at": "Tue Jul 21 08:01:50 2026",
-  "agent": "codex",
-  "started_at": "2026-07-21T06:01:48.882607+00:00",
+  "session_id": "7c85978c-580d-4629-a362-b9eaae6e80af",
+  "pid": 10899,
+  "process_started_at": "Tue Jul 21 08:09:39 2026",
+  "agent": "claude",
+  "started_at": "2026-07-21T06:09:37.870814+00:00",
   "scheduler_stalls": {
     "blocked_issues": {
       "67": {
         "first_seen_at": "2026-07-20T21:40:34.197615+00:00",
-        "last_seen_at": "2026-07-21T06:00:39.917089+00:00",
-        "consecutive_passes": 453,
+        "last_seen_at": "2026-07-21T06:08:29.928371+00:00",
+        "consecutive_passes": 460,
         "title": "Run and record the complete live REAPER verification suite"
       }
     }
@@ -26,7 +26,7 @@
   "verification_followups": {
     "f0d8bfc9d2dc6da7a31609184e25c4d66d3986fd2340b33a83e98204fb86691e": "created"
   },
-  "role": "fix",
+  "role": "review",
   "branch": "issue-72-detect-chords-from-stems-as-well-as-the",
   "worktree_path": "/Users/marekkucharski/projects/.pm-worktrees/vgt/issue-72",
   "pr_number": 74,
@@ -63,11 +63,11 @@
   "pending_transition": {
     "issue": 72,
     "target": "working",
-    "event": "agent.fix_started",
+    "event": "agent.review_started",
     "detail": {
       "issue": 72,
-      "agent": "codex",
-      "fix_count": 4
+      "agent": "claude",
+      "pr": 74
     },
     "cleanup": {}
   }
