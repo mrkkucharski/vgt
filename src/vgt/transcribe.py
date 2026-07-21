@@ -66,6 +66,12 @@ _TARGET_FREQUENCY_HZ: dict[str, tuple[float, float]] = {
 
 BASIC_PITCH_PACKAGE_PIN = "basic-pitch[onnx]==0.4.0"
 BASIC_PITCH_SERIALIZATION = "onnx"
+DRUMSCRIPT_PACKAGE_PIN = "drumscript==0.1.6"
+# This is the isolated interpreter contract D-B will implement.  It is part of
+# the identity now so changing it later cannot reuse a MIDI made by another
+# runtime.
+DRUMSCRIPT_RUNTIME_VERSION = "python==3.11"
+DRUMSCRIPT_CLASSIFIER_MODE = "standard-polyphonic"
 
 # Overrides the whole `uvx ...` invocation with a pre-installed binary, e.g.
 # `uv tool install --python 3.11 --with "setuptools<81" "basic-pitch[onnx]==0.4.0"`
@@ -100,7 +106,7 @@ def notes_artifact_name(target: str) -> str:
 
 
 @dataclass(frozen=True)
-class TranscriptionSpec:
+class BasicPitchSpec:
     """Everything that changes one target's transcribed output. One spec per
     target, derived from `default_spec_for_target` -- so retuning one
     target's thresholds never changes another target's `settings_hash`."""
@@ -121,6 +127,28 @@ class TranscriptionSpec:
         return asdict(self)
 
 
+@dataclass(frozen=True)
+class DrumScriptSpec:
+    """Settings that can affect DrumScript events or the MIDI derived from them.
+
+    D-A deliberately defines identity only; it does not install or execute
+    DrumScript.  `time_signature` is optional because the planned backend may
+    use the detected signature as an input in a later issue.
+    """
+
+    backend: str
+    package_pin: str
+    runtime_version: str
+    classifier_mode: str
+    time_signature: tuple[int, int] | None
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)
+
+
+TranscriptionSpec = BasicPitchSpec | DrumScriptSpec
+
+
 def default_spec_for_target(
     target: str,
     *,
@@ -128,11 +156,22 @@ def default_spec_for_target(
     package_pin: str = BASIC_PITCH_PACKAGE_PIN,
     serialization: str = BASIC_PITCH_SERIALIZATION,
     midi_tempo: float | None = None,
+    drumscript_runtime_version: str = DRUMSCRIPT_RUNTIME_VERSION,
+    drumscript_classifier_mode: str = DRUMSCRIPT_CLASSIFIER_MODE,
+    drumscript_time_signature: tuple[int, int] | None = None,
 ) -> TranscriptionSpec:
     """The per-target default spec (see the frequency table above)."""
     validate_target(target)
+    if backend == "drumscript":
+        return DrumScriptSpec(
+            backend=backend,
+            package_pin=package_pin if package_pin != BASIC_PITCH_PACKAGE_PIN else DRUMSCRIPT_PACKAGE_PIN,
+            runtime_version=drumscript_runtime_version,
+            classifier_mode=drumscript_classifier_mode,
+            time_signature=drumscript_time_signature,
+        )
     minimum_frequency_hz, maximum_frequency_hz = _TARGET_FREQUENCY_HZ.get(target, (None, None))
-    return TranscriptionSpec(
+    return BasicPitchSpec(
         backend=backend,
         package_pin=package_pin,
         serialization=serialization,
@@ -194,6 +233,12 @@ def target_input_hash(path: Path, artifact: dict[str, Any] | None) -> str:
 
 
 def _settings_dict(spec: TranscriptionSpec) -> dict[str, Any]:
+    if isinstance(spec, DrumScriptSpec):
+        return {
+            "runtime_version": spec.runtime_version,
+            "classifier_mode": spec.classifier_mode,
+            "time_signature": list(spec.time_signature) if spec.time_signature else None,
+        }
     return {
         "onset_threshold": spec.onset_threshold,
         "frame_threshold": spec.frame_threshold,
@@ -212,7 +257,7 @@ def missing_source_entry(spec: TranscriptionSpec, source_role: str) -> dict[str,
     return {
         "backend": spec.backend,
         "package_pin": spec.package_pin,
-        "serialization": spec.serialization,
+        "serialization": spec.serialization if isinstance(spec, BasicPitchSpec) else None,
         "source_role": source_role,
         "input_hash": None,
         "settings_hash": spec_hash(spec),
@@ -223,7 +268,7 @@ def missing_source_entry(spec: TranscriptionSpec, source_role: str) -> dict[str,
         "pitch_range_midi": None,
         "first_note_s": None,
         "last_note_s": None,
-        "midi_tempo": spec.midi_tempo,
+        "midi_tempo": spec.midi_tempo if isinstance(spec, BasicPitchSpec) else None,
         "settings": _settings_dict(spec),
         "transcribed_at": None,
         "error": None,
@@ -243,7 +288,7 @@ def transcribed_entry(
     return {
         "backend": spec.backend,
         "package_pin": spec.package_pin,
-        "serialization": spec.serialization,
+        "serialization": spec.serialization if isinstance(spec, BasicPitchSpec) else None,
         "source_role": source_role,
         "input_hash": input_hash,
         "settings_hash": spec_hash(spec),
@@ -254,7 +299,7 @@ def transcribed_entry(
         "pitch_range_midi": list(result.pitch_range_midi) if result.pitch_range_midi else None,
         "first_note_s": result.first_note_s,
         "last_note_s": result.last_note_s,
-        "midi_tempo": spec.midi_tempo,
+        "midi_tempo": spec.midi_tempo if isinstance(spec, BasicPitchSpec) else None,
         "settings": _settings_dict(spec),
         "transcribed_at": transcribed_at,
         "error": None,
@@ -269,7 +314,7 @@ def error_entry(spec: TranscriptionSpec, *, source_role: str, input_hash: str | 
     return {
         "backend": spec.backend,
         "package_pin": spec.package_pin,
-        "serialization": spec.serialization,
+        "serialization": spec.serialization if isinstance(spec, BasicPitchSpec) else None,
         "source_role": source_role,
         "input_hash": input_hash,
         "settings_hash": spec_hash(spec),
@@ -280,7 +325,7 @@ def error_entry(spec: TranscriptionSpec, *, source_role: str, input_hash: str | 
         "pitch_range_midi": None,
         "first_note_s": None,
         "last_note_s": None,
-        "midi_tempo": spec.midi_tempo,
+        "midi_tempo": spec.midi_tempo if isinstance(spec, BasicPitchSpec) else None,
         "settings": _settings_dict(spec),
         "transcribed_at": None,
         "error": error,
@@ -315,6 +360,60 @@ class Transcriber(Protocol):
     ) -> TranscriptionResult: ...
 
 
+class TranscriberRouter(Protocol):
+    """The sole target-to-backend selection seam.
+
+    Production and tests both call this interface; analysis never decides a
+    backend from a target name itself.
+    """
+
+    def for_target(self, target: str) -> Transcriber: ...
+
+    def spec_for_target(self, target: str, *, midi_tempo: float | None) -> TranscriptionSpec: ...
+
+
+@dataclass(frozen=True)
+class TargetTranscriberRouter:
+    """Routes a configured set of targets to the drum backend.
+
+    The production constructor intentionally leaves that set empty until D-F.
+    Tests can pass ``drumscript_targets=("drums",)`` with fakes to exercise
+    the exact same route without importing either real model.
+    """
+
+    basic_pitch: Transcriber
+    drumscript: Transcriber
+    drumscript_targets: tuple[str, ...] = ()
+    drumscript_package_pin: str = DRUMSCRIPT_PACKAGE_PIN
+    drumscript_runtime_version: str = DRUMSCRIPT_RUNTIME_VERSION
+    drumscript_classifier_mode: str = DRUMSCRIPT_CLASSIFIER_MODE
+    drumscript_time_signature: tuple[int, int] | None = None
+
+    def for_target(self, target: str) -> Transcriber:
+        validate_target(target)
+        return self.drumscript if target in self.drumscript_targets else self.basic_pitch
+
+    def spec_for_target(self, target: str, *, midi_tempo: float | None) -> TranscriptionSpec:
+        backend = self.for_target(target).name
+        if backend == "drumscript":
+            return default_spec_for_target(
+                target,
+                backend=backend,
+                package_pin=self.drumscript_package_pin,
+                midi_tempo=midi_tempo,
+                drumscript_runtime_version=self.drumscript_runtime_version,
+                drumscript_classifier_mode=self.drumscript_classifier_mode,
+                drumscript_time_signature=self.drumscript_time_signature,
+            )
+        return default_spec_for_target(target, backend=backend, midi_tempo=midi_tempo)
+
+
+def production_transcriber_router() -> TranscriberRouter:
+    """Current production route.  D-F is the only issue allowed to add drums."""
+    basic_pitch = BasicPitchTranscriber()
+    return TargetTranscriberRouter(basic_pitch=basic_pitch, drumscript=DrumScriptTranscriber())
+
+
 def _hz_to_midi(hz: float) -> int:
     return round(69 + 12 * math.log2(hz / 440.0))
 
@@ -334,8 +433,10 @@ def _content_seed(source: Path, spec: TranscriptionSpec, salt: str) -> int:
 
 def _fake_notes(source: Path, spec: TranscriptionSpec, note_count: int = 4) -> list[tuple[float, float, int, int]]:
     """A short, deterministic note list: (start_s, end_s, pitch_midi, velocity)."""
-    min_pitch = _hz_to_midi(spec.minimum_frequency_hz or 82.4)  # standard-tuning low E as a fallback center
-    max_pitch = _hz_to_midi(spec.maximum_frequency_hz or 880.0)
+    minimum_frequency_hz = spec.minimum_frequency_hz if isinstance(spec, BasicPitchSpec) else None
+    maximum_frequency_hz = spec.maximum_frequency_hz if isinstance(spec, BasicPitchSpec) else None
+    min_pitch = _hz_to_midi(minimum_frequency_hz or 82.4)  # standard-tuning low E as a fallback center
+    max_pitch = _hz_to_midi(maximum_frequency_hz or 880.0)
     if max_pitch <= min_pitch:
         max_pitch = min_pitch + 24
     span = max_pitch - min_pitch
@@ -427,7 +528,8 @@ class FakeTranscriber:
         notes = _fake_notes(source, spec)
         midi_path = destination_dir / "transcription.mid"
         notes_path = destination_dir / "transcription.csv"
-        tempo_bpm = spec.midi_tempo or 120.0
+        tempo_bpm = spec.midi_tempo if isinstance(spec, BasicPitchSpec) else None
+        tempo_bpm = tempo_bpm or 120.0
         _write_midi(midi_path, notes, tempo_bpm)
         _write_notes_csv(notes_path, notes, source, spec)
 
@@ -465,7 +567,7 @@ def _basic_pitch_base_command(package_pin: str) -> list[str]:
     ]
 
 
-def build_basic_pitch_argv(source: Path, destination_dir: Path, spec: TranscriptionSpec) -> list[str]:
+def build_basic_pitch_argv(source: Path, destination_dir: Path, spec: BasicPitchSpec) -> list[str]:
     """The full `basic-pitch` command line for one target. Pure and
     side-effect-free so tests can assert on it without running `uvx` or a
     model (per the issue's acceptance criteria)."""
@@ -626,6 +728,8 @@ class BasicPitchTranscriber:
         progress: Callable[[str], None] | None = None,
     ) -> TranscriptionResult:
         emit = progress or (lambda _message: None)
+        if not isinstance(spec, BasicPitchSpec):
+            raise TranscriptionError("BasicPitchTranscriber requires a BasicPitchSpec")
         argv = build_basic_pitch_argv(source, destination_dir, spec)
 
         if shutil.which(argv[0]) is None:
@@ -670,3 +774,25 @@ class BasicPitchTranscriber:
             midi_path=midi_path,
             notes_path=notes_path,
         )
+
+
+class DrumScriptTranscriber:
+    """Placeholder backend for the D-A routing seam.
+
+    D-B supplies the pinned isolated subprocess and artifact normalization.
+    Keeping this class dependency-free ensures merely constructing the
+    production router cannot download or import DrumScript, Torch, Torchaudio,
+    or Demucs.
+    """
+
+    name = "drumscript"
+
+    def transcribe(
+        self,
+        source: Path,
+        destination_dir: Path,
+        spec: TranscriptionSpec,
+        progress: Callable[[str], None] | None = None,
+    ) -> TranscriptionResult:
+        del source, destination_dir, spec, progress
+        raise TranscriptionError("DrumScript transcription is not implemented until D-B")

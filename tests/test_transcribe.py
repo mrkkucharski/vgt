@@ -4,8 +4,12 @@ import struct
 import pytest
 
 from vgt.transcribe import (
+    BasicPitchSpec,
+    DrumScriptSpec,
+    DrumScriptTranscriber,
     VALID_TARGETS,
     FakeTranscriber,
+    TargetTranscriberRouter,
     TranscriptionError,
     default_spec_for_target,
     midi_artifact_name,
@@ -13,6 +17,7 @@ from vgt.transcribe import (
     notes_artifact_name,
     resolve_target_source,
     spec_hash,
+    production_transcriber_router,
     target_input_hash,
     transcribed_entry,
     validate_target,
@@ -68,6 +73,49 @@ def test_spec_hash_changes_when_a_target_setting_changes() -> None:
     retuned = replace(spec, onset_threshold=0.7)
 
     assert spec_hash(spec) != spec_hash(retuned)
+
+
+def test_drumscript_spec_identity_covers_every_drumscript_setting() -> None:
+    from dataclasses import replace
+
+    spec = default_spec_for_target(
+        "drums", backend="drumscript", drumscript_time_signature=(7, 8)
+    )
+    assert isinstance(spec, DrumScriptSpec)
+    assert spec.package_pin == "drumscript==0.1.6"
+    assert spec.runtime_version == "python==3.11"
+    assert spec.classifier_mode == "standard-polyphonic"
+    assert spec.time_signature == (7, 8)
+    assert spec_hash(spec) != spec_hash(replace(spec, classifier_mode="rudiment"))
+    assert spec_hash(spec) != spec_hash(replace(spec, runtime_version="python==3.12"))
+    assert spec_hash(spec) != spec_hash(replace(spec, time_signature=(4, 4)))
+
+
+def test_router_routes_only_drums_to_an_injected_drum_backend() -> None:
+    class FakeBasicPitch(FakeTranscriber):
+        name = "basic-pitch"
+
+    class FakeDrumScript(FakeTranscriber):
+        name = "drumscript"
+
+    basic_pitch = FakeBasicPitch()
+    drumscript = FakeDrumScript()
+    router = TargetTranscriberRouter(basic_pitch, drumscript, drumscript_targets=("drums",))
+
+    for target in VALID_TARGETS:
+        assert router.for_target(target) is (drumscript if target == "drums" else basic_pitch)
+    assert isinstance(router.spec_for_target("drums", midi_tempo=120.0), DrumScriptSpec)
+    assert isinstance(router.spec_for_target("guitar", midi_tempo=120.0), BasicPitchSpec)
+
+
+def test_production_router_has_not_switched_drums_to_drumscript() -> None:
+    router = production_transcriber_router()
+
+    assert router.for_target("drums").name == "basic-pitch"
+    assert router.for_target("guitar").name == "basic-pitch"
+    assert isinstance(router.spec_for_target("drums", midi_tempo=120.0), BasicPitchSpec)
+    assert isinstance(router.for_target("drums"), type(router.for_target("guitar")))
+    assert not isinstance(router.for_target("drums"), DrumScriptTranscriber)
 
 
 def test_validate_target_accepts_every_documented_target() -> None:
