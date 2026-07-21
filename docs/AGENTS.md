@@ -26,6 +26,14 @@ LALAL-only stem workflow.
   need to bundle, download, or install it.
 - Platform is macOS (Apple Silicon). Python 3.11 + `uv` per the plan's stack.
 
+## Human-owned REAPER verification
+
+Live verification in REAPER is always performed by the human/user. Agents must
+not create, start, or execute issues whose purpose or acceptance criteria
+require opening REAPER, running a ReaScript against a live project, or manually
+checking REAPER output. Keep such work out of the autonomous issue queue and
+document any required user verification in the relevant user-facing guidance.
+
 ## Test project
 
 A real REAPER project fixture lives at **`test/Reaper Project/`** — use it for
