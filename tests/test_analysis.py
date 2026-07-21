@@ -695,6 +695,24 @@ def test_cli_extra_stem_requires_explicit_noninteractive_acknowledgment(
     assert "requires --accept-stem-cost" in capsys.readouterr().err
 
 
+def test_cli_pending_persisted_extra_stem_still_requires_noninteractive_acknowledgment(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    project = _project_copy(tmp_path)
+    _write_v1_sidecar(project)
+    sidecar = read_sidecar(project)
+    sidecar["analysis"]["stems"]["optional_stems"] = ["strings"]
+    write_sidecar(project, sidecar)
+    monkeypatch.setattr(sys.stdin, "isatty", lambda: False)
+    monkeypatch.setattr("vgt.cli.LalalSeparator", lambda: pytest.fail("must not submit paid work"))
+
+    # A prior opt-in request can survive an interrupted/declined run.  A
+    # retry without repeating the flag must not silently charge for it.
+    assert main(["analyze", "--guitar", "electric", str(project)]) == 2
+
+    assert "requires --accept-stem-cost" in capsys.readouterr().err
+
+
 def test_cli_accepts_keys_piano_extra_stem_alias(
     tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:

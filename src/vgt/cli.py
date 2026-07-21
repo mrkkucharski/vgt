@@ -56,7 +56,7 @@ def _parser() -> argparse.ArgumentParser:
     )
     analyze_parser.add_argument(
         "--accept-stem-cost", action="store_true",
-        help="Explicitly acknowledge the displayed paid stem-operation cost; required for non-interactive --force-stems.",
+        help="Explicitly acknowledge the displayed paid stem-operation cost; required for non-interactive forced or opt-in stem work.",
     )
     status_parser = subparsers.add_parser("status", help="Summarize the read-only vgt sidecar state for a project.")
     status_parser.add_argument("project", nargs="?", help="Path to a .RPP project (defaults to cwd's only .RPP).")
@@ -138,7 +138,19 @@ def main(argv: list[str] | None = None) -> int:
                     # An opt-in extra creates new paid work. It therefore
                     # uses the same consent path as a forced refresh, after
                     # preflight has supplied LALAL's authoritative quote.
-                    requires_paid_confirmation = args.force_stems or bool(args.extra_stem)
+                    # An interrupted opt-in request remains in the sidecar so
+                    # it can resume safely.  It must still use the opt-in
+                    # confirmation path, even when this invocation omits
+                    # --extra-stem; otherwise a declined request could turn
+                    # into an unacknowledged charge on a later retry.
+                    outstanding_optional_operations = {
+                        f"{stem}-original" for stem in preview["optional_stems"]
+                    }.intersection(outstanding)
+                    requires_paid_confirmation = (
+                        args.force_stems
+                        or bool(args.extra_stem)
+                        or bool(outstanding_optional_operations)
+                    )
                     if requires_paid_confirmation and outstanding:
                         report(
                             f"PAID stem operations requested for {len(outstanding)} operations; "
