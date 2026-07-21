@@ -48,7 +48,7 @@ def _parser() -> argparse.ArgumentParser:
     analyze_parser.add_argument(
         "--extra-stem",
         action="append",
-        choices=(*OPTIONAL_STEMS, "keys"),
+        choices=(*OPTIONAL_STEMS, "keys", "keys/piano"),
         help="Also separate this opt-in instrument (repeat for both strings and keys/piano).",
     )
     analyze_parser.add_argument(
@@ -145,7 +145,7 @@ def main(argv: list[str] | None = None) -> int:
                             "LALAL's authoritative balance and minute estimate will be shown before confirmation."
                         )
                         if not args.accept_stem_cost and not sys.stdin.isatty():
-                            raise AnalysisError("paid stem operations in non-interactive mode require --accept-stem-cost")
+                            raise AnalysisError("a paid stem operation in non-interactive mode requires --accept-stem-cost")
                     if outstanding:
                         def confirm_paid_operations(operation_count: int) -> None:
                             # `separate` invokes this only after the free LALAL

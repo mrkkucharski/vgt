@@ -17,6 +17,7 @@ from vgt.separation import (
     artifact_path,
     build_recipe,
     hash_audio_content,
+    normalize_optional_stems,
     separate,
     separation_preview,
     spec_hash,
@@ -613,3 +614,7 @@ def test_opt_in_strings_and_piano_are_priced_persisted_and_cached_on_retry(tmp_p
     retry = _RecordingSeparator(FakeSeparator())
     separate(project, retry, guitar_type="electric")
     assert retry.calls == []
+
+
+def test_keys_piano_is_a_persisted_piano_alias() -> None:
+    assert normalize_optional_stems(("keys/piano", "strings")) == ("strings", "piano")

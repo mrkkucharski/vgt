@@ -183,7 +183,8 @@ vgt analyze --guitar electric "$PROJECT"
 ```
 
 If the mix needs them, request additional paid separations explicitly. Use
-`--extra-stem strings`, `--extra-stem piano` (or the alias `keys`), or repeat
+`--extra-stem strings`, `--extra-stem piano` (also accepted as `keys` or
+`keys/piano`), or repeat
 the option for both. These are never included in the default recipe:
 
 ```sh

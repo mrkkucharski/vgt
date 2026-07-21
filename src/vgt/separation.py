@@ -152,8 +152,8 @@ class OperationDef:
 
 
 def normalize_optional_stems(optional_stems: tuple[str, ...] | list[str] | None) -> tuple[str, ...]:
-    """Canonicalize explicit opt-in choices; ``keys`` maps to ``piano``."""
-    normalized = {"piano" if value == "keys" else value for value in (optional_stems or ())}
+    """Canonicalize explicit opt-in choices; keys/piano aliases map to ``piano``."""
+    normalized = {"piano" if value in {"keys", "keys/piano"} else value for value in (optional_stems or ())}
     invalid = normalized.difference(OPTIONAL_STEMS)
     if invalid:
         raise SeparationError(f"optional stems must be drawn from {OPTIONAL_STEMS}, got {sorted(invalid)!r}")
