@@ -1,20 +1,11 @@
 {
-  "current_issue": 78,
-  "session_id": "dd33587d-681e-4771-a21b-54aac3cb72e6",
-  "pid": 30972,
-  "process_started_at": "Tue Jul 21 14:23:53 2026",
+  "current_issue": 79,
+  "session_id": "09117439-f7b0-46de-a51f-2b1cacb0aaf9",
+  "pid": 31346,
+  "process_started_at": "Tue Jul 21 14:28:28 2026",
   "agent": "claude",
-  "started_at": "2026-07-21T12:23:51.567771+00:00",
-  "scheduler_stalls": {
-    "blocked_issues": {
-      "67": {
-        "first_seen_at": "2026-07-20T21:40:34.197615+00:00",
-        "last_seen_at": "2026-07-21T12:22:41.870826+00:00",
-        "consecutive_passes": 796,
-        "title": "Run and record the complete live REAPER verification suite"
-      }
-    }
-  },
+  "started_at": "2026-07-21T12:28:26.730360+00:00",
+  "scheduler_stalls": {},
   "budget": {
     "window_start": "2026-07-21T11:44:16.758773+00:00",
     "seconds_used": 477.418858,
@@ -26,10 +17,10 @@
   "verification_followups": {
     "f0d8bfc9d2dc6da7a31609184e25c4d66d3986fd2340b33a83e98204fb86691e": "created"
   },
-  "role": "review",
-  "branch": "issue-78-t-a-transcription-stage-foundation-trans",
-  "worktree_path": "/Users/marekkucharski/projects/.pm-worktrees/vgt/issue-78",
-  "pr_number": 84,
+  "role": "implement",
+  "branch": "issue-79-t-b-basicpitchtranscriber-pinned-uvx-sub",
+  "worktree_path": "/Users/marekkucharski/projects/.pm-worktrees/vgt/issue-79",
+  "pr_number": null,
   "followup_generation": {
     "fingerprint": "71c63f065a33718d76704b02fc07bebfd2dd591df8a3b818d11f1e4be2ba5384",
     "items": {
@@ -63,13 +54,13 @@
     "78": 2
   },
   "pending_transition": {
-    "issue": 78,
+    "issue": 79,
     "target": "working",
-    "event": "agent.review_started",
+    "event": "agent.started",
     "detail": {
-      "issue": 78,
+      "issue": 79,
       "agent": "claude",
-      "pr": 84
+      "branch": "issue-79-t-b-basicpitchtranscriber-pinned-uvx-sub"
     },
     "cleanup": {}
   }
