@@ -182,7 +182,7 @@ def build_status(project_path: Path) -> dict[str, Any]:
         },
         "managed_area": {
             "managed_track_guids": raw.get("managed_track_guids", []), "folder_name": config.get("folder_name"),
-            "mirror_name": config.get("mirror_name"), "tempo_map_applied": config.get("tempo_map_applied"),
+            "tempo_map_applied": config.get("tempo_map_applied"),
         },
         "stages": stages,
         "timestamps": {
@@ -215,7 +215,7 @@ def format_status(status: dict[str, Any]) -> str:
     ]
     managed = status["managed_area"]
     lines += [
-        f"Managed area: {len(managed['managed_track_guids']) if isinstance(managed['managed_track_guids'], list) else 0} tracks; folder={managed['folder_name'] or 'unknown'}; mirror={managed['mirror_name'] or 'unknown'}; tempo map applied={managed['tempo_map_applied'] if managed['tempo_map_applied'] is not None else 'unknown'}",
+        f"Managed area: {len(managed['managed_track_guids']) if isinstance(managed['managed_track_guids'], list) else 0} tracks; folder={managed['folder_name'] or 'unknown'}; tempo map applied={managed['tempo_map_applied'] if managed['tempo_map_applied'] is not None else 'unknown'}",
         "Analysis:",
     ]
     for name, stage in status["stages"].items():

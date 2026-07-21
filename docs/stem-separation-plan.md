@@ -179,7 +179,7 @@ unchanged to paid binary operations:
 - **Sidecar `.vgt`** is the manifest; add a `stems` block (not the plan's
   separate `manifest.json`).
 - **ReaScript `vgt_initialize.lua`** already imports media as `[vgt]` tracks
-  (the mirror); extend it to import stem WAVs the same way.
+  (the click track); extend it to import stem WAVs the same way.
 
 ### Artifact layout
 
@@ -319,7 +319,7 @@ clean. (If a user chooses to version their own project, adding their own
 
 ### D — ReaScript import of stems (priority:medium, M)
 
-- Extend `vgt_initialize.lua`: after the mirror, read `analysis.stems.artifacts`
+- Extend `vgt_initialize.lua`: read `analysis.stems.artifacts`
   from the sidecar and create six `[vgt]` stem tracks — `[vgt] Vocals`,
   `[vgt] Instrumental`, `[vgt] Bass`, `[vgt] Drums`, `[vgt] Guitar`, and
   `[vgt] Backing (no guitar)` — **time-based** positioning, offset-shifted,

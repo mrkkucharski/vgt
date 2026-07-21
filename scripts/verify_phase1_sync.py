@@ -150,7 +150,7 @@ def run_live(baseline: Path) -> dict[str, object]:
         sidecar_path = project.with_suffix(".vgt")
 
         select = root / "select-reference.lua"
-        _write_script(select, 'reaper.SetExtState("vgt", "reference_index", "1", false)\n')
+        _write_script(select, 'reaper.SetExtState("vgt", "reference_index", "0", false)\n')
         save = root / "save.lua"
         first_done = root / "first-saved"
         _save_script(save, first_done)

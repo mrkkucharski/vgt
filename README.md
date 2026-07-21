@@ -35,15 +35,14 @@ Open and save the target project in REAPER 7.x. In **Actions → Show action lis
 
 The action is intentionally the mutation path: it uses REAPER's API and never text-edits an RPP. It:
 
-- pops up a menu of the project's own (non-`[vgt]`) tracks and asks which one is the **reference** to mirror;
-- creates a REAPER folder named `[vgt] <reference track name>` (e.g. `[vgt] The Seven Rivers (Full March - 3_00)`) with a `[vgt] Mirror` child;
-- clones only the chosen reference track's file-backed media to the mirror track, without adding sends, changing source tracks, or changing project tempo/sample rate;
-- writes the adjacent `.vgt` sidecar — named after the project, e.g. `Reaper Project.vgt` — with its two created track GUIDs and config recording the reference track;
+- determines which of the project's own (non-`[vgt]`) tracks have file-backed media — REAPER-native items like a count-in click track never count — and asks which one is the **reference** only if more than one qualifies; with exactly one candidate it is used automatically, with none it errors;
+- creates a REAPER track named `[vgt] <reference track name>` (e.g. `[vgt] The Seven Rivers (Full March - 3_00)`), without adding sends, changing source tracks, or changing project tempo/sample rate; it becomes a folder only once analysis/stem tracks are nested under it, otherwise it stays a plain track;
+- writes the adjacent `.vgt` sidecar — named after the project, e.g. `Reaper Project.vgt` — with its created track GUID(s) and config recording the reference track;
 - on re-apply, deletes only tracks whose GUID occurs in the sidecar **and** whose current name begins `[vgt]`, then recreates the same area, carrying forward any `analysis` block `vgt analyze` had already written (schema stays version 1 until analysis exists, then becomes version 3).
 
-The folder/mirror are therefore idempotent and original tracks remain untouched. REAPER-native click-source items have no file to clone, so choosing a click track mirrors nothing. `vgt apply` validates the project path and directs you to this action rather than silently falling back to unsafe RPP editing.
+The managed area is therefore idempotent and original tracks remain untouched. `vgt apply` validates the project path and directs you to this action rather than silently falling back to unsafe RPP editing.
 
-Automation can skip the menu by setting the `vgt`/`reference_index` ExtState (a 0-based index over the non-`[vgt]` tracks) before running the action; interactive users are always prompted.
+Automation can force a specific choice (even with only one candidate) by setting the `vgt`/`reference_index` ExtState (a 0-based index over the non-`[vgt]` candidate tracks) before running the action.
 
 Use a copy of any project when experimenting; the included `test/Reaper Project` fixture is read-mostly.
 
@@ -230,8 +229,8 @@ records a stable namespace, and all generated artifacts stay below
 folder is moved or backed up.
 
 After separation, run the same initialization ReaScript from **Actions → Show
-action list → ReaScript: Load** again. Alongside the mirror and Phase 1
-annotations, it imports the valid artifacts additively as `[vgt] Vocals`,
+action list → ReaScript: Load** again. Alongside the Phase 1 annotations, it
+imports the valid artifacts additively as `[vgt] Vocals`,
 `[vgt] Instrumental`, `[vgt] Bass`, `[vgt] Drums`, `[vgt] Guitar`, and `[vgt]
 Backing (no guitar)` tracks. Re-applying reconciles only vgt-owned tracks.
 

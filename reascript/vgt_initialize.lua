@@ -3,7 +3,6 @@
 -- It is the only writer of REAPER projects: the Python CLI intentionally never edits RPP text.
 
 local PREFIX = "[vgt]"
-local MIRROR_NAME = PREFIX .. " Mirror"
 local CHORDS_NAME = PREFIX .. " Chords"
 local BEATS_NAME = PREFIX .. " Beats"
 local CLICK_NAME = PREFIX .. " Click"
@@ -45,22 +44,41 @@ local function starts_with_vgt(track)
   return track_name(track):sub(1, #PREFIX) == PREFIX
 end
 
--- Candidate reference tracks are the project's own (non-vgt) tracks, in order.
+-- A reference must be real audio vgt can later resolve a source path for
+-- (see project.track_source_path): at least one item whose active take
+-- has a file-backed source. This is deliberately false for tracks with no
+-- items, MIDI-only tracks, and REAPER-native generators such as a count-in
+-- click track (<SOURCE CLICK>, which has no file at all).
+local function has_file_backed_media(track)
+  for item_index = 0, reaper.CountTrackMediaItems(track) - 1 do
+    local item = reaper.GetTrackMediaItem(track, item_index)
+    local take = reaper.GetActiveTake(item)
+    if take then
+      local filename = reaper.GetMediaSourceFileName(reaper.GetMediaItemTake_Source(take), "")
+      if filename ~= "" then return true end
+    end
+  end
+  return false
+end
+
+-- Candidate reference tracks are the project's own (non-vgt) tracks that
+-- actually have file-backed audio on them, in order.
 local function candidate_tracks()
   local candidates = {}
   for index = 0, reaper.CountTracks(0) - 1 do
     local track = reaper.GetTrack(0, index)
-    if not starts_with_vgt(track) then candidates[#candidates + 1] = track end
+    if not starts_with_vgt(track) and has_file_backed_media(track) then candidates[#candidates + 1] = track end
   end
   return candidates
 end
 
--- Ask which track is the reference to mirror. Automation (e.g. the headless
+-- Ask which track is the reference. Automation (e.g. the headless
 -- verifier) can preselect it via the "vgt"/"reference_index" ExtState, a 0-based
--- index over candidate_tracks(); interactive users get a popup menu. Returns the
--- chosen track, or nil if the user dismissed the menu.
+-- index over candidate_tracks(). A lone candidate is used without prompting;
+-- otherwise interactive users get a popup menu. Returns the chosen track, or
+-- nil if the user dismissed the menu.
 local function choose_reference(candidates)
-  if #candidates == 0 then error("No non-[vgt] tracks to use as a reference.") end
+  if #candidates == 0 then error("No non-[vgt] tracks with file-backed media to use as a reference.") end
 
   local forced = reaper.GetExtState("vgt", "reference_index")
   if forced ~= "" then
@@ -70,6 +88,8 @@ local function choose_reference(candidates)
     end
     return candidates[index + 1]
   end
+
+  if #candidates == 1 then return candidates[1] end
 
   local labels = {}
   for position, track in ipairs(candidates) do
@@ -332,32 +352,6 @@ local function find_track_by_guid(guid)
   return nil
 end
 
-local function copy_file_backed_items(source, destination)
-  for item_index = 0, reaper.CountTrackMediaItems(source) - 1 do
-    local source_item = reaper.GetTrackMediaItem(source, item_index)
-    local source_take = reaper.GetActiveTake(source_item)
-    if source_take then
-      local source_media = reaper.GetMediaItemTake_Source(source_take)
-      -- Lua returns the filename directly (unlike several APIs that return an
-      -- `ok, value` pair). Keeping it in one variable avoids passing nil to
-      -- PCM_Source_CreateFromFile and leaving an empty item behind.
-      local filename = reaper.GetMediaSourceFileName(source_media, "")
-      if filename ~= "" then
-        local item = reaper.AddMediaItemToTrack(destination)
-        reaper.SetMediaItemInfo_Value(item, "D_POSITION", reaper.GetMediaItemInfo_Value(source_item, "D_POSITION"))
-        reaper.SetMediaItemInfo_Value(item, "D_LENGTH", reaper.GetMediaItemInfo_Value(source_item, "D_LENGTH"))
-        local take = reaper.AddTakeToMediaItem(item)
-        reaper.SetMediaItemTake_Source(take, reaper.PCM_Source_CreateFromFile(filename))
-        reaper.SetMediaItemTakeInfo_Value(take, "D_STARTOFFS", reaper.GetMediaItemTakeInfo_Value(source_take, "D_STARTOFFS"))
-        reaper.SetMediaItemTakeInfo_Value(take, "D_PLAYRATE", reaper.GetMediaItemTakeInfo_Value(source_take, "D_PLAYRATE"))
-        reaper.SetMediaItemTakeInfo_Value(take, "D_PITCH", reaper.GetMediaItemTakeInfo_Value(source_take, "D_PITCH"))
-        -- Tempo maps must never stretch vgt-owned audio.
-        reaper.SetMediaItemInfo_Value(item, "C_BEATATTACHMODE", 0)
-      end
-    end
-  end
-end
-
 local function add_labeled_item(track, start_time, end_time, label, locked)
   if end_time <= start_time then return end
   local item = reaper.AddMediaItemToTrack(track)
@@ -615,7 +609,7 @@ local function add_sections(sections, reference_start)
   return region_ids
 end
 
-local function write_settings(folder, managed_tracks, managed_region_ids, reference, tempo_map_applied, tempo_map_fingerprint, tempo_data_fp, guitar_type)
+local function write_settings(managed_tracks, managed_region_ids, reference, tempo_map_applied, tempo_map_fingerprint, tempo_data_fp, guitar_type)
   -- Preserve any analysis the Python CLI already wrote (schema v4); a fresh
   -- sidecar with no prior analysis stays schema v1, matching Phase 0's
   -- long-standing on-disk format.
@@ -640,13 +634,13 @@ local function write_settings(folder, managed_tracks, managed_region_ids, refere
   "schema_version": %d,%s
   "managed_track_guids": [%s],
   "managed_region_ids": [%s],
-  "config": {"reference_track_name": "%s", "reference_track_guid": "%s", "folder_name": "%s", "mirror_name": "%s", "tempo_map_applied": %s, "tempo_map_fingerprint": "%s", "tempo_data_fingerprint": "%s", "guitar_type": "%s"}
+  "config": {"reference_track_name": "%s", "reference_track_guid": "%s", "folder_name": "%s", "tempo_map_applied": %s, "tempo_map_fingerprint": "%s", "tempo_data_fingerprint": "%s", "guitar_type": "%s"}
 }
 ]],
     schema_version, analysis_field,
     table.concat(guids, ", "), table.concat(region_ids, ", "),
     escaped(track_name(reference)), reaper.GetTrackGUID(reference),
-    escaped(PREFIX .. " " .. track_name(reference)), escaped(MIRROR_NAME), tempo_map_applied and "true" or "false",
+    escaped(PREFIX .. " " .. track_name(reference)), tempo_map_applied and "true" or "false",
     escaped(tempo_map_fingerprint or ""), escaped(tempo_data_fp or ""), escaped(guitar_type)))
   file:close()
   local renamed, rename_error = os.rename(temporary_path, sidecar_path())
@@ -703,18 +697,12 @@ local function apply()
   reaper.InsertTrackAtIndex(insert_at, true)
   local folder = reaper.GetTrack(0, insert_at)
   reaper.GetSetMediaTrackInfo_String(folder, "P_NAME", folder_name, true)
+  -- Tentatively open a folder; if nothing ends up nested under it (no tempo,
+  -- click, stems, chords, or sections to add), it is flattened back to a
+  -- plain track below rather than left as a folder with no children.
   reaper.SetMediaTrackInfo_Value(folder, "I_FOLDERDEPTH", 1)
 
-  reaper.InsertTrackAtIndex(insert_at + 1, true)
-  local mirror = reaper.GetTrack(0, insert_at + 1)
-  reaper.GetSetMediaTrackInfo_String(mirror, "P_NAME", MIRROR_NAME, true)
-  -- Close the folder after all analysis tracks have been added below.
-  reaper.SetMediaTrackInfo_Value(mirror, "I_FOLDERDEPTH", 0)
-
-  -- Clone only the chosen reference track's file-backed media. Every other track stays untouched.
-  copy_file_backed_items(reference, mirror)
-
-  local managed_tracks = {folder, mirror}
+  local managed_tracks = {folder}
   local reference_start, reference_end = reference_start_and_end(reference)
   local tempo = analysis and analysis.tempo and analysis.tempo.value
   local artifact_namespace = analysis and analysis.stems and analysis.stems.artifact_namespace
@@ -749,7 +737,7 @@ local function apply()
       -- cannot prove the map is still ours, so it is never touched again;
       -- offer the latest tempo data non-invasively instead.
       tempo_data_fp = ""
-      offer_beats_track(insert_at + 2, tempo, reference_start, reference_end, managed_tracks)
+      offer_beats_track(insert_at + 1, tempo, reference_start, reference_end, managed_tracks)
     elseif is_single_default_tempo_marker() then
       tempo_map_applied = apply_tempo_map(tempo, reference_start)
       if tempo_map_applied then
@@ -760,15 +748,13 @@ local function apply()
       end
     else
       tempo_data_fp = ""
-      offer_beats_track(insert_at + 2, tempo, reference_start, reference_end, managed_tracks)
+      offer_beats_track(insert_at + 1, tempo, reference_start, reference_end, managed_tracks)
     end
   end
 
   if type(tempo) == "table" then
     add_click_track(reaper.CountTracks(0), tempo, reference_start, managed_tracks, artifact_namespace)
   end
-
-  add_stem_tracks(reaper.CountTracks(0), analysis and analysis.stems, reference_start, managed_tracks)
 
   local chords = analysis and analysis.chords and analysis.chords.value
   local segments = type(chords) == "table" and (chords.segments or chords) or nil
@@ -784,12 +770,20 @@ local function apply()
     managed_tracks[#managed_tracks + 1] = chords_track
   end
 
+  add_stem_tracks(reaper.CountTracks(0), analysis and analysis.stems, reference_start, managed_tracks)
+
   local managed_region_ids = add_sections(analysis and analysis.sections and analysis.sections.value, reference_start) or {}
 
-  -- The folder must close after every child we appended.
-  reaper.SetMediaTrackInfo_Value(managed_tracks[#managed_tracks], "I_FOLDERDEPTH", -1)
+  if #managed_tracks > 1 then
+    -- The folder must close after every child we appended.
+    reaper.SetMediaTrackInfo_Value(managed_tracks[#managed_tracks], "I_FOLDERDEPTH", -1)
+  else
+    -- Nothing ended up nested under the folder track -- flatten it back to a
+    -- plain track rather than leave a folder with no children.
+    reaper.SetMediaTrackInfo_Value(folder, "I_FOLDERDEPTH", 0)
+  end
 
-  write_settings(folder, managed_tracks, managed_region_ids, reference, tempo_map_applied, tempo_map_fingerprint, tempo_data_fp, guitar_type)
+  write_settings(managed_tracks, managed_region_ids, reference, tempo_map_applied, tempo_map_fingerprint, tempo_data_fp, guitar_type)
   reaper.MarkProjectDirty(0)
   reaper.UpdateArrange()
   reaper.PreventUIRefresh(-1)

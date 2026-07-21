@@ -16,8 +16,6 @@ def test_apply_uses_reaper_api_and_never_edits_rpp_text() -> None:
     assert "reaper.InsertTrackAtIndex" in script
     assert "reaper.DeleteTrack" in script
     assert "reaper.AddMediaItemToTrack" in script
-    assert 'local filename = reaper.GetMediaSourceFileName(source_media, "")' in script
-    assert "local ok, filename = reaper.GetMediaSourceFileName" not in script
     assert "managed[reaper.GetTrackGUID(track)] and starts_with_vgt(track)" in script
     assert "GetSetProjectInfo_String" not in script
 
@@ -28,8 +26,96 @@ def test_apply_asks_for_a_reference_track_and_names_the_folder_after_it() -> Non
     assert "gfx.showmenu" in script
     assert 'reaper.GetExtState("vgt", "reference_index")' in script
     assert 'PREFIX .. " " .. track_name(reference)' in script
-    # Only the chosen reference is mirrored, not every track.
-    assert "copy_file_backed_items(reference, mirror)" in script
+
+
+def test_has_file_backed_media_requires_a_real_file_backed_item() -> None:
+    """REAPER-native generators (e.g. a count-in `<SOURCE CLICK>` track) have
+    an active take but no underlying file, so they must not count."""
+    script = APPLY_SCRIPT.read_text()
+    helpers_end = script.index("local function read_sidecar_body()")
+    lua_program = "\n".join(
+        [
+            "reaper = {}",
+            "local tracks = {",
+            "  {items = {{take = {source = 'song.mp3'}}}},",  # file-backed
+            "  {items = {{take = {source = ''}}}},",  # click-source, no file
+            "  {items = {}},",  # no items at all
+            "}",
+            "function reaper.CountTrackMediaItems(track) return #track.items end",
+            "function reaper.GetTrackMediaItem(track, index) return track.items[index + 1] end",
+            "function reaper.GetActiveTake(item) return item.take end",
+            "function reaper.GetMediaItemTake_Source(take) return take.source end",
+            "function reaper.GetMediaSourceFileName(source, buf) return source end",
+            script[:helpers_end],
+            "io.write(tostring(has_file_backed_media(tracks[1])), ':', tostring(has_file_backed_media(tracks[2])), ':', tostring(has_file_backed_media(tracks[3])))",
+        ]
+    )
+    result = subprocess.run(["lua", "-", "song.RPP"], input=lua_program, text=True, capture_output=True, check=True)
+    assert result.stdout == "true:false:false"
+
+
+def test_candidate_tracks_excludes_vgt_and_non_file_backed_tracks() -> None:
+    script = APPLY_SCRIPT.read_text()
+    helpers_end = script.index("local function read_sidecar_body()")
+    lua_program = "\n".join(
+        [
+            "reaper = {}",
+            "local tracks = {",
+            "  {name = 'Click', items = {{take = {source = ''}}}},",
+            "  {name = 'Song A', items = {{take = {source = 'a.mp3'}}}},",
+            "  {name = '[vgt] Beats', items = {{take = {source = 'b.wav'}}}},",
+            "  {name = 'Song B', items = {{take = {source = 'b.mp3'}}}},",
+            "}",
+            "function reaper.CountTracks() return #tracks end",
+            "function reaper.GetTrack(_, index) return tracks[index + 1] end",
+            "function reaper.GetTrackName(track) return true, track.name end",
+            "function reaper.CountTrackMediaItems(track) return #track.items end",
+            "function reaper.GetTrackMediaItem(track, index) return track.items[index + 1] end",
+            "function reaper.GetActiveTake(item) return item.take end",
+            "function reaper.GetMediaItemTake_Source(take) return take.source end",
+            "function reaper.GetMediaSourceFileName(source, buf) return source end",
+            script[:helpers_end],
+            "local names = {}",
+            "for _, track in ipairs(candidate_tracks()) do names[#names + 1] = track.name end",
+            "io.write(table.concat(names, ','))",
+        ]
+    )
+    result = subprocess.run(["lua", "-", "song.RPP"], input=lua_program, text=True, capture_output=True, check=True)
+    assert result.stdout == "Song A,Song B"
+
+
+def test_choose_reference_skips_the_menu_for_a_lone_candidate() -> None:
+    script = APPLY_SCRIPT.read_text()
+    helpers_end = script.index("local function read_sidecar_body()")
+    lua_program = "\n".join(
+        [
+            "reaper = {}",
+            "function reaper.GetExtState() return '' end",
+            "gfx = setmetatable({}, {__index = function() error('menu should not be shown for a lone candidate') end})",
+            script[:helpers_end],
+            "local track = {name = 'Only Song'}",
+            "io.write(tostring(choose_reference({track}) == track))",
+        ]
+    )
+    result = subprocess.run(["lua", "-", "song.RPP"], input=lua_program, text=True, capture_output=True, check=True)
+    assert result.stdout == "true"
+
+
+def test_choose_reference_still_honors_an_automation_override_with_one_candidate() -> None:
+    script = APPLY_SCRIPT.read_text()
+    helpers_end = script.index("local function read_sidecar_body()")
+    lua_program = "\n".join(
+        [
+            "reaper = {}",
+            "function reaper.GetExtState() return '0' end",
+            "gfx = setmetatable({}, {__index = function() error('menu should not be shown when forced') end})",
+            script[:helpers_end],
+            "local track = {name = 'Only Song'}",
+            "io.write(tostring(choose_reference({track}) == track))",
+        ]
+    )
+    result = subprocess.run(["lua", "-", "song.RPP"], input=lua_program, text=True, capture_output=True, check=True)
+    assert result.stdout == "true"
 
 
 def test_apply_declares_and_persists_guitar_type_with_an_automation_override() -> None:
@@ -62,7 +148,7 @@ def test_beats_and_chords_tracks_are_both_unmuted() -> None:
     assert 'reaper.SetMediaTrackInfo_Value(track, "B_MUTE", muted and 1 or 0)' in script
     assert "local function offer_beats_track(index, tempo, reference_start, reference_end, managed_tracks)" in script
     assert "local beats = add_locked_track(index, BEATS_NAME, false)" in script
-    assert "offer_beats_track(insert_at + 2, tempo, reference_start, reference_end, managed_tracks)" in script
+    assert "offer_beats_track(insert_at + 1, tempo, reference_start, reference_end, managed_tracks)" in script
     assert "add_locked_track(reaper.CountTracks(0), CHORDS_NAME, false)" in script
 
 
@@ -527,7 +613,7 @@ local tracks = {{
     {{position = 10.5, length = 1.0, take_name = "Am"}},
     {{position = 11.5, length = 1.5, take_name = "F"}},
   }}}},
-  {{guid = "{other_guid}", name = "[vgt] Mirror", items = {{}}}},
+  {{guid = "{other_guid}", name = "[vgt] Beats", items = {{}}}},
 }}
 local regions = {{
   {{id = 17, start = 10.5, finish = 12.0, name = "[vgt] Verse {{A}}"}},

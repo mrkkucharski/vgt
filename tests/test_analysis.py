@@ -40,7 +40,6 @@ def _write_v1_sidecar(project: Path) -> Path:
                     "reference_track_name": "The Seven Rivers (Full March - 3_00)",
                     "reference_track_guid": REFERENCE_GUID,
                     "folder_name": "[vgt] The Seven Rivers (Full March - 3_00)",
-                    "mirror_name": "[vgt] Mirror",
                 },
             }
         )

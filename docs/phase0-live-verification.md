@@ -17,10 +17,13 @@ From the repository root, make a temporary copy that preserves the relative
 `Media/` directory. The helper save script is deliberately outside the repo;
 it makes REAPER save after the apply action.
 
-The apply action prompts for a reference track. To keep the run non-interactive,
-a `select.lua` runs first and sets the `vgt`/`reference_index` ExtState (0-based
-over the project's non-`[vgt]` tracks); index `1` is the first song track after
-`Click`.
+The apply action prompts for a reference track only when more than one
+candidate has file-backed media (REAPER-native items like the fixture's
+`Click` count-in track never count, and a lone candidate is used
+automatically without prompting). To keep this run non-interactive despite
+the fixture having two real song tracks, a `select.lua` runs first and sets
+the `vgt`/`reference_index` ExtState (0-based over the project's non-`[vgt]`
+candidate tracks); index `0` is `The Seven Rivers (Full March - 3_00)`.
 
 ```sh
 RUN_DIR="$(mktemp -d /tmp/vgt-phase0.XXXXXX)"
@@ -28,7 +31,7 @@ cp -R "test/Reaper Project" "$RUN_DIR/Reaper Project"
 PROJECT="$RUN_DIR/Reaper Project/Reaper Project.RPP"
 SELECT_SCRIPT="$RUN_DIR/select.lua"
 SAVE_SCRIPT="$RUN_DIR/save.lua"
-printf '%s\n' 'reaper.SetExtState("vgt", "reference_index", "1", false)' > "$SELECT_SCRIPT"
+printf '%s\n' 'reaper.SetExtState("vgt", "reference_index", "0", false)' > "$SELECT_SCRIPT"
 printf '%s\n' 'reaper.Main_SaveProject(0, false)' > "$SAVE_SCRIPT"
 
 /Applications/REAPER.app/Contents/MacOS/REAPER -newinst \
@@ -50,14 +53,12 @@ saved `.RPP` and its adjacent `.vgt` sidecar (named after the project, e.g.
 
 - the original name/GUID pairs and project sample rate, tempo, and time
   signature match the baseline;
-- the sidecar has schema version 1, exactly two distinct managed GUIDs, and a
-  config whose `reference_track_guid`/`reference_track_name` is one of the
-  original tracks and whose `folder_name` is `[vgt] <reference track name>`;
-- the sidecar GUIDs are exactly the two `[vgt]` tracks: the reference-named
-  folder with depth `+1`, followed by one `[vgt] Mirror` child with depth `-1`;
-- the mirror has exactly the chosen reference track's file-backed media items,
-  all of which resolve on disk. Thus the second pass also rejects duplicate
-  managed tracks or items.
+- the sidecar has schema version 1, exactly one managed GUID, and a config
+  whose `reference_track_guid`/`reference_track_name` is one of the original
+  tracks and whose `folder_name` is `[vgt] <reference track name>`;
+- the sidecar GUID is exactly the one `[vgt]` track, flattened to a plain
+  (non-folder, depth `0`) track since a Phase 0-only apply has nothing to nest
+  under it yet. Thus the second pass also rejects duplicate managed tracks.
 
 ## Recorded run
 

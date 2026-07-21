@@ -32,7 +32,6 @@ def test_status_reports_analysis_corrections_artifacts_and_json(tmp_path: Path, 
             "reference_track_name": "The Seven Rivers (Full March - 3_00)",
             "reference_track_guid": REFERENCE_GUID,
             "folder_name": "[vgt] The Seven Rivers (Full March - 3_00)",
-            "mirror_name": "[vgt] Mirror",
             "tempo_map_applied": True,
         },
         "analysis": {

@@ -74,7 +74,7 @@ def _write_wav(path: Path) -> None:
 def _run_reaper(project: Path, run_dir: Path, *, add_region: bool = False) -> None:
     select = run_dir / "select.lua"
     save = run_dir / "save.lua"
-    select.write_text('reaper.SetExtState("vgt", "reference_index", "1", false)\n', encoding="utf-8")
+    select.write_text('reaper.SetExtState("vgt", "reference_index", "0", false)\n', encoding="utf-8")
     save.write_text("reaper.Main_SaveProject(0, false)\nreaper.Main_OnCommand(40004, 0)\n", encoding="utf-8")
     arguments = [str(REAPER), "-newinst", str(project)]
     if add_region:
@@ -99,8 +99,8 @@ def verify(project: Path, baseline: Path, *, prior_snapshot: tuple[str, ...] | N
         raise VerificationError("user region was changed")
     sidecar = json.loads(project.with_suffix(".vgt").read_text(encoding="utf-8"))
     managed = sidecar.get("managed_track_guids")
-    if not isinstance(managed, list) or len(managed) != 8 or len(set(managed)) != 8:
-        raise VerificationError("sidecar does not track exactly folder, mirror, and six stems")
+    if not isinstance(managed, list) or len(managed) != 7 or len(set(managed)) != 7:
+        raise VerificationError("sidecar does not track exactly folder and six stems")
     by_name = {track.name: track.guid for track in parsed.tracks}
     reference_guid = sidecar["config"]["reference_track_guid"]
     reference_items = _blocks(blocks[reference_guid], _ITEM)

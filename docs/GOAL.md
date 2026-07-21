@@ -43,9 +43,8 @@ Shipped:
   vgt's own state (schema version, the vgt-managed track GUIDs it created, and any config);
 - **preparing a "vgt managed" area for practice tracks** — a REAPER track folder (and a `[vgt]` name prefix on
   every track/region vgt creates) so a student can immediately identify what vgt owns;
-- **choosing a reference track and mirroring it** — the apply action asks which of the project's own tracks is
-  the reference, names the managed folder after it (`[vgt] <reference track name>`), and mirrors that one track's
-  media into the managed area.
+- **choosing a reference track** — the apply action asks which of the project's own tracks is the reference,
+  and names the managed area after it (`[vgt] <reference track name>`).
 
 ### Phase 1 — Reference analysis *(delivered)*
 

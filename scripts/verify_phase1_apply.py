@@ -38,7 +38,6 @@ _ITEM_START = re.compile(r"^\s*<ITEM\s*$", re.MULTILINE)
 _POSITION = re.compile(r"^\s*POSITION\s+([-+.\d]+)", re.MULTILINE)
 _LENGTH = re.compile(r"^\s*LENGTH\s+([-+.\d]+)", re.MULTILINE)
 _TAKE_NAME = re.compile(r'^\s*NAME\s+(?:"(?P<quoted>.*)"|(?P<plain>\S.*))\s*$', re.MULTILINE)
-_TIME_BASED = re.compile(r"^\s*BEAT\s+0\b", re.MULTILINE)
 
 
 class VerificationError(ValueError):
@@ -181,10 +180,6 @@ def verify(project_path: Path, baseline_path: Path, *, first_snapshot: dict[str,
     if expect_user_region and not user_region_present:
         _fail("the user-created [vgt] region was removed")
 
-    mirror_guid = next((guid for guid in managed if names_by_guid.get(guid) == f"{PREFIX} Mirror"), None)
-    if mirror_guid is None or any(not _TIME_BASED.search(item) for item in _blocks(blocks[mirror_guid], _ITEM_START)):
-        _fail("[vgt] Mirror items are not all time-based")
-
     config = sidecar.get("config") or {}
     tempo_applied = config.get("tempo_map_applied")
     tempo_fingerprint = config.get("tempo_map_fingerprint")
@@ -225,7 +220,7 @@ def _run_reaper(project: Path, run_dir: Path, *, existing_map: bool, user_region
     select = run_dir / "select.lua"
     save = run_dir / "save.lua"
     report = run_dir / "regions.tsv"
-    select.write_text('reaper.SetExtState("vgt", "reference_index", "1", false)\n', encoding="utf-8")
+    select.write_text('reaper.SetExtState("vgt", "reference_index", "0", false)\n', encoding="utf-8")
     # The command-line REAPER process otherwise remains open after it has run
     # the action, which would make this verifier hang in CI.
     save.write_text(
