@@ -357,6 +357,43 @@ def test_chord_cache_refreshes_when_a_stem_becomes_available(tmp_path: Path, mon
     assert calls == 2
 
 
+def test_chords_ignore_a_stem_that_disappears_during_cache_identity(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A transient/missing optional artifact must not block mix-only chords."""
+    project = _project_copy(tmp_path)
+    _write_v1_sidecar(project)
+    sidecar = read_sidecar(project)
+    namespace = ensure_artifact_namespace(sidecar, project)
+    stem = artifact_namespace_dir(project, namespace) / "instrumental.wav"
+    stem.parent.mkdir(parents=True, exist_ok=True)
+    stem.write_bytes(b"available briefly")
+    sidecar["analysis"]["stems"]["artifacts"]["instrumental"] = {"file": str(stem.relative_to(project.parent))}
+    sidecar["analysis"]["tempo"]["value"] = {"beat_times": [0.0, 1.0]}
+    write_sidecar(project, sidecar)
+
+    original_hash = analysis_module.hash_source_file
+
+    def disappear_when_hashed(path: Path) -> str:
+        if path == stem:
+            stem.unlink()
+        return original_hash(path)
+
+    observed_sources: list[tuple[str, ...]] = []
+
+    def fake_chords(*_args: object, sources: dict[str, Path], **_kwargs: object) -> dict[str, object]:
+        observed_sources.append(tuple(sources))
+        return {"segments": [], "beat_times": [0.0, 1.0], "vocabulary": "maj_min", "backend": "test", "sources": list(sources)}
+
+    monkeypatch.setattr(analysis_module, "hash_source_file", disappear_when_hashed)
+    monkeypatch.setattr(analysis_module, "_detect_chords", fake_chords)
+
+    result = analyze(project, stages=("chords",))
+
+    assert observed_sources == [("original",)]
+    assert result["analysis"]["chords"]["value"]["sources"] == ["original"]
+
+
 def test_manual_correction_survives_rerun(tmp_path: Path) -> None:
     project = _project_copy(tmp_path)
     _write_v1_sidecar(project)

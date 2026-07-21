@@ -211,8 +211,21 @@ def chord_sources(project_path: Path, source: Path, analysis: dict[str, Any]) ->
 
 
 def _chord_input_hash(source: Path, chord_source_paths: dict[str, Path]) -> str:
-    """Include the available fusion-source set in the chord cache identity."""
-    identities = [(name, hash_source_file(path)) for name, path in chord_source_paths.items()]
+    """Include the available fusion-source set in the chord cache identity.
+
+    Stem artifacts are optional and can disappear between their initial
+    ``is_file`` check and this cache calculation (for example, while a user
+    removes a failed download).  Treat that race exactly like an unavailable
+    stem rather than letting it abort the otherwise free chord stage.
+    """
+    identities = []
+    for name, path in chord_source_paths.items():
+        try:
+            identities.append((name, hash_source_file(path)))
+        except OSError as exc:
+            if name == "original":
+                raise
+            _LOG.warning("Skipping chord-fusion source %s while hashing (%s): %s", name, path, exc)
     return hashlib.sha256(json.dumps(identities, sort_keys=True).encode("utf-8")).hexdigest()
 
 
