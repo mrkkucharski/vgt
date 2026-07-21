@@ -89,6 +89,53 @@ def evaluate_instruments(
     return {"tolerance_seconds": tolerance, "per_instrument": {key: asdict(value) for key, value in per_instrument.items()}, "macro": macro, "global": asdict(global_metrics)}
 
 
+def aggregate_instrument_metrics(reports: Iterable[dict[str, object]]) -> dict[str, object]:
+    """Combine independently-scored clips without matching across clip boundaries."""
+    totals: dict[str, list[int]] = {}
+    for report in reports:
+        per_instrument = report.get("per_instrument")
+        if not isinstance(per_instrument, dict):
+            raise ValueError("report must contain per-instrument metrics")
+        for instrument, metric in per_instrument.items():
+            if not isinstance(instrument, str) or not isinstance(metric, dict):
+                raise ValueError("invalid per-instrument metric")
+            bucket = totals.setdefault(instrument, [0, 0, 0])
+            for index, name in enumerate(("true_positives", "false_positives", "false_negatives")):
+                value = metric.get(name)
+                if not isinstance(value, int):
+                    raise ValueError(f"invalid {name} metric")
+                bucket[index] += value
+    # Reconstructing lists would incorrectly turn every shared zero into a
+    # match.  Calculate the aggregate directly from summed clip-local counts.
+    per_instrument = {}
+    for instrument, (tp, fp, fn) in totals.items():
+        precision = tp / (tp + fp) if tp + fp else 0.0
+        recall = tp / (tp + fn) if tp + fn else 0.0
+        per_instrument[instrument] = asdict(InstrumentMetrics(
+            tp, fp, fn, precision, recall,
+            2 * precision * recall / (precision + recall) if precision + recall else 0.0,
+        ))
+    metrics = list(per_instrument.values())
+    total_tp = sum(item["true_positives"] for item in metrics)
+    total_fp = sum(item["false_positives"] for item in metrics)
+    total_fn = sum(item["false_negatives"] for item in metrics)
+    precision = total_tp / (total_tp + total_fp) if total_tp + total_fp else 0.0
+    recall = total_tp / (total_tp + total_fn) if total_tp + total_fn else 0.0
+    return {
+        "tolerance_seconds": ONSET_TOLERANCE_SECONDS,
+        "per_instrument": per_instrument,
+        "macro": {
+            "precision": sum(item["precision"] for item in metrics) / len(metrics) if metrics else 0.0,
+            "recall": sum(item["recall"] for item in metrics) / len(metrics) if metrics else 0.0,
+            "f1": sum(item["f1"] for item in metrics) / len(metrics) if metrics else 0.0,
+        },
+        "global": asdict(InstrumentMetrics(
+            total_tp, total_fp, total_fn, precision, recall,
+            2 * precision * recall / (precision + recall) if precision + recall else 0.0,
+        )),
+    }
+
+
 def instrument_onsets(events: list[object]) -> dict[str, list[float]]:
     """Extract labeled onsets from DrumScript's normalized event JSON."""
     result: dict[str, list[float]] = {}

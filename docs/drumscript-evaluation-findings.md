@@ -32,6 +32,10 @@ uv run python scripts/drumscript_smoke.py /path/to/redistributable-drums.wav /tm
 `drumscript_benchmark.py` reports precision, recall, F1, TP, FP, and FN for
 every observed/annotated class at the fixed 50 ms tolerance.  Its macro and
 global figures provide context only; the individual cymbal rows remain visible.
+Each clip is matched independently before TP/FP/FN are summed, so identical
+relative timestamps from separate files can never be counted as a match.  The
+JSON report carries the input manifest SHA-256 and corpus/source metadata for
+the precise evaluated subset.
 The deterministic checked-in fixture verifies the command shape and scoring
 semantics without claiming to be a model-quality result:
 
@@ -102,6 +106,9 @@ one-to-one matches them with DrumScript event onsets within 50 ms.  It only
 contains `matched`, `drumscript_only`, and `basic_pitch_only` counts.  It does
 not map Basic Pitch pitches to drum instruments, filter events, create MIDI or
 REAPER tracks, write a production artifact name, or represent confidence.
+The command rejects output paths in a vgt `transcription` or `.vgt` sidecar
+directory (and `drums.json`/`drums.mid` names), making this boundary enforceable
+as well as documented.
 
 ## Limits and human-owned work
 

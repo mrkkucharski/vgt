@@ -4,7 +4,7 @@ import json
 from pathlib import Path
 import runpy
 
-from vgt.drum_evaluation import collapse_basic_pitch_starts, evaluate_instruments, instrument_onsets, shadow_comparison
+from vgt.drum_evaluation import aggregate_instrument_metrics, collapse_basic_pitch_starts, evaluate_instruments, instrument_onsets, shadow_comparison
 
 
 def test_annotated_metrics_are_per_class_with_macro_and_global_context() -> None:
@@ -25,6 +25,18 @@ def test_onset_matching_maximizes_valid_pairs_before_minimizing_distance() -> No
     assert report["per_instrument"]["kick"] == {
         "true_positives": 2, "false_positives": 0, "false_negatives": 0,
         "precision": 1.0, "recall": 1.0, "f1": 1.0,
+    }
+
+
+def test_aggregate_metrics_never_matches_onsets_from_different_clips() -> None:
+    # Both clips use time zero, but their annotations are independent timelines.
+    report = aggregate_instrument_metrics([
+        evaluate_instruments({"kick": [0.0]}, {"kick": []}),
+        evaluate_instruments({"kick": []}, {"kick": [0.0]}),
+    ])
+    assert report["per_instrument"]["kick"] == {
+        "true_positives": 0, "false_positives": 1, "false_negatives": 1,
+        "precision": 0.0, "recall": 0.0, "f1": 0.0,
     }
 
 
@@ -61,6 +73,7 @@ def test_benchmark_command_scores_checked_in_fixture(tmp_path: Path, capsys) -> 
     assert main([str(root / "annotated-manifest.json"), "--events-dir", str(root / "events")]) == 0
     report = json.loads(capsys.readouterr().out)
     assert report["kind"] == "annotated-drumscript-benchmark"
+    assert report["manifest_sha256"]
     assert report["metrics"]["per_instrument"]["crash"]["f1"] == 0.0
 
 
@@ -80,6 +93,20 @@ def test_shadow_command_writes_temporary_unlabeled_report(tmp_path: Path) -> Non
         "kind", "tolerance_seconds", "cluster_window_seconds", "drumscript_onsets",
         "basic_pitch_transient_clusters", "matched", "drumscript_only", "basic_pitch_only",
     }
+
+
+def test_shadow_command_rejects_production_artifact_paths(tmp_path: Path) -> None:
+    root = Path(__file__).parent / "fixtures" / "drum_evaluation"
+    notes = tmp_path / "basic-pitch-notes.csv"
+    notes.write_text("start_time_s,end_time_s,pitch_midi,velocity,pitch_bend\\n", encoding="utf-8")
+    main = runpy.run_path(str(Path("scripts/drumscript_shadow_compare.py")))["main"]
+    production_path = tmp_path / "vgt" / "namespace" / "transcription" / "drums.json"
+    try:
+        main([str(root / "events" / "pattern-a.json"), str(notes), "--output", str(production_path)])
+    except SystemExit as error:
+        assert error.code == 2
+    else:
+        raise AssertionError("expected production path rejection")
 
 
 def test_idmt_annotation_parser_maps_only_the_official_three_classes(tmp_path: Path) -> None:

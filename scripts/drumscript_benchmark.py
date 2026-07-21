@@ -9,11 +9,12 @@ never downloaded and DrumScript is never invoked by this command.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 from pathlib import Path
 import sys
 
-from vgt.drum_evaluation import evaluate_instruments, instrument_onsets, read_event_json
+from vgt.drum_evaluation import aggregate_instrument_metrics, evaluate_instruments, instrument_onsets, read_event_json
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -22,23 +23,30 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--events-dir", required=True, type=Path, help="directory of <clip id>.json DrumScript event arrays")
     parser.add_argument("--output", type=Path, help="write reproducible JSON report here (otherwise stdout)")
     args = parser.parse_args(argv)
-    manifest = json.loads(args.manifest.read_text(encoding="utf-8"))
+    manifest_bytes = args.manifest.read_bytes()
+    manifest = json.loads(manifest_bytes)
     clips = manifest.get("clips") if isinstance(manifest, dict) else None
     if not isinstance(clips, list):
         parser.error("manifest must contain a clips array")
-    annotations: dict[str, list[float]] = {}
-    predictions: dict[str, list[float]] = {}
+    clip_reports = []
     for clip in clips:
         if not isinstance(clip, dict) or not isinstance(clip.get("id"), str) or not isinstance(clip.get("annotations"), dict):
             parser.error("each clip needs string id and annotations object")
+        annotations: dict[str, list[float]] = {}
         for instrument, onsets in clip["annotations"].items():
             if not isinstance(instrument, str) or not isinstance(onsets, list):
                 parser.error("annotations must map instrument names to onset arrays")
-            annotations.setdefault(instrument, []).extend(float(value) for value in onsets)
+            annotations[instrument] = [float(value) for value in onsets]
         event_path = args.events_dir / f"{clip['id']}.json"
-        for instrument, onsets in instrument_onsets(read_event_json(event_path)).items():
-            predictions.setdefault(instrument, []).extend(onsets)
-    report = {"kind": "annotated-drumscript-benchmark", "clip_count": len(clips), "metrics": evaluate_instruments(annotations, predictions)}
+        clip_reports.append(evaluate_instruments(annotations, instrument_onsets(read_event_json(event_path))))
+    report = {
+        "kind": "annotated-drumscript-benchmark",
+        "clip_count": len(clips),
+        "manifest_sha256": hashlib.sha256(manifest_bytes).hexdigest(),
+        "corpus": manifest.get("corpus"),
+        "source": manifest.get("source"),
+        "metrics": aggregate_instrument_metrics(clip_reports),
+    }
     rendered = json.dumps(report, indent=2, sort_keys=True) + "\n"
     if args.output:
         args.output.write_text(rendered, encoding="utf-8")
