@@ -1,33 +1,33 @@
 {
   "current_issue": 76,
-  "session_id": "0bb5a595-e5b0-4ea3-97be-33919240331e",
-  "pid": 13766,
-  "process_started_at": "Tue Jul 21 08:45:29 2026",
+  "session_id": "e5bcbc11-153f-40c6-a29f-68c0ce2c04e9",
+  "pid": 14416,
+  "process_started_at": "Tue Jul 21 08:52:13 2026",
   "agent": "codex",
-  "started_at": "2026-07-21T06:45:28.126543+00:00",
+  "started_at": "2026-07-21T06:52:11.727469+00:00",
   "scheduler_stalls": {
     "blocked_issues": {
       "67": {
         "first_seen_at": "2026-07-20T21:40:34.197615+00:00",
-        "last_seen_at": "2026-07-21T06:44:19.692214+00:00",
-        "consecutive_passes": 492,
+        "last_seen_at": "2026-07-21T06:51:02.083770+00:00",
+        "consecutive_passes": 498,
         "title": "Run and record the complete live REAPER verification suite"
       }
     }
   },
   "budget": {
     "window_start": "2026-07-21T04:42:16.777981+00:00",
-    "seconds_used": 2203.897209,
+    "seconds_used": 2605.2087530000003,
     "dollars_used": 4.2670951,
     "seconds_used_by_agent": {
       "claude": 1934.27971,
-      "codex": 269.617499
+      "codex": 670.9290430000001
     }
   },
   "verification_followups": {
     "f0d8bfc9d2dc6da7a31609184e25c4d66d3986fd2340b33a83e98204fb86691e": "created"
   },
-  "role": "review",
+  "role": "fix",
   "branch": "issue-76-feat-support-opt-in-strings-and-keys-pia",
   "worktree_path": "/Users/marekkucharski/projects/.pm-worktrees/vgt/issue-76",
   "pr_number": 77,
@@ -60,16 +60,16 @@
     "46": 1,
     "65": 1,
     "72": 4,
-    "76": 1
+    "76": 2
   },
   "pending_transition": {
     "issue": 76,
     "target": "working",
-    "event": "agent.review_started",
+    "event": "agent.fix_started",
     "detail": {
       "issue": 76,
       "agent": "codex",
-      "pr": 77
+      "fix_count": 2
     },
     "cleanup": {}
   }
