@@ -18,7 +18,7 @@ from vgt.sidecar import (
     upgrade,
     write_sidecar,
 )
-from vgt.transcribe import FakeTranscriber, TranscriptionError, midi_artifact_name, notes_artifact_name
+from vgt.transcribe import FakeTranscriber, TargetTranscriberRouter, TranscriptionError, midi_artifact_name, notes_artifact_name
 
 
 FIXTURE_DIR = Path(__file__).parents[1] / "test" / "Reaper Project"
@@ -967,20 +967,44 @@ def test_refresh_target_isolates_one_targets_failure_from_the_others(tmp_path: P
     assert bass["status"] == "transcribed"
 
 
-def test_refresh_target_warns_once_when_drums_is_requested(tmp_path: Path) -> None:
+def test_refresh_target_uses_the_injected_router_and_keeps_drum_cache_independent(tmp_path: Path) -> None:
     project = _project_copy(tmp_path)
     _write_v1_sidecar(project)
-    messages: list[str] = []
+    sidecar = read_sidecar(project)
+    for target in ("guitar", "bass", "drums"):
+        _add_fake_stem(project, sidecar, target, f"{target}-audio".encode())
+    write_sidecar(project, sidecar)
 
-    analyze(
-        project,
-        stages=("transcription",),
-        transcription_targets=("drums",),
-        transcriber=FakeTranscriber(),
-        progress=messages.append,
+    class FakeBasicPitch(FakeTranscriber):
+        name = "basic-pitch"
+
+    class FakeDrumScript(FakeTranscriber):
+        name = "drumscript"
+
+    basic_pitch = FakeBasicPitch()
+    drumscript = FakeDrumScript()
+    router = TargetTranscriberRouter(basic_pitch, drumscript, drumscript_targets=("drums",))
+    targets = ("guitar", "bass", "drums")
+    first = analyze(project, stages=("transcription",), transcription_targets=targets, transcriber_router=router)
+    first_targets = first["analysis"]["transcription"]["targets"]
+    assert first_targets["drums"]["backend"] == "drumscript"
+    assert first_targets["guitar"]["backend"] == first_targets["bass"]["backend"] == "basic-pitch"
+
+    # Changing a DrumScript-only option changes only the drums settings hash;
+    # the normal cache path therefore leaves every Basic Pitch target intact.
+    changed_router = TargetTranscriberRouter(
+        basic_pitch,
+        drumscript,
+        drumscript_targets=("drums",),
+        drumscript_classifier_mode="rudiment",
     )
+    second = analyze(project, stages=("transcription",), transcription_targets=targets, transcriber_router=changed_router)
+    second_targets = second["analysis"]["transcription"]["targets"]
+    assert second_targets["drums"]["settings_hash"] != first_targets["drums"]["settings_hash"]
+    assert second_targets["guitar"] == first_targets["guitar"]
+    assert second_targets["bass"] == first_targets["bass"]
 
-    assert any("groove map" in message for message in messages)
+
 
 
 def test_add_transcription_targets_dedupes_and_preserves_order(tmp_path: Path) -> None:

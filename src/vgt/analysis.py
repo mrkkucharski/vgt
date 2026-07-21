@@ -42,14 +42,15 @@ from .sidecar import (
 )
 from .tempo import TempoDetectionError, build_tempo_grid, click_artifact_path, detect_beats, render_click
 from .transcribe import (
-    BasicPitchTranscriber,
     Transcriber,
+    TranscriberRouter,
+    TargetTranscriberRouter,
     TranscriptionError,
-    default_spec_for_target,
     error_entry,
     midi_artifact_name,
     missing_source_entry,
     notes_artifact_name,
+    production_transcriber_router,
     resolve_target_source,
     spec_hash,
     target_input_hash,
@@ -200,7 +201,7 @@ def _refresh_target(
     analysis: dict[str, Any],
     reference_source: Path,
     namespace: str,
-    transcriber: Transcriber,
+    router: TranscriberRouter,
     *,
     force: bool,
     emit: Callable[[str], None],
@@ -216,12 +217,10 @@ def _refresh_target(
     `sidecar.py` schema v9 and `docs/transcription-plan.md` section 2).
     """
     validate_target(target)
-    if target == "drums":
-        emit("transcription: drums is a pitch model, not a groove map -- expect nonsense-shaped output")
-
     tempo_value = analysis["tempo"].get("value")
     midi_tempo = tempo_value.get("bpm") if isinstance(tempo_value, dict) else None
-    spec = default_spec_for_target(target, backend=transcriber.name, midi_tempo=midi_tempo)
+    transcriber = router.for_target(target)
+    spec = router.spec_for_target(target, midi_tempo=midi_tempo)
     settings_hash = spec_hash(spec)
 
     resolved = resolve_target_source(project_path, target, analysis, reference_source=reference_source)
@@ -393,6 +392,7 @@ def analyze(
     force: bool = False,
     stages: tuple[str, ...] | None = None,
     transcriber: Transcriber | None = None,
+    transcriber_router: TranscriberRouter | None = None,
     transcription_targets: tuple[str, ...] | None = None,
 ) -> dict[str, Any]:
     """Run (or refresh) analysis for `project` and persist it into the sidecar.
@@ -407,9 +407,11 @@ def analyze(
     stage starts (the detectors are otherwise silent for a minute or more); the
     CLI wires it to stderr so the JSON result on stdout stays pipe-clean.
 
-    `transcriber` overrides the backend used by the `transcription` stage
-    (defaults to the real `BasicPitchTranscriber`; tests inject
-    `FakeTranscriber`). `transcription_targets`, when given, overrides the
+    `transcriber_router` overrides the target-to-backend route used by the
+    `transcription` stage.  The production router intentionally still sends
+    every target (including drums) to Basic Pitch in D-A. `transcriber` is a
+    backwards-compatible single-backend test hook; it is wrapped in the same
+    router. `transcription_targets`, when given, overrides the
     persisted `requested_targets` for this run only -- implements
     `--transcribe-only` without touching the persisted set.
     """
@@ -455,7 +457,12 @@ def analyze(
                 transcription_targets if transcription_targets is not None else analysis["transcription"]["requested_targets"]
             )
             emit(f"[{position}/{total}] transcription — reconciling {len(targets_to_run)} target(s)…")
-            active_transcriber = transcriber or BasicPitchTranscriber()
+            if transcriber is not None and transcriber_router is not None:
+                raise AnalysisError("pass either transcriber or transcriber_router, not both")
+            active_router = (
+                transcriber_router
+                or (TargetTranscriberRouter(transcriber, transcriber) if transcriber is not None else production_transcriber_router())
+            )
             for target in targets_to_run:
                 analysis["transcription"]["targets"][target] = _refresh_target(
                     project_path,
@@ -463,7 +470,7 @@ def analyze(
                     analysis,
                     source,
                     namespace,
-                    active_transcriber,
+                    active_router,
                     force=force,
                     emit=emit,
                 )

@@ -72,7 +72,8 @@ Schema versions:
            "requested_targets": ["guitar"],
            "targets": {
              "<target>": {
-               "backend": str, "package_pin": str, "serialization": str,
+               "backend": str, "package_pin": str,
+               "serialization": str | null, # Basic Pitch only; legacy v9 records retain it
                "source_role": str,
                "input_hash": str | null,      # the source stem's sha256
                "settings_hash": str | null,   # that target's TranscriptionSpec
@@ -80,7 +81,7 @@ Schema versions:
                "midi_file": str | null, "notes_file": str | null,
                "note_count": int | null, "pitch_range_midi": [int, int] | null,
                "first_note_s": float | null, "last_note_s": float | null,
-               "midi_tempo": float | null, "settings": dict,
+               "midi_tempo": float | null, "settings": dict, # backend-specific settings
                "transcribed_at": str | null, "error": str | null,
              }, ...
            },
