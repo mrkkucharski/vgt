@@ -1,30 +1,32 @@
 {
   "current_issue": 72,
-  "session_id": "49714a28-9831-40bc-80d5-2b2652ffb765",
-  "pid": 5870,
-  "process_started_at": "Tue Jul 21 07:09:15 2026",
-  "agent": "claude",
-  "started_at": "2026-07-21T05:09:13.674337+00:00",
+  "session_id": "d74f9b8f-0cb7-4a7a-aae4-6acaab7c2a45",
+  "pid": 6563,
+  "process_started_at": "Tue Jul 21 07:19:17 2026",
+  "agent": "codex",
+  "started_at": "2026-07-21T05:19:16.035253+00:00",
   "scheduler_stalls": {
     "blocked_issues": {
       "67": {
         "first_seen_at": "2026-07-20T21:40:34.197615+00:00",
-        "last_seen_at": "2026-07-21T05:08:02.134460+00:00",
-        "consecutive_passes": 406,
+        "last_seen_at": "2026-07-21T05:18:07.039496+00:00",
+        "consecutive_passes": 415,
         "title": "Run and record the complete live REAPER verification suite"
       }
     }
   },
   "budget": {
     "window_start": "2026-07-21T04:42:16.777981+00:00",
-    "seconds_used": 0.0,
-    "dollars_used": 0.0,
-    "seconds_used_by_agent": {}
+    "seconds_used": 600.305779,
+    "dollars_used": 0.8669203999999999,
+    "seconds_used_by_agent": {
+      "claude": 600.305779
+    }
   },
   "verification_followups": {
     "f0d8bfc9d2dc6da7a31609184e25c4d66d3986fd2340b33a83e98204fb86691e": "created"
   },
-  "role": "review",
+  "role": "fix",
   "branch": "issue-72-detect-chords-from-stems-as-well-as-the",
   "worktree_path": "/Users/marekkucharski/projects/.pm-worktrees/vgt/issue-72",
   "pr_number": 74,
@@ -55,16 +57,17 @@
     "44": 1,
     "45": 3,
     "46": 1,
-    "65": 1
+    "65": 1,
+    "72": 1
   },
   "pending_transition": {
     "issue": 72,
     "target": "working",
-    "event": "agent.review_started",
+    "event": "agent.fix_started",
     "detail": {
       "issue": 72,
-      "agent": "claude",
-      "pr": 74
+      "agent": "codex",
+      "fix_count": 1
     },
     "cleanup": {}
   }
