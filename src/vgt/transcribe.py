@@ -409,7 +409,9 @@ def _basic_pitch_base_command(package_pin: str) -> list[str]:
     dependency."""
     override = os.environ.get(BASIC_PITCH_CMD_ENV)
     if override:
-        return shlex.split(override)
+        parts = shlex.split(override)
+        if parts:
+            return parts
     return [
         "uvx",
         "--python", "3.11",
@@ -455,6 +457,18 @@ def build_basic_pitch_argv(source: Path, destination_dir: Path, spec: Transcript
 
 def _stderr_tail(stderr: str | None, limit: int = 4000) -> str:
     return (stderr or "")[-limit:]
+
+
+def _clear_stale_outputs(destination_dir: Path) -> None:
+    """Remove any `.mid`/`.csv` already in `destination_dir` before invoking
+    `uvx`, so a retry against a reused directory (e.g. the orchestrator
+    re-running a target after a prior failure) starts from a clean slate --
+    otherwise a leftover renamed `transcription.mid`/`.csv` from an earlier
+    call would corrupt `_collect_and_rename_outputs`'s exactly-one-file
+    check, or worse, get silently mistaken for the current run's output."""
+    for pattern in ("*.mid", "*.csv"):
+        for stale in destination_dir.glob(pattern):
+            stale.unlink()
 
 
 def _collect_and_rename_outputs(destination_dir: Path) -> tuple[Path, Path]:
@@ -523,12 +537,15 @@ def parse_notes_csv(path: Path) -> list[ParsedNote]:
         fields = line.split(",")
         if len(fields) < 4:
             raise TranscriptionError(f"{path}: malformed note row {line!r}")
+        bend_fields = fields[4:]
+        if bend_fields and bend_fields[-1] == "":
+            bend_fields = bend_fields[:-1]  # a trailing comma, not a value
         try:
             start_s = float(fields[0])
             end_s = float(fields[1])
             pitch_midi = int(float(fields[2]))
             velocity = int(float(fields[3]))
-            pitch_bend = tuple(float(value) for value in fields[4:] if value != "")
+            pitch_bend = tuple(float(value) for value in bend_fields)
         except ValueError as exc:
             raise TranscriptionError(f"{path}: malformed note row {line!r}: {exc}") from exc
         notes.append(ParsedNote(start_s, end_s, pitch_midi, velocity, pitch_bend))
@@ -575,6 +592,7 @@ class BasicPitchTranscriber:
             )
 
         destination_dir.mkdir(parents=True, exist_ok=True)
+        _clear_stale_outputs(destination_dir)
         emit(f"transcribing (basic-pitch): {source.name}")
         try:
             completed = subprocess.run(argv, capture_output=True, text=True, timeout=600)

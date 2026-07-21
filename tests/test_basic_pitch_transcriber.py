@@ -149,6 +149,16 @@ def test_cmd_env_override_replaces_the_whole_uvx_invocation(tmp_path: Path, monk
     assert "uvx" not in argv
 
 
+def test_cmd_env_override_falls_back_to_uvx_when_blank(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """A whitespace-only override (e.g. an exported-but-unset shell var) must
+    not silently produce an empty command prefix."""
+    monkeypatch.setenv(BASIC_PITCH_CMD_ENV, "   ")
+
+    argv = build_basic_pitch_argv(tmp_path / "guitar.wav", tmp_path / "out", _spec())
+
+    assert argv[0] == "uvx"
+
+
 def test_cmd_env_override_is_used_for_the_real_run(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """A prebuilt `uv tool install`ed binary can stand in for the whole `uvx`
     invocation -- exercised by pointing the override at a fixture script that
@@ -243,6 +253,27 @@ def test_parse_notes_csv_rejects_an_empty_file(tmp_path: Path) -> None:
         parse_notes_csv(path)
 
 
+def test_parse_notes_csv_tolerates_a_single_trailing_comma(tmp_path: Path) -> None:
+    path = tmp_path / "notes.csv"
+    path.write_text(
+        "start_time_s,end_time_s,pitch_midi,velocity,pitch_bend\n0.0,0.5,40,90,\n", encoding="utf-8"
+    )
+
+    notes = parse_notes_csv(path)
+
+    assert notes == [ParsedNote(0.0, 0.5, 40, 90, ())]
+
+
+def test_parse_notes_csv_rejects_an_empty_field_inside_the_bend_series(tmp_path: Path) -> None:
+    path = tmp_path / "notes.csv"
+    path.write_text(
+        "start_time_s,end_time_s,pitch_midi,velocity,pitch_bend\n0.5,1.2,52,70,10,,3\n", encoding="utf-8"
+    )
+
+    with pytest.raises(TranscriptionError):
+        parse_notes_csv(path)
+
+
 # ---------------------------------------------------------------------------
 # artifact renaming
 # ---------------------------------------------------------------------------
@@ -278,6 +309,36 @@ def test_transcribe_renames_basic_pitch_named_outputs_to_stable_names(
     assert result.pitch_range_midi == (40, 52)
     assert result.first_note_s == 0.0
     assert result.last_note_s == 1.0
+
+
+def test_transcribe_retry_against_a_reused_destination_dir_ignores_stale_outputs(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A leftover `transcription.mid`/`.csv` from a prior run in the same
+    `destination_dir` (e.g. an orchestrator retry) must not corrupt the
+    exactly-one-file check or be mistaken for the retry's own output."""
+    source = tmp_path / "guitar.wav"
+    source.write_bytes(b"fake-audio")
+    destination = tmp_path / "out"
+    destination.mkdir()
+    (destination / "transcription.mid").write_bytes(b"stale-not-even-valid-midi")
+    (destination / "transcription.csv").write_text("stale\n", encoding="utf-8")
+
+    def fake_run(argv, **kwargs):
+        (destination / "guitar_basic_pitch.mid").write_bytes(_valid_midi_bytes())
+        (destination / "guitar_basic_pitch.csv").write_text(
+            "start_time_s,end_time_s,pitch_midi,velocity,pitch_bend\n0.0,0.5,40,90\n",
+            encoding="utf-8",
+        )
+        return SimpleNamespace(returncode=0, stdout="", stderr="")
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+    monkeypatch.setattr("shutil.which", lambda _name: "/usr/bin/uvx")
+
+    result = BasicPitchTranscriber().transcribe(source, destination, _spec())
+
+    assert result.note_count == 1
+    assert result.midi_path.read_bytes() == _valid_midi_bytes()
 
 
 def _valid_midi_bytes() -> bytes:
