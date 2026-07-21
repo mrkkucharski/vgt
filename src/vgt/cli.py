@@ -158,7 +158,12 @@ def main(argv: list[str] | None = None) -> int:
                                 progress=report,
                                 before_submit=confirm_paid_refresh if args.force_stems else None,
                             )
-                except (LalalError, SeparationError, AnalysisError) as exc:
+                # A failed or unavailable separator is optional, but an
+                # explicit paid-work safety refusal is not.  In particular,
+                # non-interactive --force-stems without --accept-stem-cost
+                # must retain its documented non-zero exit rather than being
+                # silently converted into a successful mix-only run.
+                except (LalalError, SeparationError) as exc:
                     separation_error = exc
             elif args.no_stems:
                 report("stem separation skipped (--no-stems)")
