@@ -288,11 +288,11 @@ def test_stage_cache_only_refreshes_the_stage_with_changed_settings(
         def detect(
             _project_path: Path,
             _source: Path,
-                _settings: dict[str, object],
-                _analysis: dict[str, object],
-                _namespace: str,
-                **_kwargs: object,
-            ) -> dict[str, str]:
+            _settings: dict[str, object],
+            _analysis: dict[str, object],
+            _namespace: str,
+            **_kwargs: object,
+        ) -> dict[str, str]:
             calls[stage] += 1
             return {"stage": stage}
 
