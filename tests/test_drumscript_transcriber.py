@@ -31,8 +31,11 @@ def _spec(**changes):
     return replace(spec, **changes) if changes else spec
 
 
-def _midi(channel: int = 9, notes: tuple[int, ...] = (36, 38)) -> bytes:
+def _midi(channel: int = 9, notes: tuple[int, ...] = (36, 38), tempo_bpm: float | None = None) -> bytes:
     track = bytearray()
+    if tempo_bpm is not None:
+        tempo_uspb = int(round(60_000_000 / tempo_bpm))
+        track += b"\x00\xff\x51\x03" + tempo_uspb.to_bytes(3, "big")
     for note in notes:  # delta zero makes the onset polyphonic.
         track += bytes([0, 0x90 | channel, note, 100])
     for note in notes:
@@ -41,14 +44,14 @@ def _midi(channel: int = 9, notes: tuple[int, ...] = (36, 38)) -> bytes:
     return b"MThd\x00\x00\x00\x06\x00\x00\x00\x01\x01\xe0" + b"MTrk" + len(track).to_bytes(4, "big") + track
 
 
-def _run_writing(events, midi: bytes = _midi()):
+def _run_writing(events, midi: bytes = _midi(), stdout: str = "useful stdout"):
     def fake_run(argv, *, cwd, **kwargs):
         out = Path(cwd) / "nested"
         out.mkdir()
         (out / "detected.mid").write_bytes(midi)
         import json
         (out / "events.json").write_text(json.dumps(events), encoding="utf-8")
-        return SimpleNamespace(returncode=0, stdout="useful stdout", stderr="useful stderr")
+        return SimpleNamespace(returncode=0, stdout=stdout, stderr="useful stderr")
     return fake_run
 
 
@@ -89,6 +92,26 @@ def test_normalizes_valid_outputs_and_preserves_polyphonic_channel_10_midi(tmp_p
     data = result.midi_path.read_bytes()
     assert b"\x00\x99\x24\x64\x00\x99\x26\x64" in data
     assert result.events_path.read_text(encoding="utf-8").startswith("[")
+
+
+def test_drum_result_records_only_explicit_backend_and_midi_tempos(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    source = tmp_path / "drums.wav"
+    source.write_bytes(b"not decoded by this unit test")
+    monkeypatch.setattr("shutil.which", lambda _cmd: "/usr/bin/uvx")
+    monkeypatch.setattr(subprocess, "run", _run_writing(
+        [{"time_sec": 1.25, "instruments": ["kick"]}], _midi(tempo_bpm=119.5), "Detected tempo: 118 BPM"
+    ))
+    monkeypatch.setattr("vgt.transcribe._source_duration_seconds", lambda _source: 10.0)
+
+    result = DrumScriptTranscriber().transcribe(source, tmp_path / "destination", _spec())
+    entry = transcribed_entry(
+        _spec(), source_role="drums", input_hash="stem-hash", target="drums", result=result, transcribed_at="2026-07-21T00:00:00Z"
+    )
+
+    assert entry["backend_tempo"] == 118.0
+    assert entry["midi_tempo"] == pytest.approx(119.5)
+    assert entry["first_note_s"] is entry["last_note_s"] is None
+    assert entry["first_event_s"] == entry["last_event_s"] == 1.25
 
 
 @pytest.mark.parametrize(

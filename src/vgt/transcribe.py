@@ -23,6 +23,7 @@ import hashlib
 import json
 import math
 import os
+import re
 import shlex
 import shutil
 import subprocess
@@ -330,8 +331,8 @@ def transcribed_entry(
         # GM percussion note numbers select kit instruments; they are not a
         # musical pitch range and must never be presented as one.
         "pitch_range_midi": list(result.pitch_range_midi) if isinstance(spec, BasicPitchSpec) and result.pitch_range_midi else None,
-        "first_note_s": result.first_note_s,
-        "last_note_s": result.last_note_s,
+        "first_note_s": result.first_note_s if isinstance(spec, BasicPitchSpec) else None,
+        "last_note_s": result.last_note_s if isinstance(spec, BasicPitchSpec) else None,
         "first_event_s": result.first_event_s if isinstance(spec, DrumScriptSpec) else None,
         "last_event_s": result.last_event_s if isinstance(spec, DrumScriptSpec) else None,
         "backend_tempo": result.backend_tempo if isinstance(spec, DrumScriptSpec) else None,
@@ -932,14 +933,15 @@ class DrumScriptTranscriber:
         return TranscriptionResult(
             note_count=len(events),
             pitch_range_midi=None,
-            first_note_s=min(times) if times else None,
-            last_note_s=max(times) if times else None,
+            first_note_s=None,
+            last_note_s=None,
             midi_path=midi_path,
             events_path=events_path,
             instrument_counts=counts,
             event_count=len(events),
             first_event_s=min(times) if times else None,
             last_event_s=max(times) if times else None,
+            backend_tempo=_drumscript_backend_tempo(completed),
             midi_tempo=_midi_tempo_bpm(midi_path),
         )
 
@@ -1016,6 +1018,29 @@ def _midi_tempo_bpm(path: Path) -> float | None:
         return None
     microseconds_per_beat = int.from_bytes(data[index + 3:index + 6], "big")
     return 60_000_000 / microseconds_per_beat if microseconds_per_beat else None
+
+
+_DRUMSCRIPT_TEMPO = re.compile(
+    r"\b(?:detected\s+)?tempo\s*[:=]\s*(\d+(?:\.\d+)?)\s*(?:bpm)?\b", re.IGNORECASE
+)
+
+
+def _drumscript_backend_tempo(completed: Any) -> float | None:
+    """Read a tempo explicitly reported by DrumScript, without estimating one.
+
+    The v0.1.6 command's machine-readable event artifact is an array, so its
+    optional tempo diagnostic is emitted in process output rather than added
+    to that artifact.  Keep this deliberately conservative: an unrelated
+    number in progress output is never treated as a BPM value.
+    """
+    output = "\n".join(
+        value for value in (getattr(completed, "stdout", None), getattr(completed, "stderr", None)) if isinstance(value, str)
+    )
+    match = _DRUMSCRIPT_TEMPO.search(output)
+    if not match:
+        return None
+    tempo = float(match.group(1))
+    return tempo if math.isfinite(tempo) and tempo > 0 else None
 
 
 def _read_varlen(data: bytes, index: int) -> tuple[int, int]:
