@@ -1,34 +1,34 @@
 {
   "current_issue": 95,
-  "session_id": "03dd98ac-696a-4825-88dc-4e7437ff6cfd",
-  "pid": 54298,
-  "process_started_at": "Tue Jul 21 21:06:08 2026",
+  "session_id": "772786f2-70a2-4a74-8a24-bf40bf154da5",
+  "pid": 54896,
+  "process_started_at": "Tue Jul 21 21:11:53 2026",
   "agent": "codex",
-  "started_at": "2026-07-21T19:06:07.335732+00:00",
+  "started_at": "2026-07-21T19:11:51.899405+00:00",
   "scheduler_stalls": {
     "blocked_issues": {
       "92": {
         "first_seen_at": "2026-07-21T18:09:53.229638+00:00",
-        "last_seen_at": "2026-07-21T19:04:57.488089+00:00",
-        "consecutive_passes": 50,
+        "last_seen_at": "2026-07-21T19:10:42.284589+00:00",
+        "consecutive_passes": 55,
         "title": "Practice C: integrate active-session handoff with initialization and document the workflow"
       },
       "91": {
         "first_seen_at": "2026-07-21T18:09:53.230089+00:00",
-        "last_seen_at": "2026-07-21T19:04:57.488725+00:00",
-        "consecutive_passes": 50,
+        "last_seen_at": "2026-07-21T19:10:42.286722+00:00",
+        "consecutive_passes": 55,
         "title": "Practice B: implement safe REAPER section-loop Start and Restore actions"
       },
       "90": {
         "first_seen_at": "2026-07-21T18:09:53.230437+00:00",
-        "last_seen_at": "2026-07-21T19:04:57.488978+00:00",
-        "consecutive_passes": 50,
+        "last_seen_at": "2026-07-21T19:10:42.286968+00:00",
+        "consecutive_passes": 55,
         "title": "Practice A: add sidecar practice-session state and pure reconciliation model"
       },
       "89": {
         "first_seen_at": "2026-07-21T18:09:53.230884+00:00",
-        "last_seen_at": "2026-07-21T19:04:57.489177+00:00",
-        "consecutive_passes": 50,
+        "last_seen_at": "2026-07-21T19:10:42.287407+00:00",
+        "consecutive_passes": 55,
         "title": "Define the first practice-workflow milestone"
       }
     }
@@ -44,7 +44,7 @@
   "verification_followups": {
     "f0d8bfc9d2dc6da7a31609184e25c4d66d3986fd2340b33a83e98204fb86691e": "created"
   },
-  "role": "fix",
+  "role": "review",
   "branch": "issue-95-d-c-drum-event-metadata-cache-status-int",
   "worktree_path": "/Users/marekkucharski/projects/.pm-worktrees/vgt/issue-95",
   "pr_number": 101,
@@ -77,11 +77,11 @@
   "pending_transition": {
     "issue": 95,
     "target": "working",
-    "event": "agent.fix_started",
+    "event": "agent.review_started",
     "detail": {
       "issue": 95,
       "agent": "codex",
-      "fix_count": 1
+      "pr": 101
     },
     "cleanup": {}
   }
