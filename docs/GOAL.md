@@ -16,6 +16,11 @@ analyzes it, optionally creates practice stems, and adds a clearly owned
 - **Supporting capability — stem separation:** LALAL.AI v1 separates the
   standard vocals/instrumental/bass/drums/guitar/backing set, with optional
   strings and piano. It is a delivered capability, not a numbered phase.
+- **Supporting capability — reference transcription:** Basic Pitch transcribes
+  requested separated stems locally into cached, per-target reference MIDI and
+  imports each result beside its source stem. Guitar is the default; further
+  targets can be kept independently. This is a delivered capability, not a
+  numbered phase.
 
 See [the user manual](USER-MANUAL.md) for commands, REAPER object states,
 correction workflow, cost controls, and the current regression contract.
@@ -36,44 +41,16 @@ correction workflow, cost controls, and the current regression contract.
 - **Cost safe:** LALAL credentials are environment-only; paid work is cached,
   checkpointed, and explicitly confirmed when forced or optional.
 
-## Planned — stem transcription (reference MIDI)
-
-The next committed capability is **multi-target transcription of separated
-stems into reference MIDI**, using Basic Pitch. See
-[the transcription plan](transcription-plan.md) for the full design; its
-milestones are tracked as GitHub issues T-A through T-F.
-
-Scope, in one paragraph: `vgt analyze` gains a `transcription` stage that
-transcribes requested stems — guitar by default, any of bass, vocals,
-strings, piano, instrumental, backing, drums, or the mix on request — to MIDI
-with pitch bends. Each target is cached, kept, and refreshed independently;
-the set of wanted targets persists in the sidecar. The ReaScript action
-imports each transcription as an unmuted, time-based `[vgt] … Ref (MIDI)`
-track placed directly beneath the stem it came from.
-
-Two consequences worth stating in the goal:
-
-- **Transcription is local and free.** It needs none of the paid-work
-  machinery: no cost confirmation, no lease, no credentials. Basic Pitch runs
-  as an isolated `uvx` subprocess (it cannot install into vgt's interpreter),
-  so no ML dependency enters vgt's own environment.
-- **Reference MIDI is not correctable in this scope.** There is no `vgt sync`
-  read-back for MIDI, so a `[vgt] … Ref (MIDI)` track is recreated on every
-  apply like any other vgt-owned object. Editing it requires copying it to a
-  user-owned track first, and that must be documented.
-
-Explicitly not in this scope: tablature or string/fret assignment,
-performance scoring, and MIDI correction read-back.
-
 ## Later — practice workflow *(to be planned)*
 
-The practice workflow starts from the delivered baseline plus transcription.
-Its scope has not yet been defined. Likely directions include
+The practice workflow starts from the delivered baseline, including
+transcription. Its scope has not yet been defined. Likely directions include
 practice-oriented stem muting, looping, tempo management, and recording
 support, but none are committed by this goal.
 
-Offline separation, performance scoring, and new practice controls remain out
-of the delivered baseline until explicitly planned.
+Offline separation, tablature/string-fret assignment, performance scoring,
+MIDI correction read-back, and new practice controls remain out of the
+delivered baseline until explicitly planned.
 
 Subjective listening evaluation of real stems remains a user-owned activity: it
 requires human ears and the user's audio, and is not an autonomous-agent task.
