@@ -40,8 +40,26 @@ def test_status_reports_analysis_corrections_artifacts_and_json(tmp_path: Path, 
             "sections": {"value": [{}, {}], "analyzed_at": "2026-07-19T10:00:00Z"},
             "chords": {"value": {"segments": [{}, {}], "chord_sheet_path": "chords.txt"}, "detected": {"segments": [{}, {}, {}]}, "human_verified": True, "analyzed_at": "2026-07-19T10:00:00Z", "verified_at": "2026-07-19T11:00:00Z"},
             "stems": {"artifact_namespace": namespace},
+            "transcription": {
+                "requested_targets": ["guitar", "bass", "vocals"],
+                "targets": {
+                    "guitar": {
+                        "backend": "basic-pitch", "package_pin": "basic-pitch[onnx]==0.4.0",
+                        "status": "transcribed", "note_count": 872, "pitch_range_midi": [40, 76],
+                        "transcribed_at": "2026-07-19T10:05:00Z",
+                        "midi_file": "transcription/guitar.mid", "notes_file": "transcription/guitar.csv",
+                    },
+                    "bass": {
+                        "backend": "basic-pitch", "package_pin": "basic-pitch[onnx]==0.4.0",
+                        "status": "error", "error": "basic-pitch exited with status 1",
+                    },
+                    "vocals": {"status": "skipped-missing-source"},
+                },
+            },
         },
     }))
+    (namespace_dir / "transcription").mkdir(parents=True)
+    (namespace_dir / "transcription" / "guitar.mid").write_bytes(b"midi")
 
     assert main(["status", str(project)]) == 0
     text = capsys.readouterr().out
@@ -51,6 +69,10 @@ def test_status_reports_analysis_corrections_artifacts_and_json(tmp_path: Path, 
     assert "2 segments, human-corrected, detected baseline present" in text
     assert "Last human correction: 2026-07-19T11:00:00Z" in text
     assert "click: present" in text
+    assert "transcription (basic-pitch[onnx]==0.4.0): 3 requested" in text
+    assert "guitar   872 notes, MIDI 40-76, transcribed 2026-07-19T10:05:00Z" in text
+    assert "bass     error - basic-pitch exited with status 1" in text
+    assert "vocals   skipped - no vocals stem available" in text
 
     assert main(["status", "--json", str(project)]) == 0
     status = json.loads(capsys.readouterr().out)
@@ -62,6 +84,16 @@ def test_status_reports_analysis_corrections_artifacts_and_json(tmp_path: Path, 
     }
     assert set(status["stems"]["artifacts"]) == {"vocals", "instrumental", "bass", "drums", "guitar", "backing"}
     assert status["stems"]["artifacts"]["vocals"]["state"] == "missing"
+
+    transcription = status["transcription"]
+    assert transcription["requested_targets"] == ["guitar", "bass", "vocals"]
+    assert transcription["backend"] == "basic-pitch"
+    assert transcription["targets"]["guitar"]["status"] == "transcribed"
+    assert transcription["targets"]["guitar"]["note_count"] == 872
+    assert transcription["targets"]["bass"]["status"] == "error"
+    assert transcription["targets"]["vocals"]["status"] == "skipped-missing-source"
+    assert status["artifacts"]["transcription_guitar_midi"]["exists"] is True
+    assert status["artifacts"]["transcription_guitar_midi"]["path"].endswith("transcription/guitar.mid")
 
 
 def test_status_handles_older_sidecars_and_missing_sidecars(tmp_path: Path, capsys) -> None:
@@ -75,3 +107,4 @@ def test_status_handles_older_sidecars_and_missing_sidecars(tmp_path: Path, caps
     assert "tempo: missing" in text
     assert "Last analysis: unknown" in text
     assert "Last human correction: unknown" in text
+    assert "transcription (not yet run): 0 requested" in text

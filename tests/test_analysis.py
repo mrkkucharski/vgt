@@ -1,4 +1,6 @@
 from pathlib import Path
+from typing import Any
+import hashlib
 import json
 import shutil
 import sys
@@ -6,7 +8,7 @@ import sys
 import pytest
 
 from vgt import analysis as analysis_module
-from vgt.analysis import AnalysisError, analyze, chord_sources
+from vgt.analysis import AnalysisError, add_transcription_targets, analyze, chord_sources, forget_transcription_targets
 from vgt.cli import main
 from vgt.sidecar import (
     ANALYSIS_STAGES,
@@ -16,6 +18,7 @@ from vgt.sidecar import (
     upgrade,
     write_sidecar,
 )
+from vgt.transcribe import FakeTranscriber, TranscriptionError, midi_artifact_name, notes_artifact_name
 
 
 FIXTURE_DIR = Path(__file__).parents[1] / "test" / "Reaper Project"
@@ -27,6 +30,18 @@ def _project_copy(tmp_path: Path) -> Path:
     destination = tmp_path / "Reaper Project"
     shutil.copytree(FIXTURE_DIR, destination)
     return destination / "Reaper Project.RPP"
+
+
+def _add_fake_stem(project: Path, sidecar: dict, target: str, content: bytes) -> None:
+    """Fabricate a `stems.artifacts[target]` record pointing at a real file
+    holding `content`, without running real separation -- `resolve_target_source`
+    only reads `file` (resolved relative to the song folder) and `sha256`."""
+    filename = f"{target}.bin"
+    (project.parent / filename).write_bytes(content)
+    sidecar["analysis"].setdefault("stems", {}).setdefault("artifacts", {})[target] = {
+        "file": filename,
+        "sha256": hashlib.sha256(content).hexdigest(),
+    }
 
 
 def _write_v1_sidecar(project: Path) -> Path:
@@ -279,7 +294,12 @@ def test_analyze_writes_v2_sidecar_with_skeleton_and_provenance(tmp_path: Path) 
         assert result["analysis"][stage]["input_hash"] is not None
         assert result["analysis"][stage]["human_verified"] is False
         assert result["analysis"][stage]["analyzed_at"] is not None
-    assert result["analysis"]["transcription"] == {"requested_targets": ["guitar"], "targets": {}}
+    transcription = result["analysis"]["transcription"]
+    assert transcription["requested_targets"] == ["guitar"]
+    # No separation ran, so the default `guitar` target has no stem to
+    # transcribe yet -- retained as `skipped-missing-source`, never falling
+    # back to the mix.
+    assert transcription["targets"]["guitar"]["status"] == "skipped-missing-source"
     provenance = result["analysis"]["provenance"]
     assert provenance["tool"] == "vgt"
     assert provenance["reference_source_path"].endswith("The Seven Rivers (Full March - 3_00).mp3")
@@ -805,7 +825,7 @@ def test_cli_no_stems_does_not_attempt_separation(tmp_path: Path, monkeypatch: p
     monkeypatch.setattr("vgt.cli.analyze", fake_analyze)
 
     assert main(["analyze", "--no-stems", str(project)]) == 0
-    assert calls == [("tempo", "key", "sections"), ("chords",)]
+    assert calls == [("tempo", "key", "sections"), ("chords", "transcription")]
 
 
 def test_cli_force_does_not_attempt_paid_stems(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -821,7 +841,7 @@ def test_cli_force_does_not_attempt_paid_stems(tmp_path: Path, monkeypatch: pyte
     monkeypatch.setattr("vgt.cli.separation_preview", lambda *_args, **_kwargs: pytest.fail("must not spend credits"))
 
     assert main(["analyze", "--force", str(project)]) == 0
-    assert calls == [("tempo", "key", "sections"), ("chords",)]
+    assert calls == [("tempo", "key", "sections"), ("chords", "transcription")]
 
 
 def test_cli_interactive_guitar_declaration_is_persisted(
@@ -841,3 +861,243 @@ def test_cli_interactive_guitar_declaration_is_persisted(
     assert sidecar["config"]["guitar_type"] == "acoustic"
     assert sidecar["analysis"]["stems"]["guitar_type"] == "acoustic"
     assert sidecar["analysis"]["chords"]["value"] is not None
+
+
+# --- T-C: per-target transcription reconciliation -------------------------
+
+
+def test_refresh_target_per_target_cache_independence(tmp_path: Path) -> None:
+    project = _project_copy(tmp_path)
+    _write_v1_sidecar(project)
+    sidecar = read_sidecar(project)
+    _add_fake_stem(project, sidecar, "guitar", b"guitar-audio-v1")
+    _add_fake_stem(project, sidecar, "bass", b"bass-audio-v1")
+    write_sidecar(project, sidecar)
+
+    first = analyze(project, stages=("transcription",), transcription_targets=("guitar", "bass"), transcriber=FakeTranscriber())
+    guitar_first = first["analysis"]["transcription"]["targets"]["guitar"]
+    bass_first = first["analysis"]["transcription"]["targets"]["bass"]
+    assert guitar_first["status"] == "transcribed"
+    assert bass_first["status"] == "transcribed"
+
+    # Changing only the guitar stem's content must never touch bass's entry.
+    sidecar = read_sidecar(project)
+    _add_fake_stem(project, sidecar, "guitar", b"guitar-audio-v2")
+    write_sidecar(project, sidecar)
+
+    second = analyze(project, stages=("transcription",), transcription_targets=("guitar", "bass"), transcriber=FakeTranscriber())
+    assert second["analysis"]["transcription"]["targets"]["guitar"]["input_hash"] != guitar_first["input_hash"]
+    assert second["analysis"]["transcription"]["targets"]["bass"] == bass_first
+
+
+def test_refresh_target_fills_in_once_a_missing_stem_arrives(tmp_path: Path) -> None:
+    project = _project_copy(tmp_path)
+    _write_v1_sidecar(project)
+
+    first = analyze(project, stages=("transcription",), transcription_targets=("vocals",), transcriber=FakeTranscriber())
+    assert first["analysis"]["transcription"]["targets"]["vocals"]["status"] == "skipped-missing-source"
+
+    sidecar = read_sidecar(project)
+    _add_fake_stem(project, sidecar, "vocals", b"vocals-audio")
+    write_sidecar(project, sidecar)
+
+    second = analyze(project, stages=("transcription",), transcription_targets=("vocals",), transcriber=FakeTranscriber())
+    assert second["analysis"]["transcription"]["targets"]["vocals"]["status"] == "transcribed"
+
+
+def test_refresh_target_force_recomputes_every_unchanged_target(tmp_path: Path) -> None:
+    project = _project_copy(tmp_path)
+    _write_v1_sidecar(project)
+    sidecar = read_sidecar(project)
+    _add_fake_stem(project, sidecar, "guitar", b"guitar-audio")
+    _add_fake_stem(project, sidecar, "bass", b"bass-audio")
+    write_sidecar(project, sidecar)
+
+    class _CountingTranscriber:
+        name = "fake"
+
+        def __init__(self) -> None:
+            self.calls = 0
+
+        def transcribe(self, source, destination_dir, spec, progress=None):
+            self.calls += 1
+            return FakeTranscriber().transcribe(source, destination_dir, spec, progress)
+
+    transcriber = _CountingTranscriber()
+    targets = ("guitar", "bass")
+    analyze(project, stages=("transcription",), transcription_targets=targets, transcriber=transcriber)
+    assert transcriber.calls == 2
+
+    # Unchanged inputs/settings: cached, no recompute.
+    analyze(project, stages=("transcription",), transcription_targets=targets, transcriber=transcriber)
+    assert transcriber.calls == 2
+
+    # --force recomputes every resolvable target, even unchanged ones.
+    analyze(project, stages=("transcription",), transcription_targets=targets, transcriber=transcriber, force=True)
+    assert transcriber.calls == 4
+
+
+def test_refresh_target_isolates_one_targets_failure_from_the_others(tmp_path: Path) -> None:
+    project = _project_copy(tmp_path)
+    _write_v1_sidecar(project)
+    sidecar = read_sidecar(project)
+    _add_fake_stem(project, sidecar, "guitar", b"guitar-audio")
+    _add_fake_stem(project, sidecar, "bass", b"bass-audio")
+    write_sidecar(project, sidecar)
+
+    class _PartiallyFailingTranscriber:
+        name = "fake"
+
+        def transcribe(self, source, destination_dir, spec, progress=None):
+            if source.name == "guitar.bin":
+                raise TranscriptionError("boom: guitar backend exploded")
+            return FakeTranscriber().transcribe(source, destination_dir, spec, progress)
+
+    result = analyze(
+        project,
+        stages=("transcription",),
+        transcription_targets=("guitar", "bass"),
+        transcriber=_PartiallyFailingTranscriber(),
+    )
+
+    guitar = result["analysis"]["transcription"]["targets"]["guitar"]
+    bass = result["analysis"]["transcription"]["targets"]["bass"]
+    assert guitar["status"] == "error"
+    assert "boom: guitar backend exploded" in guitar["error"]
+    assert bass["status"] == "transcribed"
+
+
+def test_refresh_target_warns_once_when_drums_is_requested(tmp_path: Path) -> None:
+    project = _project_copy(tmp_path)
+    _write_v1_sidecar(project)
+    messages: list[str] = []
+
+    analyze(
+        project,
+        stages=("transcription",),
+        transcription_targets=("drums",),
+        transcriber=FakeTranscriber(),
+        progress=messages.append,
+    )
+
+    assert any("groove map" in message for message in messages)
+
+
+def test_add_transcription_targets_dedupes_and_preserves_order(tmp_path: Path) -> None:
+    project = _project_copy(tmp_path)
+    _write_v1_sidecar(project)
+
+    add_transcription_targets(project, ("bass",))
+    result = add_transcription_targets(project, ("guitar", "bass", "vocals"))
+
+    assert result["analysis"]["transcription"]["requested_targets"] == ["guitar", "bass", "vocals"]
+
+
+def test_cli_transcribe_persists_a_target_across_later_runs(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    project = _project_copy(tmp_path)
+    _write_v1_sidecar(project)
+    calls: list[tuple[Any, Any]] = []
+
+    def fake_analyze(*_args: object, stages: tuple[str, ...] | None = None, transcription_targets=None, **_kwargs: object) -> dict[str, object]:
+        calls.append((stages, transcription_targets))
+        return read_sidecar(project)
+
+    monkeypatch.setattr("vgt.cli.analyze", fake_analyze)
+
+    assert main(["analyze", "--transcribe", "bass", str(project)]) == 0
+    assert read_sidecar(project)["analysis"]["transcription"]["requested_targets"] == ["guitar", "bass"]
+    assert calls[-1] == (("chords", "transcription"), None)
+
+    # A later run needs no flag: the persisted set already includes it.
+    assert main(["analyze", str(project)]) == 0
+    assert read_sidecar(project)["analysis"]["transcription"]["requested_targets"] == ["guitar", "bass"]
+
+
+def test_forget_transcription_targets_before_any_analysis_is_a_harmless_no_op(tmp_path: Path) -> None:
+    project = _project_copy(tmp_path)
+    _write_v1_sidecar(project)
+
+    # No `vgt analyze` has ever run: there is no artifact namespace yet, and
+    # thus nothing on disk to delete -- forgetting must still succeed.
+    result = forget_transcription_targets(project, ("guitar",))
+
+    assert result["analysis"]["transcription"]["requested_targets"] == []
+    assert "guitar" not in result["analysis"]["transcription"]["targets"]
+
+
+def test_cli_transcribe_only_does_not_persist(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    project = _project_copy(tmp_path)
+    _write_v1_sidecar(project)
+    calls: list[tuple[Any, Any]] = []
+
+    def fake_analyze(*_args: object, stages: tuple[str, ...] | None = None, transcription_targets=None, **_kwargs: object) -> dict[str, object]:
+        calls.append((stages, transcription_targets))
+        return read_sidecar(project)
+
+    monkeypatch.setattr("vgt.cli.analyze", fake_analyze)
+
+    assert main(["analyze", "--transcribe-only", "bass", str(project)]) == 0
+    assert calls[-1] == (("chords", "transcription"), ("bass",))
+    assert read_sidecar(project)["analysis"]["transcription"]["requested_targets"] == ["guitar"]
+
+
+def test_cli_no_transcribe_skips_the_stage_and_keeps_the_requested_set(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    project = _project_copy(tmp_path)
+    _write_v1_sidecar(project)
+    calls: list[tuple[Any, Any]] = []
+
+    def fake_analyze(*_args: object, stages: tuple[str, ...] | None = None, transcription_targets=None, **_kwargs: object) -> dict[str, object]:
+        calls.append((stages, transcription_targets))
+        return read_sidecar(project)
+
+    monkeypatch.setattr("vgt.cli.analyze", fake_analyze)
+
+    assert main(["analyze", "--no-transcribe", str(project)]) == 0
+    assert calls[-1] == (("chords",), None)
+    assert read_sidecar(project)["analysis"]["transcription"]["requested_targets"] == ["guitar"]
+
+
+def test_cli_transcribe_only_rejects_no_transcribe_and_transcribe(tmp_path: Path) -> None:
+    project = _project_copy(tmp_path)
+    _write_v1_sidecar(project)
+
+    assert main(["analyze", "--transcribe-only", "bass", "--no-transcribe", str(project)]) == 2
+    assert main(["analyze", "--transcribe-only", "bass", "--transcribe", "vocals", str(project)]) == 2
+
+
+def test_cli_forget_transcription_removes_entry_and_deletes_artifacts(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    project = _project_copy(tmp_path)
+    _write_v1_sidecar(project)
+    sidecar = read_sidecar(project)
+    namespace = ensure_artifact_namespace(sidecar, project)
+    sidecar["analysis"]["transcription"]["requested_targets"] = ["guitar"]
+    sidecar["analysis"]["transcription"]["targets"]["guitar"] = {
+        "status": "transcribed",
+        "midi_file": midi_artifact_name("guitar"),
+        "notes_file": notes_artifact_name("guitar"),
+    }
+    write_sidecar(project, sidecar)
+
+    namespace_dir = artifact_namespace_dir(project, namespace)
+    midi_path = namespace_dir / midi_artifact_name("guitar")
+    notes_path = namespace_dir / notes_artifact_name("guitar")
+    midi_path.parent.mkdir(parents=True, exist_ok=True)
+    midi_path.write_bytes(b"fake-midi")
+    notes_path.write_text("start_time_s,end_time_s,pitch_midi,velocity,pitch_bend\n")
+
+    def fake_analyze(*_args: object, stages: tuple[str, ...] | None = None, **_kwargs: object) -> dict[str, object]:
+        return read_sidecar(project)
+
+    monkeypatch.setattr("vgt.cli.analyze", fake_analyze)
+
+    assert main(["analyze", "--forget-transcription", "guitar", str(project)]) == 0
+
+    result = read_sidecar(project)
+    assert "guitar" not in result["analysis"]["transcription"]["requested_targets"]
+    assert "guitar" not in result["analysis"]["transcription"]["targets"]
+    assert not midi_path.is_file()
+    assert not notes_path.is_file()

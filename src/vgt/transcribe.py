@@ -261,6 +261,32 @@ def transcribed_entry(
     }
 
 
+def error_entry(spec: TranscriptionSpec, *, source_role: str, input_hash: str | None, error: str) -> dict[str, Any]:
+    """A retained `targets` index entry recording a backend failure for one
+    target. Mirrors `missing_source_entry`'s retention: the remaining targets
+    still run (see `analysis._refresh_target`), and a later run retries this
+    target from scratch rather than leaving a dangling "in progress" state."""
+    return {
+        "backend": spec.backend,
+        "package_pin": spec.package_pin,
+        "serialization": spec.serialization,
+        "source_role": source_role,
+        "input_hash": input_hash,
+        "settings_hash": spec_hash(spec),
+        "status": "error",
+        "midi_file": None,
+        "notes_file": None,
+        "note_count": None,
+        "pitch_range_midi": None,
+        "first_note_s": None,
+        "last_note_s": None,
+        "midi_tempo": spec.midi_tempo,
+        "settings": _settings_dict(spec),
+        "transcribed_at": None,
+        "error": error,
+    }
+
+
 @dataclass
 class TranscriptionResult:
     """What a `Transcriber` hands back after a successful transcription."""

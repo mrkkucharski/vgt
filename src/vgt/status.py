@@ -70,7 +70,48 @@ def _artifact_paths(project_path: Path, analysis: dict[str, Any]) -> dict[str, P
         "chord_sheet": (chords.get("value") or {}).get("chord_sheet_path") if isinstance(chords, dict) else None,
         "section_timeline": "sections.txt",
     }
+    transcription = analysis.get("transcription") if isinstance(analysis.get("transcription"), dict) else {}
+    transcription_targets = transcription.get("targets") if isinstance(transcription.get("targets"), dict) else {}
+    for target, entry in transcription_targets.items():
+        if not isinstance(entry, dict):
+            continue
+        if isinstance(entry.get("midi_file"), str):
+            names[f"transcription_{target}_midi"] = entry["midi_file"]
+        if isinstance(entry.get("notes_file"), str):
+            names[f"transcription_{target}_notes"] = entry["notes_file"]
     return {name: namespace_dir / filename if isinstance(filename, str) else None for name, filename in names.items()}
+
+
+def _transcription_status(analysis: dict[str, Any]) -> dict[str, Any]:
+    """Summarize the multi-target `transcription` stage: one entry per
+    requested target, reported in `requested_targets` order."""
+    transcription = analysis.get("transcription") if isinstance(analysis.get("transcription"), dict) else {}
+    requested = transcription.get("requested_targets") if isinstance(transcription.get("requested_targets"), list) else []
+    targets = transcription.get("targets") if isinstance(transcription.get("targets"), dict) else {}
+
+    backend: str | None = None
+    package_pin: str | None = None
+    entries: dict[str, Any] = {}
+    for target in requested:
+        entry = targets.get(target) if isinstance(targets.get(target), dict) else {}
+        if backend is None and isinstance(entry.get("backend"), str):
+            backend = entry.get("backend")
+            package_pin = entry.get("package_pin")
+        entries[target] = {
+            "status": entry.get("status"),
+            "note_count": entry.get("note_count"),
+            "pitch_range_midi": entry.get("pitch_range_midi"),
+            "transcribed_at": entry.get("transcribed_at"),
+            "error": entry.get("error"),
+            "midi_file": entry.get("midi_file"),
+            "notes_file": entry.get("notes_file"),
+        }
+    return {
+        "backend": backend,
+        "package_pin": package_pin,
+        "requested_targets": list(requested),
+        "targets": entries,
+    }
 
 
 def build_status(project_path: Path) -> dict[str, Any]:
@@ -100,6 +141,8 @@ def build_status(project_path: Path) -> dict[str, Any]:
 
     stages: dict[str, Any] = {}
     for name in ANALYSIS_STAGES:
+        if name == "transcription":
+            continue  # per-target index, not the value/input_hash/settings_hash shape; see `_transcription_status`
         stage = analysis.get(name)
         stage = stage if isinstance(stage, dict) else {}
         summary = _stage_summary(name, stage)
@@ -187,6 +230,7 @@ def build_status(project_path: Path) -> dict[str, Any]:
             "tempo_map_applied": config.get("tempo_map_applied"),
         },
         "stages": stages,
+        "transcription": _transcription_status(analysis),
         "timestamps": {
             "last_analysis_at": _latest_timestamp([stage["analyzed_at"] for stage in stages.values()]),
             "last_human_correction_at": _latest_timestamp([stage["verified_at"] for stage in stages.values()]),
@@ -227,6 +271,22 @@ def format_status(status: dict[str, Any]) -> str:
             if name in DETECTED_SPLIT_STAGES and stage["detected_present"]:
                 detail += ", detected baseline present"
         lines.append(f"  {name}: {detail}")
+    transcription = status["transcription"]
+    label = transcription["package_pin"] or transcription["backend"] or "not yet run"
+    lines.append(f"transcription ({label}): {len(transcription['requested_targets'])} requested")
+    for target in transcription["requested_targets"]:
+        entry = transcription["targets"].get(target, {})
+        status_value = entry.get("status")
+        if status_value == "transcribed":
+            pitch = entry.get("pitch_range_midi")
+            pitch_text = f"MIDI {pitch[0]}-{pitch[1]}" if pitch else "MIDI ?"
+            lines.append(f"  {target:<8} {entry.get('note_count')} notes, {pitch_text}, transcribed {entry.get('transcribed_at')}")
+        elif status_value == "skipped-missing-source":
+            lines.append(f"  {target:<8} skipped - no {target} stem available")
+        elif status_value == "error":
+            lines.append(f"  {target:<8} error - {entry.get('error')}")
+        else:
+            lines.append(f"  {target:<8} not yet run")
     timestamps = status["timestamps"]
     lines += [
         f"Last analysis: {timestamps['last_analysis_at'] or 'unknown'}",

@@ -22,6 +22,7 @@ import copy
 import hashlib
 import json
 import logging
+import shutil
 
 from . import __version__
 from .chords import ChordDetectionError, chord_sheet_path, detect_chords as _detect_chords, render_chord_sheet
@@ -32,6 +33,7 @@ from .sidecar import (
     ANALYSIS_STAGES,
     SidecarError,
     DETECTED_SPLIT_STAGES,
+    artifact_namespace_dir,
     ensure_artifact_namespace,
     read_sidecar,
     refresh_stage,
@@ -39,6 +41,21 @@ from .sidecar import (
     update_analysis,
 )
 from .tempo import TempoDetectionError, build_tempo_grid, click_artifact_path, detect_beats, render_click
+from .transcribe import (
+    BasicPitchTranscriber,
+    Transcriber,
+    TranscriptionError,
+    default_spec_for_target,
+    error_entry,
+    midi_artifact_name,
+    missing_source_entry,
+    notes_artifact_name,
+    resolve_target_source,
+    spec_hash,
+    target_input_hash,
+    transcribed_entry,
+    validate_target,
+)
 
 FUSION_STEM_NAMES = ("instrumental", "guitar", "backing")
 _LOG = logging.getLogger(__name__)
@@ -167,6 +184,91 @@ def _refresh_stage_with_detected(
     }
 
 
+def _replace_artifact(local_path: Path, final_path: Path) -> None:
+    """Atomically move a backend's local output into its final artifact
+    location, mirroring `separation.py`'s `.part`-suffix move so a crash
+    mid-write never leaves a half-written artifact at the final path."""
+    final_path.parent.mkdir(parents=True, exist_ok=True)
+    tmp_final = final_path.with_suffix(final_path.suffix + ".part")
+    shutil.move(str(local_path), str(tmp_final))
+    tmp_final.replace(final_path)
+
+
+def _refresh_target(
+    project_path: Path,
+    target: str,
+    analysis: dict[str, Any],
+    reference_source: Path,
+    namespace: str,
+    transcriber: Transcriber,
+    *,
+    force: bool,
+    emit: Callable[[str], None],
+) -> dict[str, Any]:
+    """Reconcile one transcription target's `targets` index entry.
+
+    A small sibling of `_refresh_stage_with_detected`: each entry is
+    recomputed only when its own `input_hash`/`settings_hash` pair is stale
+    (or `force`), so changing the guitar stem never touches the bass entry.
+    Never falls back to the mix and never triggers separation -- a target
+    whose stem hasn't arrived yet is simply retained as
+    `skipped-missing-source` until a later run finds it (see
+    `sidecar.py` schema v9 and `docs/transcription-plan.md` section 2).
+    """
+    validate_target(target)
+    if target == "drums":
+        emit("transcription: drums is a pitch model, not a groove map -- expect nonsense-shaped output")
+
+    tempo_value = analysis["tempo"].get("value")
+    midi_tempo = tempo_value.get("bpm") if isinstance(tempo_value, dict) else None
+    spec = default_spec_for_target(target, backend=transcriber.name, midi_tempo=midi_tempo)
+    settings_hash = spec_hash(spec)
+
+    resolved = resolve_target_source(project_path, target, analysis, reference_source=reference_source)
+    if resolved is None:
+        emit(f"transcription skipped for {target}: no {target} stem available")
+        return missing_source_entry(spec, target)
+
+    source_path, artifact = resolved
+    input_hash = target_input_hash(source_path, artifact)
+
+    existing = analysis["transcription"]["targets"].get(target)
+    if (
+        not force
+        and isinstance(existing, dict)
+        and existing.get("status") == "transcribed"
+        and existing.get("input_hash") == input_hash
+        and existing.get("settings_hash") == settings_hash
+    ):
+        emit(f"transcription — {target}: unchanged, using cached result")
+        return existing
+
+    emit(f"transcription — {target}: transcribing…")
+    namespace_dir = artifact_namespace_dir(project_path, namespace)
+    work_dir = namespace_dir / "transcription" / f"_work-{target}"
+    try:
+        try:
+            result = transcriber.transcribe(source_path, work_dir, spec, progress=emit)
+        except TranscriptionError as exc:
+            emit(f"transcription error for {target}: {exc}")
+            return error_entry(spec, source_role=target, input_hash=input_hash, error=str(exc))
+
+        _replace_artifact(result.midi_path, namespace_dir / midi_artifact_name(target))
+        _replace_artifact(result.notes_path, namespace_dir / notes_artifact_name(target))
+    finally:
+        if work_dir.is_dir():
+            shutil.rmtree(work_dir, ignore_errors=True)
+
+    return transcribed_entry(
+        spec,
+        source_role=target,
+        input_hash=input_hash,
+        target=target,
+        result=result,
+        transcribed_at=datetime.now(UTC).isoformat().replace("+00:00", "Z"),
+    )
+
+
 def _tempo_beat_times(tempo_value: dict[str, Any] | None, source: Path) -> list[float]:
     """Beat timestamps backing the chords stage's grid alignment: reused from
     the tempo stage's persisted value when present, otherwise (e.g. after a
@@ -290,6 +392,8 @@ def analyze(
     progress: Callable[[str], None] | None = None,
     force: bool = False,
     stages: tuple[str, ...] | None = None,
+    transcriber: Transcriber | None = None,
+    transcription_targets: tuple[str, ...] | None = None,
 ) -> dict[str, Any]:
     """Run (or refresh) analysis for `project` and persist it into the sidecar.
 
@@ -302,6 +406,12 @@ def analyze(
     `progress`, when given, is called with human-readable status lines as each
     stage starts (the detectors are otherwise silent for a minute or more); the
     CLI wires it to stderr so the JSON result on stdout stays pipe-clean.
+
+    `transcriber` overrides the backend used by the `transcription` stage
+    (defaults to the real `BasicPitchTranscriber`; tests inject
+    `FakeTranscriber`). `transcription_targets`, when given, overrides the
+    persisted `requested_targets` for this run only -- implements
+    `--transcribe-only` without touching the persisted set.
     """
     emit = progress or (lambda _message: None)
     settings = settings or {}
@@ -338,10 +448,34 @@ def analyze(
     total = len(selected_stages)
     for position, stage in enumerate(selected_stages, start=1):
         if stage == "transcription":
-            # Per-target reconciliation (source resolution, spec/cache
-            # bookkeeping, CLI wiring) lands in a later issue; this stage
-            # owns its own per-target index (see sidecar.py) rather than the
-            # single input_hash/settings_hash pair this generic loop drives.
+            # Owns a per-target index (see sidecar.py schema v9) rather than
+            # the single input_hash/settings_hash pair this generic loop
+            # drives, so each target is reconciled independently below.
+            targets_to_run = (
+                transcription_targets if transcription_targets is not None else analysis["transcription"]["requested_targets"]
+            )
+            emit(f"[{position}/{total}] transcription — reconciling {len(targets_to_run)} target(s)…")
+            active_transcriber = transcriber or BasicPitchTranscriber()
+            for target in targets_to_run:
+                analysis["transcription"]["targets"][target] = _refresh_target(
+                    project_path,
+                    target,
+                    analysis,
+                    source,
+                    namespace,
+                    active_transcriber,
+                    force=force,
+                    emit=emit,
+                )
+                # Each target's success (or failure) becomes durable
+                # immediately, same as every other stage below -- a later
+                # target failing must not roll back an earlier one.
+                update_analysis(
+                    project_path,
+                    lambda current, target=target: current["transcription"]["targets"].__setitem__(
+                        target, copy.deepcopy(analysis["transcription"]["targets"][target])
+                    ),
+                )
             continue
         stage_settings = settings.get(stage, {})
         settings_hash = _hash_settings(stage_settings)
@@ -403,3 +537,53 @@ def analyze(
         lambda current: current.__setitem__("provenance", copy.deepcopy(analysis["provenance"])),
     )
     return persisted
+
+
+def add_transcription_targets(project: str | Path | None, targets: tuple[str, ...]) -> dict[str, Any]:
+    """Persist `targets` into `analysis.transcription.requested_targets`,
+    deduped and order-preserving. Mirrors `--extra-stem`'s persistence of
+    opt-in separation requests: stating a target once is enough for every
+    later run to keep refreshing it."""
+    for target in targets:
+        validate_target(target)
+    project_path = locate_project(project)
+
+    def update(current: dict[str, Any]) -> None:
+        existing = current["transcription"]["requested_targets"]
+        current["transcription"]["requested_targets"] = list(dict.fromkeys([*existing, *targets]))
+
+    try:
+        return update_analysis(project_path, update)
+    except SidecarError as exc:
+        raise AnalysisError(str(exc)) from exc
+
+
+def forget_transcription_targets(project: str | Path | None, targets: tuple[str, ...]) -> dict[str, Any]:
+    """Remove `targets` from the persisted requested set, drop their
+    `targets` index entries, and delete their MIDI/notes artifacts -- the
+    only way a kept transcription goes away (see docs/transcription-plan.md
+    section 4). A target never requested/computed is silently a no-op."""
+    for target in targets:
+        validate_target(target)
+    project_path = locate_project(project)
+    try:
+        sidecar = read_sidecar(project_path)
+    except SidecarError as exc:
+        raise AnalysisError(str(exc)) from exc
+
+    namespace = sidecar["analysis"]["stems"].get("artifact_namespace")
+    if namespace:
+        namespace_dir = artifact_namespace_dir(project_path, namespace)
+        for target in targets:
+            for name in (midi_artifact_name(target), notes_artifact_name(target)):
+                path = namespace_dir / name
+                if path.is_file():
+                    path.unlink()
+
+    def update(current: dict[str, Any]) -> None:
+        transcription = current["transcription"]
+        transcription["requested_targets"] = [t for t in transcription["requested_targets"] if t not in targets]
+        for target in targets:
+            transcription["targets"].pop(target, None)
+
+    return update_analysis(project_path, update)
