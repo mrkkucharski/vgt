@@ -96,7 +96,7 @@ class TranscriptionSpec:
 def default_spec_for_target(
     target: str,
     *,
-    backend: str = "fake",
+    backend: str = "basic-pitch",
     package_pin: str = BASIC_PITCH_PACKAGE_PIN,
     serialization: str = BASIC_PITCH_SERIALIZATION,
     midi_tempo: float | None = None,

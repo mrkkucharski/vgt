@@ -42,6 +42,7 @@ def test_default_spec_shares_the_common_defaults_across_targets() -> None:
     guitar = default_spec_for_target("guitar")
     bass = default_spec_for_target("bass")
 
+    assert guitar.backend == bass.backend == "basic-pitch"
     assert guitar.minimum_note_length_ms == bass.minimum_note_length_ms == 60.0
     assert guitar.melodia_trick is True
     assert guitar.multiple_pitch_bends is False
