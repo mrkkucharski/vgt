@@ -1,35 +1,35 @@
 {
-  "current_issue": 78,
-  "session_id": "c38b6c33-99cd-434f-94f7-f6e7063048a8",
-  "pid": 29909,
-  "process_started_at": "Tue Jul 21 14:15:45 2026",
+  "current_issue": 79,
+  "session_id": "38ce50da-1508-476c-9d44-aa51d037237c",
+  "pid": 30227,
+  "process_started_at": "Tue Jul 21 14:18:07 2026",
   "agent": "codex",
-  "started_at": "2026-07-21T12:15:43.685728+00:00",
+  "started_at": "2026-07-21T12:18:05.463685+00:00",
   "scheduler_stalls": {
     "blocked_issues": {
       "67": {
         "first_seen_at": "2026-07-20T21:40:34.197615+00:00",
-        "last_seen_at": "2026-07-21T12:14:34.159799+00:00",
-        "consecutive_passes": 789,
+        "last_seen_at": "2026-07-21T12:16:54.559779+00:00",
+        "consecutive_passes": 791,
         "title": "Run and record the complete live REAPER verification suite"
       }
     }
   },
   "budget": {
     "window_start": "2026-07-21T11:44:16.758773+00:00",
-    "seconds_used": 338.980965,
+    "seconds_used": 477.418858,
     "dollars_used": 0.0,
     "seconds_used_by_agent": {
-      "codex": 338.980965
+      "codex": 477.418858
     }
   },
   "verification_followups": {
     "f0d8bfc9d2dc6da7a31609184e25c4d66d3986fd2340b33a83e98204fb86691e": "created"
   },
-  "role": "review",
-  "branch": "issue-78-t-a-transcription-stage-foundation-trans",
-  "worktree_path": "/Users/marekkucharski/projects/.pm-worktrees/vgt/issue-78",
-  "pr_number": 84,
+  "role": "implement",
+  "branch": "issue-79-t-b-basicpitchtranscriber-pinned-uvx-sub",
+  "worktree_path": "/Users/marekkucharski/projects/.pm-worktrees/vgt/issue-79",
+  "pr_number": null,
   "followup_generation": {
     "fingerprint": "71c63f065a33718d76704b02fc07bebfd2dd591df8a3b818d11f1e4be2ba5384",
     "items": {
@@ -63,13 +63,13 @@
     "78": 1
   },
   "pending_transition": {
-    "issue": 78,
+    "issue": 79,
     "target": "working",
-    "event": "agent.review_started",
+    "event": "agent.started",
     "detail": {
-      "issue": 78,
+      "issue": 79,
       "agent": "codex",
-      "pr": 84
+      "branch": "issue-79-t-b-basicpitchtranscriber-pinned-uvx-sub"
     },
     "cleanup": {}
   }
