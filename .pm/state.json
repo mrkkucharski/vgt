@@ -1,23 +1,23 @@
 {
   "current_issue": 79,
-  "session_id": "f317f01f-af03-4b65-9f57-56a84079f3fa",
-  "pid": 32070,
-  "process_started_at": "Tue Jul 21 14:38:36 2026",
-  "agent": "codex",
-  "started_at": "2026-07-21T12:38:34.335546+00:00",
+  "session_id": "feb6d24f-fb62-4787-94fc-53113ce37122",
+  "pid": 32454,
+  "process_started_at": "Tue Jul 21 14:42:02 2026",
+  "agent": "claude",
+  "started_at": "2026-07-21T12:42:01.264250+00:00",
   "scheduler_stalls": {},
   "budget": {
     "window_start": "2026-07-21T11:44:16.758773+00:00",
-    "seconds_used": 477.418858,
+    "seconds_used": 681.668283,
     "dollars_used": 0.0,
     "seconds_used_by_agent": {
-      "codex": 477.418858
+      "codex": 681.668283
     }
   },
   "verification_followups": {
     "f0d8bfc9d2dc6da7a31609184e25c4d66d3986fd2340b33a83e98204fb86691e": "created"
   },
-  "role": "review",
+  "role": "fix",
   "branch": "issue-79-t-b-basicpitchtranscriber-pinned-uvx-sub",
   "worktree_path": "/Users/marekkucharski/projects/.pm-worktrees/vgt/issue-79",
   "pr_number": 85,
@@ -51,16 +51,17 @@
     "65": 1,
     "72": 4,
     "76": 3,
-    "78": 2
+    "78": 2,
+    "79": 1
   },
   "pending_transition": {
     "issue": 79,
     "target": "working",
-    "event": "agent.review_started",
+    "event": "agent.fix_started",
     "detail": {
       "issue": 79,
-      "agent": "codex",
-      "pr": 85
+      "agent": "claude",
+      "fix_count": 1
     },
     "cleanup": {}
   }
