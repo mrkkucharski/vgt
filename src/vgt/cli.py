@@ -7,12 +7,13 @@ import json
 from pathlib import Path
 import sys
 
-from .analysis import AnalysisError, analyze
+from .analysis import AnalysisError, add_transcription_targets, analyze, forget_transcription_targets
 from .lalal import LalalError, LalalSeparator
 from .project import ProjectError, locate_project, read_project
 from .separation import GUITAR_TYPES, OPTIONAL_STEMS, SeparationError, declared_guitar_type, separate, separation_preview
 from .sidecar import read_sidecar, write_sidecar
 from .status import StatusError, build_status, format_status
+from .transcribe import VALID_TARGETS
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -58,6 +59,31 @@ def _parser() -> argparse.ArgumentParser:
         "--accept-stem-cost", action="store_true",
         help="Explicitly acknowledge the displayed paid stem-operation cost; required for non-interactive forced or opt-in stem work.",
     )
+    analyze_parser.add_argument(
+        "--transcribe",
+        action="append",
+        choices=VALID_TARGETS,
+        metavar="TARGET",
+        help="Also transcribe this target's stem to MIDI; persists across future runs (repeat for multiple targets).",
+    )
+    analyze_parser.add_argument(
+        "--forget-transcription",
+        action="append",
+        choices=VALID_TARGETS,
+        metavar="TARGET",
+        help="Remove this target from the persisted transcription set and delete its MIDI/notes artifacts.",
+    )
+    analyze_parser.add_argument(
+        "--transcribe-only",
+        choices=VALID_TARGETS,
+        metavar="TARGET",
+        help="Transcribe only this target for this run, without changing the persisted set (for threshold tuning).",
+    )
+    analyze_parser.add_argument(
+        "--no-transcribe",
+        action="store_true",
+        help="Skip the transcription stage this run; the persisted requested set is untouched.",
+    )
     status_parser = subparsers.add_parser("status", help="Summarize the read-only vgt sidecar state for a project.")
     status_parser.add_argument("project", nargs="?", help="Path to a .RPP project (defaults to cwd's only .RPP).")
     status_parser.add_argument("--json", action="store_true", help="Print the summary as JSON.")
@@ -90,6 +116,13 @@ def main(argv: list[str] | None = None) -> int:
                 # Progress goes to stderr so stdout stays a clean JSON document
                 # for `vgt analyze ... | jq` and file redirects.
                 print(f"vgt: {message}", file=sys.stderr, flush=True)
+
+            if args.transcribe_only and (args.transcribe or args.forget_transcription):
+                raise AnalysisError("--transcribe-only cannot be combined with --transcribe or --forget-transcription")
+            if args.transcribe_only and args.no_transcribe:
+                raise AnalysisError("--transcribe-only and --no-transcribe are mutually exclusive")
+            if args.transcribe and args.forget_transcription and set(args.transcribe) & set(args.forget_transcription):
+                raise AnalysisError("a target cannot be both --transcribe and --forget-transcription in the same run")
 
             # `--force` is intentionally local-only.  Paid work can only be
             # refreshed through the separate, conspicuous --force-stems path.
@@ -197,7 +230,22 @@ def main(argv: list[str] | None = None) -> int:
 
             if separation_error is not None:
                 report(f"stem separation unavailable; continuing with available sources: {separation_error}")
-            result = analyze(project, progress=report, force=args.force, stages=("chords",))
+
+            if args.forget_transcription:
+                forget_transcription_targets(project, tuple(args.forget_transcription))
+                report(f"forgot transcription target(s): {', '.join(args.forget_transcription)}")
+            if args.transcribe:
+                add_transcription_targets(project, tuple(args.transcribe))
+                report(f"transcription target(s) persisted: {', '.join(args.transcribe)}")
+
+            transcription_stages = () if args.no_transcribe else ("transcription",)
+            result = analyze(
+                project,
+                progress=report,
+                force=args.force,
+                stages=("chords", *transcription_stages),
+                transcription_targets=(args.transcribe_only,) if args.transcribe_only else None,
+            )
             print(json.dumps(result, indent=2))
             return 0
         if args.command == "status":
