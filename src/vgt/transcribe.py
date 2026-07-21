@@ -409,7 +409,10 @@ def _basic_pitch_base_command(package_pin: str) -> list[str]:
     dependency."""
     override = os.environ.get(BASIC_PITCH_CMD_ENV)
     if override:
-        parts = shlex.split(override)
+        try:
+            parts = shlex.split(override)
+        except ValueError as exc:
+            raise TranscriptionError(f"{BASIC_PITCH_CMD_ENV} is not a valid shell command: {override!r} ({exc})") from exc
         if parts:
             return parts
     return [
@@ -591,11 +594,17 @@ class BasicPitchTranscriber:
                 f'"{spec.package_pin}")'
             )
 
-        destination_dir.mkdir(parents=True, exist_ok=True)
-        _clear_stale_outputs(destination_dir)
+        try:
+            destination_dir.mkdir(parents=True, exist_ok=True)
+            _clear_stale_outputs(destination_dir)
+        except OSError as exc:
+            raise TranscriptionError(f"could not prepare {destination_dir}: {exc}") from exc
+
         emit(f"transcribing (basic-pitch): {source.name}")
         try:
-            completed = subprocess.run(argv, capture_output=True, text=True, timeout=600)
+            completed = subprocess.run(
+                argv, capture_output=True, text=True, timeout=600, errors="replace"
+            )
         except subprocess.TimeoutExpired as exc:
             raise TranscriptionError(f"basic-pitch timed out after {exc.timeout}s") from exc
         except OSError as exc:

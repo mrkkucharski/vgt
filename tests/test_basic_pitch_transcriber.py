@@ -426,3 +426,54 @@ def test_transcribe_raises_when_command_cannot_be_executed(tmp_path: Path, monke
 
     with pytest.raises(TranscriptionError):
         BasicPitchTranscriber().transcribe(source, tmp_path / "out", _spec())
+
+
+def test_transcribe_raises_when_destination_dir_cannot_be_prepared(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A pre-existing plain file at `destination_dir`'s path (e.g. a stale
+    artifact left over from an earlier, differently-shaped run) must not
+    escape as a raw FileExistsError -- it's exactly the kind of malformed
+    on-disk state this backend has to turn into a TranscriptionError so the
+    orchestrator can mark just this target failed and continue."""
+    source = tmp_path / "guitar.wav"
+    source.write_bytes(b"fake-audio")
+    blocker = tmp_path / "out"
+    blocker.write_bytes(b"i-am-a-file-not-a-directory")
+
+    monkeypatch.setattr("shutil.which", lambda _name: "/usr/bin/uvx")
+
+    with pytest.raises(TranscriptionError, match="could not prepare"):
+        BasicPitchTranscriber().transcribe(source, blocker, _spec())
+
+
+def test_transcribe_tolerates_non_utf8_stderr_on_non_zero_exit(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A crashing subprocess dependency (onnxruntime, a locale-encoded error
+    message) can put non-UTF-8 bytes on stderr. That must still surface as a
+    TranscriptionError with whatever stderr could be captured, not crash the
+    whole call with an unhandled UnicodeDecodeError."""
+    source = tmp_path / "guitar.wav"
+    source.write_bytes(b"fake-audio")
+
+    def fake_run(argv, **kwargs):
+        assert kwargs.get("errors") == "replace"
+        return SimpleNamespace(returncode=1, stdout="", stderr="boom � tail")
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+    monkeypatch.setattr("shutil.which", lambda _name: "/usr/bin/uvx")
+
+    with pytest.raises(TranscriptionError, match="boom"):
+        BasicPitchTranscriber().transcribe(source, tmp_path / "out", _spec())
+
+
+def test_cmd_env_override_with_unbalanced_quoting_raises_transcription_error(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """An operator-set `VGT_BASIC_PITCH_CMD` with a shell-quoting mistake must
+    raise TranscriptionError, not a raw shlex ValueError."""
+    monkeypatch.setenv(BASIC_PITCH_CMD_ENV, 'basic-pitch --model-dir "unterminated')
+
+    with pytest.raises(TranscriptionError, match=BASIC_PITCH_CMD_ENV):
+        build_basic_pitch_argv(tmp_path / "guitar.wav", tmp_path / "out", _spec())
