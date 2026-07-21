@@ -138,3 +138,22 @@ def test_detect_chords_falls_back_to_template_classifier_snapped_to_the_given_gr
     for segment in result["segments"]:
         assert segment["start_seconds"] in grid
         assert segment["end_seconds"] in grid
+
+
+def test_detect_chords_fuses_optional_stems_in_one_template_decode(monkeypatch: pytest.MonkeyPatch) -> None:
+    import vgt.chords as chords_module
+
+    monkeypatch.setattr(
+        chords_module,
+        "_template_chords_fused",
+        lambda sources, *_args: ([(0.0, 2.0, "C:maj")], list(sources)),
+    )
+    result = detect_chords(
+        FIXTURE_SOURCE,
+        beat_times=[0.0, 1.0, 2.0],
+        sources={"instrumental": FIXTURE_SOURCE, "guitar": FIXTURE_SOURCE},
+    )
+
+    assert result["backend"] == "librosa_fusion"
+    assert result["sources"] == ["original", "instrumental", "guitar"]
+    assert result["segments"] == [{"start_seconds": 0.0, "end_seconds": 2.0, "chord": "C:maj"}]

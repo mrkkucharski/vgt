@@ -6,7 +6,7 @@ import sys
 import pytest
 
 from vgt import analysis as analysis_module
-from vgt.analysis import AnalysisError, analyze
+from vgt.analysis import AnalysisError, analyze, chord_sources
 from vgt.cli import main
 from vgt.sidecar import (
     ANALYSIS_STAGES,
@@ -306,6 +306,57 @@ def test_stage_cache_only_refreshes_the_stage_with_changed_settings(
     assert calls == {"tempo": 2, "key": 1, "sections": 1, "chords": 1}
 
 
+def test_chord_source_set_uses_only_the_measured_fusion_artifacts(tmp_path: Path) -> None:
+    project = _project_copy(tmp_path)
+    _write_v1_sidecar(project)
+    sidecar = read_sidecar(project)
+    namespace = ensure_artifact_namespace(sidecar, project)
+    artifact_dir = artifact_namespace_dir(project, namespace)
+    artifact_dir.mkdir(parents=True)
+    for name in ("instrumental", "guitar", "backing", "bass"):
+        (artifact_dir / f"{name}.wav").write_bytes(b"not decoded here")
+        sidecar["analysis"]["stems"]["artifacts"][name] = {
+            "file": str((artifact_dir / f"{name}.wav").relative_to(project.parent))
+        }
+    write_sidecar(project, sidecar)
+
+    sources = chord_sources(project, FIXTURE_DIR / "Media" / "The Seven Rivers (Full March - 3_00).mp3", sidecar["analysis"])
+
+    assert tuple(sources) == ("original", "instrumental", "guitar", "backing")
+
+
+def test_chord_cache_refreshes_when_a_stem_becomes_available(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    project = _project_copy(tmp_path)
+    _write_v1_sidecar(project)
+    calls = 0
+
+    def fake_chords(*_args: object, **_kwargs: object) -> dict[str, object]:
+        nonlocal calls
+        calls += 1
+        return {"segments": [], "beat_times": [0.0, 1.0], "vocabulary": "maj_min", "backend": "test", "sources": ["original"]}
+
+    monkeypatch.setattr(analysis_module, "_detect_chords", fake_chords)
+    monkeypatch.setattr(analysis_module, "_tempo_beat_times", lambda *_args: [0.0, 1.0])
+    # Seed tempo, avoiding unrelated audio work while keeping the chord stage's
+    # normal cache path intact.
+    sidecar = read_sidecar(project)
+    sidecar["analysis"]["tempo"]["value"] = {"beat_times": [0.0, 1.0]}
+    sidecar["analysis"]["tempo"]["input_hash"] = "seed"
+    write_sidecar(project, sidecar)
+    analyze(project, stages=("chords",))
+
+    sidecar = read_sidecar(project)
+    namespace = sidecar["analysis"]["stems"]["artifact_namespace"]
+    stem = artifact_namespace_dir(project, namespace) / "instrumental.wav"
+    stem.parent.mkdir(parents=True, exist_ok=True)
+    stem.write_bytes(b"available")
+    sidecar["analysis"]["stems"]["artifacts"]["instrumental"] = {"file": str(stem.relative_to(project.parent))}
+    write_sidecar(project, sidecar)
+    analyze(project, stages=("chords",))
+
+    assert calls == 2
+
+
 def test_manual_correction_survives_rerun(tmp_path: Path) -> None:
     project = _project_copy(tmp_path)
     _write_v1_sidecar(project)
@@ -557,13 +608,13 @@ def test_cli_analyze_preserves_local_results_when_lalal_is_unavailable(
     _write_v1_sidecar(project)
     monkeypatch.delenv("LALAL_LICENSE_KEY", raising=False)
 
-    assert main(["analyze", "--guitar", "electric", str(project)]) == 2
+    assert main(["analyze", "--guitar", "electric", str(project)]) == 0
 
     captured = capsys.readouterr()
     output = json.loads(captured.out)
     assert output["schema_version"] == 7
     assert output["analysis"]["tempo"]["value"] is not None
-    assert "local tempo/key/sections/chords analysis was saved" in captured.err
+    assert "stem separation unavailable; continuing with available sources" in captured.err
 
 
 def test_cli_force_stems_requires_explicit_noninteractive_acknowledgment(
@@ -579,20 +630,33 @@ def test_cli_force_stems_requires_explicit_noninteractive_acknowledgment(
     assert "requires --accept-stem-cost" in capsys.readouterr().err
 
 
-def test_cli_requires_a_guitar_declaration_in_noninteractive_mode(
+def test_cli_without_a_guitar_declaration_still_runs_free_chord_analysis(
     tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
     project = _project_copy(tmp_path)
     _write_v1_sidecar(project)
     monkeypatch.setattr(sys.stdin, "isatty", lambda: False)
 
-    assert main(["analyze", str(project)]) == 2
+    assert main(["analyze", str(project)]) == 0
 
     captured = capsys.readouterr()
-    assert "declared guitar type is required in non-interactive mode" in captured.err
-    # The free analysis remains a durable partial success even though paid
-    # work was correctly refused before contacting LALAL.
-    assert read_sidecar(project)["analysis"]["tempo"]["value"] is not None
+    assert "stem separation unavailable; continuing with available sources" in captured.err
+    assert read_sidecar(project)["analysis"]["chords"]["value"] is not None
+
+
+def test_cli_no_stems_does_not_attempt_separation(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    project = _project_copy(tmp_path)
+    _write_v1_sidecar(project)
+    calls: list[tuple[str, ...] | None] = []
+
+    def fake_analyze(*_args: object, stages: tuple[str, ...] | None = None, **_kwargs: object) -> dict[str, object]:
+        calls.append(stages)
+        return read_sidecar(project)
+
+    monkeypatch.setattr("vgt.cli.analyze", fake_analyze)
+
+    assert main(["analyze", "--no-stems", str(project)]) == 0
+    assert calls == [("tempo", "key", "sections"), ("chords",)]
 
 
 def test_cli_interactive_guitar_declaration_is_persisted(

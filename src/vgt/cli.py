@@ -39,6 +39,11 @@ def _parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Recompute every stage, ignoring cached results (human-verified stages are still preserved).",
     )
+    analyze_parser.add_argument(
+        "--no-stems",
+        action="store_true",
+        help="Run free mix analysis only; do not attempt paid stem separation.",
+    )
     analyze_parser.add_argument("--guitar", choices=GUITAR_TYPES, help="Persist and use the declared guitar type for stem separation.")
     analyze_parser.add_argument(
         "--force-stems", action="store_true", help="Deliberately repeat paid stem operations (requires cost confirmation)."
@@ -82,19 +87,23 @@ def main(argv: list[str] | None = None) -> int:
 
             # `--force` is intentionally local-only.  Paid work can only be
             # refreshed through the separate, conspicuous --force-stems path.
-            local_result = analyze(project, progress=report, force=args.force)
-            try:
-                resolved_guitar_type = declared_guitar_type(local_result, args.guitar)
-            except SeparationError:
-                if not sys.stdin.isatty():
-                    raise AnalysisError(
-                        "A declared guitar type is required in non-interactive mode; use --guitar electric or --guitar acoustic."
-                    )
-                resolved_guitar_type = _prompt_for_guitar_type()
+            # Tempo must precede both separation and chords.  Do the other
+            # free detectors now, attempt optional separation, then decode
+            # chords once from whichever artifacts actually arrived.
+            local_result = analyze(project, progress=report, force=args.force, stages=("tempo", "key", "sections"))
+            resolved_guitar_type: str | None = None
+            separation_error: Exception | None = None
+            if not args.no_stems and (not args.force or args.force_stems):
+                try:
+                    resolved_guitar_type = declared_guitar_type(local_result, args.guitar)
+                except SeparationError as exc:
+                    # A missing declaration is an unavailable optional stem
+                    # run, not a reason to withhold free chord analysis.
+                    separation_error = exc
 
             # Keep the ReaScript first-run setting and the stem cache setting
             # aligned.  The CLI override is deliberately persistent.
-            if (
+            if resolved_guitar_type and (
                 local_result["analysis"]["stems"].get("guitar_type") != resolved_guitar_type
                 or local_result.get("config", {}).get("guitar_type") != resolved_guitar_type
             ):
@@ -102,56 +111,57 @@ def main(argv: list[str] | None = None) -> int:
                 local_result.setdefault("config", {})["guitar_type"] = resolved_guitar_type
                 write_sidecar(project, local_result)
 
-            preview = separation_preview(project, guitar_type=resolved_guitar_type, force=args.force_stems)
-            cached = preview["cached_operations"]
-            outstanding = preview["outstanding_operations"]
-            report(
-                "stem recipe: "
-                f"cached operations ({len(cached)}): {', '.join(cached) or 'none'}; "
-                f"outstanding operations ({len(outstanding)}): {', '.join(outstanding) or 'none'}"
-            )
-            if args.force_stems:
-                report(
-                    f"PAID refresh requested for {len(outstanding)} operations; "
-                    "LALAL's authoritative balance and minute estimate will be shown before confirmation."
-                )
-                if not args.accept_stem_cost:
-                    if not sys.stdin.isatty():
-                        raise AnalysisError("--force-stems in non-interactive mode requires --accept-stem-cost")
-            if not outstanding:
-                print(json.dumps(local_result, indent=2))
-                return 0
-            try:
-                with LalalSeparator() as backend:
-                    def confirm_paid_refresh(operation_count: int) -> None:
-                        # `separate` invokes this only after the free LALAL
-                        # preflight has printed the current balance and the
-                        # duration-derived estimate, and before any split
-                        # request can be submitted.
-                        if not args.force_stems or args.accept_stem_cost:
-                            return
-                        answer = input(
-                            f"Repeat {operation_count} paid LALAL split operations at the displayed estimate? "
-                            "Type 'yes' to continue: "
-                        )
-                        if answer.strip().lower() != "yes":
-                            raise SeparationError("paid stem refresh cancelled")
-
-                    result = separate(
-                        project,
-                        backend,
-                        guitar_type=resolved_guitar_type,
-                        force=args.force_stems,
-                        progress=report,
-                        before_submit=confirm_paid_refresh if args.force_stems else None,
+            if resolved_guitar_type:
+                try:
+                    preview = separation_preview(project, guitar_type=resolved_guitar_type, force=args.force_stems)
+                    cached = preview["cached_operations"]
+                    outstanding = preview["outstanding_operations"]
+                    report(
+                        "stem recipe: "
+                        f"cached operations ({len(cached)}): {', '.join(cached) or 'none'}; "
+                        f"outstanding operations ({len(outstanding)}): {', '.join(outstanding) or 'none'}"
                     )
-            except (LalalError, SeparationError) as exc:
-                # Local detector results were atomically checkpointed before
-                # the network stage.  Make that partial success explicit and
-                # preserve a pipe-friendly representation of it on stdout.
-                report(f"local tempo/key/sections/chords analysis was saved; stem separation failed: {exc}")
-                print(json.dumps(read_sidecar(project), indent=2))
-                return 2
+                    if args.force_stems:
+                        report(
+                            f"PAID refresh requested for {len(outstanding)} operations; "
+                            "LALAL's authoritative balance and minute estimate will be shown before confirmation."
+                        )
+                        if not args.accept_stem_cost and not sys.stdin.isatty():
+                            raise AnalysisError("--force-stems in non-interactive mode requires --accept-stem-cost")
+                    if outstanding:
+                        def confirm_paid_refresh(operation_count: int) -> None:
+                            # `separate` invokes this only after the free LALAL
+                            # preflight has printed the current balance and the
+                            # duration-derived estimate, and before any split
+                            # request can be submitted.
+                            if not args.force_stems or args.accept_stem_cost:
+                                return
+                            answer = input(
+                                f"Repeat {operation_count} paid LALAL split operations at the displayed estimate? "
+                                "Type 'yes' to continue: "
+                            )
+                            if answer.strip().lower() != "yes":
+                                raise SeparationError("paid stem refresh cancelled")
+
+                        with LalalSeparator() as backend:
+                            separate(
+                                project,
+                                backend,
+                                guitar_type=resolved_guitar_type,
+                                force=args.force_stems,
+                                progress=report,
+                                before_submit=confirm_paid_refresh if args.force_stems else None,
+                            )
+                except (LalalError, SeparationError, AnalysisError) as exc:
+                    separation_error = exc
+            elif args.no_stems:
+                report("stem separation skipped (--no-stems)")
+            else:
+                report("stem separation skipped (--force never spends credits; use --force-stems to opt in)")
+
+            if separation_error is not None:
+                report(f"stem separation unavailable; continuing with available sources: {separation_error}")
+            result = analyze(project, progress=report, force=args.force, stages=("chords",))
             print(json.dumps(result, indent=2))
             return 0
         if args.command == "status":
