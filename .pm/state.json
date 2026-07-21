@@ -1,10 +1,10 @@
 {
-  "current_issue": 82,
-  "session_id": "dd55925c-1350-4309-9a73-5800ac485227",
-  "pid": 47987,
-  "process_started_at": "Tue Jul 21 19:47:03 2026",
-  "agent": "claude",
-  "started_at": "2026-07-21T17:47:01.589958+00:00",
+  "current_issue": 89,
+  "session_id": "c840f140-3637-4e9d-b409-d916e5d2338a",
+  "pid": 48920,
+  "process_started_at": "Tue Jul 21 19:57:45 2026",
+  "agent": "codex",
+  "started_at": "2026-07-21T17:57:43.533298+00:00",
   "scheduler_stalls": {},
   "budget": {
     "window_start": "2026-07-21T17:38:55.585848+00:00",
@@ -15,23 +15,15 @@
   "verification_followups": {
     "f0d8bfc9d2dc6da7a31609184e25c4d66d3986fd2340b33a83e98204fb86691e": "created"
   },
-  "role": "review",
-  "branch": "issue-82-t-e-document-the-transcription-capabilit",
-  "worktree_path": "/Users/marekkucharski/projects/.pm-worktrees/vgt/issue-82",
-  "pr_number": 88,
+  "role": "implement",
+  "branch": "issue-89-define-the-first-practice-workflow-miles",
+  "worktree_path": "/Users/marekkucharski/projects/.pm-worktrees/vgt/issue-89",
+  "pr_number": null,
   "followup_generation": {
-    "fingerprint": "71c63f065a33718d76704b02fc07bebfd2dd591df8a3b818d11f1e4be2ba5384",
+    "fingerprint": "4701b1bcaece332200f67f774b655fb9255333bda19a6b60f901a25f419b6c7d",
     "items": {
-      "81b1f4f51ba9e75f567d9eab591e467bc0c063fcaa3ea680195f7cd0ec6ddbcd": {
-        "title": "Add CI coverage for the full offline test suite",
-        "status": "created"
-      },
-      "3e0138ded87fbddc650a4f5a914c86d6b710bb21fe4e4c5a776371cf8282d48a": {
-        "title": "Add a live-REAPER verifier for vgt sync corrections",
-        "status": "created"
-      },
-      "2bb9b859dce02edfbe0b6d4661dffe674ba9be6b7ac0da8c55c7b0f381d5884f": {
-        "title": "Run and record the complete live REAPER verification suite",
+      "01ee1c50af6bee870505ebde54b2ee701850df15d4193f3e62575cfbe2c0dbf2": {
+        "title": "Define the first practice-workflow milestone",
         "status": "created"
       }
     }
@@ -53,13 +45,13 @@
     "79": 2
   },
   "pending_transition": {
-    "issue": 82,
+    "issue": 89,
     "target": "working",
-    "event": "agent.review_started",
+    "event": "agent.started",
     "detail": {
-      "issue": 82,
-      "agent": "claude",
-      "pr": 88
+      "issue": 89,
+      "agent": "codex",
+      "branch": "issue-89-define-the-first-practice-workflow-miles"
     },
     "cleanup": {}
   }
