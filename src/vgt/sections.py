@@ -212,8 +212,7 @@ def detect_sections(source: Path, settings: dict[str, Any] | None = None) -> lis
 def section_timeline_path(project_path: Path, namespace: str) -> Path:
     """Verification artifact lives under the project's `vgt/<namespace>/`
     folder, not inside its own Media folder -- it is vgt-owned, regenerable,
-    not part of the song (see docs/stem-separation-plan.md's Artifact
-    layout)."""
+    not part of the song."""
     return artifact_namespace_dir(project_path, namespace) / "sections.txt"
 
 

@@ -148,8 +148,8 @@ def verify(project_path: Path, baseline_path: Path, *, first_snapshot: dict[str,
     if chord_guid is None:
         _fail(f"missing {CHORDS_NAME!r} track")
     chord_block = blocks[chord_guid]
-    if not _MUTE.search(chord_block):
-        _fail("[vgt] Chords must stay muted")
+    if _MUTE.search(chord_block):
+        _fail("[vgt] Chords must stay unmuted so labels remain visible")
     chord_items = _blocks(chord_block, _ITEM_START)
     expected_chords = _expected_chords(analysis, reference_start)
     if len(chord_items) != len(expected_chords):
@@ -203,8 +203,8 @@ def verify(project_path: Path, baseline_path: Path, *, first_snapshot: dict[str,
             _fail("existing tempo map needs the non-invasive [vgt] Beats fallback track")
     if beat_guid is not None:
         beat_block = blocks[beat_guid]
-        if not _MUTE.search(beat_block) or any(not _LOCK.search(item) for item in _blocks(beat_block, _ITEM_START)):
-            _fail("[vgt] Beats is not muted with locked marker items")
+        if _MUTE.search(beat_block) or any(not _LOCK.search(item) for item in _blocks(beat_block, _ITEM_START)):
+            _fail("[vgt] Beats must stay unmuted with locked marker items")
 
     result = {"original_blocks": original_blocks, "managed_names": tuple(names_by_guid[guid] for guid in managed), "regions": tuple(actual_sections), "user_region_present": user_region_present, "tempo_markers": tuple(_TEMPO_MARKER.findall(rpp_text)), "tempo_map_applied": tempo_applied, "tempo_map_fingerprint": tempo_fingerprint}
     if first_snapshot and {key: value for key, value in result.items() if key != "original_blocks"} != {key: value for key, value in first_snapshot.items() if key != "original_blocks"}:

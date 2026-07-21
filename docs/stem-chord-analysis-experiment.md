@@ -1,13 +1,18 @@
 # Experiment: does chord detection on stems beat chord detection on the mix?
 
-**Question.** Phase 1 detects chords from the reference mix only. Now that Phase 2
-produces stems, can analyzing `instrumental`, `bass`, `guitar`, and `backing`
+**Question.** vgt initially detected chords from the reference mix only. Now that
+it produces stems, can analyzing `instrumental`, `bass`, `guitar`, and `backing`
 *in addition to* the original track improve chord quality?
 
 **Answer.** Yes — but less than the raw numbers first suggest, and not in the way
 you'd expect. Roughly two-thirds of the apparent gain turns out to come from a
 better *cleanup step*, which needs no stems at all. The stems earn the rest, and
 they earn it mostly on chord **roots** rather than on major/minor.
+
+**Status.** This experiment led to two shipped changes: the duration-prior/bar
+decoder and optional fusion of the original, instrumental, guitar, and backing
+sources. Its remaining value is as evidence for future validation and classifier
+work, not as a current implementation plan.
 
 ---
 
@@ -108,7 +113,7 @@ The majority filter, or bar aggregation + duration prior, as described above.
 
 | pipeline | audio (knob A) | cleanup (knob B) | exact | root |
 |---|---|---|---|---|
-| **shipped today** | mix only | majority filter | 83.6% | 89.0% |
+| **baseline at experiment time** | mix only | majority filter | 83.6% | 89.0% |
 | **decoder-only control** | mix only | bar-agg + duration prior | 88.7% | 92.1% |
 | **stem fusion** | mix + 3 stems | bar-agg + duration prior | **90.7%** | **95.2%** |
 
@@ -291,22 +296,16 @@ correct, so a few of the "errors" above may be the detector being right.
 
 ---
 
-## Part 7 — Suggested follow-ups, in order
+## Part 7 — Remaining follow-ups
 
-1. **Fix the decoder first — it's free.** Replacing the 5-beat majority filter in
-   `_template_chords` with bar aggregation + a duration prior gains ~5 points on
-   the mix alone, needs no stems, costs no LALAL credits, and touches one function.
-   By far the best value-to-risk ratio available here.
-2. **Then add multi-source fusion**, as a summed score over
-   `original + instrumental + guitar + backing`, gated on stems actually being
-   present. Note the ordering problem this creates: chord detection currently runs
-   *before* separation, so this needs either a re-analysis pass after Phase 2
-   completes or a change to the stage order.
-3. **Validate on a second and third song before tuning any constant** — especially
+The decoder improvement and multi-source fusion described above are now shipped.
+The next useful work is:
+
+1. **Validate on a second and third song before tuning any constant** — especially
    the 4-beat assumption, which should be re-checked against a song whose chords
    change faster than once per bar, and against a song where the detected downbeat
    is shakier.
-4. **Then attack quality, not roots.** Seven of the ten remaining error runs are
+2. **Then attack quality, not roots.** Seven of the ten remaining error runs are
    right-letter/wrong-flavor. Installing madmom's neural chord recognizer, or
    adding a key-aware major/minor prior (we already detect the key: A# minor at
    0.908 confidence), likely beats any further work on sources.

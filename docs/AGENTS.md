@@ -12,9 +12,9 @@ rules live.
 guitar practice. Delivered work covers project plumbing, reference analysis,
 and LALAL.AI stem separation; vgt persists its own state beside the project and
 uses a `[vgt]`-managed REAPER area for its reference annotations and stems —
-all non-destructively and idempotently. See `docs/GOAL.md` for the
-exact phase scope and `docs/stem-separation-plan.md` for the fixed Phase 2
-recipe and its LALAL-only limitation.
+all non-destructively and idempotently. See `docs/GOAL.md` for scope and
+`docs/USER-MANUAL.md` for current user-visible behavior, including the
+LALAL-only stem workflow.
 
 ## Environment assumptions
 

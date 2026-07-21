@@ -1,126 +1,50 @@
 # Goal
 
-## Background
-We are building a (to some extent still experimental) virtual guitar teacher. We are at the initial phase.
-The user interacts with vgt either from the command line or from the REAPER desktop app.
+vgt is a virtual guitar teacher that non-destructively prepares existing REAPER
+projects for practice. A user selects one file-backed reference mix; vgt
+analyzes it, optionally creates practice stems, and adds a clearly owned
+`[vgt]` area to the live project.
 
-In REAPER the user has typically one original song; in the future there is a possibility of having more than
-one. That song may have adjusted pitch, be normalized, or have some marks — but otherwise it is not expected to
-have significant modifications. This is the **reference song**.
+## Delivered baseline
 
-The student works on separate tracks — typically split into several stems:
-a) vocals
-b) drums
-c) bass
-d) guitar(s)
-e) rest of the instruments
+- **Phase 0 — project integration:** inspect and locate RPP projects, select a
+  reference track, keep state in the adjacent `<project>.vgt` sidecar, and
+  maintain an idempotent `[vgt]` area through REAPER.
+- **Phase 1 — reference analysis:** detect tempo/beat grid, key, sections, and
+  beat-aligned major/minor chords; show the results in REAPER; and preserve
+  human chord/section corrections through `vgt sync`.
+- **Supporting capability — stem separation:** LALAL.AI v1 separates the
+  standard vocals/instrumental/bass/drums/guitar/backing set, with optional
+  strings and piano. It is a delivered capability, not a numbered phase.
 
-For practicing, the student may want to mute the original track, change play speed (preserving pitch), adjust
-the volume of specific parts (e.g. volume up on bass and drums, volume down on guitar) etc. — so they can play
-along with specific track sets. And so on.
+See [the user manual](USER-MANUAL.md) for commands, REAPER object states,
+correction workflow, cost controls, and the current regression contract.
 
-The whole initiative is divided into sub-projects or phases. Each phase builds an incremental piece of the
-functionality.
+## Permanent invariants
 
-## Phases
+- **Non-destructive:** vgt changes only objects it created and recorded as
+  `[vgt]`-managed; it never changes user tracks, items, or regions.
+- **Idempotent:** re-running a workflow reconciles vgt-owned state without
+  duplicates or corruption.
+- **Live REAPER mutation:** project changes use REAPER's API, never RPP text
+  editing.
+- **Analysis outside REAPER:** CPU-heavy DSP/ML stays in the Python CLI.
+- **Correctable:** human-synchronized chord and section edits survive future
+  runs; machine detections remain available as a baseline.
+- **Respect the project:** vgt does not overwrite an existing or human-edited
+  tempo map; it falls back to non-invasive beat labels.
+- **Cost safe:** LALAL credentials are environment-only; paid work is cached,
+  checkpointed, and explicitly confirmed when forced or optional.
 
-The initiative is built in incremental phases. Each adds a self-contained slice and builds on the `[vgt]`
-conventions and the `<project>.vgt` sidecar established by the phases before it. "Done" for the whole project is
-the union of every phase's deliverables below.
+## Phase 2 — practice workflow *(to be planned)*
 
-### Phase 0 — REAPER-plumbing foundation *(delivered)*
+Phase 2 starts from the delivered baseline above. Its scope has not yet been
+defined. Likely directions include practice-oriented stem muting, looping,
+tempo management, and recording support, but none are committed by this goal.
 
-Establishes how vgt locates, opens, and safely augments a REAPER project, and where vgt stores its own state.
-Shipped:
-- **locating a REAPER project** — accept a project path as input;
-- **defaulting to the current project** — when no project is given and there is already a REAPER project in the
-  working directory, assume the user wants to work with that one;
-- **opening the project and reading relevant information** — parse the project and read at least: sample rate,
-  tempo/time-signature, and the existing track list (names and GUIDs) so vgt can tell which tracks are already
-  vgt-managed;
-- **storing vgt settings next to the REAPER project** — a single sidecar file living alongside the
-  `.RPP` and sharing its name with a `.vgt` extension (e.g. `Reaper Project.RPP` → `Reaper Project.vgt`), holding
-  vgt's own state (schema version, the vgt-managed track GUIDs it created, and any config);
-- **preparing a "vgt managed" area for practice tracks** — a REAPER track folder (and a `[vgt]` name prefix on
-  every track/region vgt creates) so a student can immediately identify what vgt owns;
-- **choosing a reference track** — the apply action asks which of the project's own tracks is the reference,
-  and names the managed area after it (`[vgt] <reference track name>`).
+Offline separation, guitar MIDI reference generation, performance scoring, and
+new practice controls remain out of the delivered baseline until explicitly
+planned.
 
-### Phase 1 — Reference analysis *(delivered)*
-
-Analyze the chosen reference track — **the full mix; no stem separation yet** — and record what vgt learns about
-the song, both in the sidecar and as `[vgt]`-owned objects in the project. From the reference audio, detect:
-- **tempo & beat grid** — BPM, downbeat offset, and time signature;
-- **key** — root + scale (major/minor);
-- **sections** — intro / verse / chorus / … boundaries;
-- **chords** — beat-aligned chord labels (maj/min vocabulary).
-
-Phase 1 delivers:
-- **an analysis stage in the CLI** — heavy analysis runs in the Python CLI, never inside REAPER; the ReaScript
-  action passes the reference track's source-file path (already identified in phase 0) to the CLI;
-- **persisting analysis in the sidecar** — extend the `<project>.vgt` schema (bump `schema_version`) to hold the
-  detected tempo/key/sections/chords alongside phase 0's state;
-- **reflecting analysis into the project**, additively and idempotently, as `[vgt]`-owned objects:
-  - a **tempo map** — subject to the tempo-map rule: written only when the project still has a single default
-    tempo marker; otherwise left untouched and offered non-invasively (an unmuted `[vgt]` beat-marker track). A
-    re-apply refreshes a vgt-created map with newly detected/corrected tempo data as long as the live map is
-    still demonstrably the one vgt wrote (a fingerprint recorded in the sidecar proves it); the moment a human
-    edits it by hand, vgt never touches it again and falls back to the non-invasive beat-marker track instead;
-  - `[vgt]` **section regions** (intro/verse/chorus/…), renamable and movable by the user;
-  - a **muted `[vgt] Chords`** track carrying the beat-aligned chord labels as text items, editable on the
-    timeline;
-  - a single **`vgt sync`** action reads both the edited chord items and the edited section regions back into
-    the sidecar as human-verified corrections in one invocation, without disturbing the machine-detected values
-    each stage keeps alongside them (see README's "Correcting chords and sections in REAPER").
-
-**Phase 1 was the analysis slice** of the [phase1-song-prep-plan.md](phase1-song-prep-plan.md) roadmap.
-Stem separation — deferred out of phase 1 — is now **Phase 2** (below). Guitar MIDI reference generation,
-practice controls (stem muting / looping / tempo-ramp), and performance scoring remain deferred to later phases.
-
-### Phase 2 — Stem separation *(current)*
-
-Separate the reference track into practice stems using **LALAL.AI as the sole backend** — offline separation
-(Demucs/UVR/RoFormer) is explicitly deferred. Reproducing the user's proven manual workflow, vgt produces six
-artifacts via five paid split operations, isolating each **reference** stem from the **original** mix (with one
-deliberate cascade for the guitarless practice bed) and loading them as `[vgt]` tracks. The full design — LALAL
-API v1 contract, the fixed recipe, durability / no-double-charge invariants, artifact layout, and acceptance
-criteria — is in [stem-separation-plan.md](stem-separation-plan.md). Phase 2 delivers:
-- **six stems** — `vocals`, `instrumental` (mix − vocals), `bass`, `drums`, `guitar` (electric/acoustic,
-  user-declared), and `backing (no guitar)`;
-- **a LALAL v1 backend** behind a thin `Separator` seam, authenticated only by the `LALAL_LICENSE_KEY`
-  environment variable (never persisted or logged), with idempotency-keyed, durably-checkpointed operations so
-  paid work is never repeated or double-charged;
-- **a `stems` block in the sidecar** — per-operation and per-artifact provenance, content-hash cache identity,
-  and a stable per-project artifact namespace under a `vgt/` subfolder next to the RPP;
-- **six `[vgt]` stem tracks** imported additively and idempotently with project-relative media paths;
-- **cost-safe CLI semantics** — ordinary `vgt analyze --force` never spends credits; repeating paid work
-  requires an explicit `--force-stems` with a cost preview and confirmation.
-
-**Out of scope for phase 2** (deferred to later phases): offline separation (UVR / RoFormer / Demucs), guitar
-MIDI reference generation, practice controls (stem muting / looping / tempo-ramp), and performance scoring.
-
-**Not an agent task.** Subjective quality evaluation of real LALAL stems on the user's own golden songs
-(listening for interference/damage, judging electric-vs-acoustic and `extraction_level` quality) is performed
-by the user, not by an autonomous agent — it requires human ears and owned audio. Do **not** create issues for
-this; the user runs it directly and folds findings back into the docs.
-
-## Requirements
-
-- **Non-destructive.** Never overwrite, rename, delete, or modify any track or object vgt did not create.
-  Everything vgt creates carries the `[vgt]` prefix; only `[vgt]`-owned objects are ever touched. A re-apply
-  first removes only its own `[vgt]` objects before recreating them.
-- **Respect REAPER settings.** Open and read the REAPER project (and relevant preferences) and honor them —
-  do not fight the project's existing sample rate, tempo, etc.
-- **Prefer live, in-app manipulation.** The intended mechanism is to manipulate the project through the REAPER
-  API via a ReaScript action (not by editing `.RPP` text), so the modifications appear immediately in the user's
-  open project and REAPER handles project construction correctly. Where a piece is not yet technically feasible
-  in-app, note it explicitly rather than silently falling back to text edits.
-- **Analysis stays out of the DAW process.** ML/DSP analysis runs in the Python CLI; REAPER only reads the
-  reference source path and applies results through the API. The DAW never loads heavy analysis dependencies.
-- **Correctable.** Auto-analysis will sometimes be wrong; every detected value (tempo, key, sections, chords) is
-  overridable, and corrections survive re-runs of the analysis.
-- **CLI-initiated.** A command-line interface initiates the actions, with the intent that it be invoked from a
-  ReaScript action inside REAPER. The ReaScript wrapper is a thin caller; the CLI does the work.
-- **Idempotent.** Running the same command twice produces the same result — no duplicate tracks, folders, regions,
-  or settings. Re-running reconciles vgt's managed area to the intended state.
-- **Documented.** There is documentation describing how vgt works and how to run it.
+Subjective listening evaluation of real stems remains a user-owned activity: it
+requires human ears and the user's audio, and is not an autonomous-agent task.

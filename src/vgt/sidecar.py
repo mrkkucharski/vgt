@@ -127,8 +127,8 @@ def sidecar_path(project_path: str | Path) -> Path:
 
 def artifact_namespace_dir(project_path: str | Path, namespace: str) -> Path:
     """Directory for `namespace`'s regenerable artifacts: `vgt/<namespace>/`
-    next to the project (see docs/stem-separation-plan.md's Artifact
-    layout). The `.vgt` sidecar itself stays adjacent to the RPP, not here."""
+    next to the project. The `.vgt` sidecar itself stays adjacent to the RPP,
+    not here."""
     return Path(project_path).parent / "vgt" / namespace
 
 

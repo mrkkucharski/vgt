@@ -474,8 +474,7 @@ local function offer_beats_track(index, tempo, reference_start, reference_end, m
 end
 
 -- Imports the rendered click WAV (analysis.tempo.value.click_artifact_path,
--- a filename under the project's vgt/<namespace>/ folder, see
--- docs/stem-separation-plan.md's Artifact layout) as a muted audio track, so
+-- a filename under the project's vgt/<namespace>/ folder) as a muted audio track, so
 -- it never surprises the user with playback -- unlike Beats/Chords, which
 -- are read rather than heard, this one only needs to exist for the user to
 -- unmute it. Absent gracefully if `vgt analyze` has not produced the

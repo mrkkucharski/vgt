@@ -1,4 +1,4 @@
-"""Stem separation orchestrator (M1-A, see docs/stem-separation-plan.md).
+"""Stem separation orchestrator.
 
 Owns the fixed five-operation split DAG, content-identity hashing, cache
 checks, output validation/naming, and durable sidecar checkpoints. A backend
@@ -8,7 +8,7 @@ That separation is deliberate: it lets a network-free `FakeSeparator` exercise
 every recipe/cache/partial-resume/sidecar code path that the real LALAL
 backend (a later issue) will also drive.
 
-The fixed recipe (docs/stem-separation-plan.md, "Separation recipe"):
+The fixed recipe:
   1. vocals-original     split(vocals) from the original  -> keep vocals (stem)
                                                           + instrumental (back)
   2. bass-original        split(bass) from the original    -> keep bass (stem)
@@ -21,8 +21,7 @@ guitar-instrumental is the *only* cascade (split of a split); everything else
 is always split from the original source, per the plan's correctness
 invariant. `guitar_type` is declared by the caller, never detected here.
 
-Two invariants this module exists to guarantee (docs/stem-separation-plan.md
-Acceptance criteria, and repeated in the issue as "must-have"):
+Two invariants this module exists to guarantee:
   - Never double-charge: an operation already `in_progress` resumes with its
     persisted `backend_state` (which a real backend uses to recover a task id)
     instead of silently starting a fresh paid task.

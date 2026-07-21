@@ -55,7 +55,7 @@ def _latest_timestamp(timestamps: list[Any]) -> str | None:
 
 def _artifact_paths(project_path: Path, analysis: dict[str, Any]) -> dict[str, Path | None]:
     """Regenerable analysis artifacts live under `vgt/<namespace>/` next to
-    the project (see docs/stem-separation-plan.md's Artifact layout); until
+    the project; until
     an `artifact_namespace` has been recorded (i.e. before `vgt analyze` has
     ever run), none of these paths can be known."""
     stems = analysis.get("stems") if isinstance(analysis.get("stems"), dict) else {}
