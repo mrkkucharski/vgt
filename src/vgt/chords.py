@@ -123,45 +123,137 @@ def _chord_templates() -> list[tuple[str, Any]]:
     return templates
 
 
-def _best_chord(chroma_vector, templates) -> str:
+def _template_scores(chroma_vector, templates):
     import numpy as np
 
     vector = np.asarray(chroma_vector, dtype=float)
     norm = float(np.linalg.norm(vector))
     if norm < 1e-6:
-        return _NO_CHORD
+        return None
     vector = vector / norm
-
-    best_label, best_score = _NO_CHORD, -1.0
-    for label, template in templates:
-        template_norm = template / np.linalg.norm(template)
-        score = float(np.dot(vector, template_norm))
-        if score > best_score:
-            best_label, best_score = label, score
-    return best_label
+    return np.array([float(np.dot(vector, template / np.linalg.norm(template))) for _, template in templates])
 
 
-_SMOOTHING_WINDOW = 5  # beats; odd, so each label has an equal look-ahead/behind
+DEFAULT_DURATION_PRIOR = 0.8
+"""Score bonus for retaining the preceding chord in template decoding.
+
+This value came from an exploratory single-song experiment, so it is exposed
+as a setting rather than embedded in the decoder.  It is safe without a known
+downbeat because it has no bar-phase assumption.
+"""
+
+DEFAULT_BAR_AGGREGATION_BEATS = 4
+"""Beats to pool for a bar-level chord decision when a 4/4 downbeat is known."""
 
 
-def _smooth_labels(labels: list[str], window: int = _SMOOTHING_WINDOW) -> list[str]:
-    """Per-beat chord classification is noisy (single-beat chroma windows
-    flip between e.g. a root's major/minor reading from frame to frame) --
-    a majority-vote filter over a small neighborhood turns that chatter into
-    stable, musically plausible runs before segments are merged."""
-    from collections import Counter
-
-    half = window // 2
-    n = len(labels)
-    return [Counter(labels[max(0, i - half) : min(n, i + half + 1)]).most_common(1)[0][0] for i in range(n)]
+def _decoder_setting(settings: dict[str, Any], name: str, default: float) -> float:
+    value = settings.get(name, default)
+    if isinstance(value, bool) or not isinstance(value, (int, float)) or value < 0:
+        raise ChordDetectionError(f"chords.{name} must be a non-negative number.")
+    return float(value)
 
 
-def _template_chords(source: Path, beat_times: list[float]) -> list[tuple[float, float, str]]:
+def _bar_aggregation_beats(settings: dict[str, Any], tempo: dict[str, Any] | None) -> int | None:
+    """Return a usable bar size only when the tempo stage knows its downbeat.
+
+    Librosa deliberately reports every beat as position one (see tempo.py),
+    which means its offset is not a detected downbeat.  Pooling four beats in
+    that case can move every decision one beat out of phase, so the conservative
+    default is no aggregation.  Explicit settings still require madmom's
+    downbeat-aware tempo result; they only change the group size.
+    """
+    requested = settings.get("bar_aggregation_beats", DEFAULT_BAR_AGGREGATION_BEATS)
+    if isinstance(requested, bool) or not isinstance(requested, int) or requested < 0:
+        raise ChordDetectionError("chords.bar_aggregation_beats must be a non-negative integer.")
+    if requested == 0:
+        return None
+    if not tempo or tempo.get("backend") != "madmom" or tempo.get("time_signature") != "4/4":
+        return None
+    if not isinstance(tempo.get("downbeat_offset_seconds"), (int, float)):
+        return None
+    return requested
+
+
+def _bar_aggregate_scores(scores, group_indices: list[int | None]):
+    """Replace each beat's evidence with the mean evidence of its bar.
+
+    Scores rather than independently chosen labels are pooled, so every label
+    in a bar is supported by all of that bar's chroma observations.
+    """
+    import numpy as np
+
+    pooled = np.asarray(scores, dtype=float).copy()
+    groups: dict[int, list[int]] = {}
+    for row, group in enumerate(group_indices):
+        if group is not None:
+            groups.setdefault(group, []).append(row)
+    for rows in groups.values():
+        pooled[rows] = pooled[rows].mean(axis=0)
+    return pooled
+
+
+def _viterbi_labels(scores, labels: list[str], duration_prior: float) -> list[str]:
+    """Decode template scores with a first-order chord-duration prior."""
+    import numpy as np
+
+    emissions = np.asarray(scores, dtype=float)
+    if emissions.ndim != 2 or emissions.shape[1] != len(labels):
+        raise ValueError("scores must have one column per chord label")
+    if len(emissions) == 0:
+        return []
+
+    path_scores = emissions[0].copy()
+    backpointers = np.zeros((len(emissions), len(labels)), dtype=int)
+    for beat in range(1, len(emissions)):
+        best_previous = int(np.argmax(path_scores))
+        transitions = np.full(len(labels), path_scores[best_previous])
+        staying = path_scores + duration_prior
+        stay_better = staying >= transitions
+        transitions[stay_better] = staying[stay_better]
+        backpointers[beat, stay_better] = np.flatnonzero(stay_better)
+        backpointers[beat, ~stay_better] = best_previous
+        path_scores = emissions[beat] + transitions
+
+    indices = [int(np.argmax(path_scores))]
+    for beat in range(len(emissions) - 1, 0, -1):
+        indices.append(int(backpointers[beat, indices[-1]]))
+    indices.reverse()
+    return [labels[index] for index in indices]
+
+
+def _bar_groups(
+    bounds: list[tuple[float, float]], beat_times: list[float], tempo: dict[str, Any] | None, bar_beats: int | None
+) -> list[int | None]:
+    """Map template windows to bars anchored on the detected downbeat."""
+    if bar_beats is None:
+        return [None] * len(bounds)
+    downbeat = float(tempo["downbeat_offset_seconds"])  # guarded by _bar_aggregation_beats
+    if len(beat_times) < 2:
+        return [None] * len(bounds)
+    intervals = [b - a for a, b in zip(beat_times, beat_times[1:]) if b > a]
+    if not intervals:
+        return [None] * len(bounds)
+    interval = min(intervals)
+    anchor = min(range(len(beat_times)), key=lambda index: abs(beat_times[index] - downbeat))
+    if abs(beat_times[anchor] - downbeat) > interval * 0.1:
+        return [None] * len(bounds)
+
+    groups: list[int | None] = []
+    for start, _end in bounds:
+        index = min(range(len(beat_times)), key=lambda candidate: abs(beat_times[candidate] - start))
+        groups.append((index - anchor) // bar_beats if abs(beat_times[index] - start) <= interval * 0.1 else None)
+    return groups
+
+
+def _template_chords(
+    source: Path, beat_times: list[float], settings: dict[str, Any], tempo: dict[str, Any] | None
+) -> list[tuple[float, float, str]]:
     """Always-available fallback: chroma of the harmonic component
     (percussive transients hurt chord templates) averaged within each
     beat-to-beat window of the shared grid, classified against the 24
-    maj/min triad templates, majority-vote smoothed across neighboring
-    beats, then run-length-merged into segments."""
+    maj/min triad templates, decoded with a chord-duration prior.  When the
+    tempo stage has a trustworthy 4/4 downbeat, template scores are also
+    pooled within downbeat-aligned bars before decoding."""
     import librosa
     import numpy as np
 
@@ -177,19 +269,29 @@ def _template_chords(source: Path, beat_times: list[float]) -> list[tuple[float,
     boundaries = sorted({round(t, 6) for t in [0.0, *beat_times, duration]})
     templates = _chord_templates()
 
-    raw_labels: list[str] = []
     raw_bounds: list[tuple[float, float]] = []
+    score_rows: list[Any] = []
     for start, end in zip(boundaries, boundaries[1:]):
         mask = (frame_times >= start) & (frame_times < end)
         if not mask.any():
             continue
-        raw_labels.append(_best_chord(chroma[:, mask].mean(axis=1), templates))
+        scores = _template_scores(chroma[:, mask].mean(axis=1), templates)
+        if scores is None:
+            score_rows.append(np.full(len(templates), -1.0))
+        else:
+            score_rows.append(scores)
         raw_bounds.append((start, end))
 
-    smoothed_labels = _smooth_labels(raw_labels)
+    if not score_rows:
+        return []
+    labels = [label for label, _template in templates]
+    duration_prior = _decoder_setting(settings, "duration_prior", DEFAULT_DURATION_PRIOR)
+    bar_beats = _bar_aggregation_beats(settings, tempo)
+    scores = _bar_aggregate_scores(score_rows, _bar_groups(raw_bounds, beat_times, tempo, bar_beats))
+    decoded_labels = _viterbi_labels(scores, labels, duration_prior)
 
     segments: list[tuple[float, float, str]] = []
-    for (start, end), label in zip(raw_bounds, smoothed_labels):
+    for (start, end), label in zip(raw_bounds, decoded_labels):
         if segments and segments[-1][2] == label:
             segments[-1] = (segments[-1][0], end, label)
         else:
@@ -226,11 +328,17 @@ def _snap_segments_to_grid(
     return snapped
 
 
-def detect_chords(source: Path, beat_times: list[float], settings: dict[str, Any] | None = None) -> dict[str, Any]:
+def detect_chords(
+    source: Path,
+    beat_times: list[float],
+    settings: dict[str, Any] | None = None,
+    *,
+    tempo: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     """Return `{"segments", "beat_times", "vocabulary", "backend"}` for
     `source`, with every chord segment boundary snapped to `beat_times` --
     the shared grid from the tempo stage (see module docstring)."""
-    del settings  # no tunables yet; accepted for a uniform detector signature
+    settings = settings or {}
     if not source.is_file():
         raise ChordDetectionError(f"Reference source file not found: {source}")
     grid = sorted(beat_times)
@@ -245,7 +353,7 @@ def detect_chords(source: Path, beat_times: list[float], settings: dict[str, Any
         if chordino_result is not None:
             raw_segments, backend = chordino_result, "chordino"
         else:
-            raw_segments, backend = _template_chords(source, grid), "librosa"
+            raw_segments, backend = _template_chords(source, grid, settings, tempo), "librosa"
 
     segments = _snap_segments_to_grid(raw_segments, grid)
 

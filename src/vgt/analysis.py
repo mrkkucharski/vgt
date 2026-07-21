@@ -198,9 +198,10 @@ def detect_chords(
     documented as reflecting the effective, human-corrected `value` -- isn't
     silently overwritten with the raw machine detection the human corrected
     away from."""
-    beat_times = _tempo_beat_times(analysis["tempo"]["value"], source)
+    tempo_value = analysis["tempo"]["value"]
+    beat_times = _tempo_beat_times(tempo_value, source)
     try:
-        chords_value = _detect_chords(source, beat_times, settings)
+        chords_value = _detect_chords(source, beat_times, settings, tempo=tempo_value)
     except ChordDetectionError as exc:
         raise AnalysisError(str(exc)) from exc
     artifact_path = chord_sheet_path(project_path, namespace)
