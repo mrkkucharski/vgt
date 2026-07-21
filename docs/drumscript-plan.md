@@ -384,4 +384,3 @@ sub-issue ordering as described in the repository root `AGENTS.md`.
 - [DrumScript score builder](https://github.com/DrumScript/DrumScript/blob/main/drumscript/notation_generator/score_builder.py)
 - [DrumScript MIDI exporter](https://github.com/DrumScript/DrumScript/blob/main/drumscript/notation_generator/midi_exporter.py)
 - [DrumScript GM drum mapping](https://github.com/DrumScript/DrumScript/blob/main/drumscript/notation_generator/constants.py)
-
