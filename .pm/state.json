@@ -1,10 +1,10 @@
 {
-  "current_issue": 89,
-  "session_id": "c840f140-3637-4e9d-b409-d916e5d2338a",
-  "pid": 48920,
-  "process_started_at": "Tue Jul 21 19:57:45 2026",
+  "current_issue": 93,
+  "session_id": "07e2feaa-4d23-452e-9f93-6ac3d726469b",
+  "pid": 49768,
+  "process_started_at": "Tue Jul 21 20:09:51 2026",
   "agent": "codex",
-  "started_at": "2026-07-21T17:57:43.533298+00:00",
+  "started_at": "2026-07-21T18:09:49.642463+00:00",
   "scheduler_stalls": {},
   "budget": {
     "window_start": "2026-07-21T17:38:55.585848+00:00",
@@ -16,8 +16,8 @@
     "f0d8bfc9d2dc6da7a31609184e25c4d66d3986fd2340b33a83e98204fb86691e": "created"
   },
   "role": "implement",
-  "branch": "issue-89-define-the-first-practice-workflow-miles",
-  "worktree_path": "/Users/marekkucharski/projects/.pm-worktrees/vgt/issue-89",
+  "branch": "issue-93-d-a-backend-aware-transcription-specs-an",
+  "worktree_path": "/Users/marekkucharski/projects/.pm-worktrees/vgt/issue-93",
   "pr_number": null,
   "followup_generation": {
     "fingerprint": "4701b1bcaece332200f67f774b655fb9255333bda19a6b60f901a25f419b6c7d",
@@ -45,13 +45,13 @@
     "79": 2
   },
   "pending_transition": {
-    "issue": 89,
+    "issue": 93,
     "target": "working",
     "event": "agent.started",
     "detail": {
-      "issue": 89,
+      "issue": 93,
       "agent": "codex",
-      "branch": "issue-89-define-the-first-practice-workflow-miles"
+      "branch": "issue-93-d-a-backend-aware-transcription-specs-an"
     },
     "cleanup": {}
   }
