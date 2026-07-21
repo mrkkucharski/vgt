@@ -16,6 +16,20 @@ local STEM_TRACKS = {
   {artifact = "strings", filename = "stems/strings.wav", name = PREFIX .. " Strings"},
   {artifact = "piano", filename = "stems/piano.wav", name = PREFIX .. " Keys / Piano"},
 }
+-- This order and these labels match transcribe.py's VALID_TARGETS and the
+-- corresponding stem labels above. It also gives orphaned transcriptions a
+-- stable place after the stem block.
+local TRANSCRIPTION_TARGETS = {
+  {target = "guitar", label = "Guitar"},
+  {target = "bass", label = "Bass"},
+  {target = "vocals", label = "Vocals"},
+  {target = "drums", label = "Drums"},
+  {target = "instrumental", label = "Instrumental"},
+  {target = "backing", label = "Backing (no guitar)"},
+  {target = "strings", label = "Strings"},
+  {target = "piano", label = "Keys / Piano"},
+  {target = "original", label = "Original"},
+}
 local STEM_LEASE_TIMEOUT_SECONDS = 30 * 60
 
 local function project_path()
@@ -555,19 +569,72 @@ local function valid_stem_artifact(artifact, expected_filename, artifact_namespa
   return path
 end
 
+-- MIDI records follow the same namespace rule as stems. Unlike WAV stem
+-- records they have no committed size/duration metadata; REAPER validates the
+-- MIDI data when it opens the source.
+local function valid_midi_artifact(record, target, artifact_namespace)
+  if type(record) ~= "table" or type(record.midi_file) ~= "string" then return nil, "sidecar record is missing midi_file" end
+  if not artifact_namespace or artifact_namespace == "" or artifact_namespace:find("[\\/]") or artifact_namespace:find("%.%.") then
+    return nil, "sidecar artifact namespace is invalid"
+  end
+  local expected_filename = "transcription/" .. target .. ".mid"
+  if record.midi_file ~= expected_filename then return nil, "sidecar MIDI file is outside the expected transcription namespace" end
+  local path = project_dir() .. "vgt/" .. artifact_namespace .. "/" .. record.midi_file
+  local file = io.open(path, "rb")
+  if not file then return nil, "MIDI is missing" end
+  file:close()
+  return path
+end
+
+local function add_reference_midi_track(index, target, transcription, reference_start, managed_tracks, artifact_namespace)
+  local record = type(transcription) == "table" and transcription.targets and transcription.targets[target] or nil
+  if type(record) ~= "table" or record.status ~= "transcribed" then return index, false end
+  local definition = nil
+  for _, candidate in ipairs(TRANSCRIPTION_TARGETS) do
+    if candidate.target == target then definition = candidate break end
+  end
+  if not definition then return index, true end
+  local path, reason = valid_midi_artifact(record, target, artifact_namespace)
+  if not path then
+    warn("skipping transcription " .. target .. ": " .. reason)
+    return index, true
+  end
+  local source = reaper.PCM_Source_CreateFromFile(path)
+  if not source then
+    warn("skipping transcription " .. target .. ": REAPER could not open MIDI")
+    return index, true
+  end
+  -- MIDI has no instrument on this track, so it is silent but remains visible
+  -- and readable in the arrange view like Chords and Beats.
+  local midi_track = add_locked_track(index, PREFIX .. " " .. definition.label .. " Ref (MIDI)", false)
+  local item = reaper.AddMediaItemToTrack(midi_track)
+  reaper.SetMediaItemInfo_Value(item, "D_POSITION", reference_start)
+  reaper.SetMediaItemInfo_Value(item, "D_LENGTH", reaper.GetMediaSourceLength(source))
+  reaper.SetMediaItemInfo_Value(item, "C_BEATATTACHMODE", 0)
+  local take = reaper.AddTakeToMediaItem(item)
+  reaper.SetMediaItemTake_Source(take, source)
+  managed_tracks[#managed_tracks + 1] = midi_track
+  return index + 1, true
+end
+
 -- Import only records that the separator committed into its own
 -- namespace.  The API gets an absolute local path, but saving the project is
 -- what causes REAPER to serialize it project-relative; the live verifier
 -- checks that persisted behavior separately.
-local function add_stem_tracks(index, stems, reference_start, managed_tracks)
-  if type(stems) ~= "table" then return end
-  local artifacts = stems.artifacts
-  local artifact_namespace = stems.artifact_namespace
-  if type(artifacts) ~= "table" then return end
-  if next(artifacts) == nil then return end -- separation has not produced any outputs yet.
+local function add_stem_tracks(index, stems, transcription, reference_start, managed_tracks)
+  -- Keep the helper callable by older local automation snippets that passed
+  -- only stems/reference_start/managed_tracks.
+  if managed_tracks == nil then
+    managed_tracks = reference_start
+    reference_start = transcription
+    transcription = nil
+  end
+  local artifacts = type(stems) == "table" and stems.artifacts or nil
+  local artifact_namespace = type(stems) == "table" and stems.artifact_namespace or nil
+  local imported_stems = {}
   for _, definition in ipairs(STEM_TRACKS) do
     -- Omitted optional records are not an error: strings/piano are opt-in.
-    if artifacts[definition.artifact] ~= nil then
+    if type(artifacts) == "table" and artifacts[definition.artifact] ~= nil then
       local path, reason = valid_stem_artifact(artifacts[definition.artifact], definition.filename, artifact_namespace)
       if not path then
         warn("skipping stem " .. definition.artifact .. ": " .. reason)
@@ -585,8 +652,17 @@ local function add_stem_tracks(index, stems, reference_start, managed_tracks)
           reaper.SetMediaItemTake_Source(take, source)
           managed_tracks[#managed_tracks + 1] = stem_track
           index = index + 1
+          imported_stems[definition.artifact] = true
+          index = add_reference_midi_track(index, definition.artifact, transcription, reference_start, managed_tracks, artifact_namespace)
         end
       end
+    end
+  end
+  -- `original` and targets whose stem did not import have no adjacent stem.
+  -- Keep them anyway, after the stem block, in Python's target-table order.
+  for _, definition in ipairs(TRANSCRIPTION_TARGETS) do
+    if not imported_stems[definition.target] then
+      index = add_reference_midi_track(index, definition.target, transcription, reference_start, managed_tracks, artifact_namespace)
     end
   end
 end
@@ -774,7 +850,7 @@ local function apply()
     managed_tracks[#managed_tracks + 1] = chords_track
   end
 
-  add_stem_tracks(reaper.CountTracks(0), analysis and analysis.stems, reference_start, managed_tracks)
+  add_stem_tracks(reaper.CountTracks(0), analysis and analysis.stems, analysis and analysis.transcription, reference_start, managed_tracks)
 
   local managed_region_ids = add_sections(analysis and analysis.sections and analysis.sections.value, reference_start) or {}
 

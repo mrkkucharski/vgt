@@ -6,6 +6,7 @@ import subprocess
 VERIFY_SCRIPT = Path(__file__).parents[1] / "scripts" / "verify_phase0_apply.py"
 PHASE1_VERIFY_SCRIPT = Path(__file__).parents[1] / "scripts" / "verify_phase1_apply.py"
 STEM_VERIFY_SCRIPT = Path(__file__).parents[1] / "scripts" / "verify_stem_apply.py"
+TRANSCRIPTION_VERIFY_SCRIPT = Path(__file__).parents[1] / "scripts" / "verify_transcription_apply.py"
 SYNC_VERIFY_SCRIPT = Path(__file__).parents[1] / "scripts" / "verify_phase1_sync.py"
 APPLY_SCRIPT = Path(__file__).parents[1] / "reascript" / "vgt_initialize.lua"
 SYNC_SCRIPT = Path(__file__).parents[1] / "reascript" / "vgt_sync.lua"
@@ -345,6 +346,70 @@ def test_add_stem_tracks_skips_missing_or_outside_namespace_artifacts_with_a_war
     result = subprocess.run(["lua", "-", str(rpp)], input=lua_program, text=True, capture_output=True, check=True)
     assert result.stdout == "0:0:0"
     assert "skipping stem vocals: sidecar file is outside the expected stem namespace" in result.stderr
+
+
+def test_transcription_tracks_follow_their_stems_and_are_unmuted_time_based(tmp_path: Path) -> None:
+    rpp = tmp_path / "song.RPP"
+    namespace = tmp_path / "vgt" / "song-abc123"
+    (namespace / "stems").mkdir(parents=True)
+    (namespace / "transcription").mkdir()
+    for name in ("guitar", "bass"):
+        (namespace / "stems" / f"{name}.wav").write_bytes(b"RIFF....WAVEfmt ")
+        (namespace / "transcription" / f"{name}.mid").write_bytes(b"MThd")
+    script = APPLY_SCRIPT.read_text()
+    helpers_end = script.index("local function remove_previous_managed_regions()")
+    lua_program = "\n".join([
+        _click_track_lua_mock(rpp), script[:helpers_end], "local managed_tracks = {}",
+        "add_stem_tracks(0, {artifact_namespace = 'song-abc123', artifacts = {bass = {file = 'vgt/song-abc123/stems/bass.wav', size_bytes = 16, duration_seconds = 2.5}, guitar = {file = 'vgt/song-abc123/stems/guitar.wav', size_bytes = 16, duration_seconds = 2.5}}}, {targets = {guitar = {status = 'transcribed', midi_file = 'transcription/guitar.mid'}, bass = {status = 'transcribed', midi_file = 'transcription/bass.mid'}}}, 12.25, managed_tracks)",
+        "for i, track in ipairs(__tracks) do local item = __items[i]; io.write(track.name, ':', track.mute, ':', item.values.D_POSITION, ':', item.values.C_BEATATTACHMODE, ';') end io.write('#', #managed_tracks)",
+    ])
+    result = subprocess.run(["lua", "-", str(rpp)], input=lua_program, text=True, capture_output=True, check=True)
+    assert result.stdout == (
+        "[vgt] Bass:0:12.25:0;[vgt] Bass Ref (MIDI):0:12.25:0;"
+        "[vgt] Guitar:0:12.25:0;[vgt] Guitar Ref (MIDI):0:12.25:0;#4"
+    )
+
+
+def test_transcription_skips_expected_states_and_appends_orphans_in_target_order(tmp_path: Path) -> None:
+    rpp = tmp_path / "song.RPP"
+    namespace = tmp_path / "vgt" / "song-abc123" / "transcription"
+    namespace.mkdir(parents=True)
+    for name in ("guitar", "bass", "original"):
+        (namespace / f"{name}.mid").write_bytes(b"MThd")
+    script = APPLY_SCRIPT.read_text()
+    helpers_end = script.index("local function remove_previous_managed_regions()")
+    lua_program = "\n".join([
+        _click_track_lua_mock(rpp), "function reaper.ShowConsoleMsg(message) io.stderr:write(message) end", script[:helpers_end], "local managed_tracks = {}",
+        "add_stem_tracks(0, {artifact_namespace = 'song-abc123', artifacts = {}}, {targets = {guitar = {status = 'transcribed', midi_file = 'transcription/guitar.mid'}, bass = {status = 'transcribed', midi_file = 'transcription/bass.mid'}, original = {status = 'transcribed', midi_file = 'transcription/original.mid'}, vocals = {status = 'skipped-missing-source'}, drums = {status = 'error'}}}, 2, managed_tracks)",
+        "for _, track in ipairs(__tracks) do io.write(track.name, ';') end io.write('#', #managed_tracks)",
+    ])
+    result = subprocess.run(["lua", "-", str(rpp)], input=lua_program, text=True, capture_output=True, check=True)
+    assert result.stdout == "[vgt] Guitar Ref (MIDI);[vgt] Bass Ref (MIDI);[vgt] Original Ref (MIDI);#3"
+    assert result.stderr == ""
+
+
+def test_transcription_rejects_outside_namespace_midi_path(tmp_path: Path) -> None:
+    rpp = tmp_path / "song.RPP"
+    script = APPLY_SCRIPT.read_text()
+    helpers_end = script.index("local function remove_previous_managed_regions()")
+    lua_program = "\n".join([
+        _click_track_lua_mock(rpp), "function reaper.ShowConsoleMsg(message) io.stderr:write(message) end", script[:helpers_end], "local managed_tracks = {}",
+        "add_stem_tracks(0, {artifact_namespace = 'song-abc123', artifacts = {}}, {targets = {guitar = {status = 'transcribed', midi_file = '../user.mid'}}}, 0, managed_tracks)",
+        "io.write(#managed_tracks, ':', #__tracks)",
+    ])
+    result = subprocess.run(["lua", "-", str(rpp)], input=lua_program, text=True, capture_output=True, check=True)
+    assert result.stdout == "0:0"
+    assert "skipping transcription guitar: sidecar MIDI file is outside the expected transcription namespace" in result.stderr
+
+
+def test_transcription_import_source_and_opt_in_verifier_are_present() -> None:
+    script = APPLY_SCRIPT.read_text()
+    assert "local function add_reference_midi_track(index, target, transcription, reference_start, managed_tracks, artifact_namespace)" in script
+    assert "record.status ~= \"transcribed\"" in script
+    assert "local midi_track = add_locked_track(index, PREFIX .. \" \" .. definition.label .. \" Ref (MIDI)\", false)" in script
+    assert 'record.midi_file ~= expected_filename' in script
+    assert "analysis and analysis.transcription" in script
+    assert TRANSCRIPTION_VERIFY_SCRIPT.is_file()
 
 
 def test_live_stem_lease_is_detected_without_mutating_the_project(tmp_path: Path) -> None:

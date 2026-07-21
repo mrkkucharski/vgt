@@ -34,6 +34,21 @@ VALID_TARGETS: tuple[str, ...] = (
     "original",
 )
 
+# Display labels are shared with the ReaScript's `[vgt] … Ref (MIDI)` track
+# names. Keep this mapping alongside the target contract rather than deriving
+# labels from identifiers (notably `backing` and `piano`).
+TARGET_LABELS: dict[str, str] = {
+    "guitar": "Guitar",
+    "bass": "Bass",
+    "vocals": "Vocals",
+    "drums": "Drums",
+    "instrumental": "Instrumental",
+    "backing": "Backing (no guitar)",
+    "strings": "Strings",
+    "piano": "Keys / Piano",
+    "original": "Original",
+}
+
 # Per-target frequency narrowing. Targets absent here (polyphonic/unpredictable
 # sources) get Basic Pitch's own full-range defaults (`None` = unbounded).
 _TARGET_FREQUENCY_HZ: dict[str, tuple[float, float]] = {
