@@ -7,8 +7,11 @@ artifact naming, while a backend only turns one stem into a MIDI/CSV pair.
 `FakeTranscriber` writes a small deterministic, valid MIDI file (plus its
 matching lenient-CSV note list) instead of invoking Basic Pitch, so the
 offline test suite never runs a model -- exactly the role `FakeSeparator`
-plays for stem separation. The real `BasicPitchTranscriber` (a pinned `uvx`
-subprocess invocation) is a later issue (T-B); no model is invoked here.
+plays for stem separation. `BasicPitchTranscriber` is the real backend: a
+pinned `uvx` subprocess invocation, isolated from vgt's own interpreter
+because Basic Pitch cannot resolve on vgt's Python (see the module's
+`docs/transcription-plan.md` "one hard constraint" section) -- it must never
+become a vgt dependency.
 """
 
 from __future__ import annotations
@@ -19,6 +22,10 @@ from typing import Any, Callable, Protocol
 import hashlib
 import json
 import math
+import os
+import shlex
+import shutil
+import subprocess
 
 # Valid target names: the separation artifact names, plus the untouched mix
 # ("original"). A target is always a single named source, never a merged set.
@@ -44,6 +51,12 @@ _TARGET_FREQUENCY_HZ: dict[str, tuple[float, float]] = {
 
 BASIC_PITCH_PACKAGE_PIN = "basic-pitch[onnx]==0.4.0"
 BASIC_PITCH_SERIALIZATION = "onnx"
+
+# Overrides the whole `uvx ...` invocation with a pre-installed binary, e.g.
+# `uv tool install --python 3.11 --with "setuptools<81" "basic-pitch[onnx]==0.4.0"`
+# then `VGT_BASIC_PITCH_CMD=basic-pitch`, so an offline machine can prebuild
+# the env once instead of paying the ~35s cold `uvx` build on every run.
+BASIC_PITCH_CMD_ENV = "VGT_BASIC_PITCH_CMD"
 
 # Shared defaults across every target (see docs/transcription-plan.md section 1).
 DEFAULT_ONSET_THRESHOLD = 0.5
@@ -383,6 +396,209 @@ class FakeTranscriber:
             pitch_range_midi=(min(pitches), max(pitches)) if pitches else None,
             first_note_s=notes[0][0] if notes else None,
             last_note_s=max(end for _start, end, _pitch, _velocity in notes) if notes else None,
+            midi_path=midi_path,
+            notes_path=notes_path,
+        )
+
+
+def _basic_pitch_base_command(package_pin: str) -> list[str]:
+    """The invocation prefix, before `<destination_dir> <source>` and the
+    spec-derived flags. Honours `VGT_BASIC_PITCH_CMD` as a full override for
+    a pre-installed binary (see the env var's docstring above); otherwise a
+    pinned, isolated `uvx` invocation -- Basic Pitch never becomes a vgt
+    dependency."""
+    override = os.environ.get(BASIC_PITCH_CMD_ENV)
+    if override:
+        return shlex.split(override)
+    return [
+        "uvx",
+        "--python", "3.11",
+        "--with", "setuptools<81",
+        "--from", package_pin,
+        "basic-pitch",
+    ]
+
+
+def build_basic_pitch_argv(source: Path, destination_dir: Path, spec: TranscriptionSpec) -> list[str]:
+    """The full `basic-pitch` command line for one target. Pure and
+    side-effect-free so tests can assert on it without running `uvx` or a
+    model (per the issue's acceptance criteria)."""
+    if spec.backend != "basic-pitch":
+        raise TranscriptionError(f"BasicPitchTranscriber cannot build argv for backend {spec.backend!r}")
+    argv = [
+        *_basic_pitch_base_command(spec.package_pin),
+        str(destination_dir),
+        str(source),
+        # Forced explicitly: the onnx extra still installs coremltools on
+        # macOS, and Basic Pitch's default tf -> coreml -> tflite -> onnx
+        # preference order would otherwise silently pick CoreML -- a
+        # different runtime behind the same command line.
+        "--model-serialization", spec.serialization,
+        "--save-midi",
+        "--save-note-events",
+    ]
+    if spec.midi_tempo is not None:
+        argv += ["--midi-tempo", str(spec.midi_tempo)]
+    argv += ["--minimum-note-length", str(spec.minimum_note_length_ms)]
+    if spec.minimum_frequency_hz is not None:
+        argv += ["--minimum-frequency", str(spec.minimum_frequency_hz)]
+    if spec.maximum_frequency_hz is not None:
+        argv += ["--maximum-frequency", str(spec.maximum_frequency_hz)]
+    argv += ["--onset-threshold", str(spec.onset_threshold)]
+    argv += ["--frame-threshold", str(spec.frame_threshold)]
+    if not spec.melodia_trick:
+        argv.append("--no-melodia")
+    if spec.multiple_pitch_bends:
+        argv.append("--multiple-pitch-bends")
+    return argv
+
+
+def _stderr_tail(stderr: str | None, limit: int = 4000) -> str:
+    return (stderr or "")[-limit:]
+
+
+def _collect_and_rename_outputs(destination_dir: Path) -> tuple[Path, Path]:
+    """Basic Pitch names its outputs after the input file (e.g.
+    `guitar_basic_pitch.mid`), which would collide across targets sharing a
+    destination dir. Rename whatever it produced to the same stable
+    `transcription.mid` / `transcription.csv` names `FakeTranscriber` uses,
+    so the two backends are interchangeable from the orchestrator's side;
+    final per-target artifact naming (`transcription/<target>.mid`) is the
+    orchestrator's job, not this backend's."""
+    midi_candidates = sorted(destination_dir.glob("*.mid"))
+    notes_candidates = sorted(destination_dir.glob("*.csv"))
+    if len(midi_candidates) != 1 or len(notes_candidates) != 1:
+        raise TranscriptionError(
+            f"basic-pitch produced {len(midi_candidates)} MIDI file(s) and "
+            f"{len(notes_candidates)} CSV file(s) in {destination_dir}; expected exactly one of each"
+        )
+    midi_path = destination_dir / "transcription.mid"
+    notes_path = destination_dir / "transcription.csv"
+    if midi_candidates[0] != midi_path:
+        midi_candidates[0].replace(midi_path)
+    if notes_candidates[0] != notes_path:
+        notes_candidates[0].replace(notes_path)
+    return midi_path, notes_path
+
+
+def _validate_basic_pitch_midi(path: Path) -> None:
+    """Raise `TranscriptionError` unless `path` is a non-empty, readable
+    Standard MIDI File -- never trust a backend's raw output as a valid
+    artifact (mirrors `separation._validate_wav`)."""
+    try:
+        header = path.read_bytes()[:8]
+    except OSError as exc:
+        raise TranscriptionError(f"{path}: MIDI file is not readable: {exc}") from exc
+    if len(header) < 8 or header[:4] != b"MThd":
+        raise TranscriptionError(f"{path}: not a valid MIDI file")
+
+
+@dataclass(frozen=True)
+class ParsedNote:
+    """One row of Basic Pitch's note-events CSV, leniently parsed (see
+    `parse_notes_csv`)."""
+
+    start_s: float
+    end_s: float
+    pitch_midi: int
+    velocity: int
+    pitch_bend: tuple[float, ...]
+
+
+def parse_notes_csv(path: Path) -> list[ParsedNote]:
+    """Parse Basic Pitch's note-events CSV.
+
+    The header is `start_time_s,end_time_s,pitch_midi,velocity,pitch_bend`,
+    but `pitch_bend` is a variable-length trailing sequence of values, so
+    rows have differing column counts. This must never be handed to a strict
+    CSV reader (e.g. `csv.DictReader`) -- only the first four fields are
+    fixed-position; everything after them is that row's bend series.
+    """
+    text = path.read_text(encoding="utf-8")
+    lines = [line for line in text.splitlines() if line.strip()]
+    if not lines:
+        raise TranscriptionError(f"{path}: empty notes CSV")
+    notes: list[ParsedNote] = []
+    for line in lines[1:]:
+        fields = line.split(",")
+        if len(fields) < 4:
+            raise TranscriptionError(f"{path}: malformed note row {line!r}")
+        try:
+            start_s = float(fields[0])
+            end_s = float(fields[1])
+            pitch_midi = int(float(fields[2]))
+            velocity = int(float(fields[3]))
+            pitch_bend = tuple(float(value) for value in fields[4:] if value != "")
+        except ValueError as exc:
+            raise TranscriptionError(f"{path}: malformed note row {line!r}: {exc}") from exc
+        notes.append(ParsedNote(start_s, end_s, pitch_midi, velocity, pitch_bend))
+    return notes
+
+
+def _summarize_notes(notes: list[ParsedNote]) -> tuple[int, tuple[int, int] | None, float | None, float | None]:
+    if not notes:
+        return 0, None, None, None
+    pitches = [note.pitch_midi for note in notes]
+    return (
+        len(notes),
+        (min(pitches), max(pitches)),
+        min(note.start_s for note in notes),
+        max(note.end_s for note in notes),
+    )
+
+
+class BasicPitchTranscriber:
+    """Runs Basic Pitch as a pinned, isolated `uvx` subprocess -- see the
+    module docstring for why it cannot be a vgt dependency. Degradation is
+    per target: a missing `uvx`, a non-zero exit, or malformed output all
+    raise `TranscriptionError` carrying the captured stderr tail, so the
+    orchestrator (T-C) can mark just that target `error` and continue with
+    the others."""
+
+    name = "basic-pitch"
+
+    def transcribe(
+        self,
+        source: Path,
+        destination_dir: Path,
+        spec: TranscriptionSpec,
+        progress: Callable[[str], None] | None = None,
+    ) -> TranscriptionResult:
+        emit = progress or (lambda _message: None)
+        argv = build_basic_pitch_argv(source, destination_dir, spec)
+
+        if shutil.which(argv[0]) is None:
+            raise TranscriptionError(
+                f"{argv[0]!r} is not on PATH; install uv (for uvx) or set {BASIC_PITCH_CMD_ENV} to a "
+                "prebuilt basic-pitch binary (uv tool install --python 3.11 --with \"setuptools<81\" "
+                f'"{spec.package_pin}")'
+            )
+
+        destination_dir.mkdir(parents=True, exist_ok=True)
+        emit(f"transcribing (basic-pitch): {source.name}")
+        try:
+            completed = subprocess.run(argv, capture_output=True, text=True, timeout=600)
+        except subprocess.TimeoutExpired as exc:
+            raise TranscriptionError(f"basic-pitch timed out after {exc.timeout}s") from exc
+        except OSError as exc:
+            raise TranscriptionError(f"failed to run {argv[0]!r}: {exc}") from exc
+
+        if completed.returncode != 0:
+            raise TranscriptionError(
+                f"basic-pitch exited with status {completed.returncode}: {_stderr_tail(completed.stderr)}"
+            )
+
+        midi_path, notes_path = _collect_and_rename_outputs(destination_dir)
+        _validate_basic_pitch_midi(midi_path)
+        notes = parse_notes_csv(notes_path)
+        note_count, pitch_range_midi, first_note_s, last_note_s = _summarize_notes(notes)
+        emit(f"transcribed (basic-pitch): {note_count} notes")
+
+        return TranscriptionResult(
+            note_count=note_count,
+            pitch_range_midi=pitch_range_midi,
+            first_note_s=first_note_s,
+            last_note_s=last_note_s,
             midi_path=midi_path,
             notes_path=notes_path,
         )
