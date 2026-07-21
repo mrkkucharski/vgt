@@ -1,0 +1,5 @@
+[
+  {"time_sec": 0.02, "instruments": ["kick"]},
+  {"time_sec": 0.25, "instruments": ["snare"]},
+  {"time_sec": 0.70, "instruments": ["ride"]}
+]
