@@ -1,26 +1,32 @@
 {
-  "current_issue": 67,
-  "session_id": "b7601269-ab34-4c2b-8cf6-03f906bdf416",
-  "pid": 86386,
-  "process_started_at": "Mon Jul 20 23:33:55 2026",
+  "current_issue": 71,
+  "session_id": "38845b12-e72d-43eb-acc5-e17a87e57677",
+  "pid": 3725,
+  "process_started_at": "Tue Jul 21 06:42:25 2026",
   "agent": "codex",
-  "started_at": "2026-07-20T21:33:54.095365+00:00",
-  "scheduler_stalls": {},
-  "budget": {
-    "window_start": "2026-07-20T20:09:51.136591+00:00",
-    "seconds_used": 736.493579,
-    "dollars_used": 1.2713944,
-    "seconds_used_by_agent": {
-      "claude": 599.984396,
-      "codex": 136.509183
+  "started_at": "2026-07-21T04:42:23.824000+00:00",
+  "scheduler_stalls": {
+    "blocked_issues": {
+      "67": {
+        "first_seen_at": "2026-07-20T21:40:34.197615+00:00",
+        "last_seen_at": "2026-07-21T04:41:10.321024+00:00",
+        "consecutive_passes": 382,
+        "title": "Run and record the complete live REAPER verification suite"
+      }
     }
+  },
+  "budget": {
+    "window_start": "2026-07-21T04:42:16.777981+00:00",
+    "seconds_used": 0.0,
+    "dollars_used": 0.0,
+    "seconds_used_by_agent": {}
   },
   "verification_followups": {
     "f0d8bfc9d2dc6da7a31609184e25c4d66d3986fd2340b33a83e98204fb86691e": "created"
   },
   "role": "implement",
-  "branch": "issue-67-run-and-record-the-complete-live-reaper",
-  "worktree_path": "/Users/marekkucharski/projects/.pm-worktrees/vgt/issue-67",
+  "branch": "issue-71-improve-chord-decoding-bar-aggregation-c",
+  "worktree_path": "/Users/marekkucharski/projects/.pm-worktrees/vgt/issue-71",
   "pr_number": null,
   "followup_generation": {
     "fingerprint": "71c63f065a33718d76704b02fc07bebfd2dd591df8a3b818d11f1e4be2ba5384",
@@ -52,13 +58,13 @@
     "65": 1
   },
   "pending_transition": {
-    "issue": 67,
+    "issue": 71,
     "target": "working",
     "event": "agent.started",
     "detail": {
-      "issue": 67,
+      "issue": 71,
       "agent": "codex",
-      "branch": "issue-67-run-and-record-the-complete-live-reaper"
+      "branch": "issue-71-improve-chord-decoding-bar-aggregation-c"
     },
     "cleanup": {}
   }
