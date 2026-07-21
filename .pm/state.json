@@ -1,10 +1,10 @@
 {
   "current_issue": 96,
-  "session_id": "5fb9e945-d488-4b3c-9101-1dc380240c0c",
-  "pid": 56449,
-  "process_started_at": "Tue Jul 21 21:24:33 2026",
+  "session_id": "6cf47ddd-1460-4f19-b2df-ef643a21959b",
+  "pid": 57168,
+  "process_started_at": "Tue Jul 21 21:31:20 2026",
   "agent": "codex",
-  "started_at": "2026-07-21T19:24:31.353013+00:00",
+  "started_at": "2026-07-21T19:31:18.782281+00:00",
   "scheduler_stalls": {},
   "budget": {
     "window_start": "2026-07-21T17:38:55.585848+00:00",
@@ -18,10 +18,10 @@
   "verification_followups": {
     "f0d8bfc9d2dc6da7a31609184e25c4d66d3986fd2340b33a83e98204fb86691e": "created"
   },
-  "role": "implement",
+  "role": "review",
   "branch": "issue-96-d-d-offline-channel-10-polyphony-and-rea",
   "worktree_path": "/Users/marekkucharski/projects/.pm-worktrees/vgt/issue-96",
-  "pr_number": null,
+  "pr_number": 102,
   "followup_generation": {
     "fingerprint": "4701b1bcaece332200f67f774b655fb9255333bda19a6b60f901a25f419b6c7d",
     "items": {
@@ -51,11 +51,11 @@
   "pending_transition": {
     "issue": 96,
     "target": "working",
-    "event": "agent.started",
+    "event": "agent.review_started",
     "detail": {
       "issue": 96,
       "agent": "codex",
-      "branch": "issue-96-d-d-offline-channel-10-polyphony-and-rea"
+      "pr": 102
     },
     "cleanup": {}
   }
