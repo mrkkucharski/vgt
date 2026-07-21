@@ -210,23 +210,27 @@ def chord_sources(project_path: Path, source: Path, analysis: dict[str, Any]) ->
     return sources
 
 
-def _chord_input_hash(source: Path, chord_source_paths: dict[str, Path]) -> str:
-    """Include the available fusion-source set in the chord cache identity.
+def _chord_source_identity(chord_source_paths: dict[str, Path]) -> tuple[str, dict[str, Path]]:
+    """Return the chord cache identity and its validated source snapshot.
 
     Stem artifacts are optional and can disappear between their initial
     ``is_file`` check and this cache calculation (for example, while a user
-    removes a failed download).  Treat that race exactly like an unavailable
-    stem rather than letting it abort the otherwise free chord stage.
+    removes a failed download). Treat that race exactly like an unavailable
+    stem rather than letting it abort the otherwise free chord stage. The
+    returned mapping is used for decoding too, so the identity and the source
+    set handed to the decoder cannot disagree.
     """
     identities = []
+    validated_sources: dict[str, Path] = {}
     for name, path in chord_source_paths.items():
         try:
             identities.append((name, hash_source_file(path)))
+            validated_sources[name] = path
         except OSError as exc:
             if name == "original":
                 raise
             _LOG.warning("Skipping chord-fusion source %s while hashing (%s): %s", name, path, exc)
-    return hashlib.sha256(json.dumps(identities, sort_keys=True).encode("utf-8")).hexdigest()
+    return hashlib.sha256(json.dumps(identities, sort_keys=True).encode("utf-8")).hexdigest(), validated_sources
 
 
 def detect_chords(
@@ -237,6 +241,7 @@ def detect_chords(
     namespace: str,
     *,
     render_artifact: bool = True,
+    sources: dict[str, Path] | None = None,
 ) -> dict[str, Any]:
     """Beat-aligned maj/min chord segments (see chords.py), snapped to the
     tempo stage's shared beat grid, plus a chord-sheet text artifact rendered
@@ -252,7 +257,7 @@ def detect_chords(
     beat_times = _tempo_beat_times(tempo_value, source)
     try:
         chords_value = _detect_chords(
-            source, beat_times, settings, tempo=tempo_value, sources=chord_sources(project_path, source, analysis)
+            source, beat_times, settings, tempo=tempo_value, sources=sources or chord_sources(project_path, source, analysis)
         )
     except ChordDetectionError as exc:
         raise AnalysisError(str(exc)) from exc
@@ -334,9 +339,11 @@ def analyze(
     for position, stage in enumerate(selected_stages, start=1):
         stage_settings = settings.get(stage, {})
         settings_hash = _hash_settings(stage_settings)
-        stage_input_hash = (
-            _chord_input_hash(source, chord_sources(project_path, source, analysis)) if stage == "chords" else input_hash
-        )
+        chord_source_paths: dict[str, Path] | None = None
+        if stage == "chords":
+            stage_input_hash, chord_source_paths = _chord_source_identity(chord_sources(project_path, source, analysis))
+        else:
+            stage_input_hash = input_hash
         if analysis[stage].get("human_verified"):
             if stage in DETECTED_SPLIT_STAGES and (
                 force
@@ -353,13 +360,17 @@ def analyze(
         else:
             emit(f"[{position}/{total}] {stage} — analyzing…")
         refresh = _refresh_stage_with_detected if stage in DETECTED_SPLIT_STAGES else refresh_stage
+
+        def compute_stage(*, stage: str = stage, stage_settings: dict[str, Any] = stage_settings, **kwargs: Any) -> Any:
+            if stage == "chords":
+                kwargs["sources"] = chord_source_paths
+            return _DETECTORS[stage](project_path, source, stage_settings, analysis, namespace, **kwargs)
+
         analysis[stage] = refresh(
             analysis[stage],
             input_hash=stage_input_hash,
             settings_hash=settings_hash,
-            compute=lambda stage=stage, stage_settings=stage_settings, **kwargs: _DETECTORS[stage](
-                project_path, source, stage_settings, analysis, namespace, **kwargs
-            ),
+            compute=compute_stage,
             force=force,
             analyzed_at=datetime.now(UTC).isoformat().replace("+00:00", "Z"),
         )
