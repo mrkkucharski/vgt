@@ -31,7 +31,7 @@ Schema versions:
            "api_version": str | null,
            "recipe_version": int | null,
            "guitar_type": "electric" | "acoustic" | null,
-           "artifact_namespace": str | null,  # stable, never regenerated once set
+           "artifact_namespace": str | null,  # opaque id; stable, never regenerated once set
            "operations": {
              "<operation_id>": {
                "source_role": str, "source_sha256": str | null, "spec_hash": str | null,
@@ -138,11 +138,20 @@ def ensure_artifact_namespace(sidecar: dict[str, Any], project_path: str | Path)
     the namespace layout.  Their presence is proof of vgt ownership; no glob
     search is performed, and unknown files are left alone.  Never regenerate
     the namespace once set, even if the project is later renamed (see module
-    docstring, schema 6)."""
+    docstring, schema 6).
+
+    The namespace is a bare opaque id, deliberately carrying no trace of the
+    project name.  Only the id is ever matched on; a `<project-stem>-` prefix
+    would read as a claim about which project owns the directory, and because
+    the namespace is never regenerated, the first rename of the RPP would
+    turn that claim into a lie (`7Rivers/vgt/Old Name-6a7745be/`).  Namespaces
+    generated before this carry the old prefixed form and stay valid --
+    nothing parses them.
+    """
     stems = sidecar["analysis"]["stems"]
     namespace = stems.get("artifact_namespace")
     if namespace is None:
-        namespace = f"{Path(project_path).stem}-{uuid.uuid4().hex[:8]}"
+        namespace = uuid.uuid4().hex[:8]
         stems["artifact_namespace"] = namespace
         _migrate_legacy_analysis_artifacts(sidecar, Path(project_path), namespace)
     return namespace

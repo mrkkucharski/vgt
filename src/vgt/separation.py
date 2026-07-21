@@ -388,14 +388,32 @@ def artifact_path(project_path: Path, artifact: dict[str, Any]) -> Path:
 
 def _artifacts_on_disk(project_path: Path, record: dict[str, Any], artifacts: dict[str, Any]) -> bool:
     """A completed operation is only still cached if every artifact it
-    produced still exists at its recorded size -- an operation is never
-    treated as current just because the sidecar says so."""
+    produced still exists with its recorded *content* -- an operation is
+    never treated as current just because the sidecar says so.
+
+    Size alone is not identity. Two projects sharing a song folder write
+    into the same artifact namespace only if that namespace is misconfigured,
+    but a same-duration, same-format overwrite (an alternate arrangement of
+    one song is exactly that) lands on a byte count that matches, and a
+    size-only check would then hand one project the other's paid stems as a
+    cache hit. Size is still tested first: it rejects the common mismatch
+    without reading the file.
+
+    A record with no recorded `sha256` is treated as stale rather than
+    trusted. Every artifact vgt has ever written carries one (schema 6
+    introduced `artifacts` and the hash together), so this only fires on a
+    hand-edited sidecar -- and there, re-running one operation is the
+    cheaper mistake than serving audio we cannot prove is ours.
+    """
     for artifact_name in record.get("outputs", []):
         artifact = artifacts.get(artifact_name)
         if not artifact:
             return False
         path = artifact_path(project_path, artifact)
         if not path.is_file() or path.stat().st_size != artifact.get("size_bytes"):
+            return False
+        recorded_sha256 = artifact.get("sha256")
+        if not recorded_sha256 or hash_audio_content(path) != recorded_sha256:
             return False
     return True
 

@@ -187,8 +187,14 @@ All vgt artifacts live **in the user's REAPER project folder**, never in this
 repo. Regenerable outputs move under a stable per-project namespace inside a
 **`vgt/` subfolder next to the RPP**, while the canonical `.vgt` sidecar stays
 adjacent to the project. On first upgrade, vgt creates and persists an
-`artifact_namespace` such as `<project-stem>-<short-id>`; it does not change if
-the RPP is renamed or a second RPP later appears in the same folder.
+`artifact_namespace`: a bare `<short-id>`; it does not change if the RPP is
+renamed or a second RPP later appears in the same folder.
+
+The id deliberately carries no trace of the project name. An earlier form
+prefixed it with `<project-stem>-`, which reads as a claim about which project
+owns the directory — and since the namespace is never regenerated, the first
+rename of the RPP turned that claim into a lie. Nothing has ever parsed the
+namespace, so prefixed ids written by earlier versions remain valid as-is.
 
 ```
 <song folder>/                     # the user's project folder, outside this repo
