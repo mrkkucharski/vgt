@@ -1,11 +1,20 @@
 {
   "current_issue": 82,
-  "session_id": "5e2ada35-c60a-43f5-996a-8cba89736610",
-  "pid": 44971,
-  "process_started_at": "Tue Jul 21 18:31:29 2026",
+  "session_id": "b8740ac1-45d8-4b35-8bb7-156c6d3f8034",
+  "pid": 45126,
+  "process_started_at": "Tue Jul 21 18:32:48 2026",
   "agent": "claude",
-  "started_at": "2026-07-21T16:31:26.809965+00:00",
-  "scheduler_stalls": {},
+  "started_at": "2026-07-21T16:32:46.708431+00:00",
+  "scheduler_stalls": {
+    "blocked_issues": {
+      "81": {
+        "first_seen_at": "2026-07-21T16:31:31.263888+00:00",
+        "last_seen_at": "2026-07-21T16:31:31.263888+00:00",
+        "consecutive_passes": 1,
+        "title": "T-C: per-target reconciliation in analysis.py + CLI/status wiring for transcription"
+      }
+    }
+  },
   "budget": {
     "window_start": "2026-07-21T11:44:16.758773+00:00",
     "seconds_used": 1493.480207,
