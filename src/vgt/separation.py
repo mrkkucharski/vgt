@@ -56,7 +56,7 @@ from .sidecar import (
     update_stems_under_lease,
 )
 
-RECIPE_VERSION = 1
+RECIPE_VERSION = 2
 
 # Fixed operation identities and their dependency-respecting run order. Only
 # "guitar-instrumental" depends on another operation (vocals-original's
@@ -78,8 +78,17 @@ ARTIFACT_FILENAMES: dict[str, str] = {
     "guitar": "guitar.wav",
     "backing": "backing-no-guitar.wav",
 }
+OPTIONAL_ARTIFACT_FILENAMES = {"strings": "strings.wav", "piano": "piano.wav"}
 
 GUITAR_TYPES = ("electric", "acoustic")
+OPTIONAL_STEMS = ("strings", "piano")
+
+
+def artifact_filename(name: str) -> str:
+    try:
+        return {**ARTIFACT_FILENAMES, **OPTIONAL_ARTIFACT_FILENAMES}[name]
+    except KeyError as exc:
+        raise SeparationError(f"unknown stem artifact {name!r}") from exc
 
 
 class SeparationError(ValueError):
@@ -142,7 +151,20 @@ class OperationDef:
     artifact_names: dict[str, str]
 
 
-def build_recipe(guitar_type: str) -> dict[str, OperationDef]:
+def normalize_optional_stems(optional_stems: tuple[str, ...] | list[str] | None) -> tuple[str, ...]:
+    """Canonicalize explicit opt-in choices; ``keys`` maps to ``piano``."""
+    normalized = {"piano" if value == "keys" else value for value in (optional_stems or ())}
+    invalid = normalized.difference(OPTIONAL_STEMS)
+    if invalid:
+        raise SeparationError(f"optional stems must be drawn from {OPTIONAL_STEMS}, got {sorted(invalid)!r}")
+    return tuple(name for name in OPTIONAL_STEMS if name in normalized)
+
+
+def recipe_order(recipe: dict[str, OperationDef]) -> tuple[str, ...]:
+    return tuple(operation_id for operation_id in (*OPERATION_ORDER, "strings-original", "piano-original") if operation_id in recipe)
+
+
+def build_recipe(guitar_type: str, optional_stems: tuple[str, ...] | list[str] | None = None) -> dict[str, OperationDef]:
     """The fixed five-operation DAG for one `guitar_type`. `guitar_type`
     selects the requested stem for the two guitar operations only; changing
     it therefore changes only their `spec_hash`, which is what makes cache
@@ -150,7 +172,7 @@ def build_recipe(guitar_type: str) -> dict[str, OperationDef]:
     if guitar_type not in GUITAR_TYPES:
         raise SeparationError(f"guitar_type must be one of {GUITAR_TYPES}, got {guitar_type!r}")
     guitar_stem = f"{guitar_type}_guitar"
-    return {
+    recipe = {
         "vocals-original": OperationDef(
             operation_id="vocals-original",
             spec=SplitSpec(stem="vocals", source_role="original", keep=("stem", "back")),
@@ -182,6 +204,14 @@ def build_recipe(guitar_type: str) -> dict[str, OperationDef]:
             artifact_names={"back": "backing"},
         ),
     }
+    for stem in normalize_optional_stems(optional_stems):
+        recipe[f"{stem}-original"] = OperationDef(
+            operation_id=f"{stem}-original",
+            spec=SplitSpec(stem=stem, source_role="original", keep=("stem",)),
+            depends_on=None,
+            artifact_names={"stem": stem},
+        )
+    return recipe
 
 
 @dataclass
@@ -429,7 +459,7 @@ def _operation_is_current(
 
 
 def separation_preview(
-    project: str | Path | None, *, guitar_type: str | None = None, force: bool = False
+    project: str | Path | None, *, guitar_type: str | None = None, optional_stems: tuple[str, ...] | list[str] | None = None, force: bool = False
 ) -> dict[str, Any]:
     """Return a read-only, operation-level cache view for the paid recipe."""
     project_path = locate_project(project)
@@ -442,10 +472,14 @@ def separation_preview(
         raise SeparationError(f"Reference source file not found: {source}")
     stems = sidecar["analysis"]["stems"]
     resolved_guitar_type = declared_guitar_type(sidecar, guitar_type)
-    recipe = build_recipe(resolved_guitar_type)
+    selected_optional_stems = normalize_optional_stems(
+        [*(stems.get("optional_stems") or []), *(optional_stems or [])]
+        if optional_stems is not None else stems.get("optional_stems")
+    )
+    recipe = build_recipe(resolved_guitar_type, selected_optional_stems)
     original_sha = hash_audio_content(source)
     operations: list[dict[str, Any]] = []
-    for operation_id in OPERATION_ORDER:
+    for operation_id in recipe_order(recipe):
         definition = recipe[operation_id]
         record = stems["operations"].get(operation_id, {})
         if definition.spec.source_role == "original":
@@ -465,6 +499,7 @@ def separation_preview(
         })
     return {
         "guitar_type": resolved_guitar_type,
+        "optional_stems": list(selected_optional_stems),
         "operations": operations,
         "cached_operations": [item["id"] for item in operations if item["state"] == "cached"],
         "outstanding_operations": [item["id"] for item in operations if item["state"] == "outstanding"],
@@ -578,7 +613,7 @@ def _run_operation(
             for side, local_path in result.outputs.items():
                 artifact_name = op_def.artifact_names[side]
                 duration_seconds = _validate_wav(local_path)
-                final_path = stems_dir(project_path, namespace) / ARTIFACT_FILENAMES[artifact_name]
+                final_path = stems_dir(project_path, namespace) / artifact_filename(artifact_name)
                 final_path.parent.mkdir(parents=True, exist_ok=True)
                 tmp_final = final_path.with_suffix(final_path.suffix + ".part")
                 shutil.move(str(local_path), str(tmp_final))
@@ -619,6 +654,7 @@ def _separate_under_lease(
     backend: Separator,
     *,
     guitar_type: str | None = None,
+    optional_stems: tuple[str, ...] | list[str] | None = None,
     force: bool = False,
     progress: Callable[[str], None] | None = None,
     before_submit: Callable[[int], None] | None = None,
@@ -655,6 +691,8 @@ def _separate_under_lease(
     stems = sidecar["analysis"]["stems"]
     resolved_guitar_type = declared_guitar_type(sidecar, guitar_type)
     stems["guitar_type"] = resolved_guitar_type
+    selected_optional_stems = normalize_optional_stems(optional_stems) if optional_stems is not None else normalize_optional_stems(stems.get("optional_stems"))
+    stems["optional_stems"] = list(normalize_optional_stems([*(stems.get("optional_stems") or []), *selected_optional_stems]))
     stems["backend"] = backend.name
     stems["api_version"] = backend.api_version
     stems["recipe_version"] = RECIPE_VERSION
@@ -667,11 +705,12 @@ def _separate_under_lease(
         # cannot cause this owner to write after losing its lease.
         update_stems_under_lease(project_path, stems, lease_owner)
 
-    recipe = build_recipe(resolved_guitar_type)
+    recipe = build_recipe(resolved_guitar_type, stems["optional_stems"])
+    operation_order = recipe_order(recipe)
     # Every fixed operation gets a visible "pending" record up front (e.g.
     # for `vgt status`), even one this run never reaches because its
     # dependency didn't complete.
-    for operation_id in OPERATION_ORDER:
+    for operation_id in operation_order:
         stems["operations"].setdefault(operation_id, _empty_operation_record(recipe[operation_id]))
     persist()
 
@@ -682,7 +721,7 @@ def _separate_under_lease(
     # network-free; the real backend supplies this capability.
     outstanding = 0
     preflight_counts: dict[Path, int] = {}
-    for operation_id in OPERATION_ORDER:
+    for operation_id in operation_order:
         op_def = recipe[operation_id]
         if op_def.spec.source_role == "instrumental":
             instrumental_record = stems["artifacts"].get("instrumental")
@@ -729,7 +768,7 @@ def _separate_under_lease(
 
         def checkpoint_preflight_source(index: int, state: dict[str, Any]) -> None:
             preflight_sha256 = preflight_source_hashes[index]
-            for operation_id in OPERATION_ORDER:
+            for operation_id in operation_order:
                 op_def = recipe[operation_id]
                 record = stems["operations"][operation_id]
                 if op_def.spec.source_role == "instrumental":
@@ -782,9 +821,9 @@ def _separate_under_lease(
     if outstanding and before_submit is not None:
         before_submit(outstanding)
 
-    total = len(OPERATION_ORDER)
+    total = len(operation_order)
     errors: list[str] = []
-    for position, operation_id in enumerate(OPERATION_ORDER, start=1):
+    for position, operation_id in enumerate(operation_order, start=1):
         op_def = recipe[operation_id]
         emit(f"[{position}/{total}] {operation_id}")
         if op_def.depends_on:
@@ -828,6 +867,7 @@ def separate(
     backend: Separator,
     *,
     guitar_type: str | None = None,
+    optional_stems: tuple[str, ...] | list[str] | None = None,
     force: bool = False,
     progress: Callable[[str], None] | None = None,
     before_submit: Callable[[int], None] | None = None,
@@ -848,6 +888,7 @@ def separate(
             project_path,
             backend,
             guitar_type=guitar_type,
+            optional_stems=optional_stems,
             force=force,
             progress=progress,
             before_submit=before_submit,

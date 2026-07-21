@@ -10,7 +10,7 @@ import sys
 from .analysis import AnalysisError, analyze
 from .lalal import LalalError, LalalSeparator
 from .project import ProjectError, locate_project, read_project
-from .separation import GUITAR_TYPES, SeparationError, declared_guitar_type, separate, separation_preview
+from .separation import GUITAR_TYPES, OPTIONAL_STEMS, SeparationError, declared_guitar_type, separate, separation_preview
 from .sidecar import read_sidecar, write_sidecar
 from .status import StatusError, build_status, format_status
 
@@ -45,6 +45,12 @@ def _parser() -> argparse.ArgumentParser:
         help="Run free mix analysis only; do not attempt paid stem separation.",
     )
     analyze_parser.add_argument("--guitar", choices=GUITAR_TYPES, help="Persist and use the declared guitar type for stem separation.")
+    analyze_parser.add_argument(
+        "--extra-stem",
+        action="append",
+        choices=(*OPTIONAL_STEMS, "keys"),
+        help="Also separate this opt-in instrument (repeat for both strings and keys/piano).",
+    )
     analyze_parser.add_argument(
         "--force-stems", action="store_true", help="Deliberately repeat paid stem operations (requires cost confirmation)."
     )
@@ -119,7 +125,7 @@ def main(argv: list[str] | None = None) -> int:
 
             if resolved_guitar_type:
                 try:
-                    preview = separation_preview(project, guitar_type=resolved_guitar_type, force=args.force_stems)
+                    preview = separation_preview(project, guitar_type=resolved_guitar_type, optional_stems=args.extra_stem, force=args.force_stems)
                     cached = preview["cached_operations"]
                     outstanding = preview["outstanding_operations"]
                     report(
@@ -127,6 +133,8 @@ def main(argv: list[str] | None = None) -> int:
                         f"cached operations ({len(cached)}): {', '.join(cached) or 'none'}; "
                         f"outstanding operations ({len(outstanding)}): {', '.join(outstanding) or 'none'}"
                     )
+                    if preview["optional_stems"]:
+                        report(f"opt-in stems: {', '.join(preview['optional_stems'])}")
                     if args.force_stems:
                         report(
                             f"PAID refresh requested for {len(outstanding)} operations; "
@@ -154,6 +162,7 @@ def main(argv: list[str] | None = None) -> int:
                                 project,
                                 backend,
                                 guitar_type=resolved_guitar_type,
+                                optional_stems=args.extra_stem,
                                 force=args.force_stems,
                                 progress=report,
                                 before_submit=confirm_paid_refresh if args.force_stems else None,

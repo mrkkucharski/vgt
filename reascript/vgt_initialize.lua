@@ -14,6 +14,8 @@ local STEM_TRACKS = {
   {artifact = "drums", filename = "stems/drums.wav", name = PREFIX .. " Drums"},
   {artifact = "guitar", filename = "stems/guitar.wav", name = PREFIX .. " Guitar"},
   {artifact = "backing", filename = "stems/backing-no-guitar.wav", name = PREFIX .. " Backing (no guitar)"},
+  {artifact = "strings", filename = "stems/strings.wav", name = PREFIX .. " Strings"},
+  {artifact = "piano", filename = "stems/piano.wav", name = PREFIX .. " Keys / Piano"},
 }
 local STEM_LEASE_TIMEOUT_SECONDS = 30 * 60
 
@@ -560,7 +562,7 @@ local function valid_stem_artifact(artifact, expected_filename, artifact_namespa
   return path
 end
 
--- Import only the six records that the separator committed into its own
+-- Import only records that the separator committed into its own
 -- namespace.  The API gets an absolute local path, but saving the project is
 -- what causes REAPER to serialize it project-relative; the live verifier
 -- checks that persisted behavior separately.
@@ -571,23 +573,26 @@ local function add_stem_tracks(index, stems, reference_start, managed_tracks)
   if type(artifacts) ~= "table" then return end
   if next(artifacts) == nil then return end -- separation has not produced any outputs yet.
   for _, definition in ipairs(STEM_TRACKS) do
-    local path, reason = valid_stem_artifact(artifacts[definition.artifact], definition.filename, artifact_namespace)
-    if not path then
-      warn("skipping stem " .. definition.artifact .. ": " .. reason)
-    else
-      local source = reaper.PCM_Source_CreateFromFile(path)
-      if not source then
-        warn("skipping stem " .. definition.artifact .. ": REAPER could not open WAV")
+    -- Omitted optional records are not an error: strings/piano are opt-in.
+    if artifacts[definition.artifact] ~= nil then
+      local path, reason = valid_stem_artifact(artifacts[definition.artifact], definition.filename, artifact_namespace)
+      if not path then
+        warn("skipping stem " .. definition.artifact .. ": " .. reason)
       else
-        local stem_track = add_locked_track(index, definition.name, false)
-        local item = reaper.AddMediaItemToTrack(stem_track)
-        reaper.SetMediaItemInfo_Value(item, "D_POSITION", reference_start)
-        reaper.SetMediaItemInfo_Value(item, "D_LENGTH", reaper.GetMediaSourceLength(source))
-        reaper.SetMediaItemInfo_Value(item, "C_BEATATTACHMODE", 0)
-        local take = reaper.AddTakeToMediaItem(item)
-        reaper.SetMediaItemTake_Source(take, source)
-        managed_tracks[#managed_tracks + 1] = stem_track
-        index = index + 1
+        local source = reaper.PCM_Source_CreateFromFile(path)
+        if not source then
+          warn("skipping stem " .. definition.artifact .. ": REAPER could not open WAV")
+        else
+          local stem_track = add_locked_track(index, definition.name, false)
+          local item = reaper.AddMediaItemToTrack(stem_track)
+          reaper.SetMediaItemInfo_Value(item, "D_POSITION", reference_start)
+          reaper.SetMediaItemInfo_Value(item, "D_LENGTH", reaper.GetMediaSourceLength(source))
+          reaper.SetMediaItemInfo_Value(item, "C_BEATATTACHMODE", 0)
+          local take = reaper.AddTakeToMediaItem(item)
+          reaper.SetMediaItemTake_Source(take, source)
+          managed_tracks[#managed_tracks + 1] = stem_track
+          index = index + 1
+        end
       end
     end
   end

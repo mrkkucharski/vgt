@@ -182,6 +182,14 @@ is electric or acoustic:
 vgt analyze --guitar electric "$PROJECT"
 ```
 
+If the mix needs them, request additional paid separations explicitly. Use
+`--extra-stem strings`, `--extra-stem piano` (or the alias `keys`), or repeat
+the option for both. These are never included in the default recipe:
+
+```sh
+vgt analyze --guitar electric --extra-stem strings --extra-stem keys "$PROJECT"
+```
+
 The first `vgt_initialize.lua` run also asks **Electric** or **Acoustic** and
 persists the choice. Automation can set the `vgt`/`guitar_type` ExtState to
 `electric` or `acoustic` before running that action. The CLI's `--guitar`
@@ -195,7 +203,7 @@ backend**: Demucs, UVR, RoFormer, and similar local separation options are
 explicitly deferred. If LALAL is unavailable or the key is missing, the local
 analysis remains saved and the command reports the stem failure.
 
-The paid recipe is fixed: five split operations produce these six artifacts.
+The standard paid recipe is fixed: five split operations produce these six artifacts.
 
 | Operation | Source | Kept artifact(s) |
 | --- | --- | --- |
@@ -210,6 +218,11 @@ other split uses the original mix. vgt checkpoints each operation in the
 project's sidecar and validates its WAV artifacts before treating them as
 cached. Re-running resumes incomplete work and reuses valid cached operations,
 so it does not intentionally submit the same paid work twice.
+
+Each opt-in extra adds one original-mix split and one artifact: `strings` →
+`strings.wav`, and `keys`/`piano` → `piano.wav`. They appear in the same cost
+preview and confirmation as the standard work. The sidecar persists selected
+extras, so an interrupted request resumes rather than submitting it again.
 
 `--force` is safe for normal analysis maintenance: it recomputes local analysis
 only and **never spends LALAL credits**. To deliberately repeat paid stem
@@ -226,14 +239,15 @@ Generated output is project-local, not stored in this repository. The sidecar
 records a stable namespace, and all generated artifacts stay below
 `<project-folder>/vgt/<namespace>/` (including `stems/vocals.wav`,
 `instrumental.wav`, `bass.wav`, `drums.wav`, `guitar.wav`, and
-`backing-no-guitar.wav`). This keeps the media project-relative when the song
+`backing-no-guitar.wav`, plus requested `strings.wav` and/or `piano.wav`). This keeps the media project-relative when the song
 folder is moved or backed up.
 
 After separation, run the same initialization ReaScript from **Actions → Show
 action list → ReaScript: Load** again. Alongside the mirror and Phase 1
 annotations, it imports the valid artifacts additively as `[vgt] Vocals`,
 `[vgt] Instrumental`, `[vgt] Bass`, `[vgt] Drums`, `[vgt] Guitar`, and `[vgt]
-Backing (no guitar)` tracks. Re-applying reconciles only vgt-owned tracks.
+Backing (no guitar)` tracks, plus `[vgt] Strings` and `[vgt] Keys / Piano`
+when requested. Re-applying reconciles only vgt-owned tracks.
 
 The live LALAL check is deliberately opt-in and never runs in CI because it
 uses account credits. Account owners can follow the

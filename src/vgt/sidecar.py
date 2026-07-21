@@ -59,6 +59,8 @@ Schema versions:
   7 -- `analysis.stems.in_progress` is a durable, heartbeat-refreshed lease
        held by Python for the lifetime of a paid separation run.  ReaScript
        refuses a live lease and safely treats an expired one as stale.
+  8 -- `analysis.stems.optional_stems` persists requested strings/piano
+       additions so retries resume the same paid work safely.
 
 Every stage entry has the same shape:
   {
@@ -104,7 +106,7 @@ import shutil
 import tempfile
 import uuid
 
-SCHEMA_VERSION = 7
+SCHEMA_VERSION = 8
 STEMS_LEASE_TIMEOUT = timedelta(minutes=30)
 
 ANALYSIS_STAGES = ("tempo", "key", "sections", "chords")
@@ -216,6 +218,7 @@ def _empty_stems_block() -> dict[str, Any]:
         "api_version": None,
         "recipe_version": None,
         "guitar_type": None,
+        "optional_stems": [],
         "artifact_namespace": None,
         # A durable, short-lived ownership record for the paid separator.
         # It is deliberately inside ``stems`` so ReaScript can read it while
@@ -264,6 +267,7 @@ def upgrade(data: dict[str, Any]) -> dict[str, Any]:
     stems = {**_empty_stems_block(), **(analysis.get("stems") or {})}
     stems["operations"] = dict(stems.get("operations") or {})
     stems["artifacts"] = dict(stems.get("artifacts") or {})
+    stems["optional_stems"] = list(stems.get("optional_stems") or [])
     analysis["stems"] = stems
     upgraded["analysis"] = analysis
     return upgraded

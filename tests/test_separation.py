@@ -572,3 +572,44 @@ def test_corrupt_downloaded_wav_is_never_committed_as_a_valid_artifact(tmp_path:
     assert stems["operations"]["vocals-original"]["status"] == "error"
     assert "vocals" not in stems["artifacts"]
     assert "instrumental" not in stems["artifacts"]
+
+
+def test_opt_in_strings_and_piano_are_priced_persisted_and_cached_on_retry(tmp_path: Path) -> None:
+    project = _project_copy(tmp_path)
+    _write_v1_sidecar(project)
+
+    # The unadorned recipe stays exactly the standard five paid operations.
+    assert len(separation_preview(project, guitar_type="electric")["outstanding_operations"]) == 5
+
+    preview = separation_preview(project, guitar_type="electric", optional_stems=("strings", "keys"))
+    assert preview["optional_stems"] == ["strings", "piano"]
+    assert preview["outstanding_operations"][-2:] == ["strings-original", "piano-original"]
+
+    disclosed: list[int] = []
+    def decline(count: int) -> None:
+        disclosed.append(count)
+        raise SeparationError("cancelled")
+
+    with pytest.raises(SeparationError, match="cancelled"):
+        separate(
+            project,
+            _PreflightRecordingSeparator(),
+            guitar_type="electric",
+            optional_stems=("strings", "keys"),
+            before_submit=decline,
+        )
+    assert disclosed == [7]
+
+    first = separate(project, FakeSeparator(), guitar_type="electric", optional_stems=("strings", "keys"))
+    stems = first["analysis"]["stems"]
+    assert stems["optional_stems"] == ["strings", "piano"]
+    assert stems["operations"]["strings-original"]["status"] == "completed"
+    assert stems["operations"]["piano-original"]["status"] == "completed"
+    assert artifact_path(project, stems["artifacts"]["strings"]).name == "strings.wav"
+    assert artifact_path(project, stems["artifacts"]["piano"]).name == "piano.wav"
+
+    # A retry without repeating flags uses the durable request and does not
+    # submit either optional split again.
+    retry = _RecordingSeparator(FakeSeparator())
+    separate(project, retry, guitar_type="electric")
+    assert retry.calls == []
