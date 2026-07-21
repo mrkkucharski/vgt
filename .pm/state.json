@@ -1,16 +1,16 @@
 {
   "current_issue": 76,
-  "session_id": "b30eea2a-f1aa-42c6-8246-b1eeee0dd23f",
-  "pid": 11911,
-  "process_started_at": "Tue Jul 21 08:26:19 2026",
+  "session_id": "9f8707c7-97cf-43ae-84c4-5f910208e7d3",
+  "pid": 12719,
+  "process_started_at": "Tue Jul 21 08:35:18 2026",
   "agent": "codex",
-  "started_at": "2026-07-21T06:26:18.241905+00:00",
+  "started_at": "2026-07-21T06:35:17.141323+00:00",
   "scheduler_stalls": {
     "blocked_issues": {
       "67": {
         "first_seen_at": "2026-07-20T21:40:34.197615+00:00",
-        "last_seen_at": "2026-07-21T06:25:09.130814+00:00",
-        "consecutive_passes": 475,
+        "last_seen_at": "2026-07-21T06:34:05.664981+00:00",
+        "consecutive_passes": 483,
         "title": "Run and record the complete live REAPER verification suite"
       }
     }
@@ -26,10 +26,10 @@
   "verification_followups": {
     "f0d8bfc9d2dc6da7a31609184e25c4d66d3986fd2340b33a83e98204fb86691e": "created"
   },
-  "role": "implement",
+  "role": "review",
   "branch": "issue-76-feat-support-opt-in-strings-and-keys-pia",
   "worktree_path": "/Users/marekkucharski/projects/.pm-worktrees/vgt/issue-76",
-  "pr_number": null,
+  "pr_number": 77,
   "followup_generation": {
     "fingerprint": "71c63f065a33718d76704b02fc07bebfd2dd591df8a3b818d11f1e4be2ba5384",
     "items": {
@@ -63,11 +63,11 @@
   "pending_transition": {
     "issue": 76,
     "target": "working",
-    "event": "agent.started",
+    "event": "agent.review_started",
     "detail": {
       "issue": 76,
       "agent": "codex",
-      "branch": "issue-76-feat-support-opt-in-strings-and-keys-pia"
+      "pr": 77
     },
     "cleanup": {}
   }
