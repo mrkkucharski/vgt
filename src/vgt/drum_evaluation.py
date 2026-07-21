@@ -28,26 +28,27 @@ class InstrumentMetrics:
 
 
 def _metrics(expected: Iterable[float], observed: Iterable[float], tolerance: float) -> InstrumentMetrics:
-    """One-to-one, time-ordered onset matching.
+    """One-to-one matching that maximizes matches, then minimizes distance.
 
-    At any conflict the closest valid prediction is selected.  This makes a
-    dense sequence deterministic and prevents one prediction matching several
-    references (or vice versa).
+    A nearest-first greedy choice can leave a later reference without a valid
+    prediction even though a complete matching exists.  The dynamic programme
+    below first maximizes the number of matches, then chooses the least total
+    onset error; its final action ordering keeps tied reports reproducible.
     """
     refs = sorted(float(value) for value in expected)
     preds = sorted(float(value) for value in observed)
-    used: set[int] = set()
-    matches = 0
-    for reference in refs:
-        candidates = [
-            (abs(prediction - reference), index)
-            for index, prediction in enumerate(preds)
-            if index not in used and abs(prediction - reference) <= tolerance
-        ]
-        if candidates:
-            _, index = min(candidates)
-            used.add(index)
-            matches += 1
+    # Each cell is (matches, accumulated_error).  Sort by negative matches so
+    # ``min`` selects the objective above; action order settles exact ties.
+    score: list[list[tuple[int, float]]] = [[(0, 0.0) for _ in range(len(preds) + 1)] for _ in range(len(refs) + 1)]
+    for ref_index in range(len(refs) - 1, -1, -1):
+        for pred_index in range(len(preds) - 1, -1, -1):
+            candidates = [score[ref_index + 1][pred_index], score[ref_index][pred_index + 1]]
+            distance = abs(refs[ref_index] - preds[pred_index])
+            if distance <= tolerance:
+                matched, error = score[ref_index + 1][pred_index + 1]
+                candidates.append((matched + 1, error + distance))
+            score[ref_index][pred_index] = min(candidates, key=lambda item: (-item[0], item[1]))
+    matches = score[0][0][0]
     fp = len(preds) - matches
     fn = len(refs) - matches
     precision = matches / (matches + fp) if matches + fp else 0.0

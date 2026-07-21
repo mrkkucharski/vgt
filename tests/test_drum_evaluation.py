@@ -19,6 +19,15 @@ def test_annotated_metrics_are_per_class_with_macro_and_global_context() -> None
     assert report["macro"]["f1"] < report["global"]["f1"]
 
 
+def test_onset_matching_maximizes_valid_pairs_before_minimizing_distance() -> None:
+    # A nearest-first match would pair 0.04 with 0.05 and leave 0.08 unmatched.
+    report = evaluate_instruments({"kick": [0.04, 0.08]}, {"kick": [0.0, 0.05]})
+    assert report["per_instrument"]["kick"] == {
+        "true_positives": 2, "false_positives": 0, "false_negatives": 0,
+        "precision": 1.0, "recall": 1.0, "f1": 1.0,
+    }
+
+
 def test_instrument_onsets_preserves_multi_instrument_events() -> None:
     assert instrument_onsets([{"time_sec": 0.2, "instruments": ["kick", "snare"]}]) == {"kick": [0.2], "snare": [0.2]}
 
@@ -44,6 +53,33 @@ def test_checked_in_annotations_and_events_produce_the_documented_report() -> No
     report = evaluate_instruments(annotations, instrument_onsets(events))
     assert report["global"]["f1"] == 0.5714285714285715
     assert report["per_instrument"]["crash"]["false_negatives"] == 1
+
+
+def test_benchmark_command_scores_checked_in_fixture(tmp_path: Path, capsys) -> None:
+    root = Path(__file__).parent / "fixtures" / "drum_evaluation"
+    main = runpy.run_path(str(Path("scripts/drumscript_benchmark.py")))["main"]
+    assert main([str(root / "annotated-manifest.json"), "--events-dir", str(root / "events")]) == 0
+    report = json.loads(capsys.readouterr().out)
+    assert report["kind"] == "annotated-drumscript-benchmark"
+    assert report["metrics"]["per_instrument"]["crash"]["f1"] == 0.0
+
+
+def test_shadow_command_writes_temporary_unlabeled_report(tmp_path: Path) -> None:
+    root = Path(__file__).parent / "fixtures" / "drum_evaluation"
+    notes = tmp_path / "basic-pitch-notes.csv"
+    notes.write_text(
+        "start_time_s,end_time_s,pitch_midi,velocity,pitch_bend\n0.01,0.1,36,100\n0.015,0.1,42,100\n0.8,0.9,60,100\n",
+        encoding="utf-8",
+    )
+    output = tmp_path / "shadow.json"
+    main = runpy.run_path(str(Path("scripts/drumscript_shadow_compare.py")))["main"]
+    assert main([str(root / "events" / "pattern-a.json"), str(notes), "--output", str(output)]) == 0
+    report = json.loads(output.read_text(encoding="utf-8"))
+    assert report["kind"] == "temporary-evaluation-only-shadow-comparison"
+    assert set(report) == {
+        "kind", "tolerance_seconds", "cluster_window_seconds", "drumscript_onsets",
+        "basic_pitch_transient_clusters", "matched", "drumscript_only", "basic_pitch_only",
+    }
 
 
 def test_idmt_annotation_parser_maps_only_the_official_three_classes(tmp_path: Path) -> None:
