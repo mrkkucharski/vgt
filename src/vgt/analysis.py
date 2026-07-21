@@ -337,6 +337,12 @@ def analyze(
     update_analysis(project_path, persist_namespace)
     total = len(selected_stages)
     for position, stage in enumerate(selected_stages, start=1):
+        if stage == "transcription":
+            # Per-target reconciliation (source resolution, spec/cache
+            # bookkeeping, CLI wiring) lands in a later issue; this stage
+            # owns its own per-target index (see sidecar.py) rather than the
+            # single input_hash/settings_hash pair this generic loop drives.
+            continue
         stage_settings = settings.get(stage, {})
         settings_hash = _hash_settings(stage_settings)
         chord_source_paths: dict[str, Path] | None = None

@@ -61,6 +61,32 @@ Schema versions:
        refuses a live lease and safely treats an expired one as stale.
   8 -- `analysis.stems.optional_stems` persists requested strings/piano
        additions so retries resume the same paid work safely.
+  9 -- `analysis` gains a `transcription` block (T-A, see `transcribe.py`).
+       Targets are independent -- retuning one target must never invalidate
+       another's cached result -- so, like `stems`, it does not use the
+       stage-level `input_hash`/`settings_hash` pair: it owns a `targets`
+       index whose entries each carry their own hash pair. It is otherwise a
+       *plain* stage: no `detected`/`value` split, because there is no
+       read-back path for MIDI edits. Shape:
+         {
+           "requested_targets": ["guitar"],
+           "targets": {
+             "<target>": {
+               "backend": str, "package_pin": str, "serialization": str,
+               "source_role": str,
+               "input_hash": str | null,      # the source stem's sha256
+               "settings_hash": str | null,   # that target's TranscriptionSpec
+               "status": "transcribed" | "skipped-missing-source" | "error",
+               "midi_file": str | null, "notes_file": str | null,
+               "note_count": int | null, "pitch_range_midi": [int, int] | null,
+               "first_note_s": float | null, "last_note_s": float | null,
+               "midi_tempo": float | null, "settings": dict,
+               "transcribed_at": str | null, "error": str | null,
+             }, ...
+           },
+         }
+       Older sidecars migrate to `requested_targets: ["guitar"]` and an empty
+       `targets` index -- no data migration, since there is nothing to migrate.
 
 Every stage entry has the same shape:
   {
@@ -106,14 +132,19 @@ import shutil
 import tempfile
 import uuid
 
-SCHEMA_VERSION = 8
+SCHEMA_VERSION = 9
 STEMS_LEASE_TIMEOUT = timedelta(minutes=30)
 
-ANALYSIS_STAGES = ("tempo", "key", "sections", "chords")
+ANALYSIS_STAGES = ("tempo", "key", "sections", "chords", "transcription")
 
 # Stages that carry the detected/value split (#19): a human correction to
 # `value` never overwrites the pristine machine detection kept in `detected`.
 DETECTED_SPLIT_STAGES = ("sections", "chords")
+
+# `transcription` (like `stems`) owns a per-target index instead of the
+# generic value/input_hash/settings_hash shape every other stage in
+# ANALYSIS_STAGES uses; it is upgraded and reconciled separately.
+DEFAULT_TRANSCRIPTION_TARGETS = ("guitar",)
 
 
 class SidecarError(ValueError):
@@ -231,6 +262,10 @@ def _empty_stems_block() -> dict[str, Any]:
     }
 
 
+def _empty_transcription_block() -> dict[str, Any]:
+    return {"requested_targets": list(DEFAULT_TRANSCRIPTION_TARGETS), "targets": {}}
+
+
 def read_sidecar(project_path: str | Path) -> dict[str, Any]:
     """Read the sidecar for `project_path`, upgrading older schema versions in memory."""
     path = sidecar_path(project_path)
@@ -250,6 +285,8 @@ def upgrade(data: dict[str, Any]) -> dict[str, Any]:
     upgraded["managed_region_ids"] = managed_region_ids if isinstance(managed_region_ids, list) else []
     analysis = dict(upgraded.get("analysis") or {})
     for stage in ANALYSIS_STAGES:
+        if stage == "transcription":
+            continue  # owns a per-target index, merged separately below like `stems`
         if stage in DETECTED_SPLIT_STAGES:
             merged = {**_empty_detected_split_stage(), **(analysis.get(stage) or {})}
             if merged["detected"] is None and merged["value"] is not None:
@@ -269,6 +306,18 @@ def upgrade(data: dict[str, Any]) -> dict[str, Any]:
     stems["artifacts"] = dict(stems.get("artifacts") or {})
     stems["optional_stems"] = list(stems.get("optional_stems") or [])
     analysis["stems"] = stems
+
+    transcription = {**_empty_transcription_block(), **(analysis.get("transcription") or {})}
+    # An empty list is meaningful: it is the persisted state after a user
+    # forgets their final target.  Only a missing/null or malformed value
+    # needs the schema-v9 default.
+    requested_targets = transcription.get("requested_targets")
+    transcription["requested_targets"] = (
+        list(requested_targets) if isinstance(requested_targets, list) else list(DEFAULT_TRANSCRIPTION_TARGETS)
+    )
+    transcription["targets"] = dict(transcription.get("targets") or {})
+    analysis["transcription"] = transcription
+
     upgraded["analysis"] = analysis
     return upgraded
 
