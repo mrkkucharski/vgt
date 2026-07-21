@@ -659,6 +659,22 @@ def test_cli_no_stems_does_not_attempt_separation(tmp_path: Path, monkeypatch: p
     assert calls == [("tempo", "key", "sections"), ("chords",)]
 
 
+def test_cli_force_does_not_attempt_paid_stems(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    project = _project_copy(tmp_path)
+    _write_v1_sidecar(project)
+    calls: list[tuple[str, ...] | None] = []
+
+    def fake_analyze(*_args: object, stages: tuple[str, ...] | None = None, **_kwargs: object) -> dict[str, object]:
+        calls.append(stages)
+        return read_sidecar(project)
+
+    monkeypatch.setattr("vgt.cli.analyze", fake_analyze)
+    monkeypatch.setattr("vgt.cli.separation_preview", lambda *_args, **_kwargs: pytest.fail("must not spend credits"))
+
+    assert main(["analyze", "--force", str(project)]) == 0
+    assert calls == [("tempo", "key", "sections"), ("chords",)]
+
+
 def test_cli_interactive_guitar_declaration_is_persisted(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
