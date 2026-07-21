@@ -187,7 +187,7 @@ If the mix needs them, request additional paid separations explicitly. Use
 the option for both. These are never included in the default recipe:
 
 ```sh
-vgt analyze --guitar electric --extra-stem strings --extra-stem keys "$PROJECT"
+vgt analyze --guitar electric --extra-stem strings --extra-stem keys --accept-stem-cost "$PROJECT"
 ```
 
 The first `vgt_initialize.lua` run also asks **Electric** or **Acoustic** and
@@ -229,7 +229,8 @@ only and **never spends LALAL credits**. To deliberately repeat paid stem
 operations, use `--force-stems`. vgt shows the outstanding operation count and,
 after LALAL's free preflight, its current balance and duration-based estimate
 before asking for confirmation. Non-interactive use additionally requires the
-explicit `--accept-stem-cost` acknowledgment:
+explicit `--accept-stem-cost` acknowledgment for `--force-stems` and any
+`--extra-stem` request:
 
 ```sh
 vgt analyze --guitar acoustic --force-stems --accept-stem-cost "$PROJECT"

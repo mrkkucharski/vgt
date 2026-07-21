@@ -682,6 +682,19 @@ def test_cli_force_stems_requires_explicit_noninteractive_acknowledgment(
     assert "requires --accept-stem-cost" in capsys.readouterr().err
 
 
+def test_cli_extra_stem_requires_explicit_noninteractive_acknowledgment(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    project = _project_copy(tmp_path)
+    _write_v1_sidecar(project)
+    monkeypatch.setattr(sys.stdin, "isatty", lambda: False)
+    monkeypatch.setattr("vgt.cli.LalalSeparator", lambda: pytest.fail("must not submit paid work"))
+
+    assert main(["analyze", "--guitar", "electric", "--extra-stem", "strings", str(project)]) == 2
+
+    assert "requires --accept-stem-cost" in capsys.readouterr().err
+
+
 def test_cli_without_a_guitar_declaration_still_runs_free_chord_analysis(
     tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:

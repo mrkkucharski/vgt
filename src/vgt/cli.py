@@ -135,23 +135,27 @@ def main(argv: list[str] | None = None) -> int:
                     )
                     if preview["optional_stems"]:
                         report(f"opt-in stems: {', '.join(preview['optional_stems'])}")
-                    if args.force_stems:
+                    # An opt-in extra creates new paid work. It therefore
+                    # uses the same consent path as a forced refresh, after
+                    # preflight has supplied LALAL's authoritative quote.
+                    requires_paid_confirmation = args.force_stems or bool(args.extra_stem)
+                    if requires_paid_confirmation and outstanding:
                         report(
-                            f"PAID refresh requested for {len(outstanding)} operations; "
+                            f"PAID stem operations requested for {len(outstanding)} operations; "
                             "LALAL's authoritative balance and minute estimate will be shown before confirmation."
                         )
                         if not args.accept_stem_cost and not sys.stdin.isatty():
-                            raise AnalysisError("--force-stems in non-interactive mode requires --accept-stem-cost")
+                            raise AnalysisError("paid stem operations in non-interactive mode require --accept-stem-cost")
                     if outstanding:
-                        def confirm_paid_refresh(operation_count: int) -> None:
+                        def confirm_paid_operations(operation_count: int) -> None:
                             # `separate` invokes this only after the free LALAL
                             # preflight has printed the current balance and the
                             # duration-derived estimate, and before any split
                             # request can be submitted.
-                            if not args.force_stems or args.accept_stem_cost:
+                            if not requires_paid_confirmation or args.accept_stem_cost:
                                 return
                             answer = input(
-                                f"Repeat {operation_count} paid LALAL split operations at the displayed estimate? "
+                                f"Run {operation_count} paid LALAL split operations at the displayed estimate? "
                                 "Type 'yes' to continue: "
                             )
                             if answer.strip().lower() != "yes":
@@ -165,7 +169,7 @@ def main(argv: list[str] | None = None) -> int:
                                 optional_stems=args.extra_stem,
                                 force=args.force_stems,
                                 progress=report,
-                                before_submit=confirm_paid_refresh if args.force_stems else None,
+                                before_submit=confirm_paid_operations if requires_paid_confirmation else None,
                             )
                 # A failed or unavailable separator is optional, but an
                 # explicit paid-work safety refusal is not.  In particular,
