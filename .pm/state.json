@@ -1,30 +1,32 @@
 {
   "current_issue": 78,
-  "session_id": "c8c2b9e3-2482-4cb7-9b62-f4ed14e4a3d4",
-  "pid": 28496,
-  "process_started_at": "Tue Jul 21 13:58:51 2026",
+  "session_id": "2696a28a-ce48-440c-85a1-68cfeb353807",
+  "pid": 29056,
+  "process_started_at": "Tue Jul 21 14:04:33 2026",
   "agent": "codex",
-  "started_at": "2026-07-21T11:58:49.742485+00:00",
+  "started_at": "2026-07-21T12:04:30.966524+00:00",
   "scheduler_stalls": {
     "blocked_issues": {
       "67": {
         "first_seen_at": "2026-07-20T21:40:34.197615+00:00",
-        "last_seen_at": "2026-07-21T11:57:40.083117+00:00",
-        "consecutive_passes": 774,
+        "last_seen_at": "2026-07-21T12:03:21.230985+00:00",
+        "consecutive_passes": 779,
         "title": "Run and record the complete live REAPER verification suite"
       }
     }
   },
   "budget": {
     "window_start": "2026-07-21T11:44:16.758773+00:00",
-    "seconds_used": 0.0,
+    "seconds_used": 338.980965,
     "dollars_used": 0.0,
-    "seconds_used_by_agent": {}
+    "seconds_used_by_agent": {
+      "codex": 338.980965
+    }
   },
   "verification_followups": {
     "f0d8bfc9d2dc6da7a31609184e25c4d66d3986fd2340b33a83e98204fb86691e": "created"
   },
-  "role": "review",
+  "role": "fix",
   "branch": "issue-78-t-a-transcription-stage-foundation-trans",
   "worktree_path": "/Users/marekkucharski/projects/.pm-worktrees/vgt/issue-78",
   "pr_number": 84,
@@ -57,16 +59,17 @@
     "46": 1,
     "65": 1,
     "72": 4,
-    "76": 3
+    "76": 3,
+    "78": 1
   },
   "pending_transition": {
     "issue": 78,
     "target": "working",
-    "event": "agent.review_started",
+    "event": "agent.fix_started",
     "detail": {
       "issue": 78,
       "agent": "codex",
-      "pr": 84
+      "fix_count": 1
     },
     "cleanup": {}
   }
