@@ -56,11 +56,13 @@ def test_upgrade_keeps_v1_fields_and_adds_v2_analysis_skeleton() -> None:
 
     upgraded = upgrade(v1)
 
-    assert upgraded["schema_version"] == 8
+    assert upgraded["schema_version"] == 9
     assert upgraded["managed_region_ids"] == []
     assert upgraded["managed_track_guids"] == ["{AAAA}", "{BBBB}"]
     assert upgraded["config"] == {"reference_track_guid": REFERENCE_GUID}
     for stage in ANALYSIS_STAGES:
+        if stage == "transcription":
+            continue
         expected = {
             "value": None,
             "human_verified": False,
@@ -74,6 +76,7 @@ def test_upgrade_keeps_v1_fields_and_adds_v2_analysis_skeleton() -> None:
             expected["detected_input_hash"] = None
             expected["detected_settings_hash"] = None
         assert upgraded["analysis"][stage] == expected
+    assert upgraded["analysis"]["transcription"] == {"requested_targets": ["guitar"], "targets": {}}
     assert upgraded["analysis"]["provenance"]["tool"] == "vgt"
 
 
@@ -123,6 +126,43 @@ def test_upgrade_backfills_detected_from_value_for_v4_sections() -> None:
     sections = upgraded["analysis"]["sections"]
     assert sections["detected"] == sections["value"]
     assert sections["detected"] is not sections["value"]  # backfill copies, doesn't alias
+
+
+def test_upgrade_adds_v9_transcription_block_to_a_v8_sidecar() -> None:
+    v8 = {
+        "schema_version": 8,
+        "config": {"reference_track_guid": REFERENCE_GUID},
+        "analysis": {
+            "stems": {"artifact_namespace": "abc12345", "optional_stems": ["piano"]},
+        },
+    }
+
+    upgraded = upgrade(v8)
+
+    assert upgraded["schema_version"] == 9
+    assert upgraded["analysis"]["transcription"] == {"requested_targets": ["guitar"], "targets": {}}
+    # Unrelated v8 fields survive the upgrade untouched.
+    assert upgraded["analysis"]["stems"]["artifact_namespace"] == "abc12345"
+    assert upgraded["analysis"]["stems"]["optional_stems"] == ["piano"]
+
+
+def test_upgrade_preserves_an_existing_transcription_block() -> None:
+    v9 = {
+        "schema_version": 9,
+        "analysis": {
+            "transcription": {
+                "requested_targets": ["guitar", "bass"],
+                "targets": {"guitar": {"status": "transcribed", "note_count": 872}},
+            }
+        },
+    }
+
+    upgraded = upgrade(v9)
+
+    assert upgraded["analysis"]["transcription"] == {
+        "requested_targets": ["guitar", "bass"],
+        "targets": {"guitar": {"status": "transcribed", "note_count": 872}},
+    }
 
 
 def test_upgrade_does_not_clobber_an_existing_detected_field() -> None:
@@ -221,12 +261,15 @@ def test_analyze_writes_v2_sidecar_with_skeleton_and_provenance(tmp_path: Path) 
 
     result = analyze(project)
 
-    assert result["schema_version"] == 8
+    assert result["schema_version"] == 9
     assert result["managed_track_guids"] == ["{AAAA}", "{BBBB}"]  # phase 0 fields intact
     for stage in ANALYSIS_STAGES:
+        if stage == "transcription":
+            continue
         assert result["analysis"][stage]["input_hash"] is not None
         assert result["analysis"][stage]["human_verified"] is False
         assert result["analysis"][stage]["analyzed_at"] is not None
+    assert result["analysis"]["transcription"] == {"requested_targets": ["guitar"], "targets": {}}
     provenance = result["analysis"]["provenance"]
     assert provenance["tool"] == "vgt"
     assert provenance["reference_source_path"].endswith("The Seven Rivers (Full March - 3_00).mp3")
@@ -317,7 +360,9 @@ def test_stage_cache_only_refreshes_the_stage_with_changed_settings(
     analyze(project)
     analyze(project, settings={"tempo": {"sensitivity": "high"}})
 
-    assert calls == {"tempo": 2, "key": 1, "sections": 1, "chords": 1}
+    # "transcription" is deliberately skipped by the generic loop (it owns its
+    # own per-target index, see analysis.py); it never calls its "detector".
+    assert calls == {"tempo": 2, "key": 1, "sections": 1, "chords": 1, "transcription": 0}
 
 
 def test_chord_source_set_uses_only_the_measured_fusion_artifacts(tmp_path: Path) -> None:
@@ -663,7 +708,7 @@ def test_cli_analyze_preserves_local_results_when_lalal_is_unavailable(
 
     captured = capsys.readouterr()
     output = json.loads(captured.out)
-    assert output["schema_version"] == 8
+    assert output["schema_version"] == 9
     assert output["analysis"]["tempo"]["value"] is not None
     assert "stem separation unavailable; continuing with available sources" in captured.err
 
