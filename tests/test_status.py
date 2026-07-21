@@ -108,3 +108,15 @@ def test_status_handles_older_sidecars_and_missing_sidecars(tmp_path: Path, caps
     assert "Last analysis: unknown" in text
     assert "Last human correction: unknown" in text
     assert "transcription (not yet run): 0 requested" in text
+
+
+def test_status_json_loads_legacy_transcription_record_without_events_file(tmp_path: Path, capsys) -> None:
+    project = _project_copy(tmp_path)
+    project.with_suffix(".vgt").write_text(json.dumps({
+        "schema_version": 9, "config": {}, "analysis": {"transcription": {
+            "requested_targets": ["guitar"],
+            "targets": {"guitar": {"status": "transcribed", "note_count": 2, "midi_file": "transcription/guitar.mid"}},
+        }},
+    }))
+    assert main(["status", "--json", str(project)]) == 0
+    assert json.loads(capsys.readouterr().out)["transcription"]["targets"]["guitar"]["events_file"] is None

@@ -23,6 +23,7 @@ import hashlib
 import json
 import math
 import os
+import re
 import shlex
 import shutil
 import subprocess
@@ -292,7 +293,11 @@ def missing_source_entry(spec: TranscriptionSpec, source_role: str) -> dict[str,
         "pitch_range_midi": None,
         "first_note_s": None,
         "last_note_s": None,
+        "first_event_s": None,
+        "last_event_s": None,
+        "backend_tempo": None,
         "midi_tempo": spec.midi_tempo if isinstance(spec, BasicPitchSpec) else None,
+        "confidence": None,
         "settings": _settings_dict(spec),
         "transcribed_at": None,
         "error": None,
@@ -320,13 +325,22 @@ def transcribed_entry(
         "midi_file": midi_artifact_name(target),
         "notes_file": notes_artifact_name(target) if isinstance(spec, BasicPitchSpec) else None,
         "events_file": events_artifact_name(target) if isinstance(spec, DrumScriptSpec) else None,
-        "note_count": result.note_count,
-        "event_count": result.note_count if isinstance(spec, DrumScriptSpec) else None,
+        "note_count": result.note_count if isinstance(spec, BasicPitchSpec) else None,
+        "event_count": result.event_count if isinstance(spec, DrumScriptSpec) else None,
         "instrument_counts": result.instrument_counts if isinstance(spec, DrumScriptSpec) else None,
-        "pitch_range_midi": list(result.pitch_range_midi) if result.pitch_range_midi else None,
-        "first_note_s": result.first_note_s,
-        "last_note_s": result.last_note_s,
-        "midi_tempo": spec.midi_tempo if isinstance(spec, BasicPitchSpec) else None,
+        # GM percussion note numbers select kit instruments; they are not a
+        # musical pitch range and must never be presented as one.
+        "pitch_range_midi": list(result.pitch_range_midi) if isinstance(spec, BasicPitchSpec) and result.pitch_range_midi else None,
+        "first_note_s": result.first_note_s if isinstance(spec, BasicPitchSpec) else None,
+        "last_note_s": result.last_note_s if isinstance(spec, BasicPitchSpec) else None,
+        "first_event_s": result.first_event_s if isinstance(spec, DrumScriptSpec) else None,
+        "last_event_s": result.last_event_s if isinstance(spec, DrumScriptSpec) else None,
+        "backend_tempo": result.backend_tempo if isinstance(spec, DrumScriptSpec) else None,
+        "midi_tempo": result.midi_tempo if isinstance(spec, DrumScriptSpec) else spec.midi_tempo,
+        # DrumScript does not expose calibrated confidence.  Keeping this
+        # explicit prevents downstream consumers from mistaking velocity for
+        # a confidence score.
+        "confidence": None if isinstance(spec, DrumScriptSpec) else result.confidence,
         "settings": _settings_dict(spec),
         "transcribed_at": transcribed_at,
         "error": None,
@@ -355,7 +369,11 @@ def error_entry(spec: TranscriptionSpec, *, source_role: str, input_hash: str | 
         "pitch_range_midi": None,
         "first_note_s": None,
         "last_note_s": None,
+        "first_event_s": None,
+        "last_event_s": None,
+        "backend_tempo": None,
         "midi_tempo": spec.midi_tempo if isinstance(spec, BasicPitchSpec) else None,
+        "confidence": None,
         "settings": _settings_dict(spec),
         "transcribed_at": None,
         "error": error,
@@ -374,6 +392,12 @@ class TranscriptionResult:
     notes_path: Path | None = None
     events_path: Path | None = None
     instrument_counts: dict[str, int] | None = None
+    event_count: int | None = None
+    first_event_s: float | None = None
+    last_event_s: float | None = None
+    backend_tempo: float | None = None
+    midi_tempo: float | None = None
+    confidence: float | None = None
 
 
 class Transcriber(Protocol):
@@ -408,9 +432,10 @@ class TranscriberRouter(Protocol):
 class TargetTranscriberRouter:
     """Routes a configured set of targets to the drum backend.
 
-    The production constructor intentionally leaves that set empty until D-F.
-    Tests can pass ``drumscript_targets=("drums",)`` with fakes to exercise
-    the exact same route without importing either real model.
+    The production router keeps the existing Basic Pitch route until the
+    separately evaluated D-F rollout. Tests can opt a fake into the drum
+    route through this same seam, so the normal suite never imports either
+    real model.
     """
 
     basic_pitch: Transcriber
@@ -441,7 +466,7 @@ class TargetTranscriberRouter:
 
 
 def production_transcriber_router() -> TranscriberRouter:
-    """Current production route.  D-F is the only issue allowed to add drums."""
+    """Current production route; D-F owns the evaluated DrumScript rollout."""
     basic_pitch = BasicPitchTranscriber()
     return TargetTranscriberRouter(basic_pitch=basic_pitch, drumscript=DrumScriptTranscriber())
 
@@ -495,7 +520,7 @@ def _varlen(value: int) -> bytes:
     return bytes(reversed(chunks))
 
 
-def _write_midi(path: Path, notes: list[tuple[float, float, int, int]], tempo_bpm: float) -> None:
+def _write_midi(path: Path, notes: list[tuple[float, float, int, int]], tempo_bpm: float, *, channel: int = 0) -> None:
     """Write a minimal, valid single-track Standard MIDI File (format 0)
     containing `notes`, with no external MIDI library (none is a vgt
     dependency, and this issue must add none)."""
@@ -507,8 +532,8 @@ def _write_midi(path: Path, notes: list[tuple[float, float, int, int]], tempo_bp
     for start_s, end_s, pitch, velocity in notes:
         start_tick = int(round(start_s * ticks_per_second))
         end_tick = max(start_tick + 1, int(round(end_s * ticks_per_second)))
-        raw_events.append((start_tick, bytes([0x90, pitch & 0x7F, velocity & 0x7F])))
-        raw_events.append((end_tick, bytes([0x80, pitch & 0x7F, 0])))
+        raw_events.append((start_tick, bytes([0x90 | channel, pitch & 0x7F, velocity & 0x7F])))
+        raw_events.append((end_tick, bytes([0x80 | channel, pitch & 0x7F, 0])))
     raw_events.sort(key=lambda item: item[0])
 
     track = bytearray()
@@ -556,6 +581,30 @@ class FakeTranscriber:
         emit = progress or (lambda _message: None)
         emit(f"transcribing (fake): {source.name}")
         destination_dir.mkdir(parents=True, exist_ok=True)
+
+        if isinstance(spec, DrumScriptSpec):
+            instruments = tuple(DRUMSCRIPT_INSTRUMENTS)
+            event_count = 4
+            events = [
+                {"time_sec": round(index * 0.5, 6), "instruments": [instruments[_content_seed(source, spec, f"event-{index}") % len(instruments)]]}
+                for index in range(event_count)
+            ]
+            drum_notes = [
+                (event["time_sec"], event["time_sec"] + 0.1, DRUMSCRIPT_INSTRUMENTS[event["instruments"][0]], 100)
+                for event in events
+            ]
+            midi_path = destination_dir / "transcription.mid"
+            events_path = destination_dir / "transcription.json"
+            _write_midi(midi_path, drum_notes, 120.0, channel=9)
+            events_path.write_text(json.dumps(events), encoding="utf-8")
+            counts = {name: sum(name in event["instruments"] for event in events) for name in instruments}
+            counts = {name: count for name, count in counts.items() if count}
+            return TranscriptionResult(
+                note_count=len(events), pitch_range_midi=None, first_note_s=None, last_note_s=None,
+                midi_path=midi_path, events_path=events_path, instrument_counts=counts,
+                event_count=len(events), first_event_s=events[0]["time_sec"] if events else None,
+                last_event_s=events[-1]["time_sec"] if events else None, midi_tempo=120.0,
+            )
 
         notes = _fake_notes(source, spec)
         midi_path = destination_dir / "transcription.mid"
@@ -884,11 +933,16 @@ class DrumScriptTranscriber:
         return TranscriptionResult(
             note_count=len(events),
             pitch_range_midi=None,
-            first_note_s=min(times) if times else None,
-            last_note_s=max(times) if times else None,
+            first_note_s=None,
+            last_note_s=None,
             midi_path=midi_path,
             events_path=events_path,
             instrument_counts=counts,
+            event_count=len(events),
+            first_event_s=min(times) if times else None,
+            last_event_s=max(times) if times else None,
+            backend_tempo=_drumscript_backend_tempo(completed),
+            midi_tempo=_midi_tempo_bpm(midi_path),
         )
 
 
@@ -949,6 +1003,44 @@ def _validate_drumscript_midi(path: Path) -> None:
     # GM percussion channel (MIDI channel 10, encoded as low nibble 9).
     if _midi_has_non_percussion_notes(path.read_bytes()):
         raise TranscriptionError("drumscript MIDI contains notes outside GM percussion channel 10")
+
+
+def _midi_tempo_bpm(path: Path) -> float | None:
+    """Return the first SMF tempo meta event, when the exporter wrote one.
+
+    DrumScript MIDI is authoritative for its playback tempo, while no
+    confidence can be inferred from the fixed note velocity it writes.
+    """
+    data = path.read_bytes()
+    marker = b"\xff\x51\x03"
+    index = data.find(marker)
+    if index < 0 or index + 6 > len(data):
+        return None
+    microseconds_per_beat = int.from_bytes(data[index + 3:index + 6], "big")
+    return 60_000_000 / microseconds_per_beat if microseconds_per_beat else None
+
+
+_DRUMSCRIPT_TEMPO = re.compile(
+    r"\b(?:detected\s+)?tempo\s*[:=]\s*(\d+(?:\.\d+)?)\s*(?:bpm)?\b", re.IGNORECASE
+)
+
+
+def _drumscript_backend_tempo(completed: Any) -> float | None:
+    """Read a tempo explicitly reported by DrumScript, without estimating one.
+
+    The v0.1.6 command's machine-readable event artifact is an array, so its
+    optional tempo diagnostic is emitted in process output rather than added
+    to that artifact.  Keep this deliberately conservative: an unrelated
+    number in progress output is never treated as a BPM value.
+    """
+    output = "\n".join(
+        value for value in (getattr(completed, "stdout", None), getattr(completed, "stderr", None)) if isinstance(value, str)
+    )
+    match = _DRUMSCRIPT_TEMPO.search(output)
+    if not match:
+        return None
+    tempo = float(match.group(1))
+    return tempo if math.isfinite(tempo) and tempo > 0 else None
 
 
 def _read_varlen(data: bytes, index: int) -> tuple[int, int]:

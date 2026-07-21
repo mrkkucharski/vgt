@@ -18,7 +18,7 @@ from vgt.sidecar import (
     upgrade,
     write_sidecar,
 )
-from vgt.transcribe import FakeTranscriber, TargetTranscriberRouter, TranscriptionError, midi_artifact_name, notes_artifact_name
+from vgt.transcribe import FakeTranscriber, TargetTranscriberRouter, TranscriptionError, events_artifact_name, midi_artifact_name, notes_artifact_name
 
 
 FIXTURE_DIR = Path(__file__).parents[1] / "test" / "Reaper Project"
@@ -1003,6 +1003,35 @@ def test_refresh_target_uses_the_injected_router_and_keeps_drum_cache_independen
     assert second_targets["drums"]["settings_hash"] != first_targets["drums"]["settings_hash"]
     assert second_targets["guitar"] == first_targets["guitar"]
     assert second_targets["bass"] == first_targets["bass"]
+    drum = second_targets["drums"]
+    assert drum["events_file"] == "transcription/drums.json"
+    assert drum["event_count"] == 4
+    assert drum["pitch_range_midi"] is None
+    assert drum["confidence"] is None
+
+
+def test_drum_backend_error_is_isolated_from_other_transcription_targets(tmp_path: Path) -> None:
+    project = _project_copy(tmp_path)
+    _write_v1_sidecar(project)
+    sidecar = read_sidecar(project)
+    for target in ("guitar", "drums"):
+        _add_fake_stem(project, sidecar, target, target.encode())
+    write_sidecar(project, sidecar)
+
+    class FailingDrumBackend(FakeTranscriber):
+        name = "drumscript"
+
+        def transcribe(self, *_args, **_kwargs):
+            raise TranscriptionError("drum backend failed")
+
+    router = TargetTranscriberRouter(FakeTranscriber(), FailingDrumBackend(), drumscript_targets=("drums",))
+    result = analyze(project, stages=("transcription",), transcription_targets=("guitar", "drums"), transcriber_router=router)
+
+    assert result["analysis"]["transcription"]["targets"]["guitar"]["status"] == "transcribed"
+    drums = result["analysis"]["transcription"]["targets"]["drums"]
+    assert drums["status"] == "error"
+    assert drums["backend"] == "drumscript"
+    assert "drum backend failed" in drums["error"]
 
 
 
@@ -1125,3 +1154,28 @@ def test_cli_forget_transcription_removes_entry_and_deletes_artifacts(
     assert "guitar" not in result["analysis"]["transcription"]["targets"]
     assert not midi_path.is_file()
     assert not notes_path.is_file()
+
+
+def test_forget_drums_removes_only_its_vgt_midi_and_event_artifacts(tmp_path: Path) -> None:
+    project = _project_copy(tmp_path)
+    _write_v1_sidecar(project)
+    sidecar = read_sidecar(project)
+    namespace = ensure_artifact_namespace(sidecar, project)
+    sidecar["analysis"]["transcription"]["requested_targets"] = ["guitar", "drums"]
+    sidecar["analysis"]["transcription"]["targets"] = {
+        "guitar": {"status": "transcribed", "midi_file": midi_artifact_name("guitar"), "notes_file": notes_artifact_name("guitar")},
+        "drums": {"status": "transcribed", "midi_file": midi_artifact_name("drums"), "events_file": events_artifact_name("drums")},
+    }
+    write_sidecar(project, sidecar)
+    namespace_dir = artifact_namespace_dir(project, namespace)
+    paths = [namespace_dir / name for name in (midi_artifact_name("guitar"), notes_artifact_name("guitar"), midi_artifact_name("drums"), events_artifact_name("drums"))]
+    for path in paths:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(b"vgt")
+
+    result = forget_transcription_targets(project, ("drums",))
+
+    assert result["analysis"]["transcription"]["requested_targets"] == ["guitar"]
+    assert "drums" not in result["analysis"]["transcription"]["targets"]
+    assert paths[0].is_file() and paths[1].is_file()
+    assert not paths[2].exists() and not paths[3].exists()

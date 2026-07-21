@@ -108,7 +108,7 @@ def test_router_routes_only_drums_to_an_injected_drum_backend() -> None:
     assert isinstance(router.spec_for_target("guitar", midi_tempo=120.0), BasicPitchSpec)
 
 
-def test_production_router_has_not_switched_drums_to_drumscript() -> None:
+def test_production_router_defers_drumscript_rollout_until_d_f() -> None:
     router = production_transcriber_router()
 
     assert router.for_target("drums").name == "basic-pitch"

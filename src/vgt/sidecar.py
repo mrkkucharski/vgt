@@ -80,8 +80,11 @@ Schema versions:
                "status": "transcribed" | "skipped-missing-source" | "error",
                "midi_file": str | null, "notes_file": str | null, "events_file": str | null,
                "note_count": int | null, "pitch_range_midi": [int, int] | null,
+               "event_count": int | null, "instrument_counts": dict | null,
                "first_note_s": float | null, "last_note_s": float | null,
-               "midi_tempo": float | null, "settings": dict, # backend-specific settings
+               "first_event_s": float | null, "last_event_s": float | null,
+               "backend_tempo": float | null, "midi_tempo": float | null,
+               "confidence": float | null, "settings": dict, # backend-specific settings
                "transcribed_at": str | null, "error": str | null,
              }, ...
            },
