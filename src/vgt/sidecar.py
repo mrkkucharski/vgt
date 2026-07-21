@@ -308,7 +308,13 @@ def upgrade(data: dict[str, Any]) -> dict[str, Any]:
     analysis["stems"] = stems
 
     transcription = {**_empty_transcription_block(), **(analysis.get("transcription") or {})}
-    transcription["requested_targets"] = list(transcription.get("requested_targets") or DEFAULT_TRANSCRIPTION_TARGETS)
+    # An empty list is meaningful: it is the persisted state after a user
+    # forgets their final target.  Only a missing/null or malformed value
+    # needs the schema-v9 default.
+    requested_targets = transcription.get("requested_targets")
+    transcription["requested_targets"] = (
+        list(requested_targets) if isinstance(requested_targets, list) else list(DEFAULT_TRANSCRIPTION_TARGETS)
+    )
     transcription["targets"] = dict(transcription.get("targets") or {})
     analysis["transcription"] = transcription
 

@@ -165,6 +165,16 @@ def test_upgrade_preserves_an_existing_transcription_block() -> None:
     }
 
 
+def test_upgrade_preserves_an_intentionally_empty_transcription_target_set() -> None:
+    """Forgetting the final target must not resurrect the default guitar
+    request on every sidecar read."""
+    v9 = {"schema_version": 9, "analysis": {"transcription": {"requested_targets": [], "targets": {}}}}
+
+    upgraded = upgrade(v9)
+
+    assert upgraded["analysis"]["transcription"] == {"requested_targets": [], "targets": {}}
+
+
 def test_upgrade_does_not_clobber_an_existing_detected_field() -> None:
     v3 = {
         "schema_version": 3,
