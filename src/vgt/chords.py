@@ -18,13 +18,15 @@ madmom, whose own chord segmentation isn't beat-quantized.
 from __future__ import annotations
 
 import bisect
+import logging
 from pathlib import Path
-from typing import Any
+from typing import Any, Mapping
 
 from .sidecar import artifact_namespace_dir
 
 _PITCH_CLASSES = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"]
 _NO_CHORD = "N"
+_LOG = logging.getLogger(__name__)
 
 
 class ChordDetectionError(RuntimeError):
@@ -299,6 +301,70 @@ def _template_chords(
     return segments
 
 
+def _template_chords_fused(
+    sources: Mapping[str, Path], beat_times: list[float], settings: dict[str, Any], tempo: dict[str, Any] | None
+) -> tuple[list[tuple[float, float, str]], list[str]]:
+    """Pool template evidence from independently decoded audio sources.
+
+    The mix supplies the timeline boundaries.  Each usable source contributes
+    one 24-label score vector per shared beat window; those vectors are summed
+    before the single duration-prior decode.  A bad stem is deliberately not a
+    fatal error: it simply contributes no evidence.
+    """
+    import librosa
+    import numpy as np
+
+    original = sources["original"]
+    try:
+        mix_y, mix_sr = librosa.load(str(original), sr=None, mono=True)
+    except Exception as exc:  # noqa: BLE001 - normalize backend errors
+        raise ChordDetectionError(f"{original}: could not load audio: {exc}") from exc
+    if len(mix_y) == 0:
+        raise ChordDetectionError(f"{original}: audio contains no samples.")
+    duration = librosa.get_duration(y=mix_y, sr=mix_sr)
+    boundaries = sorted({round(t, 6) for t in [0.0, *beat_times, duration]})
+    raw_bounds = list(zip(boundaries, boundaries[1:]))
+    templates = _chord_templates()
+    summed_scores = np.zeros((len(raw_bounds), len(templates)))
+    contributors: list[str] = []
+
+    for name, path in sources.items():
+        try:
+            y, sr = (mix_y, mix_sr) if name == "original" else librosa.load(str(path), sr=None, mono=True)
+            if len(y) == 0:
+                raise ValueError("audio contains no samples")
+            harmonic = librosa.effects.harmonic(y, margin=8)
+            chroma = librosa.feature.chroma_cqt(y=harmonic, sr=sr)
+            frame_times = librosa.frames_to_time(np.arange(chroma.shape[1]), sr=sr)
+            rows = []
+            for start, end in raw_bounds:
+                mask = (frame_times >= start) & (frame_times < end)
+                score = _template_scores(chroma[:, mask].mean(axis=1), templates) if mask.any() else None
+                rows.append(np.full(len(templates), -1.0) if score is None else score)
+        except Exception as exc:  # noqa: BLE001 - one damaged artifact is optional
+            if name == "original":
+                raise ChordDetectionError(f"{path}: could not analyze audio: {exc}") from exc
+            _LOG.warning("Skipping chord-fusion source %s (%s): %s", name, path, exc)
+            continue
+        summed_scores += np.asarray(rows)
+        contributors.append(name)
+
+    if not contributors or not raw_bounds:
+        return [], contributors
+    labels = [label for label, _template in templates]
+    scores = _bar_aggregate_scores(
+        summed_scores, _bar_groups(raw_bounds, beat_times, tempo, _bar_aggregation_beats(settings, tempo))
+    )
+    decoded_labels = _viterbi_labels(scores, labels, _decoder_setting(settings, "duration_prior", DEFAULT_DURATION_PRIOR))
+    segments: list[tuple[float, float, str]] = []
+    for (start, end), label in zip(raw_bounds, decoded_labels):
+        if segments and segments[-1][2] == label:
+            segments[-1] = (segments[-1][0], end, label)
+        else:
+            segments.append((start, end, label))
+    return segments, contributors
+
+
 def _snap_to_grid(time: float, grid: list[float]) -> float:
     """Nearest point on the shared beat grid to `time` (grid must be sorted)."""
     idx = bisect.bisect_left(grid, time)
@@ -334,6 +400,7 @@ def detect_chords(
     settings: dict[str, Any] | None = None,
     *,
     tempo: dict[str, Any] | None = None,
+    sources: Mapping[str, Path] | None = None,
 ) -> dict[str, Any]:
     """Return `{"segments", "beat_times", "vocabulary", "backend"}` for
     `source`, with every chord segment boundary snapped to `beat_times` --
@@ -345,15 +412,23 @@ def detect_chords(
     if len(grid) < 2:
         raise ChordDetectionError(f"Too few beats in the shared grid ({len(grid)}) to snap chords to.")
 
-    madmom_result = _madmom_chords(source)
-    if madmom_result is not None:
-        raw_segments, backend = madmom_result, "madmom"
-    else:
-        chordino_result = _chordino_chords(source)
-        if chordino_result is not None:
-            raw_segments, backend = chordino_result, "chordino"
+    source_map = {"original": source, **(sources or {})}
+    # Preserve the established mix-only backend ladder exactly.  Fusion needs
+    # comparable template scores, so it intentionally uses the template path.
+    if len(source_map) == 1:
+        madmom_result = _madmom_chords(source)
+        if madmom_result is not None:
+            raw_segments, backend = madmom_result, "madmom"
         else:
-            raw_segments, backend = _template_chords(source, grid, settings, tempo), "librosa"
+            chordino_result = _chordino_chords(source)
+            if chordino_result is not None:
+                raw_segments, backend = chordino_result, "chordino"
+            else:
+                raw_segments, backend = _template_chords(source, grid, settings, tempo), "librosa"
+        contributors = ["original"]
+    else:
+        raw_segments, contributors = _template_chords_fused(source_map, grid, settings, tempo)
+        backend = "librosa_fusion"
 
     segments = _snap_segments_to_grid(raw_segments, grid)
 
@@ -362,6 +437,7 @@ def detect_chords(
         "beat_times": [round(t, 6) for t in grid],
         "vocabulary": "maj_min",
         "backend": backend,
+        "sources": contributors,
     }
 
 

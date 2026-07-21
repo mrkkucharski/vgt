@@ -21,6 +21,7 @@ from datetime import UTC, datetime
 import copy
 import hashlib
 import json
+import logging
 
 from . import __version__
 from .chords import ChordDetectionError, chord_sheet_path, detect_chords as _detect_chords, render_chord_sheet
@@ -38,6 +39,9 @@ from .sidecar import (
     update_analysis,
 )
 from .tempo import TempoDetectionError, build_tempo_grid, click_artifact_path, detect_beats, render_click
+
+FUSION_STEM_NAMES = ("instrumental", "guitar", "backing")
+_LOG = logging.getLogger(__name__)
 
 
 class AnalysisError(ValueError):
@@ -179,6 +183,56 @@ def _tempo_beat_times(tempo_value: dict[str, Any] | None, source: Path) -> list[
     return beat_times
 
 
+def chord_sources(project_path: Path, source: Path, analysis: dict[str, Any]) -> dict[str, Path]:
+    """Return the mix plus usable optional stem artifacts for chord fusion.
+
+    Artifact records are checkpointed independently by separation, so every
+    record and file is treated as optional.  This deliberately excludes bass:
+    the measured fusion recipe is original + instrumental + guitar + backing.
+    """
+    from .separation import artifact_path
+
+    sources = {"original": source}
+    artifacts = (analysis.get("stems") or {}).get("artifacts") or {}
+    for name in FUSION_STEM_NAMES:
+        artifact = artifacts.get(name)
+        if not isinstance(artifact, dict) or not isinstance(artifact.get("file"), str):
+            continue
+        try:
+            path = artifact_path(project_path, artifact)
+        except (KeyError, TypeError, ValueError):
+            _LOG.warning("Skipping chord-fusion source %s: malformed artifact record", name)
+            continue
+        if path.is_file():
+            sources[name] = path
+        else:
+            _LOG.warning("Skipping chord-fusion source %s: artifact is missing (%s)", name, path)
+    return sources
+
+
+def _chord_source_identity(chord_source_paths: dict[str, Path]) -> tuple[str, dict[str, Path]]:
+    """Return the chord cache identity and its validated source snapshot.
+
+    Stem artifacts are optional and can disappear between their initial
+    ``is_file`` check and this cache calculation (for example, while a user
+    removes a failed download). Treat that race exactly like an unavailable
+    stem rather than letting it abort the otherwise free chord stage. The
+    returned mapping is used for decoding too, so the identity and the source
+    set handed to the decoder cannot disagree.
+    """
+    identities = []
+    validated_sources: dict[str, Path] = {}
+    for name, path in chord_source_paths.items():
+        try:
+            identities.append((name, hash_source_file(path)))
+            validated_sources[name] = path
+        except OSError as exc:
+            if name == "original":
+                raise
+            _LOG.warning("Skipping chord-fusion source %s while hashing (%s): %s", name, path, exc)
+    return hashlib.sha256(json.dumps(identities, sort_keys=True).encode("utf-8")).hexdigest(), validated_sources
+
+
 def detect_chords(
     project_path: Path,
     source: Path,
@@ -187,6 +241,7 @@ def detect_chords(
     namespace: str,
     *,
     render_artifact: bool = True,
+    sources: dict[str, Path] | None = None,
 ) -> dict[str, Any]:
     """Beat-aligned maj/min chord segments (see chords.py), snapped to the
     tempo stage's shared beat grid, plus a chord-sheet text artifact rendered
@@ -201,7 +256,9 @@ def detect_chords(
     tempo_value = analysis["tempo"]["value"]
     beat_times = _tempo_beat_times(tempo_value, source)
     try:
-        chords_value = _detect_chords(source, beat_times, settings, tempo=tempo_value)
+        chords_value = _detect_chords(
+            source, beat_times, settings, tempo=tempo_value, sources=sources or chord_sources(project_path, source, analysis)
+        )
     except ChordDetectionError as exc:
         raise AnalysisError(str(exc)) from exc
     artifact_path = chord_sheet_path(project_path, namespace)
@@ -232,6 +289,7 @@ def analyze(
     settings: dict[str, dict[str, Any]] | None = None,
     progress: Callable[[str], None] | None = None,
     force: bool = False,
+    stages: tuple[str, ...] | None = None,
 ) -> dict[str, Any]:
     """Run (or refresh) analysis for `project` and persist it into the sidecar.
 
@@ -261,7 +319,11 @@ def analyze(
         raise AnalysisError(f"Reference source file not found: {source}")
 
     emit(f"analyzing reference track '{source.name}'")
-    emit(f"running {len(ANALYSIS_STAGES)} detectors ({', '.join(ANALYSIS_STAGES)}); first run can take a minute or two")
+    selected_stages = stages or ANALYSIS_STAGES
+    unknown_stages = set(selected_stages) - set(ANALYSIS_STAGES)
+    if unknown_stages:
+        raise AnalysisError(f"Unknown analysis stages: {', '.join(sorted(unknown_stages))}")
+    emit(f"running {len(selected_stages)} detectors ({', '.join(selected_stages)}); first run can take a minute or two")
 
     input_hash = hash_source_file(source)
     analysis = sidecar["analysis"]
@@ -273,33 +335,42 @@ def analyze(
             current["stems"]["artifact_namespace"] = namespace
 
     update_analysis(project_path, persist_namespace)
-    total = len(ANALYSIS_STAGES)
-    for position, stage in enumerate(ANALYSIS_STAGES, start=1):
+    total = len(selected_stages)
+    for position, stage in enumerate(selected_stages, start=1):
         stage_settings = settings.get(stage, {})
         settings_hash = _hash_settings(stage_settings)
+        chord_source_paths: dict[str, Path] | None = None
+        if stage == "chords":
+            stage_input_hash, chord_source_paths = _chord_source_identity(chord_sources(project_path, source, analysis))
+        else:
+            stage_input_hash = input_hash
         if analysis[stage].get("human_verified"):
             if stage in DETECTED_SPLIT_STAGES and (
                 force
-                or analysis[stage].get("detected_input_hash") != input_hash
+                or analysis[stage].get("detected_input_hash") != stage_input_hash
                 or analysis[stage].get("detected_settings_hash") != settings_hash
             ):
                 emit(f"[{position}/{total}] {stage} — human-verified value kept; refreshing detected baseline…")
             else:
                 emit(f"[{position}/{total}] {stage} — human-verified, keeping")
-        elif not force and stage_is_current(analysis[stage], input_hash=input_hash, settings_hash=settings_hash):
+        elif not force and stage_is_current(analysis[stage], input_hash=stage_input_hash, settings_hash=settings_hash):
             emit(f"[{position}/{total}] {stage} — unchanged, using cached result")
         elif force:
             emit(f"[{position}/{total}] {stage} — re-analyzing (forced)…")
         else:
             emit(f"[{position}/{total}] {stage} — analyzing…")
         refresh = _refresh_stage_with_detected if stage in DETECTED_SPLIT_STAGES else refresh_stage
+
+        def compute_stage(*, stage: str = stage, stage_settings: dict[str, Any] = stage_settings, **kwargs: Any) -> Any:
+            if stage == "chords":
+                kwargs["sources"] = chord_source_paths
+            return _DETECTORS[stage](project_path, source, stage_settings, analysis, namespace, **kwargs)
+
         analysis[stage] = refresh(
             analysis[stage],
-            input_hash=input_hash,
+            input_hash=stage_input_hash,
             settings_hash=settings_hash,
-            compute=lambda stage=stage, stage_settings=stage_settings, **kwargs: _DETECTORS[stage](
-                project_path, source, stage_settings, analysis, namespace, **kwargs
-            ),
+            compute=compute_stage,
             force=force,
             analyzed_at=datetime.now(UTC).isoformat().replace("+00:00", "Z"),
         )
