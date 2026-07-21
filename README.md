@@ -2,7 +2,8 @@
 
 vgt non-destructively prepares existing REAPER projects for guitar practice. It
 analyzes a reference mix, optionally separates practice stems with LALAL.AI,
-and adds only its own `[vgt]`-managed objects.
+creates local reference MIDI from requested stems, and adds only its own
+`[vgt]`-managed objects.
 
 Read the [user manual](docs/USER-MANUAL.md) for the current workflow, commands,
 track states, correction process, cost controls, and regression contract.

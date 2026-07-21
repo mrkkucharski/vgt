@@ -1,9 +1,10 @@
 # vgt user manual
 
 vgt prepares an existing REAPER project for guitar practice. It analyzes one
-reference mix, optionally separates practice stems through LALAL.AI, and adds
-only its own `[vgt]` objects to the project. This is the current user-visible
-contract and a compact regression checklist.
+reference mix, optionally separates practice stems through LALAL.AI, can make
+local reference MIDI from those stems, and adds only its own `[vgt]` objects to
+the project. This is the current user-visible contract and a compact regression
+checklist.
 
 ## Quick workflow
 
@@ -11,8 +12,11 @@ contract and a compact regression checklist.
 2. In REAPER's Action List, load and run `reascript/vgt_initialize.lua`.
    On first use choose a file-backed reference track and declare whether its
    guitar is electric or acoustic. This writes an adjacent `Song.vgt` sidecar.
-3. Run `vgt analyze "Song.RPP"` in a terminal.
-4. Run `vgt_initialize.lua` again to apply analysis and import available stems.
+3. Run `vgt analyze "Song.RPP"` in a terminal. After any available separation,
+   it also transcribes the requested stems locally with Basic Pitch. This is
+   free and needs no confirmation; guitar is requested by default.
+4. Run `vgt_initialize.lua` again to apply analysis and import available stems
+   and reference MIDI tracks.
 5. Correct chords and sections in REAPER, then run `reascript/vgt_sync.lua`.
 6. Inspect persisted state with `vgt status "Song.RPP"` or `--json`.
 
@@ -34,6 +38,7 @@ vgt creates a `[vgt] <reference name>` container and may add:
 | `[vgt] Click` | Tempo-click artifact exists | Muted audio track; unmute temporarily to check the beat grid. |
 | Vocals, Instrumental, Bass, Drums, Guitar, Backing | Standard separation | Unmuted, time-based audio tracks. |
 | Strings, Keys / Piano | Explicitly requested | Unmuted, time-based optional stem tracks. |
+| `[vgt] <Target> Ref (MIDI)` | A requested target was transcribed | Unmuted, time-based MIDI item directly beneath the stem it was transcribed from. It has no sound without an instrument; muting it would only dim the notes meant to be read. |
 | `[vgt]` section regions | Section analysis | Movable and renamable section markers. |
 
 Chords and Beats are unmuted so labels stay visible, but contain no audible
@@ -50,6 +55,9 @@ Artifacts live under `vgt/<stable-id>/` beside the project:
 - `tempo-click.wav` — compare by unmuting `[vgt] Click`.
 - `chords.txt` — effective chord list.
 - `sections.txt` — effective section timeline.
+- `transcription/<target>.mid` — a cached reference MIDI for each successfully
+  transcribed target.
+- `transcription/<target>.csv` — its Basic Pitch note-events data.
 
 vgt writes a tempo map only when the project still has REAPER's default 120
 BPM, 4/4 map. It never overwrites another map or a human-edited vgt map; it
@@ -105,6 +113,56 @@ known interrupted work rather than intentionally submitting it again. Generated
 media stays under `<project-folder>/vgt/<stable-id>/`, so moving the project
 folder keeps it portable.
 
+## Stem transcription (reference MIDI)
+
+Transcription runs inside `vgt analyze`, after separation has made any stem
+sources available. It uses Basic Pitch locally, so it is free, needs no LALAL
+credentials, and never asks for cost confirmation. A target without a matching
+stem is reported as skipped; it never silently falls back to transcribing the
+full mix.
+
+Guitar is the default requested target. Add other targets with repeatable
+`--transcribe`; this persists the target in the sidecar, so later analyses keep
+its reference fresh without repeating the flag:
+
+```sh
+vgt analyze --transcribe bass --transcribe vocals "Song.RPP"
+```
+
+- `--transcribe <target>` adds a target to the persisted requested set. Valid
+  targets are `guitar`, `bass`, `vocals`, `drums`, `instrumental`, `backing`,
+  `strings`, `piano`, and `original` (the mix).
+- `--transcribe-only <target>` runs just that target this time, without changing
+  the persisted set.
+- `--forget-transcription <target>` removes a persisted target and deletes its
+  MIDI and CSV artifacts.
+- `--no-transcribe` skips transcription for this run without changing the
+  persisted set.
+
+`vgt status "Song.RPP"` reports transcription as a multi-target block: how many
+targets are requested and, for each one, its note count and MIDI range, a
+missing-source skip, or an error. The status artifact list includes each
+target's MIDI and CSV when available.
+
+For a machine that must not build Basic Pitch's environment on first use,
+prepare it separately with Python 3.11:
+
+```sh
+uv tool install --python 3.11 --with "setuptools<81" "basic-pitch[onnx]==0.4.0"
+```
+
+Then set `VGT_BASIC_PITCH_CMD` to the command for that installed
+`basic-pitch` executable; it replaces vgt's normal isolated invocation.
+
+Treat the result as a **draft reference**, not a transcription to trust note for
+note. Guitar transcription remains an open research problem, especially for
+distorted or polyphonic parts. The MIDI carries pitches and timing, but no
+fretboard or string information, so vgt does not produce tablature.
+
+`[vgt] <Target> Ref (MIDI)` is recreated on every apply, like every other
+vgt-owned object. Edits to it do not survive: copy the MIDI item to your own
+track before editing. There is no `vgt sync` read-back for MIDI.
+
 ## Permanent regression contract
 
 - vgt changes only objects it created and recorded as `[vgt]`-managed.
@@ -116,6 +174,11 @@ folder keeps it portable.
 - Human-synchronized chord and section corrections survive analysis and apply.
 - Ordinary `--force` makes no LALAL charges; paid work is cached, checkpointed,
   and explicitly confirmed when forced or optional.
+- Transcription runs locally after separation, never triggers paid separation,
+  and independently caches each requested target's MIDI and CSV artifacts.
+- Reference MIDI tracks are unmuted, time-based, and paired with their source
+  stem; their edits are not a supported sync workflow and must be copied to a
+  user-owned track first.
 - `vgt status` is read-only and never reveals the license key.
 
 For repository checks, run `uv run pytest -q`.
