@@ -128,6 +128,10 @@ def test_drum_result_sidecar_uses_stable_target_midi_and_event_names(tmp_path: P
     assert entry["events_file"] == "transcription/drums.json"
     assert entry["notes_file"] is None
     assert entry["event_count"] == 1
+    assert entry["first_event_s"] == 1.0
+    assert entry["last_event_s"] == 1.0
+    assert entry["pitch_range_midi"] is None
+    assert entry["confidence"] is None
 
 
 def test_zero_event_drum_entry_remains_visible_in_status() -> None:
@@ -138,6 +142,23 @@ def test_zero_event_drum_entry_remains_visible_in_status() -> None:
         }
     })
     assert status["targets"]["drums"]["event_count"] == 0
+
+
+def test_drum_status_groups_hats_and_keeps_zero_events_visible() -> None:
+    from vgt.status import format_status
+
+    status = {
+        "project": {"path": "song.rpp"}, "sidecar": {"path": "song.vgt", "schema_version": 9},
+        "reference_track": {"name": None, "guid": None, "source_path": None, "source_error": None, "source_exists": None},
+        "managed_area": {"managed_track_guids": [], "folder_name": None, "tempo_map_applied": None},
+        "stages": {},
+        "transcription": {"package_pin": None, "backend": None, "requested_targets": ["drums"], "targets": {
+            "drums": {"status": "transcribed", "event_count": 0, "instrument_counts": {"hi_hat_closed": 2, "hi_hat_open": 3}, "package_pin": "drumscript==0.1.6", "backend": "drumscript", "transcribed_at": None}
+        }},
+        "timestamps": {"last_analysis_at": None, "last_human_correction_at": None}, "artifacts": {},
+        "stems": {"guitar_type": None, "human_verified": False, "operations": {}, "artifacts": {}},
+    }
+    assert "0 events (kick 0, snare 0, hats 5, other 0), drumscript 0.1.6" in format_status(status)
 
 
 def test_rejects_duplicate_or_missing_outputs(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

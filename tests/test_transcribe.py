@@ -108,14 +108,13 @@ def test_router_routes_only_drums_to_an_injected_drum_backend() -> None:
     assert isinstance(router.spec_for_target("guitar", midi_tempo=120.0), BasicPitchSpec)
 
 
-def test_production_router_has_not_switched_drums_to_drumscript() -> None:
+def test_production_router_routes_drums_to_drumscript() -> None:
     router = production_transcriber_router()
 
-    assert router.for_target("drums").name == "basic-pitch"
+    assert router.for_target("drums").name == "drumscript"
     assert router.for_target("guitar").name == "basic-pitch"
-    assert isinstance(router.spec_for_target("drums", midi_tempo=120.0), BasicPitchSpec)
-    assert isinstance(router.for_target("drums"), type(router.for_target("guitar")))
-    assert not isinstance(router.for_target("drums"), DrumScriptTranscriber)
+    assert isinstance(router.spec_for_target("drums", midi_tempo=120.0), DrumScriptSpec)
+    assert isinstance(router.for_target("drums"), DrumScriptTranscriber)
 
 
 def test_validate_target_accepts_every_documented_target() -> None:

@@ -100,6 +100,8 @@ def _transcription_status(analysis: dict[str, Any]) -> dict[str, Any]:
             backend = entry.get("backend")
             package_pin = entry.get("package_pin")
         entries[target] = {
+            "backend": entry.get("backend"),
+            "package_pin": entry.get("package_pin"),
             "status": entry.get("status"),
             "note_count": entry.get("note_count"),
             "event_count": entry.get("event_count"),
@@ -110,6 +112,11 @@ def _transcription_status(analysis: dict[str, Any]) -> dict[str, Any]:
             "midi_file": entry.get("midi_file"),
             "notes_file": entry.get("notes_file"),
             "events_file": entry.get("events_file"),
+            "first_event_s": entry.get("first_event_s"),
+            "last_event_s": entry.get("last_event_s"),
+            "backend_tempo": entry.get("backend_tempo"),
+            "midi_tempo": entry.get("midi_tempo"),
+            "confidence": entry.get("confidence"),
         }
     return {
         "backend": backend,
@@ -283,9 +290,14 @@ def format_status(status: dict[str, Any]) -> str:
         entry = transcription["targets"].get(target, {})
         status_value = entry.get("status")
         if status_value == "transcribed" and entry.get("event_count") is not None:
-            counts = entry.get("instrument_counts") if isinstance(entry.get("instrument_counts"), dict) else {}
-            count_text = ", ".join(f"{name} {count}" for name, count in counts.items()) or "no instruments"
-            lines.append(f"  {target:<8} {entry.get('event_count')} events ({count_text}), transcribed {entry.get('transcribed_at')}")
+            count_text = _format_drum_instruments(entry.get("instrument_counts"))
+            package = entry.get("package_pin")
+            backend = entry.get("backend")
+            backend_text = package.replace("==", " ") if isinstance(package, str) else backend or "drumscript"
+            lines.append(
+                f"  {target:<8} {entry.get('event_count')} events ({count_text}), "
+                f"{backend_text}, transcribed {entry.get('transcribed_at')}"
+            )
         elif status_value == "transcribed":
             pitch = entry.get("pitch_range_midi")
             pitch_text = f"MIDI {pitch[0]}-{pitch[1]}" if pitch else "MIDI ?"
@@ -324,3 +336,14 @@ def format_status(status: dict[str, Any]) -> str:
     lines.append("  Stem artifacts:")
     lines.extend(f"    {name}: {artifact['state']} ({artifact['path'] or 'unknown'})" for name, artifact in stems["artifacts"].items())
     return "\n".join(lines)
+
+
+def _format_drum_instruments(value: Any) -> str:
+    """Compact the detailed event JSON labels into a stable status summary."""
+    counts = value if isinstance(value, dict) else {}
+    kick = counts.get("kick", 0)
+    snare = counts.get("snare", 0)
+    hats = counts.get("hi_hat_closed", 0) + counts.get("hi_hat_open", 0)
+    other = sum(count for name, count in counts.items() if name not in {"kick", "snare", "hi_hat_closed", "hi_hat_open"})
+    parts = [f"kick {kick}", f"snare {snare}", f"hats {hats}", f"other {other}"]
+    return ", ".join(parts)
