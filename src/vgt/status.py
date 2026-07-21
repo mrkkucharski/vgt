@@ -9,7 +9,7 @@ from typing import Any
 import wave
 
 from .project import ProjectError, track_source_path
-from .separation import ARTIFACT_FILENAMES, OPERATION_ORDER, artifact_path, hash_audio_content
+from .separation import ARTIFACT_FILENAMES, OPTIONAL_STEMS, OPERATION_ORDER, artifact_path, hash_audio_content
 from .sidecar import ANALYSIS_STAGES, DETECTED_SPLIT_STAGES, artifact_namespace_dir, sidecar_path
 
 
@@ -135,8 +135,9 @@ def build_status(project_path: Path) -> dict[str, Any]:
             valid_wav = valid_hash = False
         return ("cached" if valid_wav and valid_hash else "corrupt"), str(candidate)
 
+    optional_stems = tuple(name for name in OPTIONAL_STEMS if name in (stems.get("optional_stems") or []) or name in stem_artifacts)
     stem_artifact_status: dict[str, Any] = {}
-    for name in ARTIFACT_FILENAMES:
+    for name in (*ARTIFACT_FILENAMES, *optional_stems):
         record = stem_artifacts.get(name)
         file_state, resolved_path = stem_file_state(record)
         stem_artifact_status[name] = {
@@ -146,7 +147,8 @@ def build_status(project_path: Path) -> dict[str, Any]:
             "side": record.get("side") if isinstance(record, dict) else None,
         }
     stem_operation_status: dict[str, Any] = {}
-    for operation_id in OPERATION_ORDER:
+    operation_ids = (*OPERATION_ORDER, *(f"{name}-original" for name in optional_stems))
+    for operation_id in operation_ids:
         record = stem_operations.get(operation_id) if isinstance(stem_operations.get(operation_id), dict) else {}
         backend_state = record.get("backend_state") if isinstance(record.get("backend_state"), dict) else {}
         state = record.get("status", "pending")
@@ -195,7 +197,7 @@ def build_status(project_path: Path) -> dict[str, Any]:
         },
         "stems": {
             "backend": stems.get("backend"), "api_version": stems.get("api_version"),
-            "guitar_type": stems.get("guitar_type") or config.get("guitar_type"), "artifact_namespace": stems.get("artifact_namespace"),
+            "guitar_type": stems.get("guitar_type") or config.get("guitar_type"), "optional_stems": list(optional_stems), "artifact_namespace": stems.get("artifact_namespace"),
             "human_verified": bool(stems.get("human_verified")), "verified_at": stems.get("verified_at"),
             "operations": stem_operation_status, "artifacts": stem_artifact_status,
         },

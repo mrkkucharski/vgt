@@ -10,7 +10,7 @@ import sys
 from .analysis import AnalysisError, analyze
 from .lalal import LalalError, LalalSeparator
 from .project import ProjectError, locate_project, read_project
-from .separation import GUITAR_TYPES, SeparationError, declared_guitar_type, separate, separation_preview
+from .separation import GUITAR_TYPES, OPTIONAL_STEMS, SeparationError, declared_guitar_type, separate, separation_preview
 from .sidecar import read_sidecar, write_sidecar
 from .status import StatusError, build_status, format_status
 
@@ -46,11 +46,17 @@ def _parser() -> argparse.ArgumentParser:
     )
     analyze_parser.add_argument("--guitar", choices=GUITAR_TYPES, help="Persist and use the declared guitar type for stem separation.")
     analyze_parser.add_argument(
+        "--extra-stem",
+        action="append",
+        choices=(*OPTIONAL_STEMS, "keys", "keys/piano"),
+        help="Also separate this opt-in instrument (repeat for both strings and keys/piano).",
+    )
+    analyze_parser.add_argument(
         "--force-stems", action="store_true", help="Deliberately repeat paid stem operations (requires cost confirmation)."
     )
     analyze_parser.add_argument(
         "--accept-stem-cost", action="store_true",
-        help="Explicitly acknowledge the displayed paid stem-operation cost; required for non-interactive --force-stems.",
+        help="Explicitly acknowledge the displayed paid stem-operation cost; required for non-interactive forced or opt-in stem work.",
     )
     status_parser = subparsers.add_parser("status", help="Summarize the read-only vgt sidecar state for a project.")
     status_parser.add_argument("project", nargs="?", help="Path to a .RPP project (defaults to cwd's only .RPP).")
@@ -119,7 +125,7 @@ def main(argv: list[str] | None = None) -> int:
 
             if resolved_guitar_type:
                 try:
-                    preview = separation_preview(project, guitar_type=resolved_guitar_type, force=args.force_stems)
+                    preview = separation_preview(project, guitar_type=resolved_guitar_type, optional_stems=args.extra_stem, force=args.force_stems)
                     cached = preview["cached_operations"]
                     outstanding = preview["outstanding_operations"]
                     report(
@@ -127,23 +133,41 @@ def main(argv: list[str] | None = None) -> int:
                         f"cached operations ({len(cached)}): {', '.join(cached) or 'none'}; "
                         f"outstanding operations ({len(outstanding)}): {', '.join(outstanding) or 'none'}"
                     )
-                    if args.force_stems:
+                    if preview["optional_stems"]:
+                        report(f"opt-in stems: {', '.join(preview['optional_stems'])}")
+                    # An opt-in extra creates new paid work. It therefore
+                    # uses the same consent path as a forced refresh, after
+                    # preflight has supplied LALAL's authoritative quote.
+                    # An interrupted opt-in request remains in the sidecar so
+                    # it can resume safely.  It must still use the opt-in
+                    # confirmation path, even when this invocation omits
+                    # --extra-stem; otherwise a declined request could turn
+                    # into an unacknowledged charge on a later retry.
+                    outstanding_optional_operations = {
+                        f"{stem}-original" for stem in preview["optional_stems"]
+                    }.intersection(outstanding)
+                    requires_paid_confirmation = (
+                        args.force_stems
+                        or bool(args.extra_stem)
+                        or bool(outstanding_optional_operations)
+                    )
+                    if requires_paid_confirmation and outstanding:
                         report(
-                            f"PAID refresh requested for {len(outstanding)} operations; "
+                            f"PAID stem operations requested for {len(outstanding)} operations; "
                             "LALAL's authoritative balance and minute estimate will be shown before confirmation."
                         )
                         if not args.accept_stem_cost and not sys.stdin.isatty():
-                            raise AnalysisError("--force-stems in non-interactive mode requires --accept-stem-cost")
+                            raise AnalysisError("a paid stem operation in non-interactive mode requires --accept-stem-cost")
                     if outstanding:
-                        def confirm_paid_refresh(operation_count: int) -> None:
+                        def confirm_paid_operations(operation_count: int) -> None:
                             # `separate` invokes this only after the free LALAL
                             # preflight has printed the current balance and the
                             # duration-derived estimate, and before any split
                             # request can be submitted.
-                            if not args.force_stems or args.accept_stem_cost:
+                            if not requires_paid_confirmation or args.accept_stem_cost:
                                 return
                             answer = input(
-                                f"Repeat {operation_count} paid LALAL split operations at the displayed estimate? "
+                                f"Run {operation_count} paid LALAL split operations at the displayed estimate? "
                                 "Type 'yes' to continue: "
                             )
                             if answer.strip().lower() != "yes":
@@ -154,9 +178,10 @@ def main(argv: list[str] | None = None) -> int:
                                 project,
                                 backend,
                                 guitar_type=resolved_guitar_type,
+                                optional_stems=args.extra_stem,
                                 force=args.force_stems,
                                 progress=report,
-                                before_submit=confirm_paid_refresh if args.force_stems else None,
+                                before_submit=confirm_paid_operations if requires_paid_confirmation else None,
                             )
                 # A failed or unavailable separator is optional, but an
                 # explicit paid-work safety refusal is not.  In particular,

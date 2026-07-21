@@ -56,7 +56,7 @@ def test_upgrade_keeps_v1_fields_and_adds_v2_analysis_skeleton() -> None:
 
     upgraded = upgrade(v1)
 
-    assert upgraded["schema_version"] == 7
+    assert upgraded["schema_version"] == 8
     assert upgraded["managed_region_ids"] == []
     assert upgraded["managed_track_guids"] == ["{AAAA}", "{BBBB}"]
     assert upgraded["config"] == {"reference_track_guid": REFERENCE_GUID}
@@ -221,7 +221,7 @@ def test_analyze_writes_v2_sidecar_with_skeleton_and_provenance(tmp_path: Path) 
 
     result = analyze(project)
 
-    assert result["schema_version"] == 7
+    assert result["schema_version"] == 8
     assert result["managed_track_guids"] == ["{AAAA}", "{BBBB}"]  # phase 0 fields intact
     for stage in ANALYSIS_STAGES:
         assert result["analysis"][stage]["input_hash"] is not None
@@ -663,7 +663,7 @@ def test_cli_analyze_preserves_local_results_when_lalal_is_unavailable(
 
     captured = capsys.readouterr()
     output = json.loads(captured.out)
-    assert output["schema_version"] == 7
+    assert output["schema_version"] == 8
     assert output["analysis"]["tempo"]["value"] is not None
     assert "stem separation unavailable; continuing with available sources" in captured.err
 
@@ -678,6 +678,49 @@ def test_cli_force_stems_requires_explicit_noninteractive_acknowledgment(
 
     assert main(["analyze", "--guitar", "electric", "--force-stems", str(project)]) == 2
 
+    assert "requires --accept-stem-cost" in capsys.readouterr().err
+
+
+def test_cli_extra_stem_requires_explicit_noninteractive_acknowledgment(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    project = _project_copy(tmp_path)
+    _write_v1_sidecar(project)
+    monkeypatch.setattr(sys.stdin, "isatty", lambda: False)
+    monkeypatch.setattr("vgt.cli.LalalSeparator", lambda: pytest.fail("must not submit paid work"))
+
+    assert main(["analyze", "--guitar", "electric", "--extra-stem", "strings", str(project)]) == 2
+
+    assert "requires --accept-stem-cost" in capsys.readouterr().err
+
+
+def test_cli_pending_persisted_extra_stem_still_requires_noninteractive_acknowledgment(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    project = _project_copy(tmp_path)
+    _write_v1_sidecar(project)
+    sidecar = read_sidecar(project)
+    sidecar["analysis"]["stems"]["optional_stems"] = ["strings"]
+    write_sidecar(project, sidecar)
+    monkeypatch.setattr(sys.stdin, "isatty", lambda: False)
+    monkeypatch.setattr("vgt.cli.LalalSeparator", lambda: pytest.fail("must not submit paid work"))
+
+    # A prior opt-in request can survive an interrupted/declined run.  A
+    # retry without repeating the flag must not silently charge for it.
+    assert main(["analyze", "--guitar", "electric", str(project)]) == 2
+
+    assert "requires --accept-stem-cost" in capsys.readouterr().err
+
+
+def test_cli_accepts_keys_piano_extra_stem_alias(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    project = _project_copy(tmp_path)
+    _write_v1_sidecar(project)
+    monkeypatch.setattr(sys.stdin, "isatty", lambda: False)
+    monkeypatch.setattr("vgt.cli.LalalSeparator", lambda: pytest.fail("must not submit paid work"))
+
+    assert main(["analyze", "--guitar", "electric", "--extra-stem", "keys/piano", str(project)]) == 2
     assert "requires --accept-stem-cost" in capsys.readouterr().err
 
 

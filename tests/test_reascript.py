@@ -313,6 +313,23 @@ def test_add_stem_tracks_accepts_the_file_form_the_separator_actually_commits(tm
     assert result.stdout == "1:[vgt] Vocals"
 
 
+def test_add_stem_tracks_imports_opt_in_strings_and_piano(tmp_path: Path) -> None:
+    rpp = tmp_path / "song.RPP"
+    stem_dir = tmp_path / "vgt" / "song-abc123" / "stems"
+    stem_dir.mkdir(parents=True)
+    for filename in ("strings.wav", "piano.wav"):
+        (stem_dir / filename).write_bytes(b"RIFF....WAVEfmt ")
+    script = APPLY_SCRIPT.read_text()
+    helpers_end = script.index("local function remove_previous_managed_regions()")
+    lua_program = "\n".join([
+        _click_track_lua_mock(rpp), script[:helpers_end], "local managed_tracks = {}",
+        "add_stem_tracks(3, {artifact_namespace = 'song-abc123', artifacts = {strings = {file = 'vgt/song-abc123/stems/strings.wav', size_bytes = 16, duration_seconds = 2.5}, piano = {file = 'vgt/song-abc123/stems/piano.wav', size_bytes = 16, duration_seconds = 2.5}}}, 0, managed_tracks)",
+        "io.write(__tracks[4].name, ':', __tracks[5].name, ':', #managed_tracks)",
+    ])
+    result = subprocess.run(["lua", "-", str(rpp)], input=lua_program, text=True, capture_output=True, check=True)
+    assert result.stdout == "[vgt] Strings:[vgt] Keys / Piano:2"
+
+
 def test_add_stem_tracks_skips_missing_or_outside_namespace_artifacts_with_a_warning(tmp_path: Path) -> None:
     rpp = tmp_path / "song.RPP"
     script = APPLY_SCRIPT.read_text()
