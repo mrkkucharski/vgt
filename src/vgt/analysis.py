@@ -47,6 +47,7 @@ from .transcribe import (
     TargetTranscriberRouter,
     TranscriptionError,
     error_entry,
+    events_artifact_name,
     midi_artifact_name,
     missing_source_entry,
     notes_artifact_name,
@@ -253,7 +254,10 @@ def _refresh_target(
             return error_entry(spec, source_role=target, input_hash=input_hash, error=str(exc))
 
         _replace_artifact(result.midi_path, namespace_dir / midi_artifact_name(target))
-        _replace_artifact(result.notes_path, namespace_dir / notes_artifact_name(target))
+        if result.notes_path is not None:
+            _replace_artifact(result.notes_path, namespace_dir / notes_artifact_name(target))
+        if result.events_path is not None:
+            _replace_artifact(result.events_path, namespace_dir / events_artifact_name(target))
     finally:
         if work_dir.is_dir():
             shutil.rmtree(work_dir, ignore_errors=True)
@@ -582,7 +586,7 @@ def forget_transcription_targets(project: str | Path | None, targets: tuple[str,
     if namespace:
         namespace_dir = artifact_namespace_dir(project_path, namespace)
         for target in targets:
-            for name in (midi_artifact_name(target), notes_artifact_name(target)):
+            for name in (midi_artifact_name(target), notes_artifact_name(target), events_artifact_name(target)):
                 path = namespace_dir / name
                 if path.is_file():
                     path.unlink()

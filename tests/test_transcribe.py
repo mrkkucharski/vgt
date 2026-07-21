@@ -83,11 +83,11 @@ def test_drumscript_spec_identity_covers_every_drumscript_setting() -> None:
     )
     assert isinstance(spec, DrumScriptSpec)
     assert spec.package_pin == "drumscript==0.1.6"
-    assert spec.runtime_version == "python==3.11"
+    assert spec.runtime_version == "python==3.12"
     assert spec.classifier_mode == "standard-polyphonic"
     assert spec.time_signature == (7, 8)
     assert spec_hash(spec) != spec_hash(replace(spec, classifier_mode="rudiment"))
-    assert spec_hash(spec) != spec_hash(replace(spec, runtime_version="python==3.12"))
+    assert spec_hash(spec) != spec_hash(replace(spec, runtime_version="python==3.11"))
     assert spec_hash(spec) != spec_hash(replace(spec, time_signature=(4, 4)))
 
 

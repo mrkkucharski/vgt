@@ -79,6 +79,8 @@ def _artifact_paths(project_path: Path, analysis: dict[str, Any]) -> dict[str, P
             names[f"transcription_{target}_midi"] = entry["midi_file"]
         if isinstance(entry.get("notes_file"), str):
             names[f"transcription_{target}_notes"] = entry["notes_file"]
+        if isinstance(entry.get("events_file"), str):
+            names[f"transcription_{target}_events"] = entry["events_file"]
     return {name: namespace_dir / filename if isinstance(filename, str) else None for name, filename in names.items()}
 
 
@@ -105,6 +107,7 @@ def _transcription_status(analysis: dict[str, Any]) -> dict[str, Any]:
             "error": entry.get("error"),
             "midi_file": entry.get("midi_file"),
             "notes_file": entry.get("notes_file"),
+            "events_file": entry.get("events_file"),
         }
     return {
         "backend": backend,
