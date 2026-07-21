@@ -69,7 +69,7 @@ def test_argv_is_pinned_isolated_and_never_enables_full_song(tmp_path: Path) -> 
     argv = build_drumscript_argv(source, _spec())
 
     assert argv == [
-        "uvx", "--python", "3.12", "--from", DRUMSCRIPT_PACKAGE_PIN, "drumscript", str(source.resolve()),
+        "uvx", "--python", "3.12", "--from", DRUMSCRIPT_PACKAGE_PIN, "python", "-m", "drumscript.main", str(source.resolve()),
     ]
     assert "--full-song" not in argv
     assert DRUMSCRIPT_RUNTIME_VERSION == "python==3.12"
