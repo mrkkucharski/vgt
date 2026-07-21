@@ -431,8 +431,10 @@ class TranscriberRouter(Protocol):
 class TargetTranscriberRouter:
     """Routes a configured set of targets to the drum backend.
 
-    Production routes ``drums`` to DrumScript; tests can inject fakes through
-    this same seam, so the normal suite never imports either real model.
+    The production router keeps the existing Basic Pitch route until the
+    separately evaluated D-F rollout. Tests can opt a fake into the drum
+    route through this same seam, so the normal suite never imports either
+    real model.
     """
 
     basic_pitch: Transcriber
@@ -463,13 +465,9 @@ class TargetTranscriberRouter:
 
 
 def production_transcriber_router() -> TranscriberRouter:
-    """Production routing: drums use the specialized DrumScript backend."""
+    """Current production route; D-F owns the evaluated DrumScript rollout."""
     basic_pitch = BasicPitchTranscriber()
-    return TargetTranscriberRouter(
-        basic_pitch=basic_pitch,
-        drumscript=DrumScriptTranscriber(),
-        drumscript_targets=("drums",),
-    )
+    return TargetTranscriberRouter(basic_pitch=basic_pitch, drumscript=DrumScriptTranscriber())
 
 
 def _hz_to_midi(hz: float) -> int:
@@ -585,9 +583,10 @@ class FakeTranscriber:
 
         if isinstance(spec, DrumScriptSpec):
             instruments = tuple(DRUMSCRIPT_INSTRUMENTS)
+            event_count = 4
             events = [
                 {"time_sec": round(index * 0.5, 6), "instruments": [instruments[_content_seed(source, spec, f"event-{index}") % len(instruments)]]}
-                for index in range(note_count)
+                for index in range(event_count)
             ]
             drum_notes = [
                 (event["time_sec"], event["time_sec"] + 0.1, DRUMSCRIPT_INSTRUMENTS[event["instruments"][0]], 100)
