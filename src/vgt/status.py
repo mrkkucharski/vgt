@@ -102,6 +102,8 @@ def _transcription_status(analysis: dict[str, Any]) -> dict[str, Any]:
         entries[target] = {
             "status": entry.get("status"),
             "note_count": entry.get("note_count"),
+            "event_count": entry.get("event_count"),
+            "instrument_counts": entry.get("instrument_counts"),
             "pitch_range_midi": entry.get("pitch_range_midi"),
             "transcribed_at": entry.get("transcribed_at"),
             "error": entry.get("error"),
@@ -280,7 +282,11 @@ def format_status(status: dict[str, Any]) -> str:
     for target in transcription["requested_targets"]:
         entry = transcription["targets"].get(target, {})
         status_value = entry.get("status")
-        if status_value == "transcribed":
+        if status_value == "transcribed" and entry.get("event_count") is not None:
+            counts = entry.get("instrument_counts") if isinstance(entry.get("instrument_counts"), dict) else {}
+            count_text = ", ".join(f"{name} {count}" for name, count in counts.items()) or "no instruments"
+            lines.append(f"  {target:<8} {entry.get('event_count')} events ({count_text}), transcribed {entry.get('transcribed_at')}")
+        elif status_value == "transcribed":
             pitch = entry.get("pitch_range_midi")
             pitch_text = f"MIDI {pitch[0]}-{pitch[1]}" if pitch else "MIDI ?"
             lines.append(f"  {target:<8} {entry.get('note_count')} notes, {pitch_text}, transcribed {entry.get('transcribed_at')}")

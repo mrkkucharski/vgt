@@ -23,6 +23,7 @@ from vgt.transcribe import (
     default_spec_for_target,
     transcribed_entry,
 )
+from vgt.status import _transcription_status
 
 
 def _spec(**changes):
@@ -127,6 +128,16 @@ def test_drum_result_sidecar_uses_stable_target_midi_and_event_names(tmp_path: P
     assert entry["events_file"] == "transcription/drums.json"
     assert entry["notes_file"] is None
     assert entry["event_count"] == 1
+
+
+def test_zero_event_drum_entry_remains_visible_in_status() -> None:
+    status = _transcription_status({
+        "transcription": {
+            "requested_targets": ["drums"],
+            "targets": {"drums": {"status": "transcribed", "event_count": 0, "instrument_counts": {}}},
+        }
+    })
+    assert status["targets"]["drums"]["event_count"] == 0
 
 
 def test_rejects_duplicate_or_missing_outputs(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
