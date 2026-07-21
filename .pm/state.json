@@ -1,36 +1,33 @@
 {
-  "current_issue": 82,
-  "session_id": "b8740ac1-45d8-4b35-8bb7-156c6d3f8034",
-  "pid": 45126,
-  "process_started_at": "Tue Jul 21 18:32:48 2026",
-  "agent": "claude",
-  "started_at": "2026-07-21T16:32:46.708431+00:00",
+  "current_issue": 81,
+  "session_id": "35236d1c-5ac9-4ab1-b2a4-65673156ec2a",
+  "pid": 47014,
+  "process_started_at": "Tue Jul 21 19:38:58 2026",
+  "agent": "codex",
+  "started_at": "2026-07-21T17:38:56.850110+00:00",
   "scheduler_stalls": {
     "blocked_issues": {
       "81": {
         "first_seen_at": "2026-07-21T16:31:31.263888+00:00",
-        "last_seen_at": "2026-07-21T16:31:31.263888+00:00",
-        "consecutive_passes": 1,
+        "last_seen_at": "2026-07-21T16:32:50.099888+00:00",
+        "consecutive_passes": 2,
         "title": "T-C: per-target reconciliation in analysis.py + CLI/status wiring for transcription"
       }
     }
   },
   "budget": {
-    "window_start": "2026-07-21T11:44:16.758773+00:00",
-    "seconds_used": 1493.480207,
-    "dollars_used": 1.743236,
-    "seconds_used_by_agent": {
-      "codex": 886.3802969999999,
-      "claude": 607.09991
-    }
+    "window_start": "2026-07-21T17:38:55.585848+00:00",
+    "seconds_used": 0.0,
+    "dollars_used": 0.0,
+    "seconds_used_by_agent": {}
   },
   "verification_followups": {
     "f0d8bfc9d2dc6da7a31609184e25c4d66d3986fd2340b33a83e98204fb86691e": "created"
   },
-  "role": "implement",
-  "branch": "issue-82-t-e-document-the-transcription-capabilit",
-  "worktree_path": "/Users/marekkucharski/projects/.pm-worktrees/vgt/issue-82",
-  "pr_number": null,
+  "role": "review",
+  "branch": "issue-81-t-c-per-target-reconciliation-in-analysi",
+  "worktree_path": "/Users/marekkucharski/projects/.pm-worktrees/vgt/issue-81",
+  "pr_number": 87,
   "followup_generation": {
     "fingerprint": "71c63f065a33718d76704b02fc07bebfd2dd591df8a3b818d11f1e4be2ba5384",
     "items": {
@@ -65,13 +62,13 @@
     "79": 2
   },
   "pending_transition": {
-    "issue": 82,
+    "issue": 81,
     "target": "working",
-    "event": "agent.started",
+    "event": "agent.review_started",
     "detail": {
-      "issue": 82,
-      "agent": "claude",
-      "branch": "issue-82-t-e-document-the-transcription-capabilit"
+      "issue": 81,
+      "agent": "codex",
+      "pr": 87
     },
     "cleanup": {}
   }
