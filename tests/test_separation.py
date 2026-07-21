@@ -434,6 +434,29 @@ def test_missing_artifact_on_disk_forces_a_recompute_not_a_stale_cache_hit(tmp_p
     assert artifact_path(project, result["analysis"]["stems"]["artifacts"]["bass"]).is_file()
 
 
+def test_same_size_artifact_overwrite_forces_a_recompute_not_a_stale_cache_hit(tmp_path: Path) -> None:
+    """Size is not identity: an overwrite that preserves the byte count -- what
+    a second project writing into the same namespace produces when both songs
+    share a duration and format -- must not be served as a paid cache hit."""
+    project = _project_copy(tmp_path)
+    _write_v1_sidecar(project)
+    first = separate(project, FakeSeparator(), guitar_type="electric")
+    bass_path = artifact_path(project, first["analysis"]["stems"]["artifacts"]["bass"])
+    original_size = bass_path.stat().st_size
+
+    impostor = bytearray(bass_path.read_bytes())
+    impostor[-1] ^= 0xFF  # same length, different audio
+    bass_path.write_bytes(bytes(impostor))
+    assert bass_path.stat().st_size == original_size
+
+    counting = _RecordingSeparator(FakeSeparator())
+    result = separate(project, counting, guitar_type="electric")
+
+    assert counting.calls == ["bass"]
+    restored = result["analysis"]["stems"]["artifacts"]["bass"]
+    assert hash_audio_content(artifact_path(project, restored)) == restored["sha256"]
+
+
 def test_a_failed_operation_does_not_block_independent_operations(tmp_path: Path) -> None:
     project = _project_copy(tmp_path)
     _write_v1_sidecar(project)

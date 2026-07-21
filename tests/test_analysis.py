@@ -182,6 +182,20 @@ def test_first_namespace_migrates_only_exact_known_legacy_analysis_artifacts(tmp
     assert legacy_sections.is_file()
 
 
+def test_generated_namespace_is_opaque_and_survives_a_project_rename(tmp_path: Path) -> None:
+    """The namespace must not encode the project name: it is never regenerated,
+    so any such claim goes stale the first time the RPP is renamed."""
+    project = tmp_path / "Reaper Project.RPP"
+    sidecar = upgrade({"analysis": {}})
+
+    namespace = ensure_artifact_namespace(sidecar, project)
+
+    assert "Reaper Project" not in namespace
+    assert namespace.isalnum()
+    renamed = tmp_path / "7Rivers.RPP"
+    assert ensure_artifact_namespace(sidecar, renamed) == namespace
+
+
 def test_first_namespace_leaves_unrecognized_legacy_paths_unmodified(tmp_path: Path) -> None:
     project = tmp_path / "song.RPP"
     unknown = tmp_path / "custom-click.wav"
