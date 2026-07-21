@@ -109,6 +109,17 @@ def test_shadow_command_rejects_production_artifact_paths(tmp_path: Path) -> Non
         raise AssertionError("expected production path rejection")
 
 
+def test_smoke_command_rejects_production_artifact_directory(tmp_path: Path) -> None:
+    main = runpy.run_path(str(Path("scripts/drumscript_smoke.py")))["main"]
+    production_directory = tmp_path / "vgt" / "namespace" / "transcription"
+    try:
+        main([str(tmp_path / "drums.wav"), str(production_directory)])
+    except SystemExit as error:
+        assert error.code == 2
+    else:
+        raise AssertionError("expected production directory rejection")
+
+
 def test_idmt_annotation_parser_maps_only_the_official_three_classes(tmp_path: Path) -> None:
     namespace = runpy.run_path(str(Path("scripts/idmt_drum_manifest.py")))
     annotation = tmp_path / "clip.xml"
