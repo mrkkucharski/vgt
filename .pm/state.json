@@ -1,11 +1,20 @@
 {
-  "current_issue": 80,
-  "session_id": "39737b9d-543f-411c-ad9c-d63a8906b67e",
-  "pid": 42071,
-  "process_started_at": "Tue Jul 21 17:53:47 2026",
+  "current_issue": 81,
+  "session_id": "03bdb819-c8ad-4500-8aa1-a5edccbe9637",
+  "pid": 44418,
+  "process_started_at": "Tue Jul 21 18:22:29 2026",
   "agent": "claude",
-  "started_at": "2026-07-21T15:53:46.201351+00:00",
-  "scheduler_stalls": {},
+  "started_at": "2026-07-21T16:22:27.432595+00:00",
+  "scheduler_stalls": {
+    "blocked_issues": {
+      "79": {
+        "first_seen_at": "2026-07-21T15:53:49.807811+00:00",
+        "last_seen_at": "2026-07-21T15:57:08.398063+00:00",
+        "consecutive_passes": 4,
+        "title": "T-B: BasicPitchTranscriber \u2014 pinned uvx subprocess backend"
+      }
+    }
+  },
   "budget": {
     "window_start": "2026-07-21T11:44:16.758773+00:00",
     "seconds_used": 957.3438289999999,
@@ -18,10 +27,10 @@
   "verification_followups": {
     "f0d8bfc9d2dc6da7a31609184e25c4d66d3986fd2340b33a83e98204fb86691e": "created"
   },
-  "role": "review",
-  "branch": "issue-80-t-d-reascript-import-of-vgt-ref-midi-tra",
-  "worktree_path": "/Users/marekkucharski/projects/.pm-worktrees/vgt/issue-80",
-  "pr_number": 86,
+  "role": "implement",
+  "branch": "issue-81-t-c-per-target-reconciliation-in-analysi",
+  "worktree_path": "/Users/marekkucharski/projects/.pm-worktrees/vgt/issue-81",
+  "pr_number": null,
   "followup_generation": {
     "fingerprint": "71c63f065a33718d76704b02fc07bebfd2dd591df8a3b818d11f1e4be2ba5384",
     "items": {
@@ -56,13 +65,13 @@
     "79": 2
   },
   "pending_transition": {
-    "issue": 80,
+    "issue": 81,
     "target": "working",
-    "event": "agent.review_started",
+    "event": "agent.started",
     "detail": {
-      "issue": 80,
+      "issue": 81,
       "agent": "claude",
-      "pr": 86
+      "branch": "issue-81-t-c-per-target-reconciliation-in-analysi"
     },
     "cleanup": {}
   }
