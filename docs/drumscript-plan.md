@@ -57,9 +57,10 @@ following are true:
 2. `vgt analyze`, per-target caching, `vgt status`, and REAPER MIDI import have a
    stable delivered contract documented in the user manual.
 3. The default Basic Pitch guitar workflow passes the full regression suite.
-4. Any human-owned verification required by the current transcription plan has
-   been recorded. This gate does not require a live REAPER check by an autonomous
-   agent.
+
+Live REAPER verification is not part of this prerequisite gate. It is always
+performed separately by the human owner and must never be turned into an
+autonomous issue, sub-issue, acceptance criterion, or blocker.
 
 ## Desired user-visible behavior
 
@@ -266,6 +267,11 @@ As with all reference MIDI, edits to the managed track do not survive reapply. T
 user manual should continue to direct users to copy it to a user-owned track before
 editing.
 
+All autonomous verification of this integration is limited to static inspection,
+stubbed Lua tests, saved-file assertions that do not launch REAPER, and Python
+tests. No agent may open REAPER, invoke a ReaScript in a live REAPER process, or
+manually inspect the arrange view as part of an issue.
+
 ## Evaluation strategy
 
 ### Automated correctness
@@ -282,7 +288,8 @@ The normal test suite uses a fake drum transcriber and covers:
 - multi-instrument events becoming simultaneous channel-10 notes;
 - instrument-count status and JSON output;
 - forget/removal behavior;
-- unchanged REAPER placement and idempotency.
+- unchanged REAPER placement and idempotency through the existing stubbed/static
+  ReaScript test harness, without launching REAPER.
 
 No default test may download or invoke real DrumScript.
 
@@ -331,11 +338,17 @@ This diagnostic may reveal missed transients, but it must not:
 1. Implement the backend and fake-backed tests without changing the default route.
 2. Run the opt-in DrumScript smoke test and annotated evaluation.
 3. Run the temporary shadow comparison on user-selected stems.
-4. Have the user perform the listening/visual REAPER check.
-5. If acceptable, change the single target-routing table so `drums` selects
+4. If acceptable based on the automated and audio-quality evidence, change the
+   single target-routing table so `drums` selects
    DrumScript and update documentation.
-6. Remove or disable shadow artifacts and comparison code before declaring the
+5. Remove or disable shadow artifacts and comparison code before declaring the
    work delivered.
+
+After the implementation issues are complete, the documentation may present a
+live REAPER verification checklist to the human owner. Performing that checklist
+is outside the autonomous issue tracker: do not create an issue or sub-issue for
+it, do not make another issue depend on it, and do not mark an issue blocked while
+waiting for it.
 
 After rollout, a DrumScript execution or validation failure yields `status: error`
 for drums while other targets continue. No automatic Basic Pitch fallback is
@@ -353,12 +366,29 @@ the repository's orchestration rules.
 | D-A | Backend-aware specs and target router; fake drum backend | high | current T-A through T-F complete |
 | D-B | Pinned isolated `DrumScriptTranscriber`, command override, artifact normalization and validation | high | D-A |
 | D-C | Drum event metadata, cache/status integration, forget behavior | medium | D-A, D-B |
-| D-D | REAPER channel-10/polyphony regression coverage and opt-in smoke verifier | medium | D-B, D-C |
+| D-D | Offline channel-10/polyphony coverage using stubbed/static ReaScript tests; never launch REAPER | medium | D-B, D-C |
 | D-E | Annotated benchmark plus temporary shadow comparison and written findings | medium | D-D |
-| D-F | Switch default drums route, user documentation, remove shadow output | medium | D-E and human quality approval |
+| D-F | Switch default drums route, user documentation, remove shadow output | medium | D-E |
 
 Do not label a parent issue blocked merely because these sub-issues are open; use
 sub-issue ordering as described in the repository root `AGENTS.md`.
+
+### Prohibited issue scope
+
+No issue created from this plan may require or ask an agent to:
+
+- open or start REAPER;
+- execute a ReaScript against a live REAPER project;
+- visually inspect tracks, items, channel routing, alignment, or playback in
+  REAPER;
+- listen to the result through REAPER;
+- wait for a human to perform any of those checks;
+- use human REAPER verification as an acceptance criterion or dependency.
+
+Those checks belong only in a clearly labeled human verification checklist in
+the user documentation. Automated issues must finish on offline evidence and
+must not be marked `status:blocked` because live REAPER verification has not been
+performed.
 
 ## Risks
 
