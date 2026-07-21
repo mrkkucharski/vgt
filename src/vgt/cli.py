@@ -97,9 +97,15 @@ def main(argv: list[str] | None = None) -> int:
                 try:
                     resolved_guitar_type = declared_guitar_type(local_result, args.guitar)
                 except SeparationError as exc:
-                    # A missing declaration is an unavailable optional stem
-                    # run, not a reason to withhold free chord analysis.
-                    separation_error = exc
+                    # Keep the established interactive first-run flow: a
+                    # user can declare the guitar type once and have this
+                    # invocation attempt separation before chord decoding.
+                    # Automation remains non-blocking: without an explicit
+                    # declaration it falls through to mix-only chords.
+                    if sys.stdin.isatty() and args.guitar is None:
+                        resolved_guitar_type = _prompt_for_guitar_type()
+                    else:
+                        separation_error = exc
 
             # Keep the ReaScript first-run setting and the stem cache setting
             # aligned.  The CLI override is deliberately persistent.

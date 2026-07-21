@@ -684,8 +684,11 @@ def test_cli_interactive_guitar_declaration_is_persisted(
     monkeypatch.setattr("builtins.input", lambda _prompt: "acoustic")
     monkeypatch.delenv("LALAL_LICENSE_KEY", raising=False)
 
-    assert main(["analyze", str(project)]) == 2
+    # Separation remains optional even after the interactive declaration:
+    # unavailable LALAL credentials must still leave the user with chords.
+    assert main(["analyze", str(project)]) == 0
 
     sidecar = read_sidecar(project)
     assert sidecar["config"]["guitar_type"] == "acoustic"
     assert sidecar["analysis"]["stems"]["guitar_type"] == "acoustic"
+    assert sidecar["analysis"]["chords"]["value"] is not None
