@@ -78,7 +78,7 @@ Schema versions:
                "input_hash": str | null,      # the source stem's sha256
                "settings_hash": str | null,   # that target's TranscriptionSpec
                "status": "transcribed" | "skipped-missing-source" | "error",
-               "midi_file": str | null, "notes_file": str | null,
+               "midi_file": str | null, "notes_file": str | null, "events_file": str | null,
                "note_count": int | null, "pitch_range_midi": [int, int] | null,
                "first_note_s": float | null, "last_note_s": float | null,
                "midi_tempo": float | null, "settings": dict, # backend-specific settings

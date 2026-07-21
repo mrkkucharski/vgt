@@ -26,6 +26,7 @@ import os
 import shlex
 import shutil
 import subprocess
+import tempfile
 
 # Valid target names: the separation artifact names, plus the untouched mix
 # ("original"). A target is always a single named source, never a merged set.
@@ -70,7 +71,7 @@ DRUMSCRIPT_PACKAGE_PIN = "drumscript==0.1.6"
 # This is the isolated interpreter contract D-B will implement.  It is part of
 # the identity now so changing it later cannot reuse a MIDI made by another
 # runtime.
-DRUMSCRIPT_RUNTIME_VERSION = "python==3.11"
+DRUMSCRIPT_RUNTIME_VERSION = "python==3.12"
 DRUMSCRIPT_CLASSIFIER_MODE = "standard-polyphonic"
 
 # Overrides the whole `uvx ...` invocation with a pre-installed binary, e.g.
@@ -78,6 +79,22 @@ DRUMSCRIPT_CLASSIFIER_MODE = "standard-polyphonic"
 # then `VGT_BASIC_PITCH_CMD=basic-pitch`, so an offline machine can prebuild
 # the env once instead of paying the ~35s cold `uvx` build on every run.
 BASIC_PITCH_CMD_ENV = "VGT_BASIC_PITCH_CMD"
+DRUMSCRIPT_CMD_ENV = "VGT_DRUMSCRIPT_CMD"
+
+# DrumScript's public event labels and their General MIDI percussion notes.
+# Keep this deliberately small and explicit: accepting a new upstream label is
+# an output-contract change, not something to silently pass through.
+DRUMSCRIPT_INSTRUMENTS: dict[str, int] = {
+    "kick": 36,
+    "snare": 38,
+    "low_tom": 41,
+    "mid_tom": 45,
+    "high_tom": 48,
+    "hi_hat_closed": 42,
+    "hi_hat_open": 46,
+    "crash": 49,
+    "ride": 51,
+}
 
 # Shared defaults across every target (see docs/transcription-plan.md section 1).
 DEFAULT_ONSET_THRESHOLD = 0.5
@@ -103,6 +120,10 @@ def midi_artifact_name(target: str) -> str:
 
 def notes_artifact_name(target: str) -> str:
     return f"transcription/{validate_target(target)}.csv"
+
+
+def events_artifact_name(target: str) -> str:
+    return f"transcription/{validate_target(target)}.json"
 
 
 @dataclass(frozen=True)
@@ -264,7 +285,10 @@ def missing_source_entry(spec: TranscriptionSpec, source_role: str) -> dict[str,
         "status": "skipped-missing-source",
         "midi_file": None,
         "notes_file": None,
+        "events_file": None,
         "note_count": None,
+        "event_count": None,
+        "instrument_counts": None,
         "pitch_range_midi": None,
         "first_note_s": None,
         "last_note_s": None,
@@ -294,8 +318,11 @@ def transcribed_entry(
         "settings_hash": spec_hash(spec),
         "status": "transcribed",
         "midi_file": midi_artifact_name(target),
-        "notes_file": notes_artifact_name(target),
+        "notes_file": notes_artifact_name(target) if isinstance(spec, BasicPitchSpec) else None,
+        "events_file": events_artifact_name(target) if isinstance(spec, DrumScriptSpec) else None,
         "note_count": result.note_count,
+        "event_count": result.note_count if isinstance(spec, DrumScriptSpec) else None,
+        "instrument_counts": result.instrument_counts if isinstance(spec, DrumScriptSpec) else None,
         "pitch_range_midi": list(result.pitch_range_midi) if result.pitch_range_midi else None,
         "first_note_s": result.first_note_s,
         "last_note_s": result.last_note_s,
@@ -321,7 +348,10 @@ def error_entry(spec: TranscriptionSpec, *, source_role: str, input_hash: str | 
         "status": "error",
         "midi_file": None,
         "notes_file": None,
+        "events_file": None,
         "note_count": None,
+        "event_count": None,
+        "instrument_counts": None,
         "pitch_range_midi": None,
         "first_note_s": None,
         "last_note_s": None,
@@ -341,7 +371,9 @@ class TranscriptionResult:
     first_note_s: float | None
     last_note_s: float | None
     midi_path: Path
-    notes_path: Path
+    notes_path: Path | None = None
+    events_path: Path | None = None
+    instrument_counts: dict[str, int] | None = None
 
 
 class Transcriber(Protocol):
@@ -777,12 +809,12 @@ class BasicPitchTranscriber:
 
 
 class DrumScriptTranscriber:
-    """Placeholder backend for the D-A routing seam.
+    """Pinned, isolated DrumScript backend.
 
-    D-B supplies the pinned isolated subprocess and artifact normalization.
-    Keeping this class dependency-free ensures merely constructing the
-    production router cannot download or import DrumScript, Torch, Torchaudio,
-    or Demucs.
+    DrumScript is intentionally only ever a subprocess.  Its output is made
+    in a fresh directory outside vgt's namespace, validated there, then copied
+    to stable backend-local names.  This keeps failed or extra files (notably
+    its PDF report) out of the sidecar artifact namespace.
     """
 
     name = "drumscript"
@@ -794,5 +826,235 @@ class DrumScriptTranscriber:
         spec: TranscriptionSpec,
         progress: Callable[[str], None] | None = None,
     ) -> TranscriptionResult:
-        del source, destination_dir, spec, progress
-        raise TranscriptionError("DrumScript transcription is not implemented until D-B")
+        emit = progress or (lambda _message: None)
+        if not isinstance(spec, DrumScriptSpec):
+            raise TranscriptionError("DrumScriptTranscriber requires a DrumScriptSpec")
+        source = source.resolve()
+        if not source.is_file():
+            raise TranscriptionError("drum stem is not a readable file")
+        argv_prefix = _drumscript_base_command(spec)
+        if shutil.which(argv_prefix[0]) is None:
+            raise TranscriptionError(
+                f"{argv_prefix[0]!r} is not on PATH; install uv (for uvx) or set "
+                f"{DRUMSCRIPT_CMD_ENV} to a prebuilt drumscript command"
+            )
+
+        # DrumScript accepts the separated stem as its positional input.  Do
+        # not add --full-song: that would re-run Demucs on a source vgt already
+        # obtained from LALAL.
+        argv = build_drumscript_argv(source, spec)
+        emit(f"transcribing (drumscript): {source.name}")
+        with tempfile.TemporaryDirectory(prefix="vgt-drumscript-") as temporary:
+            work_dir = Path(temporary)
+            try:
+                completed = subprocess.run(
+                    argv, cwd=work_dir, capture_output=True, text=True, timeout=600, errors="replace"
+                )
+            except subprocess.TimeoutExpired as exc:
+                raise TranscriptionError(f"drumscript timed out after {exc.timeout}s") from exc
+            except OSError as exc:
+                raise TranscriptionError(f"failed to run {argv_prefix[0]!r}: {exc}") from exc
+            if completed.returncode != 0:
+                raise TranscriptionError(
+                    f"drumscript exited with status {completed.returncode}: "
+                    f"{_drumscript_process_context(completed, work_dir)}"
+                )
+
+            try:
+                midi_source, events_source = _collect_drumscript_outputs(work_dir)
+                _validate_drumscript_midi(midi_source)
+                events = parse_drumscript_events(events_source)
+                _validate_event_times(events, _source_duration_seconds(source))
+                destination_dir.mkdir(parents=True, exist_ok=True)
+                midi_path = destination_dir / "transcription.mid"
+                events_path = destination_dir / "transcription.json"
+                shutil.copy2(midi_source, midi_path)
+                shutil.copy2(events_source, events_path)
+            except (OSError, TranscriptionError) as exc:
+                # The work directory is intentionally not useful to callers:
+                # it is deleted at scope exit and must never enter the sidecar.
+                raise TranscriptionError(_without_temporary_path(str(exc), work_dir)) from exc
+
+        counts: dict[str, int] = {}
+        for event in events:
+            for instrument in event["instruments"]:
+                counts[instrument] = counts.get(instrument, 0) + 1
+        times = [event["time_sec"] for event in events]
+        emit(f"transcribed (drumscript): {len(events)} events")
+        return TranscriptionResult(
+            note_count=len(events),
+            pitch_range_midi=None,
+            first_note_s=min(times) if times else None,
+            last_note_s=max(times) if times else None,
+            midi_path=midi_path,
+            events_path=events_path,
+            instrument_counts=counts,
+        )
+
+
+def _drumscript_base_command(spec: DrumScriptSpec) -> list[str]:
+    override = os.environ.get(DRUMSCRIPT_CMD_ENV)
+    if override:
+        try:
+            parts = shlex.split(override)
+        except ValueError as exc:
+            raise TranscriptionError(f"{DRUMSCRIPT_CMD_ENV} is not a valid shell command: {exc}") from exc
+        if parts:
+            return parts
+    return ["uvx", "--python", spec.runtime_version.removeprefix("python=="), "--from", spec.package_pin, "drumscript"]
+
+
+def build_drumscript_argv(source: Path, spec: DrumScriptSpec) -> list[str]:
+    """Pure command construction for the isolated, already-separated stem."""
+    if spec.backend != "drumscript":
+        raise TranscriptionError(f"DrumScriptTranscriber cannot build argv for backend {spec.backend!r}")
+    return [*_drumscript_base_command(spec), str(source.resolve())]
+
+
+def _without_temporary_path(message: str, work_dir: Path) -> str:
+    return message.replace(str(work_dir), "<temporary output>")
+
+
+def _drumscript_process_context(completed: Any, work_dir: Path) -> str:
+    context = " | ".join(part for part in (_stderr_tail(completed.stderr), _stderr_tail(completed.stdout)) if part)
+    return _without_temporary_path(context or "no output captured", work_dir)
+
+
+def _contained_files(work_dir: Path, suffixes: tuple[str, ...]) -> list[Path]:
+    root = work_dir.resolve()
+    candidates: list[Path] = []
+    for path in work_dir.rglob("*"):
+        if path.is_file() and path.suffix.lower() in suffixes:
+            try:
+                path.resolve().relative_to(root)
+            except ValueError as exc:
+                raise TranscriptionError("drumscript produced an artifact outside its temporary output") from exc
+            candidates.append(path)
+    return sorted(candidates)
+
+
+def _collect_drumscript_outputs(work_dir: Path) -> tuple[Path, Path]:
+    midi = _contained_files(work_dir, (".mid", ".midi"))
+    events = _contained_files(work_dir, (".json",))
+    if len(midi) != 1 or len(events) != 1:
+        raise TranscriptionError(
+            f"drumscript produced {len(midi)} MIDI file(s) and {len(events)} event JSON file(s); expected exactly one of each"
+        )
+    return midi[0], events[0]
+
+
+def _validate_drumscript_midi(path: Path) -> None:
+    _validate_basic_pitch_midi(path)
+    # Empty drum transcriptions have no channel events; otherwise require the
+    # GM percussion channel (MIDI channel 10, encoded as low nibble 9).
+    if _midi_has_non_percussion_notes(path.read_bytes()):
+        raise TranscriptionError("drumscript MIDI contains notes outside GM percussion channel 10")
+
+
+def _read_varlen(data: bytes, index: int) -> tuple[int, int]:
+    value = 0
+    while True:
+        if index >= len(data):
+            raise TranscriptionError("drumscript MIDI is truncated")
+        byte = data[index]
+        index += 1
+        value = (value << 7) | (byte & 0x7F)
+        if not byte & 0x80:
+            return value, index
+
+
+def _midi_has_non_percussion_notes(data: bytes) -> bool:
+    """Read enough SMF structure to distinguish status bytes from note data.
+
+    Searching raw bytes is incorrect because a velocity or a meta payload can
+    happen to equal a MIDI status value.
+    """
+    header_length = int.from_bytes(data[4:8], "big")
+    index = 8 + header_length
+    while index + 8 <= len(data):
+        if data[index:index + 4] != b"MTrk":
+            raise TranscriptionError("drumscript MIDI has an invalid track chunk")
+        length = int.from_bytes(data[index + 4:index + 8], "big")
+        track_end = index + 8 + length
+        if track_end > len(data):
+            raise TranscriptionError("drumscript MIDI is truncated")
+        index += 8
+        running_status: int | None = None
+        while index < track_end:
+            _delta, index = _read_varlen(data, index)
+            if index >= track_end:
+                raise TranscriptionError("drumscript MIDI is truncated")
+            status = data[index]
+            if status < 0x80:
+                if running_status is None:
+                    raise TranscriptionError("drumscript MIDI has invalid running status")
+                status = running_status
+            else:
+                index += 1
+            if status == 0xFF:
+                if index >= track_end:
+                    raise TranscriptionError("drumscript MIDI is truncated")
+                index += 1  # meta type
+                payload_length, index = _read_varlen(data, index)
+                index += payload_length
+                running_status = None
+            elif status in (0xF0, 0xF7):
+                payload_length, index = _read_varlen(data, index)
+                index += payload_length
+                running_status = None
+            elif 0x80 <= status <= 0xEF:
+                running_status = status
+                data_length = 1 if (status & 0xE0) in (0xC0, 0xD0) else 2
+                if status & 0xF0 in (0x80, 0x90) and (status & 0x0F) != 9:
+                    return True
+                index += data_length
+            else:
+                raise TranscriptionError("drumscript MIDI has an unsupported system event")
+            if index > track_end:
+                raise TranscriptionError("drumscript MIDI is truncated")
+        index = track_end
+    return False
+
+
+def parse_drumscript_events(path: Path) -> list[dict[str, Any]]:
+    try:
+        raw = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise TranscriptionError("drumscript event JSON is unreadable or malformed") from exc
+    if not isinstance(raw, list):
+        raise TranscriptionError("drumscript event JSON must be an array")
+    events: list[dict[str, Any]] = []
+    for event in raw:
+        if not isinstance(event, dict):
+            raise TranscriptionError("drumscript event JSON contains a non-object event")
+        time_sec = event.get("time_sec")
+        instruments = event.get("instruments")
+        if not isinstance(time_sec, (int, float)) or isinstance(time_sec, bool) or not math.isfinite(time_sec) or time_sec < 0:
+            raise TranscriptionError("drumscript event has an invalid time_sec")
+        if not isinstance(instruments, list) or not instruments or not all(isinstance(item, str) for item in instruments):
+            raise TranscriptionError("drumscript event has an empty or invalid instruments list")
+        unsupported = sorted(set(instruments).difference(DRUMSCRIPT_INSTRUMENTS))
+        if unsupported:
+            raise TranscriptionError(f"drumscript event has unsupported instruments: {', '.join(unsupported)}")
+        events.append({"time_sec": float(time_sec), "instruments": instruments})
+    return events
+
+
+def _source_duration_seconds(source: Path) -> float:
+    try:
+        import soundfile
+        duration = float(soundfile.info(source).duration)
+    except Exception as exc:
+        raise TranscriptionError("could not determine drum stem duration") from exc
+    if not math.isfinite(duration) or duration < 0:
+        raise TranscriptionError("drum stem has an invalid duration")
+    return duration
+
+
+def _validate_event_times(events: list[dict[str, Any]], duration: float) -> None:
+    # A small export tail is harmless; a materially longer sequence is almost
+    # certainly a unit/path mistake.  This remains deliberately independent
+    # of the subprocess exit status.
+    limit = duration + max(5.0, duration * 0.1)
+    if any(event["time_sec"] > limit for event in events):
+        raise TranscriptionError("drumscript event time is implausibly beyond the source duration")
