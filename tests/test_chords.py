@@ -2,9 +2,57 @@ from pathlib import Path
 
 import pytest
 
-from vgt.chords import ChordDetectionError, _parse_chordino_csv, _snap_segments_to_grid, detect_chords
+from vgt.chords import (
+    ChordDetectionError,
+    _bar_aggregate_scores,
+    _bar_aggregation_beats,
+    _bar_groups,
+    _parse_chordino_csv,
+    _snap_segments_to_grid,
+    _viterbi_labels,
+    detect_chords,
+)
 
 FIXTURE_SOURCE = Path(__file__).parents[1] / "test" / "Reaper Project" / "Media" / "Paris Metro Punk.mp3"
+
+
+def test_duration_prior_rejects_a_single_beat_flip_but_allows_a_sustained_change() -> None:
+    """The decoder smooths evidence, rather than voting on already-picked labels."""
+    import numpy as np
+
+    labels = ["C:maj", "G:maj"]
+    scores = np.array([[1.0, 0.0], [0.0, 0.7], [1.0, 0.0], [0.0, 1.0], [0.0, 1.0]])
+
+    assert _viterbi_labels(scores, labels, duration_prior=0.8) == [
+        "C:maj",
+        "C:maj",
+        "C:maj",
+        "G:maj",
+        "G:maj",
+    ]
+
+
+def test_bar_aggregation_is_downbeat_aligned_and_averages_scores() -> None:
+    import numpy as np
+
+    tempo = {"backend": "madmom", "time_signature": "4/4", "downbeat_offset_seconds": 1.0}
+    bounds = [(float(beat), float(beat + 1)) for beat in range(9)]
+    groups = _bar_groups(bounds, list(range(9)), tempo, bar_beats=4)
+
+    # The first partial bar is grouped backwards from the downbeat at beat 1;
+    # the following bars are [1..4] and [5..8], never an arbitrary offset.
+    assert groups == [-1, 0, 0, 0, 0, 1, 1, 1, 1]
+    pooled = _bar_aggregate_scores(np.array([[float(index), 0.0] for index in range(9)]), groups)
+    assert pooled[:, 0].tolist() == [0.0, 2.5, 2.5, 2.5, 2.5, 6.5, 6.5, 6.5, 6.5]
+
+
+def test_bar_aggregation_is_disabled_without_a_trustworthy_4_4_downbeat() -> None:
+    assert _bar_aggregation_beats(
+        {}, {"backend": "librosa", "time_signature": "4/4", "downbeat_offset_seconds": 0.0}
+    ) is None
+    assert _bar_aggregation_beats(
+        {}, {"backend": "madmom", "time_signature": "3/4", "downbeat_offset_seconds": 0.0}
+    ) is None
 
 
 def test_snap_segments_to_grid_moves_boundaries_onto_the_nearest_beat() -> None:

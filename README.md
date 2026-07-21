@@ -115,8 +115,12 @@ segment boundary snapped onto the `tempo` stage's shared `beat_times` grid
 - **Fallback: Chordino**, via the `sonic-annotator` vamp-plugin host, when
   `sonic-annotator` and the `nnls-chroma` plugin are installed system-side
   (neither ships as a pip package, so there's no `uv` extra for this either).
-- **Last resort: a chroma + template classifier** (librosa chroma, the 24
-  maj/min triad templates, majority-vote smoothed across neighboring beats)
+- **Last resort: a chroma + template classifier** (librosa chroma and the 24
+  maj/min triad templates, decoded with a chord-duration prior; with a
+  madmom-detected 4/4 downbeat it additionally pools template evidence per
+  bar). The duration-prior and bar size are configurable as
+  `chords.duration_prior` and `chords.bar_aggregation_beats`; bar pooling is
+  deliberately disabled when downbeats are unavailable.
   — always available, and what actually runs in most dev/CI environments
   since neither of the above is typically installed.
 
