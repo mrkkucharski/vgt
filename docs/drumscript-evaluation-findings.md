@@ -116,3 +116,43 @@ The integration smoke input must be redistributable or user-owned.  Real-song
 listening, usefulness judgments, and any REAPER verification remain optional,
 human-owned work and are neither test requirements nor blockers for this
 evaluation tooling.
+
+## D-F rollout decision (2026-07-22)
+
+[docs/drumscript-plan.md](drumscript-plan.md) makes the production route change
+conditional: "If acceptable based on the automated and audio-quality evidence,
+change the single target-routing table so `drums` selects DrumScript." The D-E
+evidence gathered above does not clear that bar:
+
+- The only corpus-scale result is a **one-clip smoke benchmark** against
+  `RealDrum01_00#MIX.wav`, explicitly documented above as "not a representative
+  corpus result."
+- On that clip, **kick F1 is 0.000** (0 TP, 2 FP, 23 FN) — DrumScript missed
+  essentially every kick onset. Snare F1 is 0.136 and hi-hat-closed F1 is
+  0.333. Global F1 is 0.226.
+- The findings already flag this as "strongly negative evidence for a route
+  switch" and state that "a future D-F decision needs a broader explicitly
+  chosen IDMT subset/full-corpus report and a cymbal-capable corpus" — evidence
+  that has not been produced.
+- No real-LALAL-stem or bleed/artifact evaluation (plan section "Quality
+  evaluation", items 2-3) has been run or recorded here.
+
+Given this, **D-F does not switch the production routing table.**
+`production_transcriber_router()` in `src/vgt/transcribe.py` continues to send
+`drums` to Basic Pitch by default (`drumscript_targets: tuple[str, ...] = ()`),
+and `docs/GOAL.md` / `docs/USER-MANUAL.md` continue to describe Basic Pitch as
+the transcription backend for every target, including drums, because that
+remains the shipped behavior.
+
+This is a rollout decision, not an implementation gap: `DrumScriptTranscriber`,
+its validation, cache/status/forget integration, and the offline REAPER import
+contract are all implemented and tested (243 tests pass). What is missing is
+evidence that DrumScript's current accuracy is good enough to replace Basic
+Pitch's honest "not a drum backend" gap. That is a product/quality judgment a
+human should make after either accepting the negative single-clip evidence, or
+commissioning a broader IDMT run and a real-stem review.
+
+No production code changed as part of this decision. No shadow comparison or
+evaluation code was wired into `vgt analyze` at any point (see
+`src/vgt/drum_evaluation.py`'s module docstring), so there is nothing to
+disable in production ahead of a future, separate go/no-go issue.
