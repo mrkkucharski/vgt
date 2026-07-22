@@ -432,10 +432,9 @@ class TranscriberRouter(Protocol):
 class TargetTranscriberRouter:
     """Routes a configured set of targets to the drum backend.
 
-    The production router keeps the existing Basic Pitch route until the
-    separately evaluated D-F rollout. Tests can opt a fake into the drum
-    route through this same seam, so the normal suite never imports either
-    real model.
+    The production router sends `drums` to DrumScript and every other
+    target to Basic Pitch. Tests can opt a fake into the drum route through
+    this same seam, so the normal suite never imports either real model.
     """
 
     basic_pitch: Transcriber
@@ -466,9 +465,13 @@ class TargetTranscriberRouter:
 
 
 def production_transcriber_router() -> TranscriberRouter:
-    """Current production route; D-F owns the evaluated DrumScript rollout."""
+    """Current production route: DrumScript handles drums, Basic Pitch everything else."""
     basic_pitch = BasicPitchTranscriber()
-    return TargetTranscriberRouter(basic_pitch=basic_pitch, drumscript=DrumScriptTranscriber())
+    return TargetTranscriberRouter(
+        basic_pitch=basic_pitch,
+        drumscript=DrumScriptTranscriber(),
+        drumscript_targets=("drums",),
+    )
 
 
 def _hz_to_midi(hz: float) -> int:

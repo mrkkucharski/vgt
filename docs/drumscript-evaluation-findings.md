@@ -122,7 +122,7 @@ evaluation tooling.
 [docs/drumscript-plan.md](drumscript-plan.md) makes the production route change
 conditional: "If acceptable based on the automated and audio-quality evidence,
 change the single target-routing table so `drums` selects DrumScript." The D-E
-evidence gathered above does not clear that bar:
+evidence gathered above does not clear that bar on its own:
 
 - The only corpus-scale result is a **one-clip smoke benchmark** against
   `RealDrum01_00#MIX.wav`, explicitly documented above as "not a representative
@@ -137,22 +137,36 @@ evidence gathered above does not clear that bar:
 - No real-LALAL-stem or bleed/artifact evaluation (plan section "Quality
   evaluation", items 2-3) has been run or recorded here.
 
-Given this, **D-F does not switch the production routing table.**
-`production_transcriber_router()` in `src/vgt/transcribe.py` continues to send
-`drums` to Basic Pitch by default (`drumscript_targets: tuple[str, ...] = ()`),
-and `docs/GOAL.md` / `docs/USER-MANUAL.md` continue to describe Basic Pitch as
-the transcription backend for every target, including drums, because that
-remains the shipped behavior.
+An initial D-F pass therefore stopped short of switching the route and marked
+the issue `status:blocked` for a human rollout decision, per the plan's own
+instruction not to guess or silently broaden scope. The repository owner then
+reviewed this evidence directly on the issue and explicitly instructed the
+work to proceed ("Finish the work - I did the verification.",
+[issue #98](https://github.com/mrkkucharski/vgt/issues/98#issuecomment-5041703100)).
+That is the third option this document originally posed to a human reviewer:
+accept the current accuracy for a specific product reason and explicitly
+override the plan's quality bar — "any drum groove reference beats none" is a
+defensible product call even against a weak single-clip benchmark, since vgt
+never claims calibrated confidence for DrumScript output and the user manual
+documents the limitation plainly.
 
-This is a rollout decision, not an implementation gap: `DrumScriptTranscriber`,
-its validation, cache/status/forget integration, and the offline REAPER import
-contract are all implemented and tested (243 tests pass). What is missing is
-evidence that DrumScript's current accuracy is good enough to replace Basic
-Pitch's honest "not a drum backend" gap. That is a product/quality judgment a
-human should make after either accepting the negative single-clip evidence, or
-commissioning a broader IDMT run and a real-stem review.
+Given that explicit human override, **D-F switches the production routing
+table.** `production_transcriber_router()` in `src/vgt/transcribe.py` now
+passes `drumscript_targets=("drums",)`, so `drums` routes to
+`DrumScriptTranscriber` by default; every other target continues to route to
+`BasicPitchTranscriber`. `docs/GOAL.md` and `docs/USER-MANUAL.md` were updated
+to describe this as the shipped behavior, including DrumScript's channel-10 GM
+percussion semantics, fixed velocity, and lack of calibrated confidence.
 
-No production code changed as part of this decision. No shadow comparison or
-evaluation code was wired into `vgt analyze` at any point (see
-`src/vgt/drum_evaluation.py`'s module docstring), so there is nothing to
-disable in production ahead of a future, separate go/no-go issue.
+This was already an implementation-complete capability going into the
+decision: `DrumScriptTranscriber`, its validation, cache/status/forget
+integration, and the offline REAPER import contract were implemented and
+tested (243 tests passing before and after the route switch). No shadow
+comparison or evaluation code was ever wired into `vgt analyze` (see
+`src/vgt/drum_evaluation.py`'s module docstring), so there was no shadow
+output to disable in production.
+
+The weak automated benchmark evidence above remains valid and should still
+guide expectations: users should treat `[vgt] Drums Ref (MIDI)` as a rough
+draft, most reliable for gross onset placement and least reliable for kick
+detection, until a broader corpus/real-stem evaluation is run.

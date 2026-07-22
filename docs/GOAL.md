@@ -16,11 +16,13 @@ analyzes it, optionally creates practice stems, and adds a clearly owned
 - **Supporting capability — stem separation:** LALAL.AI v1 separates the
   standard vocals/instrumental/bass/drums/guitar/backing set, with optional
   strings and piano. It is a delivered capability, not a numbered phase.
-- **Supporting capability — reference transcription:** Basic Pitch transcribes
-  requested separated stems locally into cached, per-target reference MIDI and
-  imports each result beside its source stem. Guitar is the default; further
-  targets can be kept independently. This is a delivered capability, not a
-  numbered phase.
+- **Supporting capability — reference transcription:** requested separated
+  stems are transcribed locally into cached, per-target reference MIDI and
+  imported beside their source stem. DrumScript transcribes `drums`; Basic
+  Pitch transcribes every other supported target (guitar, bass, vocals,
+  piano, strings, instrumental, backing, and original mix). Guitar is the
+  default target; further targets can be kept independently. This is a
+  delivered capability, not a numbered phase.
 
 See [the user manual](USER-MANUAL.md) for commands, REAPER object states,
 correction workflow, cost controls, and the current regression contract.
