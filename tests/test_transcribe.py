@@ -1,4 +1,5 @@
 from pathlib import Path
+import collections
 import struct
 
 import pytest
@@ -19,6 +20,8 @@ from vgt.transcribe import (
     _cap_simultaneous_voices,
     _clamp_sustain,
     _drop_harmonic_ghosts,
+    _drop_isolated_notes,
+    _merge_fragments,
     default_spec_for_target,
     midi_artifact_name,
     missing_source_entry,
@@ -67,6 +70,8 @@ def test_default_spec_leaves_electric_and_unset_guitar_at_the_generic_defaults()
         assert spec.max_simultaneous_voices is None
         assert spec.sustain_clamp_s is None
         assert spec.drop_harmonic_ghosts is False
+        assert spec.merge_gap_s is None
+        assert spec.drop_isolated_notes is False
 
 
 def test_default_spec_narrows_acoustic_guitar_and_enables_cleanup() -> None:
@@ -79,6 +84,8 @@ def test_default_spec_narrows_acoustic_guitar_and_enables_cleanup() -> None:
     assert spec.melodia_trick is False
     assert spec.max_simultaneous_voices == GUITAR_MAX_SIMULTANEOUS_VOICES
     assert spec.drop_harmonic_ghosts is True
+    assert spec.merge_gap_s == pytest.approx(0.03)
+    assert spec.drop_isolated_notes is True
     # Two bars at 120 BPM 4/4: 2 * 4 beats * 60/120 = 4.0s.
     assert spec.sustain_clamp_s == pytest.approx(4.0)
 
@@ -421,6 +428,89 @@ def _note(start_s: float, end_s: float, pitch_midi: int, velocity: int = 90) -> 
     return ParsedNote(start_s, end_s, pitch_midi, velocity, ())
 
 
+def test_merge_fragments_rejoins_a_note_split_in_place() -> None:
+    """The dominant artifact: 390 of the reference track's same-pitch gaps
+    were exactly zero-width, i.e. one note emitted as two."""
+    first = _note(1.0, 1.5, 60)
+    second = _note(1.5, 2.0, 60)  # zero-width gap
+
+    merged = _merge_fragments([first, second], max_gap_s=0.03)
+
+    assert len(merged) == 1
+    assert merged[0].start_s == pytest.approx(1.0)
+    assert merged[0].end_s == pytest.approx(2.0)
+
+
+def test_merge_fragments_collapses_a_chain_in_one_pass() -> None:
+    chain = [_note(0.0, 0.5, 60), _note(0.51, 1.0, 60), _note(1.02, 1.5, 60), _note(1.5, 2.0, 60)]
+
+    merged = _merge_fragments(chain, max_gap_s=0.03)
+
+    assert len(merged) == 1
+    assert merged[0].end_s == pytest.approx(2.0)
+
+
+def test_merge_fragments_leaves_a_genuine_rearticulation_alone() -> None:
+    first = _note(0.0, 0.5, 60)
+    second = _note(1.0, 1.5, 60)  # half-second gap: a real repeated note
+
+    merged = _merge_fragments([first, second], max_gap_s=0.03)
+
+    assert len(merged) == 2
+
+
+def test_merge_fragments_never_joins_different_pitches() -> None:
+    merged = _merge_fragments([_note(0.0, 0.5, 60), _note(0.5, 1.0, 61)], max_gap_s=0.03)
+
+    assert len(merged) == 2
+
+
+def test_merge_fragments_keeps_the_loudest_fragments_velocity() -> None:
+    """A split note's later fragment can carry the true peak; keeping the max
+    also stops a reassembled note being retired by the voice cap for looking
+    quiet."""
+    merged = _merge_fragments([_note(0.0, 0.5, 60, velocity=40), _note(0.5, 1.0, 60, velocity=100)], max_gap_s=0.03)
+
+    assert merged[0].velocity == 100
+
+
+def test_merge_fragments_handles_an_overlapping_pair_without_shortening_it() -> None:
+    """Basic Pitch can emit same-pitch notes that overlap rather than abut;
+    merging must take the later end time, never truncate to the nearer one."""
+    merged = _merge_fragments([_note(0.0, 2.0, 60), _note(0.5, 1.0, 60)], max_gap_s=0.03)
+
+    assert len(merged) == 1
+    assert merged[0].end_s == pytest.approx(2.0)
+
+
+def test_drop_isolated_notes_removes_a_lone_blip() -> None:
+    blip = _note(30.0, 30.05, 77)
+    company = [_note(1.0, 1.5, 60), _note(2.0, 2.5, 60)]
+
+    kept = _drop_isolated_notes([*company, blip], max_duration_s=0.15, neighbour_window_s=1.0)
+
+    assert blip not in kept
+    assert all(note in kept for note in company)
+
+
+def test_drop_isolated_notes_keeps_a_short_note_that_has_company_at_its_pitch() -> None:
+    """A short note inside a run at the same pitch is a played note, not a blip."""
+    run = [_note(1.0, 1.05, 60), _note(1.3, 1.35, 60), _note(1.6, 1.65, 60)]
+
+    kept = _drop_isolated_notes(run, max_duration_s=0.15, neighbour_window_s=1.0)
+
+    assert kept == run
+
+
+def test_drop_isolated_notes_keeps_a_long_isolated_note() -> None:
+    """Isolation alone is not suspicious -- only isolation *plus* brevity."""
+    sustained = _note(30.0, 32.0, 77)
+
+    kept = _drop_isolated_notes([sustained], max_duration_s=0.15, neighbour_window_s=1.0)
+
+    assert kept == [sustained]
+
+
 def test_clamp_sustain_truncates_a_runaway_note_but_leaves_short_notes_alone() -> None:
     runaway = _note(0.0, 126.0, 37)
     short = _note(1.0, 1.5, 60)
@@ -500,24 +590,55 @@ def test_cap_simultaneous_voices_retires_forward_not_only_at_the_new_notes_onset
     assert quiet_result.end_s <= 1.0  # retired at the first filler's onset, not later
 
 
-def test_apply_guitar_cleanup_runs_clamp_then_ghost_drop_then_voice_cap() -> None:
+def _max_polyphony(notes: list[ParsedNote]) -> int:
+    edges = [(note.start_s, 1) for note in notes] + [(note.end_s, -1) for note in notes]
+    edges.sort()
+    voices = peak = 0
+    for _time, delta in edges:
+        voices += delta
+        peak = max(peak, voices)
+    return peak
+
+
+def test_apply_guitar_cleanup_runs_every_stage_in_order() -> None:
     spec = default_spec_for_target("guitar", guitar_type="acoustic", midi_tempo=120.0)
     runaway_fundamental = _note(0.0, 999.0, 40, velocity=95)
     ghost = _note(0.0, 999.0, 52, velocity=80)  # octave above, would ghost off the fundamental
+    blip = _note(500.0, 500.04, 77)  # short, nothing else at pitch 77
     # 90+i, not 60+i: must avoid landing on a harmonic interval above 40 or 52
     # (e.g. 40+24=64), or the ghost-drop step would remove one of these too.
     extra_voices = [_note(0.5, 3.0, 90 + i, velocity=90) for i in range(6)]  # pushes over 6 voices
 
-    cleaned = _apply_guitar_cleanup([runaway_fundamental, ghost, *extra_voices], spec)
+    cleaned = _apply_guitar_cleanup([runaway_fundamental, ghost, blip, *extra_voices], spec)
 
     assert all(note.end_s - note.start_s <= spec.sustain_clamp_s + 1e-9 for note in cleaned)
     assert 52 not in {note.pitch_midi for note in cleaned}  # ghost dropped
-    ev = sorted((note.start_s, 1) for note in cleaned) + sorted((note.end_s, -1) for note in cleaned)
-    ev.sort()
-    voices = 0
-    for _time, delta in ev:
-        voices += delta
-        assert voices <= GUITAR_MAX_SIMULTANEOUS_VOICES
+    assert 77 not in {note.pitch_midi for note in cleaned}  # isolated blip dropped
+    assert _max_polyphony(cleaned) <= GUITAR_MAX_SIMULTANEOUS_VOICES
+
+
+def test_apply_guitar_cleanup_merges_fragments_before_clamping_sustain() -> None:
+    """The ordering finding this pipeline exists to encode.
+
+    Two fragments of 3.5 s each are individually under the 4 s clamp, so
+    clamping first leaves both untouched and a later merge produces a 7 s
+    note -- past the clamp that already ran. Merging first yields one 7 s
+    note that the clamp then cuts to 4 s.
+
+    This is the assertion that actually discriminates: reordering the
+    pipeline so the merge runs last makes it fail (verified by patching the
+    order and re-running), whereas a polyphony-only assertion can pass under
+    either order because the voice cap may simply drop the offending pitch
+    outright.
+    """
+    spec = default_spec_for_target("guitar", guitar_type="acoustic", midi_tempo=120.0)
+    fragments = [_note(0.0, 3.5, 60), _note(3.5, 7.0, 60)]  # zero-width split, each under the clamp
+
+    cleaned = _apply_guitar_cleanup(fragments, spec)
+
+    assert len(cleaned) == 1
+    assert cleaned[0].end_s - cleaned[0].start_s == pytest.approx(spec.sustain_clamp_s)
+    assert _max_polyphony(cleaned) <= GUITAR_MAX_SIMULTANEOUS_VOICES
 
 
 def test_transcribe_applies_guitar_cleanup_and_rewrites_both_artifacts(

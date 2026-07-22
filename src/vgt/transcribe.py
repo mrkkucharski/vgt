@@ -129,6 +129,23 @@ GUITAR_GHOST_OVERLAP_FRACTION = 0.6
 GUITAR_GHOST_VELOCITY_SLACK = 4
 GUITAR_MIN_NOTE_DURATION_AFTER_CAP_S = 0.04
 
+# Raising `frame_threshold` to stop the drones has a side effect: a held note
+# whose activation dips below the threshold mid-way is emitted as two notes
+# split in place.  Measured on the 7Rivers output, 390 of 435 same-pitch gaps
+# under 300 ms were *exactly* zero-width, with nothing at all between 0 and
+# 10 ms and a clean cliff before genuine re-articulations above 300 ms -- so
+# this threshold sits in the model's frame domain (a few analysis hops), not
+# the musical domain, and is deliberately NOT tempo-scaled: at a slow tempo a
+# bar-relative gap would start swallowing real repeated notes.
+GUITAR_FRAGMENT_MERGE_GAP_S = 0.03
+
+# A short note with no same-pitch neighbour anywhere near it is almost always
+# a transient artifact rather than a played note.  Both bounds are deliberately
+# conservative -- this removes ~17 notes on the reference track, and the point
+# is to catch obvious blips, not to thin the part.
+GUITAR_ISOLATED_MAX_DURATION_S = 0.15
+GUITAR_ISOLATED_NEIGHBOUR_WINDOW_S = 1.0
+
 
 class TranscriptionError(ValueError):
     """A target, spec, or transcription request cannot be processed."""
@@ -174,6 +191,8 @@ class BasicPitchSpec:
     max_simultaneous_voices: int | None = None
     sustain_clamp_s: float | None = None
     drop_harmonic_ghosts: bool = False
+    merge_gap_s: float | None = None
+    drop_isolated_notes: bool = False
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -254,6 +273,8 @@ def default_spec_for_target(
     max_simultaneous_voices: int | None = None
     sustain_clamp_s: float | None = None
     drop_harmonic_ghosts = False
+    merge_gap_s: float | None = None
+    drop_isolated_notes = False
     if target == "guitar" and guitar_type == "acoustic":
         minimum_frequency_hz, maximum_frequency_hz = GUITAR_ACOUSTIC_FREQUENCY_HZ
         onset_threshold = GUITAR_ACOUSTIC_ONSET_THRESHOLD
@@ -262,6 +283,8 @@ def default_spec_for_target(
         melodia_trick = GUITAR_ACOUSTIC_MELODIA_TRICK
         max_simultaneous_voices = GUITAR_MAX_SIMULTANEOUS_VOICES
         drop_harmonic_ghosts = True
+        merge_gap_s = GUITAR_FRAGMENT_MERGE_GAP_S
+        drop_isolated_notes = True
         bar_seconds = _bar_duration_seconds(midi_tempo, time_signature)
         sustain_clamp_s = bar_seconds * GUITAR_SUSTAIN_CLAMP_BARS if bar_seconds else None
     return BasicPitchSpec(
@@ -279,6 +302,8 @@ def default_spec_for_target(
         max_simultaneous_voices=max_simultaneous_voices,
         sustain_clamp_s=sustain_clamp_s,
         drop_harmonic_ghosts=drop_harmonic_ghosts,
+        merge_gap_s=merge_gap_s,
+        drop_isolated_notes=drop_isolated_notes,
     )
 
 
@@ -874,6 +899,75 @@ def _summarize_notes(notes: list[ParsedNote]) -> tuple[int, tuple[int, int] | No
     )
 
 
+def _merge_fragments(notes: list[ParsedNote], max_gap_s: float) -> list[ParsedNote]:
+    """Rejoin a held note the model split in place.
+
+    Two notes of the same pitch separated by no more than `max_gap_s` become
+    one note spanning both (see `GUITAR_FRAGMENT_MERGE_GAP_S` for why the
+    threshold is this small and why it isn't tempo-scaled). Chains of three or
+    more fragments collapse in a single pass, since each merge extends the
+    span the next candidate is compared against.
+
+    The merged note keeps the *loudest* fragment's velocity, not the first's:
+    a split note's later fragment can carry the true peak when the model's
+    confidence rose mid-note, and it keeps a reassembled note from being
+    spuriously retired by the voice cap for looking quiet.
+    """
+    by_pitch: dict[int, list[ParsedNote]] = {}
+    for note in notes:
+        by_pitch.setdefault(note.pitch_midi, []).append(note)
+
+    merged: list[ParsedNote] = []
+    for pitch_notes in by_pitch.values():
+        pitch_notes.sort(key=lambda note: note.start_s)
+        current = pitch_notes[0]
+        for candidate in pitch_notes[1:]:
+            if candidate.start_s - current.end_s <= max_gap_s:
+                current = replace(
+                    current,
+                    end_s=max(current.end_s, candidate.end_s),
+                    velocity=max(current.velocity, candidate.velocity),
+                    pitch_bend=current.pitch_bend + candidate.pitch_bend,
+                )
+            else:
+                merged.append(current)
+                current = candidate
+        merged.append(current)
+    return sorted(merged, key=lambda note: (note.start_s, note.pitch_midi))
+
+
+def _drop_isolated_notes(notes: list[ParsedNote], max_duration_s: float, neighbour_window_s: float) -> list[ParsedNote]:
+    """Drop a short note that has no same-pitch neighbour anywhere near it.
+
+    A real short note on a guitar almost always sits in a run, a repeated
+    figure, or beside its own re-articulation; one with nothing at that pitch
+    within `neighbour_window_s` on either side is far more likely a transient
+    the model latched onto. Deliberately conservative on both bounds -- this
+    is for obvious blips, not for thinning a busy part.
+
+    Must run *after* `_merge_fragments`: a fragment of a real held note looks
+    exactly like an isolated blip until its siblings have been rejoined to it.
+    """
+    by_pitch: dict[int, list[ParsedNote]] = {}
+    for note in notes:
+        by_pitch.setdefault(note.pitch_midi, []).append(note)
+
+    kept: list[ParsedNote] = []
+    for note in notes:
+        if note.end_s - note.start_s > max_duration_s:
+            kept.append(note)
+            continue
+        has_neighbour = any(
+            other is not note
+            and other.start_s < note.end_s + neighbour_window_s
+            and other.end_s > note.start_s - neighbour_window_s
+            for other in by_pitch[note.pitch_midi]
+        )
+        if has_neighbour:
+            kept.append(note)
+    return kept
+
+
 def _clamp_sustain(notes: list[ParsedNote], max_duration_s: float) -> list[ParsedNote]:
     """Cap every note's duration at `max_duration_s`, leaving its onset
     untouched. Fixes the acoustic ring-out runaway (see
@@ -938,11 +1032,28 @@ def _cap_simultaneous_voices(notes: list[ParsedNote], max_voices: int) -> list[P
 def _apply_guitar_cleanup(notes: list[ParsedNote], spec: BasicPitchSpec) -> list[ParsedNote]:
     """Run the acoustic-guitar post-processing pipeline the spec requests.
 
-    Order matters: the sustain clamp must run before the voice cap, or a
-    still-runaway drone would dominate which voices get retired; the ghost
-    drop runs in between so a truncated (no longer absurdly long) note is
-    what the overlap check reasons about.
+    Order is load-bearing, and every step depends on the ones before it:
+
+    1. `_merge_fragments` reassembles split notes. It must be first: every
+       later stage reasons about note *lengths*, and a fragmented note has
+       the wrong length. Running it last instead re-extends notes past
+       decisions the clamp and voice cap already made -- merging the
+       reference track's *finished* output re-created a 7.1 s note under a
+       4 s clamp, and at a 30 ms gap pushed polyphony from 6 to 7, breaking
+       both invariants this pipeline exists to guarantee.
+    2. `_drop_isolated_notes` removes blips, now that a lone fragment of a
+       real note is no longer mistaken for one.
+    3. `_clamp_sustain` caps runaway sustains -- after merging, since a chain
+       of fragments is exactly how a drone survives step 1.
+    4. `_drop_harmonic_ghosts` compares overlaps against clamped (no longer
+       absurdly long) durations.
+    5. `_cap_simultaneous_voices` runs last so it enforces six voices on the
+       final note lengths, which is the only place the invariant can hold.
     """
+    if spec.merge_gap_s is not None:
+        notes = _merge_fragments(notes, spec.merge_gap_s)
+    if spec.drop_isolated_notes:
+        notes = _drop_isolated_notes(notes, GUITAR_ISOLATED_MAX_DURATION_S, GUITAR_ISOLATED_NEIGHBOUR_WINDOW_S)
     if spec.sustain_clamp_s is not None:
         notes = _clamp_sustain(notes, spec.sustain_clamp_s)
     if spec.drop_harmonic_ghosts:
@@ -1017,7 +1128,15 @@ class BasicPitchTranscriber:
         _validate_basic_pitch_midi(midi_path)
         notes = parse_notes_csv(notes_path)
 
-        wants_cleanup = spec.sustain_clamp_s is not None or spec.drop_harmonic_ghosts or spec.max_simultaneous_voices is not None
+        wants_cleanup = any(
+            (
+                spec.merge_gap_s is not None,
+                spec.drop_isolated_notes,
+                spec.sustain_clamp_s is not None,
+                spec.drop_harmonic_ghosts,
+                spec.max_simultaneous_voices is not None,
+            )
+        )
         if wants_cleanup:
             cleaned = _apply_guitar_cleanup(notes, spec)
             if cleaned != notes:

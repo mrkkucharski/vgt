@@ -1,18 +1,23 @@
 # Guitar transcription findings
 
-Status: **implemented 2026-07-22** for `guitar_type: acoustic`.
-`src/vgt/transcribe.py` now applies the acoustic overrides and the
-sustain-clamp/harmonic-ghost/voice-cap cleanup pass described below whenever
+Status: **implemented 2026-07-22** for `guitar_type: acoustic`, in two rounds.
+`src/vgt/transcribe.py` now applies the acoustic threshold overrides plus a
+five-stage cleanup pipeline (merge → deblip → clamp → ghost → cap) whenever
 `guitar_type == "acoustic"`; `electric` and unset are deliberately left at the
-original shared defaults, since only the acoustic case was measured (see "The
-frequency bounds ignore `guitar_type`" and "Proposed changes" below, now
-applied rather than proposed). This changes `guitar`'s `settings_hash` for
-acoustic-declared projects, so existing acoustic transcriptions correctly
-invalidate and re-transcribe on the next run — no migration needed. It does
-**not** change any other target's hash or output.
+original shared defaults, since only the acoustic case was measured. Each
+round changes `guitar`'s `settings_hash` for acoustic-declared projects, so
+existing acoustic transcriptions correctly invalidate and re-transcribe on the
+next run — no migration needed. Neither round changes any other target's hash
+or output.
+
+Read in order: "The complaint" through "Changes applied" is round one (the
+threshold retune and the first three cleanup stages); "Round two" covers
+fragmentation and isolated blips, and also **corrects a measurement bias in
+the round-one sweep table** — see "The chord metric was misleading".
 
 Investigated 2026-07-22 after a user report that a real project's guitar MIDI
-was unusable.
+was unusable, then extended after the user inspected the result in REAPER's
+piano roll.
 
 ## The complaint, quantified
 
@@ -108,6 +113,12 @@ Tightening the ceiling to 1000 Hz likewise changed nothing measurable
 Run against the same stem, `basic-pitch[onnx]==0.4.0`, ONNX serialization,
 `--midi-tempo 120.004`, 70–1400 Hz unless noted.  `%ghost` is the harmonic-ghost
 share, `%>6vc` the share of sounding time above six voices.
+
+> **Caveat added in round two:** `%chordtone` here is the *onset-attributed*
+> metric (`%ct-on` in the probe script), which is biased against long notes.
+> These variants have broadly similar note lengths so the ranking holds, but
+> do not carry these numbers across to a comparison involving merged output —
+> use `%ct-t`. See "The chord metric was misleading" below.
 
 | variant | notes | med_ms | max_s | >5s | maxpoly | medpoly | %>6vc | %ghost | %chordtone |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
@@ -251,6 +262,124 @@ persisted entry, and the ordinary transcription stage detected the missing
 target and re-ran it against the new spec. Only `guitar`'s entry changed;
 `drums` reported `unchanged, using cached result` in both runs.
 
+## Round two: fragmentation and isolated blips
+
+The user inspected the 897-note result in REAPER's piano roll and reported two
+remaining artifacts: held notes broken by hairline gaps, and very short notes
+sitting alone with nothing around them.
+
+### Both confirmed, and the first is the dominant one
+
+Same-pitch gap distribution in the 897-note output:
+
+| gap | count |
+| --- | ---: |
+| **exactly 0** | **390** |
+| 0–10 ms | 0 |
+| 10–20 ms | 5 |
+| 20–50 ms | 23 |
+| 50–100 ms | 12 |
+| 100–300 ms | 45 |
+| >300 ms | 384 |
+
+390 of 435 sub-300 ms gaps are *exactly zero-width* — a note ending and the
+next beginning at the identical timestamp, which is a split, not a
+re-articulation. Nothing at all falls between 0 and 10 ms, and there is a
+clean cliff before genuine repeated notes above 300 ms. That bimodality is
+what makes merging safe here: there is no ambiguous middle band to get wrong.
+
+This artifact is a **direct consequence of the round-one retune**. Raising
+`frame_threshold` to 0.65 is what stopped the drones, but it also means a held
+note whose activation dips below the threshold mid-way gets emitted as two
+notes. The two failure modes trade off against each other and no single
+threshold avoids both — which is why the fix belongs in post-processing.
+
+Isolated blips are real but a much smaller effect: ~17 notes matched "under
+150 ms with no same-pitch neighbour within ±1 s".
+
+### Changes applied
+
+Two new passes, `_merge_fragments` and `_drop_isolated_notes`, inserted at the
+**front** of the cleanup pipeline. The full order is now merge → deblip →
+clamp → ghost → cap, and each step depends on the ones before it (see
+`_apply_guitar_cleanup`'s docstring).
+
+`GUITAR_FRAGMENT_MERGE_GAP_S = 0.03` is deliberately *not* tempo-scaled,
+unlike the sustain clamp. It describes a model artifact measured in analysis
+frames, not a musical duration; a bar-relative gap would grow at slow tempos
+and start swallowing genuine repeated notes.
+
+### Ordering is load-bearing — and my first test for it was wrong
+
+Merging must run before the clamp and the voice cap, or it re-extends notes
+past decisions those stages already made. Merging the *finished* 897-note
+output re-created a 7.1 s note under a 4 s clamp, and at a 30 ms gap pushed
+polyphony from 6 to 7 — breaking both invariants.
+
+The first test written for this asserted polyphony stayed ≤ 6 after cleanup.
+It **passed even with the merge deliberately moved to last**, because the
+voice cap can satisfy the assertion by dropping the offending pitch outright.
+The replacement asserts the sustain-clamp property instead — two 3.5 s
+fragments are each individually under the 4 s clamp, so clamping first leaves
+both alone and a later merge yields a 7 s note. That version was verified to
+fail under the wrong order before being kept. **An ordering test that has not
+been run against the wrong order is not evidence of anything.**
+
+### The chord metric was misleading, and is now fixed
+
+Merging appeared to *drop* chord agreement from 70.5 % to 63.3 %. It doesn't:
+the metric attributes each note wholly to the chord under its onset, so a
+merged note ringing across a chord change is penalised for its full length,
+while its fragments were each credited to their own chord. Scored
+length-neutrally (sampling every 20 ms against the chord sounding at that
+instant), merging is quality-neutral.
+
+`guitar_transcription_probe.py` now reports both, as `%ct-on` and `%ct-t`.
+**The `%chordtone` column in the parameter-sweep table above is the
+onset-attributed one and is biased against long notes** — it is sound for
+ranking variants of similar note length (which those were), but must not be
+used to compare variants whose note lengths differ.
+
+### Result
+
+| | notes | med_ms | max_s | maxpoly | frag | %ghost | %ct-on | %ct-t |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| original baseline | 2907 | 383 | 126.3 | 26 | 1995 | 65.4 | 52.5 | 43.1 |
+| after round one | 897 | 488 | 4.0 | 6 | 405 | 19.6 | 70.5 | 65.1 |
+| after round two | 443 | 952 | 4.0 | **6** | **0** | 18.6 | 63.3 | **65.3** |
+
+Fragmentation is fully eliminated, the clamp and six-voice invariants still
+hold, and length-neutral chord agreement is unchanged (65.1 → 65.3). On the
+honest metric the whole exercise moved the reference from 43.1 % to 65.3 %.
+
+The sustain clamp was re-examined rather than assumed: after merging it
+engages on 5.2 % of notes and removes 6.9 % of total sounding time (up from
+1.0 % / 2.0 %). That increase is the clamp doing its job — a merged chain of
+fragments is exactly how a drone survives the merge step — so it was left at
+two bars.
+
+### Test coverage added
+
+`_merge_fragments`: zero-width split rejoined, three-fragment chain collapsed
+in one pass, genuine re-articulation left alone, different pitches never
+joined, loudest fragment's velocity kept, and an *overlapping* same-pitch pair
+merged to the later end rather than truncated. `_drop_isolated_notes`: lone
+blip removed, short note inside a same-pitch run kept, long isolated note kept
+(isolation alone is not suspicious — only isolation plus brevity). Plus the
+ordering test described above, verified to fail under the wrong order.
+
+### Known limitation
+
+Two isolated short notes survive in the final output. Both are explained, and
+neither is a defect: one is a 511 ms note the *voice cap* truncated to 104 ms
+after the deblip pass had already run, and the other lost its only neighbour
+to a later stage. Isolated-blip removal is therefore **best-effort, not an
+invariant** like the clamp, fragmentation, and voice count. Moving the deblip
+pass after the voice cap would catch both, but at the cost of deleting the
+cap's deliberately-retained onset stubs — the cap truncates rather than
+deletes precisely so a retired note's onset still appears on the reference
+track.
+
 ## Reproducing
 
 `scripts/guitar_transcription_probe.py` computes every metric in this document
@@ -266,6 +395,13 @@ uv run python scripts/guitar_transcription_probe.py \
 Passing several CSVs compares parameter variants side by side; when they share
 a filename the containing directory is used as the label, so a sweep laid out
 as `sweep/<variant>/guitar_basic_pitch.csv` reads directly.
+
+Column guide: `frag` counts adjacent same-pitch pairs no more than 30 ms apart
+(should be 0 once the merge pass has run); `%ct-on` and `%ct-t` are the
+onset-attributed and time-attributed chord agreements respectively. **Prefer
+`%ct-t` whenever the variants differ in note length** — `%ct-on` penalises a
+long note for ringing across a chord change and will make merged output look
+worse than it is.
 
 To regenerate the sweep, install the backend once and drive it through the same
 command line `build_basic_pitch_argv` produces:

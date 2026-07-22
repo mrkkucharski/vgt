@@ -1,15 +1,26 @@
 """Measure the quality of a Basic Pitch guitar transcription.
 
-Evaluation-only. Reads a Basic Pitch note-events CSV and reports the four
-metrics that distinguish a usable guitar reference from an unplayable one:
-note count, sustain runaway, simultaneous voices, and agreement with vgt's
-own detected chords. It neither runs a model nor writes into a vgt project.
+Evaluation-only. Reads a Basic Pitch note-events CSV and reports the metrics
+that distinguish a usable guitar reference from an unplayable one: note count,
+sustain runaway, simultaneous voices, fragmentation, harmonic ghosts, and
+agreement with vgt's own detected chords. It neither runs a model nor writes
+into a vgt project.
 
     uv run python scripts/guitar_transcription_probe.py NOTES.csv [--chords chords.txt]
 
 `--chords` points at the `chords.txt` vgt already wrote for the same project;
-without it the chord-tone column is omitted. Pass several CSVs to compare
+without it the chord-tone columns are omitted. Pass several CSVs to compare
 parameter variants side by side.
+
+Two chord-agreement columns are reported, and the difference matters:
+
+* `%ct-on` attributes each note wholly to the chord under its *onset*. This
+  is biased against long notes -- a note ringing across a chord change is
+  penalised for its whole length -- so it makes a merged transcription look
+  worse than the fragmented one it came from, even when nothing changed
+  musically.
+* `%ct-t` samples every 20 ms against the chord sounding at that instant.
+  Use this one whenever the variants being compared differ in note length.
 """
 
 from __future__ import annotations
@@ -132,11 +143,13 @@ def harmonic_ghost_share(notes: list[Note], step_s: float = 0.02) -> float:
     return ghosts / sampled if sampled else 0.0
 
 
-def chord_tone_share(notes: list[Note], chords: list[tuple[float, frozenset[int]]]) -> float | None:
-    """Share of note-time landing on a tone of the chord detected under it.
+def chord_tone_share_onset(notes: list[Note], chords: list[tuple[float, frozenset[int]]]) -> float | None:
+    """Share of note-time on a chord tone, attributing each note wholly to the
+    chord under its onset.
 
-    Each note's contribution is capped at `SUSTAIN_CAP_S` so a single runaway
-    drone cannot dominate the figure in either direction.
+    Biased against long notes -- see the module docstring. Retained because
+    the original tuning sweep was scored this way; prefer
+    `chord_tone_share_timewise` when note lengths differ between variants.
     """
     if not chords:
         return None
@@ -155,6 +168,49 @@ def chord_tone_share(notes: list[Note], chords: list[tuple[float, frozenset[int]
     return on / total if total else None
 
 
+def chord_tone_share_timewise(
+    notes: list[Note], chords: list[tuple[float, frozenset[int]]], step_s: float = 0.02
+) -> float | None:
+    """Share of sounding time on a chord tone, scored against the chord
+    actually sounding at each sampled instant.
+
+    Length-neutral: a note held across a chord change is credited correctly on
+    both sides of the boundary instead of being attributed entirely to the
+    chord it started under.
+    """
+    if not chords:
+        return None
+    boundaries = [start for start, _ in chords]
+    on = off = 0
+    for start, end, pitch, _ in notes:
+        time = start
+        limit = min(end, start + SUSTAIN_CAP_S)
+        while time < limit:
+            index = bisect.bisect_right(boundaries, time) - 1
+            if index >= 0:
+                if pitch % 12 in chords[index][1]:
+                    on += 1
+                else:
+                    off += 1
+            time += step_s
+    total = on + off
+    return on / total if total else None
+
+
+def fragmentation_count(notes: list[Note], max_gap_s: float = 0.03) -> int:
+    """Adjacent same-pitch pairs separated by no more than `max_gap_s` -- i.e.
+    one held note the model emitted as several. Should be 0 once the merge
+    pass has run."""
+    by_pitch: dict[int, list[tuple[float, float]]] = collections.defaultdict(list)
+    for start, end, pitch, _ in notes:
+        by_pitch[pitch].append((start, end))
+    fragments = 0
+    for spans in by_pitch.values():
+        spans.sort()
+        fragments += sum(1 for i in range(1, len(spans)) if spans[i][0] - spans[i - 1][1] <= max_gap_s)
+    return fragments
+
+
 def report(path: Path, label: str, chords: list[tuple[float, frozenset[int]]]) -> None:
     notes = load_notes(path)
     if not notes:
@@ -162,13 +218,16 @@ def report(path: Path, label: str, chords: list[tuple[float, frozenset[int]]]) -
         return
     durations = [end - start for start, end, _, _ in notes]
     peak, median, crowded = polyphony(notes)
-    agreement = chord_tone_share(notes, chords)
+    onset_share = chord_tone_share_onset(notes, chords)
+    time_share = chord_tone_share_timewise(notes, chords)
+    fmt = lambda value: "--" if value is None else format(value * 100, ".1f")  # noqa: E731
     print(
         f"{label:<20} {len(notes):>6} {statistics.median(durations) * 1000:>8.0f}"
         f" {max(durations):>8.1f} {sum(1 for d in durations if d > 5):>6}"
         f" {peak:>8} {median:>8} {crowded * 100:>8.0f}"
+        f" {fragmentation_count(notes):>6}"
         f" {harmonic_ghost_share(notes) * 100:>8.1f}"
-        f" {'--' if agreement is None else format(agreement * 100, '.1f'):>11}"
+        f" {fmt(onset_share):>7} {fmt(time_share):>7}"
     )
 
 
@@ -186,7 +245,8 @@ def main() -> None:
 
     print(
         f"{'variant':<20} {'notes':>6} {'med_ms':>8} {'max_s':>8} {'>5s':>6}"
-        f" {'maxpoly':>8} {'medpoly':>8} {'%>6vc':>8} {'%ghost':>8} {'%chordtone':>11}"
+        f" {'maxpoly':>8} {'medpoly':>8} {'%>6vc':>8} {'frag':>6} {'%ghost':>8}"
+        f" {'%ct-on':>7} {'%ct-t':>7}"
     )
     for path, label in zip(args.notes, labels):
         report(path, label, chords)
