@@ -16,7 +16,7 @@ become a vgt dependency.
 
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, replace
 from pathlib import Path
 from typing import Any, Callable, Protocol
 import hashlib
@@ -104,6 +104,31 @@ DEFAULT_MINIMUM_NOTE_LENGTH_MS = 60.0
 DEFAULT_MULTIPLE_PITCH_BENDS = False  # single pitch-bend mode
 DEFAULT_MELODIA_TRICK = True
 
+# Acoustic-guitar-only overrides (see docs/guitar-transcription-findings.md).
+# A continuously strummed steel-string rings for seconds, so successive
+# chords overlap their own ring-out and the shared 0.3 frame threshold never
+# sees an activation drop low enough to release a note; melodia then bridges
+# the surviving gaps into multi-minute drones. These were measured against
+# one real acoustic stem only -- `guitar_type: electric` (and unset) keep the
+# generic guitar defaults above, since a palm-muted electric's sustain
+# behaviour is different and untested.
+GUITAR_ACOUSTIC_FREQUENCY_HZ = (80.0, 1200.0)  # standard-tuned low E2 (82.4 Hz) to a steel-string's practical top
+GUITAR_ACOUSTIC_ONSET_THRESHOLD = 0.6
+GUITAR_ACOUSTIC_FRAME_THRESHOLD = 0.65
+GUITAR_ACOUSTIC_MINIMUM_NOTE_LENGTH_MS = 100.0
+GUITAR_ACOUSTIC_MELODIA_TRICK = False
+
+# Post-transcription acoustic-guitar cleanup: no Basic Pitch setting alone
+# gets polyphony down to something playable, so this always runs alongside
+# the acoustic overrides above (see `_apply_guitar_cleanup`).
+GUITAR_MAX_SIMULTANEOUS_VOICES = 6  # a guitar has six strings
+GUITAR_SUSTAIN_CLAMP_BARS = 2.0  # in bars, not seconds, so slower material isn't clamped tighter than faster material
+GUITAR_HARMONIC_GHOST_INTERVALS: tuple[int, ...] = (12, 19, 24, 28, 31, 36)  # octave, 12th, and further partials
+GUITAR_GHOST_ONSET_TOLERANCE_S = 0.05
+GUITAR_GHOST_OVERLAP_FRACTION = 0.6
+GUITAR_GHOST_VELOCITY_SLACK = 4
+GUITAR_MIN_NOTE_DURATION_AFTER_CAP_S = 0.04
+
 
 class TranscriptionError(ValueError):
     """A target, spec, or transcription request cannot be processed."""
@@ -144,6 +169,11 @@ class BasicPitchSpec:
     multiple_pitch_bends: bool
     melodia_trick: bool
     midi_tempo: float | None  # from the tempo stage's detected BPM
+    # Guitar-only post-processing (see `_apply_guitar_cleanup`); `None`/`False`
+    # for every other target, so their `settings_hash` reflects "disabled".
+    max_simultaneous_voices: int | None = None
+    sustain_clamp_s: float | None = None
+    drop_harmonic_ghosts: bool = False
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -171,6 +201,21 @@ class DrumScriptSpec:
 TranscriptionSpec = BasicPitchSpec | DrumScriptSpec
 
 
+def _bar_duration_seconds(bpm: float | None, time_signature: str | None) -> float | None:
+    """Seconds per bar for a `bpm`/`"N/D"` pair, or `None` when `bpm` isn't
+    known yet. Assumes 4/4 when `time_signature` is missing or malformed --
+    the same fallback `tempo.py` already applies when detection can't
+    establish a signature."""
+    if not bpm:
+        return None
+    numerator, denominator = 4, 4
+    match = re.match(r"(\d+)/(\d+)", time_signature) if time_signature else None
+    if match:
+        numerator, denominator = int(match.group(1)), int(match.group(2))
+    beats_per_bar = numerator * (4.0 / denominator)
+    return beats_per_bar * 60.0 / bpm
+
+
 def default_spec_for_target(
     target: str,
     *,
@@ -178,11 +223,20 @@ def default_spec_for_target(
     package_pin: str = BASIC_PITCH_PACKAGE_PIN,
     serialization: str = BASIC_PITCH_SERIALIZATION,
     midi_tempo: float | None = None,
+    guitar_type: str | None = None,
+    time_signature: str | None = None,
     drumscript_runtime_version: str = DRUMSCRIPT_RUNTIME_VERSION,
     drumscript_classifier_mode: str = DRUMSCRIPT_CLASSIFIER_MODE,
     drumscript_time_signature: tuple[int, int] | None = None,
 ) -> TranscriptionSpec:
-    """The per-target default spec (see the frequency table above)."""
+    """The per-target default spec (see the frequency table above).
+
+    `guitar_type` and `time_signature` only affect the `guitar` target, and
+    only when `guitar_type == "acoustic"`: they select the acoustic overrides
+    and cleanup settings above (see docs/guitar-transcription-findings.md).
+    `time_signature` (a tempo-stage string like `"4/4"`) converts the cleanup
+    stage's bar-based sustain clamp to seconds at this specific tempo.
+    """
     validate_target(target)
     if backend == "drumscript":
         return DrumScriptSpec(
@@ -193,18 +247,38 @@ def default_spec_for_target(
             time_signature=drumscript_time_signature,
         )
     minimum_frequency_hz, maximum_frequency_hz = _TARGET_FREQUENCY_HZ.get(target, (None, None))
+    onset_threshold = DEFAULT_ONSET_THRESHOLD
+    frame_threshold = DEFAULT_FRAME_THRESHOLD
+    minimum_note_length_ms = DEFAULT_MINIMUM_NOTE_LENGTH_MS
+    melodia_trick = DEFAULT_MELODIA_TRICK
+    max_simultaneous_voices: int | None = None
+    sustain_clamp_s: float | None = None
+    drop_harmonic_ghosts = False
+    if target == "guitar" and guitar_type == "acoustic":
+        minimum_frequency_hz, maximum_frequency_hz = GUITAR_ACOUSTIC_FREQUENCY_HZ
+        onset_threshold = GUITAR_ACOUSTIC_ONSET_THRESHOLD
+        frame_threshold = GUITAR_ACOUSTIC_FRAME_THRESHOLD
+        minimum_note_length_ms = GUITAR_ACOUSTIC_MINIMUM_NOTE_LENGTH_MS
+        melodia_trick = GUITAR_ACOUSTIC_MELODIA_TRICK
+        max_simultaneous_voices = GUITAR_MAX_SIMULTANEOUS_VOICES
+        drop_harmonic_ghosts = True
+        bar_seconds = _bar_duration_seconds(midi_tempo, time_signature)
+        sustain_clamp_s = bar_seconds * GUITAR_SUSTAIN_CLAMP_BARS if bar_seconds else None
     return BasicPitchSpec(
         backend=backend,
         package_pin=package_pin,
         serialization=serialization,
-        onset_threshold=DEFAULT_ONSET_THRESHOLD,
-        frame_threshold=DEFAULT_FRAME_THRESHOLD,
-        minimum_note_length_ms=DEFAULT_MINIMUM_NOTE_LENGTH_MS,
+        onset_threshold=onset_threshold,
+        frame_threshold=frame_threshold,
+        minimum_note_length_ms=minimum_note_length_ms,
         minimum_frequency_hz=minimum_frequency_hz,
         maximum_frequency_hz=maximum_frequency_hz,
         multiple_pitch_bends=DEFAULT_MULTIPLE_PITCH_BENDS,
-        melodia_trick=DEFAULT_MELODIA_TRICK,
+        melodia_trick=melodia_trick,
         midi_tempo=midi_tempo,
+        max_simultaneous_voices=max_simultaneous_voices,
+        sustain_clamp_s=sustain_clamp_s,
+        drop_harmonic_ghosts=drop_harmonic_ghosts,
     )
 
 
@@ -425,7 +499,9 @@ class TranscriberRouter(Protocol):
 
     def for_target(self, target: str) -> Transcriber: ...
 
-    def spec_for_target(self, target: str, *, midi_tempo: float | None) -> TranscriptionSpec: ...
+    def spec_for_target(
+        self, target: str, *, midi_tempo: float | None, guitar_type: str | None = None, time_signature: str | None = None
+    ) -> TranscriptionSpec: ...
 
 
 @dataclass(frozen=True)
@@ -449,7 +525,9 @@ class TargetTranscriberRouter:
         validate_target(target)
         return self.drumscript if target in self.drumscript_targets else self.basic_pitch
 
-    def spec_for_target(self, target: str, *, midi_tempo: float | None) -> TranscriptionSpec:
+    def spec_for_target(
+        self, target: str, *, midi_tempo: float | None, guitar_type: str | None = None, time_signature: str | None = None
+    ) -> TranscriptionSpec:
         backend = self.for_target(target).name
         if backend == "drumscript":
             return default_spec_for_target(
@@ -461,7 +539,9 @@ class TargetTranscriberRouter:
                 drumscript_classifier_mode=self.drumscript_classifier_mode,
                 drumscript_time_signature=self.drumscript_time_signature,
             )
-        return default_spec_for_target(target, backend=backend, midi_tempo=midi_tempo)
+        return default_spec_for_target(
+            target, backend=backend, midi_tempo=midi_tempo, guitar_type=guitar_type, time_signature=time_signature
+        )
 
 
 def production_transcriber_router() -> TranscriberRouter:
@@ -794,6 +874,95 @@ def _summarize_notes(notes: list[ParsedNote]) -> tuple[int, tuple[int, int] | No
     )
 
 
+def _clamp_sustain(notes: list[ParsedNote], max_duration_s: float) -> list[ParsedNote]:
+    """Cap every note's duration at `max_duration_s`, leaving its onset
+    untouched. Fixes the acoustic ring-out runaway (see
+    `GUITAR_ACOUSTIC_FRAME_THRESHOLD`'s docstring): a note that never released
+    reports as a normal-length note instead of a multi-minute drone."""
+    return [
+        note if note.end_s - note.start_s <= max_duration_s else replace(note, end_s=note.start_s + max_duration_s)
+        for note in notes
+    ]
+
+
+def _drop_harmonic_ghosts(notes: list[ParsedNote]) -> list[ParsedNote]:
+    """Drop a note that is almost certainly the acoustic partial of a louder,
+    lower note already sounding underneath it.
+
+    A note is dropped only when another note sits a harmonic interval
+    (`GUITAR_HARMONIC_GHOST_INTERVALS`) below it, started at essentially the
+    same instant, covers most of its duration, and isn't quieter -- a real
+    independent note at a harmonic interval (e.g. an intentional octave) will
+    usually fail at least one of these and survive.
+    """
+    kept: list[ParsedNote] = []
+    for note in notes:
+        is_ghost = False
+        for other in notes:
+            if other is note or other.pitch_midi >= note.pitch_midi:
+                continue
+            if (note.pitch_midi - other.pitch_midi) not in GUITAR_HARMONIC_GHOST_INTERVALS:
+                continue
+            if not (other.start_s - GUITAR_GHOST_ONSET_TOLERANCE_S <= note.start_s <= other.end_s):
+                continue
+            overlap = min(note.end_s, other.end_s) - max(note.start_s, other.start_s)
+            if overlap > GUITAR_GHOST_OVERLAP_FRACTION * (note.end_s - note.start_s) and other.velocity >= note.velocity - GUITAR_GHOST_VELOCITY_SLACK:
+                is_ghost = True
+                break
+        if not is_ghost:
+            kept.append(note)
+    return kept
+
+
+def _cap_simultaneous_voices(notes: list[ParsedNote], max_voices: int) -> list[ParsedNote]:
+    """Never let more than `max_voices` notes sound at once -- a guitar has
+    only that many strings, so anything above it is a detection artifact, not
+    a voicing a learner could play. Retires the quietest currently-sounding
+    voice early (truncating it, not deleting it) rather than dropping a note
+    outright, so its onset still appears on the reference track."""
+    order = sorted(range(len(notes)), key=lambda index: notes[index].start_s)
+    ends = [note.end_s for note in notes]
+    active: list[int] = []
+    for index in order:
+        start = notes[index].start_s
+        active = [held for held in active if ends[held] > start]
+        if len(active) >= max_voices:
+            victim = min(active, key=lambda held: (notes[held].velocity, -notes[held].start_s))
+            ends[victim] = start
+            active.remove(victim)
+        active.append(index)
+    capped = [replace(note, end_s=ends[index]) for index, note in enumerate(notes)]
+    return [note for note in capped if note.end_s - note.start_s > GUITAR_MIN_NOTE_DURATION_AFTER_CAP_S]
+
+
+def _apply_guitar_cleanup(notes: list[ParsedNote], spec: BasicPitchSpec) -> list[ParsedNote]:
+    """Run the acoustic-guitar post-processing pipeline the spec requests.
+
+    Order matters: the sustain clamp must run before the voice cap, or a
+    still-runaway drone would dominate which voices get retired; the ghost
+    drop runs in between so a truncated (no longer absurdly long) note is
+    what the overlap check reasons about.
+    """
+    if spec.sustain_clamp_s is not None:
+        notes = _clamp_sustain(notes, spec.sustain_clamp_s)
+    if spec.drop_harmonic_ghosts:
+        notes = _drop_harmonic_ghosts(notes)
+    if spec.max_simultaneous_voices is not None:
+        notes = _cap_simultaneous_voices(notes, spec.max_simultaneous_voices)
+    return notes
+
+
+def _write_parsed_notes_csv(path: Path, notes: list[ParsedNote]) -> None:
+    """Rewrite the note-events CSV after guitar cleanup, preserving each
+    surviving note's real pitch-bend series (unlike `_write_notes_csv`, used
+    only by `FakeTranscriber`, which fabricates one)."""
+    lines = ["start_time_s,end_time_s,pitch_midi,velocity,pitch_bend"]
+    for note in notes:
+        bend = [str(value) for value in note.pitch_bend]
+        lines.append(",".join([f"{note.start_s:.6f}", f"{note.end_s:.6f}", str(note.pitch_midi), str(note.velocity), *bend]))
+    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+
 class BasicPitchTranscriber:
     """Runs Basic Pitch as a pinned, isolated `uvx` subprocess -- see the
     module docstring for why it cannot be a vgt dependency. Degradation is
@@ -847,6 +1016,16 @@ class BasicPitchTranscriber:
         midi_path, notes_path = _collect_and_rename_outputs(destination_dir)
         _validate_basic_pitch_midi(midi_path)
         notes = parse_notes_csv(notes_path)
+
+        wants_cleanup = spec.sustain_clamp_s is not None or spec.drop_harmonic_ghosts or spec.max_simultaneous_voices is not None
+        if wants_cleanup:
+            cleaned = _apply_guitar_cleanup(notes, spec)
+            if cleaned != notes:
+                _write_parsed_notes_csv(notes_path, cleaned)
+                midi_notes = [(note.start_s, note.end_s, note.pitch_midi, note.velocity) for note in cleaned]
+                _write_midi(midi_path, midi_notes, spec.midi_tempo or 120.0)
+                notes = cleaned
+
         note_count, pitch_range_midi, first_note_s, last_note_s = _summarize_notes(notes)
         emit(f"transcribed (basic-pitch): {note_count} notes")
 

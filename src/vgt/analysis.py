@@ -220,8 +220,10 @@ def _refresh_target(
     validate_target(target)
     tempo_value = analysis["tempo"].get("value")
     midi_tempo = tempo_value.get("bpm") if isinstance(tempo_value, dict) else None
+    time_signature = tempo_value.get("time_signature") if isinstance(tempo_value, dict) else None
+    guitar_type = (analysis.get("stems") or {}).get("guitar_type")
     transcriber = router.for_target(target)
-    spec = router.spec_for_target(target, midi_tempo=midi_tempo)
+    spec = router.spec_for_target(target, midi_tempo=midi_tempo, guitar_type=guitar_type, time_signature=time_signature)
     settings_hash = spec_hash(spec)
 
     resolved = resolve_target_source(project_path, target, analysis, reference_source=reference_source)
