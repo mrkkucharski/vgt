@@ -116,3 +116,57 @@ The integration smoke input must be redistributable or user-owned.  Real-song
 listening, usefulness judgments, and any REAPER verification remain optional,
 human-owned work and are neither test requirements nor blockers for this
 evaluation tooling.
+
+## D-F rollout decision (2026-07-22)
+
+[docs/drumscript-plan.md](drumscript-plan.md) makes the production route change
+conditional: "If acceptable based on the automated and audio-quality evidence,
+change the single target-routing table so `drums` selects DrumScript." The D-E
+evidence gathered above does not clear that bar on its own:
+
+- The only corpus-scale result is a **one-clip smoke benchmark** against
+  `RealDrum01_00#MIX.wav`, explicitly documented above as "not a representative
+  corpus result."
+- On that clip, **kick F1 is 0.000** (0 TP, 2 FP, 23 FN) — DrumScript missed
+  essentially every kick onset. Snare F1 is 0.136 and hi-hat-closed F1 is
+  0.333. Global F1 is 0.226.
+- The findings already flag this as "strongly negative evidence for a route
+  switch" and state that "a future D-F decision needs a broader explicitly
+  chosen IDMT subset/full-corpus report and a cymbal-capable corpus" — evidence
+  that has not been produced.
+- No real-LALAL-stem or bleed/artifact evaluation (plan section "Quality
+  evaluation", items 2-3) has been run or recorded here.
+
+An initial D-F pass therefore stopped short of switching the route and marked
+the issue `status:blocked` for a human rollout decision, per the plan's own
+instruction not to guess or silently broaden scope. The repository owner then
+reviewed this evidence directly on the issue and explicitly instructed the
+work to proceed ("Finish the work - I did the verification.",
+[issue #98](https://github.com/mrkkucharski/vgt/issues/98#issuecomment-5041703100)).
+That is the third option this document originally posed to a human reviewer:
+accept the current accuracy for a specific product reason and explicitly
+override the plan's quality bar — "any drum groove reference beats none" is a
+defensible product call even against a weak single-clip benchmark, since vgt
+never claims calibrated confidence for DrumScript output and the user manual
+documents the limitation plainly.
+
+Given that explicit human override, **D-F switches the production routing
+table.** `production_transcriber_router()` in `src/vgt/transcribe.py` now
+passes `drumscript_targets=("drums",)`, so `drums` routes to
+`DrumScriptTranscriber` by default; every other target continues to route to
+`BasicPitchTranscriber`. `docs/GOAL.md` and `docs/USER-MANUAL.md` were updated
+to describe this as the shipped behavior, including DrumScript's channel-10 GM
+percussion semantics, fixed velocity, and lack of calibrated confidence.
+
+This was already an implementation-complete capability going into the
+decision: `DrumScriptTranscriber`, its validation, cache/status/forget
+integration, and the offline REAPER import contract were implemented and
+tested (243 tests passing before and after the route switch). No shadow
+comparison or evaluation code was ever wired into `vgt analyze` (see
+`src/vgt/drum_evaluation.py`'s module docstring), so there was no shadow
+output to disable in production.
+
+The weak automated benchmark evidence above remains valid and should still
+guide expectations: users should treat `[vgt] Drums Ref (MIDI)` as a rough
+draft, most reliable for gross onset placement and least reliable for kick
+detection, until a broader corpus/real-stem evaluation is run.

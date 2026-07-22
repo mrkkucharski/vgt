@@ -1,7 +1,11 @@
 # Drum MIDI with DrumScript - deferred implementation plan
 
-Status: deferred - do not implement until the current Basic Pitch transcription
-capability is fully delivered and all T-A through T-F work is closed.
+Status: delivered - D-A through D-F are closed. `drums` routes to DrumScript by
+default in production; every other target still uses Basic Pitch. See the
+"D-F rollout decision" section of
+[docs/drumscript-evaluation-findings.md](drumscript-evaluation-findings.md)
+for the evidence and the human override that authorized the switch despite
+negative single-clip automated evidence.
 
 Date: 2026-07-21
 

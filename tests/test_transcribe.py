@@ -5,6 +5,7 @@ import pytest
 
 from vgt.transcribe import (
     BasicPitchSpec,
+    BasicPitchTranscriber,
     DrumScriptSpec,
     DrumScriptTranscriber,
     VALID_TARGETS,
@@ -108,14 +109,18 @@ def test_router_routes_only_drums_to_an_injected_drum_backend() -> None:
     assert isinstance(router.spec_for_target("guitar", midi_tempo=120.0), BasicPitchSpec)
 
 
-def test_production_router_defers_drumscript_rollout_until_d_f() -> None:
+def test_production_router_sends_drums_to_drumscript_and_everything_else_to_basic_pitch() -> None:
     router = production_transcriber_router()
 
-    assert router.for_target("drums").name == "basic-pitch"
-    assert router.for_target("guitar").name == "basic-pitch"
-    assert isinstance(router.spec_for_target("drums", midi_tempo=120.0), BasicPitchSpec)
-    assert isinstance(router.for_target("drums"), type(router.for_target("guitar")))
-    assert not isinstance(router.for_target("drums"), DrumScriptTranscriber)
+    for target in VALID_TARGETS:
+        if target == "drums":
+            assert router.for_target(target).name == "drumscript"
+            assert isinstance(router.for_target(target), DrumScriptTranscriber)
+        else:
+            assert router.for_target(target).name == "basic-pitch"
+            assert isinstance(router.for_target(target), BasicPitchTranscriber)
+    assert isinstance(router.spec_for_target("drums", midi_tempo=120.0), DrumScriptSpec)
+    assert isinstance(router.spec_for_target("guitar", midi_tempo=120.0), BasicPitchSpec)
 
 
 def test_validate_target_accepts_every_documented_target() -> None:

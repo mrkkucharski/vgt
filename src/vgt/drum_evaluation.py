@@ -1,4 +1,4 @@
-"""Offline, evaluation-only utilities for the deferred DrumScript decision.
+"""Offline, evaluation-only utilities behind the D-F DrumScript rollout.
 
 Nothing in this module is used by ``vgt analyze`` or by sidecar persistence.
 It consumes exported events and annotations to make the backend-selection
