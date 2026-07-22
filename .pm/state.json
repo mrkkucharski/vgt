@@ -1,25 +1,18 @@
 {
   "current_issue": 98,
-  "session_id": "5b1ea05d-0708-4bd4-aa56-5dd965514cc8",
-  "pid": 87450,
-  "process_started_at": "Wed Jul 22 06:00:36 2026",
+  "session_id": "135fe665-79fb-481d-93d5-c983cac2a348",
+  "pid": 88232,
+  "process_started_at": "Wed Jul 22 06:10:37 2026",
   "agent": "claude",
-  "started_at": "2026-07-22T04:00:34.577064+00:00",
-  "scheduler_stalls": {
-    "blocked_issues": {
-      "98": {
-        "first_seen_at": "2026-07-22T03:56:08.947609+00:00",
-        "last_seen_at": "2026-07-22T03:59:28.409917+00:00",
-        "consecutive_passes": 4,
-        "title": "D-F: switch drums to DrumScript and document the delivered backend"
-      }
-    }
-  },
+  "started_at": "2026-07-22T04:10:36.163335+00:00",
+  "scheduler_stalls": {},
   "budget": {
     "window_start": "2026-07-22T03:41:37.433532+00:00",
-    "seconds_used": 0.0,
-    "dollars_used": 0.0,
-    "seconds_used_by_agent": {}
+    "seconds_used": 600.078407,
+    "dollars_used": 2.1336541000000007,
+    "seconds_used_by_agent": {
+      "claude": 600.078407
+    }
   },
   "verification_followups": {
     "f0d8bfc9d2dc6da7a31609184e25c4d66d3986fd2340b33a83e98204fb86691e": "created"
