@@ -380,6 +380,37 @@ cap's deliberately-retained onset stubs — the cap truncates rather than
 deletes precisely so a retired note's onset still appears on the reference
 track.
 
+## Ruled out: converting the stem to mono
+
+The LALAL guitar stem is a 48 kHz stereo file, which raises the reasonable
+question of whether pre-converting it to mono would give Basic Pitch a
+cleaner signal. It would not, for two independent reasons.
+
+**Basic Pitch already downmixes.** `basic_pitch/inference.py` loads audio with
+`librosa.load(path, sr=AUDIO_SAMPLE_RATE, mono=True)` — the model only ever
+sees 22050 Hz mono, whatever the input file's channel count or sample rate.
+Verified rather than inferred from the source: a mono copy of the stem
+transcribed at the production settings produced 1060 notes with a note list
+**identical row for row** (onsets, offsets, pitches, velocities) to the stereo
+run. Pre-conversion is a no-op.
+
+**There is nothing to cancel anyway.** The one case where channel handling
+could matter is an L+R average nulling content — which would call for picking
+a channel, not for "converting to mono". This stem's image is far too narrow
+for that to bite:
+
+| measure | value |
+| --- | ---: |
+| L/R correlation | 0.932 |
+| mono RMS vs mean single-channel RMS | 0.983 (≈0.15 dB) |
+| side/mid ratio | 0.188 |
+| worst per-band downmix loss, 80 Hz–5 kHz | −0.48 dB |
+
+The same reasoning covers sample rate: 48 kHz is resampled to 22050 Hz
+regardless. **No pre-conditioning of the file's container format — channels,
+rate, bit depth — can change what the model sees.** Only changes to the
+*content* (EQ, transient shaping, a different separation model) could.
+
 ## Reproducing
 
 `scripts/guitar_transcription_probe.py` computes every metric in this document
