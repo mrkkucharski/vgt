@@ -737,9 +737,10 @@ def test_cli_analyze_preserves_local_results_when_lalal_is_unavailable(
     assert main(["analyze", "--guitar", "electric", str(project)]) == 0
 
     captured = capsys.readouterr()
-    output = json.loads(captured.out)
-    assert output["schema_version"] == 9
-    assert output["analysis"]["tempo"]["value"] is not None
+    assert captured.out == ""
+    sidecar = read_sidecar(project)
+    assert sidecar["schema_version"] == 9
+    assert sidecar["analysis"]["tempo"]["value"] is not None
     assert "stem separation unavailable; continuing with available sources" in captured.err
 
 

@@ -113,8 +113,6 @@ def main(argv: list[str] | None = None) -> int:
             return 0
         if args.command == "analyze":
             def report(message: str) -> None:
-                # Progress goes to stderr so stdout stays a clean JSON document
-                # for `vgt analyze ... | jq` and file redirects.
                 print(f"vgt: {message}", file=sys.stderr, flush=True)
 
             if args.transcribe_only and (args.transcribe or args.forget_transcription):
@@ -239,14 +237,13 @@ def main(argv: list[str] | None = None) -> int:
                 report(f"transcription target(s) persisted: {', '.join(args.transcribe)}")
 
             transcription_stages = () if args.no_transcribe else ("transcription",)
-            result = analyze(
+            analyze(
                 project,
                 progress=report,
                 force=args.force,
                 stages=("chords", *transcription_stages),
                 transcription_targets=(args.transcribe_only,) if args.transcribe_only else None,
             )
-            print(json.dumps(result, indent=2))
             return 0
         if args.command == "status":
             status = build_status(project)
