@@ -43,16 +43,25 @@ correction workflow, cost controls, and the current regression contract.
 - **Cost safe:** LALAL credentials are environment-only; paid work is cached,
   checkpointed, and explicitly confirmed when forced or optional.
 
-## Later — practice workflow *(to be planned)*
+## Phase 2 — first practice workflow
 
-The practice workflow starts from the delivered baseline, including
-transcription. Its scope has not yet been defined. Likely directions include
-practice-oriented stem muting, looping, tempo management, and recording
-support, but none are committed by this goal.
+The first practice session is intentionally narrow: with an analysed section
+and a guitar-less `Backing` stem available, the user manually mutes their
+original reference mix, starts a vgt-owned section loop, and practises against
+the backing stem. A new REAPER action persists the `guitar-backing` preference,
+temporarily mutes only vgt-owned audio stems, applies a selected effective
+section as the time-selection loop, and can restore exactly the previous loop
+and vgt stem-mute state. It never modifies a user track, routing, tempo map,
+playback speed, recording setup, or transport state.
 
+The detailed ownership, reconciliation, timing, testing, and human-owned
+verification contract is [the first practice-workflow milestone design](practice-workflow-milestone.md).
+
+Stem soloing, arbitrary time-selection looping, vgt-controlled playback speed
+or tempo, and recording preparation are explicitly deferred from Phase 2.
 Offline separation, tablature/string-fret assignment, performance scoring,
-MIDI correction read-back, and new practice controls remain out of the
-delivered baseline until explicitly planned.
+MIDI correction read-back, and unrelated DrumScript improvements remain outside
+this milestone.
 
 Subjective listening evaluation of real stems remains a user-owned activity: it
 requires human ears and the user's audio, and is not an autonomous-agent task.
