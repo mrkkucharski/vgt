@@ -1,0 +1,13 @@
+{
+  "corpus": "deterministic checked-in evaluation fixture",
+  "clips": [
+    {
+      "id": "pattern-a",
+      "annotations": {
+        "kick": [0.0, 0.5],
+        "snare": [0.25],
+        "crash": [0.75]
+      }
+    }
+  ]
+}

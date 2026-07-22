@@ -895,6 +895,9 @@ class DrumScriptTranscriber:
         emit(f"transcribing (drumscript): {source.name}")
         with tempfile.TemporaryDirectory(prefix="vgt-drumscript-") as temporary:
             work_dir = Path(temporary)
+            # DrumScript 0.1.6's score builder writes relative ``outputs/``
+            # artifacts but does not create that directory itself.
+            (work_dir / "outputs").mkdir()
             try:
                 completed = subprocess.run(
                     argv, cwd=work_dir, capture_output=True, text=True, timeout=600, errors="replace"
@@ -955,7 +958,13 @@ def _drumscript_base_command(spec: DrumScriptSpec) -> list[str]:
             raise TranscriptionError(f"{DRUMSCRIPT_CMD_ENV} is not a valid shell command: {exc}") from exc
         if parts:
             return parts
-    return ["uvx", "--python", spec.runtime_version.removeprefix("python=="), "--from", spec.package_pin, "drumscript"]
+    # v0.1.6's console-script entry point calls ``main`` directly and drops
+    # its required input argument.  Module execution retains its argparse
+    # wrapper, still inside the pinned uvx environment.
+    return [
+        "uvx", "--python", spec.runtime_version.removeprefix("python=="), "--from", spec.package_pin,
+        "python", "-m", "drumscript.main",
+    ]
 
 
 def build_drumscript_argv(source: Path, spec: DrumScriptSpec) -> list[str]:
