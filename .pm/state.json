@@ -1,27 +1,24 @@
 {
   "current_issue": 97,
-  "session_id": "5228643b-312b-4af6-ad5e-2434f24777ed",
-  "pid": 60721,
-  "process_started_at": "Tue Jul 21 22:09:46 2026",
-  "agent": "codex",
-  "started_at": "2026-07-21T20:09:44.932031+00:00",
+  "session_id": "cf41bc46-ecb3-479e-8c92-6a642b5a3b59",
+  "pid": 85980,
+  "process_started_at": "Wed Jul 22 05:41:40 2026",
+  "agent": "claude",
+  "started_at": "2026-07-22T03:41:38.789433+00:00",
   "scheduler_stalls": {},
   "budget": {
-    "window_start": "2026-07-21T17:38:55.585848+00:00",
-    "seconds_used": 1089.145121,
-    "dollars_used": 0.5792653,
-    "seconds_used_by_agent": {
-      "claude": 403.430638,
-      "codex": 685.714483
-    }
+    "window_start": "2026-07-22T03:41:37.433532+00:00",
+    "seconds_used": 0.0,
+    "dollars_used": 0.0,
+    "seconds_used_by_agent": {}
   },
   "verification_followups": {
     "f0d8bfc9d2dc6da7a31609184e25c4d66d3986fd2340b33a83e98204fb86691e": "created"
   },
-  "role": "fix",
+  "role": "review",
   "branch": "issue-97-d-e-annotated-drumscript-benchmark-and-t",
   "worktree_path": "/Users/marekkucharski/projects/.pm-worktrees/vgt/issue-97",
-  "pr_number": null,
+  "pr_number": 103,
   "followup_generation": {
     "fingerprint": "4701b1bcaece332200f67f774b655fb9255333bda19a6b60f901a25f419b6c7d",
     "items": {
@@ -52,11 +49,11 @@
   "pending_transition": {
     "issue": 97,
     "target": "working",
-    "event": "agent.fix_started",
+    "event": "agent.review_started",
     "detail": {
       "issue": 97,
-      "agent": "codex",
-      "fix_count": 2
+      "agent": "claude",
+      "pr": 103
     },
     "cleanup": {}
   }
