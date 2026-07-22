@@ -5,6 +5,12 @@ turns the delivered analysis, stems, and reference MIDI into one useful session
 without becoming a mixer, tempo editor, or recorder.  The implementation issues
 listed at the end are the only work authorized by this design.
 
+## Disposition of the #89 draft
+
+This document ratifies the technical decision drafted for [#89](https://github.com/mrkkucharski/vgt/issues/89), rather than treating it as a rejected design.  The evidence is that #89 was closed with no merged pull request; its design commit `5688977` remains only on the former issue branch; and #90–#92 were all closed at the same time without merged pull requests.  Neither the issue record nor its comments records a rejection or a replacement decision.  The draft was therefore **abandoned operationally**, not rejected or superseded.
+
+Issue #105 brings the design into the current branch after re-checking it against the delivered baseline and the permanent invariants.  The changes below are intentional ratification: the workflow and constraints are retained, the stale closed issue chain is replaced by the queued chain at the end of this document, and no practice-control implementation is implied by this decision issue.
+
 ## Decision
 
 The first session is **loop the selected analysed section while practising
@@ -201,9 +207,12 @@ MIDI correction read-back, and DrumScript work.
 
 | Issue | Work | Priority | Depends on |
 | --- | --- | --- | --- |
-| [#90](https://github.com/mrkkucharski/vgt/issues/90) | Practice sidecar schema and pure reconciliation/restore model | high | — |
-| [#91](https://github.com/mrkkucharski/vgt/issues/91) | ReaScript Start/Restore practice-loop actions with mocked offline tests | high | #90 |
-| [#92](https://github.com/mrkkucharski/vgt/issues/92) | Initialization integration, documentation, and regression contract for active-session handoff | medium | #91 |
+| [#106](https://github.com/mrkkucharski/vgt/issues/106) | Practice sidecar schema and pure reconciliation/restore model | high | — |
+| [#107](https://github.com/mrkkucharski/vgt/issues/107) | ReaScript Start/Restore practice-loop actions with mocked offline tests | high | #106 |
+| [#108](https://github.com/mrkkucharski/vgt/issues/108) | Initialization integration, documentation, and regression contract for active-session handoff | medium | #107 |
 
-They are linked as a GitHub sub-issue chain `#89 → #90 → #91 → #92`, so the
-orchestrator cannot start a dependent implementation issue early.
+They are linked as the GitHub sub-issue chain `#105 → #106 → #107 → #108`, so
+the orchestrator cannot start a dependent implementation issue early.  Every
+implementation issue is open with `status:queued`; #106 and #107 are
+`priority:high` because they establish and exercise the safety boundary, while
+#108 is `priority:medium` because it integrates that already-safe workflow.
