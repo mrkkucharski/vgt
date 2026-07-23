@@ -1338,3 +1338,214 @@ _G.__messages = messages
     result = subprocess.run([LUA, "-", str(rpp)], input=full_program, text=True, capture_output=True)
     assert result.returncode == 0, result.stderr
     assert "No [vgt] Chords track found" in result.stdout
+
+
+def test_write_settings_merges_a_concurrent_analyze_commit_via_generation_retry(tmp_path: Path) -> None:
+    """Deterministic interleaving for analyze-versus-apply (#138): between
+    write_settings' fresh read and its pre-rename generation check, simulate
+    a concurrent `vgt analyze` commit landing (bumping `generation` and
+    adding an analysis block write_settings never itself read). The retry
+    must pick up that newer analysis rather than silently rolling it back,
+    and must still carry forward its own change (managed_track_guids)."""
+    sidecar = tmp_path / "song.vgt"
+    sidecar.write_text(json.dumps({
+        "schema_version": 4, "generation": 1,
+        "managed_track_guids": [], "managed_region_ids": [], "config": {},
+    }))
+
+    script = APPLY_SCRIPT.read_text()
+    helpers_end = script.index("local function apply()")
+    lua_program = "\n".join(
+        [
+            "reaper = {}",
+            "function reaper.EnumProjects() return true, arg[1] end",
+            "function reaper.GetTrackGUID(track) return track.guid end",
+            "function reaper.GetTrackName(track) return true, track.name end",
+            script[:helpers_end],
+            "local sidecar_file = sidecar_path()",
+            "local real_open = io.open",
+            "local read_count = 0",
+            "io.open = function(path, mode)",
+            "  if path == sidecar_file and mode == 'r' then",
+            "    read_count = read_count + 1",
+            "    if read_count == 2 then",
+            # Simulates a concurrent `vgt analyze` commit landing in the gap
+            # between write_settings' fresh read and its pre-rename check.
+            "      local concurrent = real_open(sidecar_file, 'w')",
+            "      concurrent:write([[{\"schema_version\": 4, \"generation\": 2, \"managed_track_guids\": [], \"managed_region_ids\": [], \"config\": {}, \"analysis\": {\"tempo\": {\"value\": {\"bpm\": 140}}}}]])",
+            "      concurrent:close()",
+            "    end",
+            "  end",
+            "  return real_open(path, mode)",
+            "end",
+            "local track = {guid = '{TRACK-GUID}', name = 'Reference'}",
+            "write_settings({track}, {}, track, false, '', '', 'electric')",
+            "io.write(tostring(read_count))",
+        ]
+    )
+    result = subprocess.run([LUA, "-", str(tmp_path / "song.RPP")], input=lua_program, text=True, capture_output=True)
+    assert result.returncode == 0, result.stderr
+    assert result.stdout == "4"  # two attempts, each doing one build-read and one verification-read
+
+    data = json.loads(sidecar.read_text())
+    # Its own change (the reference track's GUID) survives...
+    assert data["managed_track_guids"] == ["{TRACK-GUID}"]
+    # ...alongside the concurrently-committed analysis it never itself read.
+    assert data["analysis"]["tempo"]["value"]["bpm"] == 140
+    # generation: 1 (initial) -> 2 (simulated concurrent commit) -> 3 (this apply's retry).
+    assert data["generation"] == 3
+
+
+def test_write_settings_gives_up_after_the_retry_limit_leaving_the_prior_sidecar_intact(tmp_path: Path) -> None:
+    """A conflict must fail cleanly rather than silently discard another
+    writer's update: if the sidecar keeps changing out from under it, apply
+    must error after a bounded number of attempts and leave the last valid
+    sidecar on disk untouched."""
+    sidecar = tmp_path / "song.vgt"
+    original = json.dumps({"schema_version": 4, "generation": 1, "managed_track_guids": [], "managed_region_ids": [], "config": {}})
+    sidecar.write_text(original)
+
+    script = APPLY_SCRIPT.read_text()
+    helpers_end = script.index("local function apply()")
+    lua_program = "\n".join(
+        [
+            "reaper = {}",
+            "function reaper.EnumProjects() return true, arg[1] end",
+            "function reaper.GetTrackGUID(track) return track.guid end",
+            "function reaper.GetTrackName(track) return true, track.name end",
+            script[:helpers_end],
+            "local sidecar_file = sidecar_path()",
+            "local real_open = io.open",
+            "io.open = function(path, mode)",
+            "  if path == sidecar_file and mode == 'r' then",
+            # Every read observes a fresh generation bump: a pathologically
+            # unlucky (or malicious) concurrent writer wins every single time.
+            "    local body = real_open(sidecar_file, 'r'):read('*a')",
+            "    local generation = tonumber(body:match('\"generation\"%s*:%s*(%d+)')) or 1",
+            "    local bumped = real_open(sidecar_file, 'w')",
+            "    bumped:write((body:gsub('\"generation\"%s*:%s*%d+', '\"generation\": ' .. (generation + 1))))",
+            "    bumped:close()",
+            "  end",
+            "  return real_open(path, mode)",
+            "end",
+            "local track = {guid = '{TRACK-GUID}', name = 'Reference'}",
+            "local ok, err = pcall(write_settings, {track}, {}, track, false, '', '', 'electric')",
+            "io.write(tostring(ok), ':', tostring(err):find('concurrently') ~= nil and 'retryable' or tostring(err))",
+        ]
+    )
+    result = subprocess.run([LUA, "-", str(tmp_path / "song.RPP")], input=lua_program, text=True, capture_output=True)
+    assert result.returncode == 0, result.stderr
+    assert result.stdout == "false:retryable"
+
+    # No temp file left behind, and the sidecar is exactly the last valid
+    # state -- never a partial write from an abandoned attempt.
+    assert not (tmp_path / "song.vgt.tmp").exists()
+    assert json.loads(sidecar.read_text())["managed_track_guids"] == []
+
+
+def test_write_sync_merges_a_concurrent_analyze_commit_via_generation_retry(tmp_path: Path) -> None:
+    """Deterministic interleaving for analyze-versus-sync (#138): between
+    write_sync's fresh read and its pre-rename generation check, simulate a
+    concurrent `vgt analyze` commit landing (bumping `generation` and
+    refreshing the tempo stage). The retry must merge the human correction
+    onto that newer sidecar rather than clobbering the concurrent commit with
+    a stale re-read of chords/sections."""
+    sidecar = tmp_path / "song.vgt"
+    sidecar.write_text(json.dumps({
+        "schema_version": 5, "generation": 1,
+        "managed_track_guids": [], "managed_region_ids": [], "config": {},
+        "analysis": {
+            "tempo": {"value": {"bpm": 120}},
+            "chords": {"value": {"segments": []}, "human_verified": False},
+            "sections": {"value": [], "human_verified": False},
+        },
+    }))
+
+    script = SYNC_SCRIPT.read_text()
+    helpers_end = script.index("local function sync()")
+    lua_program = "\n".join(
+        [
+            "reaper = {}",
+            "function reaper.EnumProjects() return true, arg[1] end",
+            script[:helpers_end],
+            "local sidecar_file = sidecar_path()",
+            "local real_open = io.open",
+            "local read_count = 0",
+            "io.open = function(path, mode)",
+            "  if path == sidecar_file and mode == 'r' then",
+            "    read_count = read_count + 1",
+            "    if read_count == 2 then",
+            # Simulates a concurrent `vgt analyze` tempo refresh landing in
+            # the gap between write_sync's fresh read and its pre-rename check.
+            "      local concurrent = real_open(sidecar_file, 'w')",
+            "      concurrent:write([[{\"schema_version\": 5, \"generation\": 2, \"managed_track_guids\": [], \"managed_region_ids\": [], \"config\": {}, \"analysis\": {\"tempo\": {\"value\": {\"bpm\": 140}}, \"chords\": {\"value\": {\"segments\": []}, \"human_verified\": false}, \"sections\": {\"value\": [], \"human_verified\": false}}}]])",
+            "      concurrent:close()",
+            "    end",
+            "  end",
+            "  return real_open(path, mode)",
+            "end",
+            'local segments = {{start_seconds = 0, end_seconds = 1, chord = "Am"}}',
+            'local sections = {{start_seconds = 0, end_seconds = 1, label = "Verse"}}',
+            "write_sync(segments, sections)",
+            "io.write(tostring(read_count))",
+        ]
+    )
+    result = subprocess.run([LUA, "-", str(tmp_path / "song.RPP")], input=lua_program, text=True, capture_output=True)
+    assert result.returncode == 0, result.stderr
+    assert result.stdout == "4"  # two attempts, each doing one build-read and one verification-read
+
+    data = json.loads(sidecar.read_text())
+    # The human correction this sync() call made survives...
+    assert data["analysis"]["chords"]["value"]["segments"][0]["chord"] == "Am"
+    assert data["analysis"]["chords"]["human_verified"] is True
+    assert data["analysis"]["sections"]["value"][0]["label"] == "Verse"
+    # ...alongside the concurrently-committed tempo refresh it never itself wrote.
+    assert data["analysis"]["tempo"]["value"]["bpm"] == 140
+    # generation: 1 (initial) -> 2 (simulated concurrent commit) -> 3 (this sync's retry).
+    assert data["generation"] == 3
+
+
+def test_write_sync_interrupted_write_leaves_the_previous_valid_sidecar_intact(tmp_path: Path) -> None:
+    """vgt_sync.lua used to write the sidecar directly with no temp file, so
+    a crash mid-write could truncate it. It must now use the same
+    temp-file-plus-atomic-replace discipline as vgt_initialize.lua: if the
+    process is interrupted right as the OS rename would happen, the
+    previously valid sidecar must survive untouched, and no partial temp
+    file may be left behind masquerading as the sidecar."""
+    sidecar = tmp_path / "song.vgt"
+    original = json.dumps({
+        "schema_version": 5, "generation": 1,
+        "managed_track_guids": [], "managed_region_ids": [], "config": {},
+        "analysis": {
+            "tempo": {"value": {"bpm": 120}},
+            "chords": {"value": {"segments": []}, "human_verified": False},
+            "sections": {"value": [], "human_verified": False},
+        },
+    })
+    sidecar.write_text(original)
+
+    script = SYNC_SCRIPT.read_text()
+    helpers_end = script.index("local function sync()")
+    lua_program = "\n".join(
+        [
+            "reaper = {}",
+            "function reaper.EnumProjects() return true, arg[1] end",
+            script[:helpers_end],
+            # Simulate a crash exactly at the atomic-replace step: the temp
+            # file is fully written, but the rename never completes.
+            "local real_rename = os.rename",
+            "os.rename = function(...) return nil, 'simulated crash before replace' end",
+            'local segments = {{start_seconds = 0, end_seconds = 1, chord = "Am"}}',
+            'local sections = {{start_seconds = 0, end_seconds = 1, label = "Verse"}}',
+            "local ok, err = pcall(write_sync, segments, sections)",
+            "io.write(tostring(ok), ':', tostring(err):find('simulated crash') ~= nil and 'crashed' or tostring(err))",
+        ]
+    )
+    result = subprocess.run([LUA, "-", str(tmp_path / "song.RPP")], input=lua_program, text=True, capture_output=True)
+    assert result.returncode == 0, result.stderr
+    assert result.stdout == "false:crashed"
+
+    # The prior valid sidecar is exactly as it was -- never truncated or
+    # partially overwritten -- and no leftover temp file remains.
+    assert sidecar.read_text() == original
+    assert not (tmp_path / "song.vgt.tmp").exists()
