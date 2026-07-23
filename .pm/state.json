@@ -1,10 +1,10 @@
 {
   "current_issue": 113,
-  "session_id": "ec535e15-1717-4077-a46e-2182ba7da942",
-  "pid": 22166,
-  "process_started_at": "Thu Jul 23 11:15:56 2026",
-  "agent": "codex",
-  "started_at": "2026-07-23T09:15:54.865107+00:00",
+  "session_id": "3bc30865-3008-483f-a002-474babbac10d",
+  "pid": 22809,
+  "process_started_at": "Thu Jul 23 11:21:09 2026",
+  "agent": "claude",
+  "started_at": "2026-07-23T09:21:06.931491+00:00",
   "scheduler_stalls": {},
   "budget": {
     "window_start": "2026-07-23T07:20:24.839872+00:00",
@@ -18,10 +18,10 @@
   "verification_followups": {
     "f0d8bfc9d2dc6da7a31609184e25c4d66d3986fd2340b33a83e98204fb86691e": "created"
   },
-  "role": "implement",
+  "role": "review",
   "branch": "issue-113-add-a-force-monophony-cleanup-stage-and",
   "worktree_path": "/Users/marekkucharski/projects/.pm-worktrees/vgt/issue-113",
-  "pr_number": null,
+  "pr_number": 117,
   "followup_generation": {
     "fingerprint": "6973a30453e2580633930a6b109df201d6cfd1b53fba5d773cbc376bb9c8311e",
     "items": {
@@ -55,11 +55,11 @@
   "pending_transition": {
     "issue": 113,
     "target": "working",
-    "event": "agent.started",
+    "event": "agent.review_started",
     "detail": {
       "issue": 113,
-      "agent": "codex",
-      "branch": "issue-113-add-a-force-monophony-cleanup-stage-and"
+      "agent": "claude",
+      "pr": 117
     },
     "cleanup": {}
   }
