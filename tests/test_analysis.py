@@ -1130,6 +1130,15 @@ def test_cli_mode_persists_a_valid_target_profile_pair(tmp_path: Path, monkeypat
     assert read_sidecar(project)["analysis"]["transcription"]["modes"] == {"guitar": "guitar-acoustic"}
 
 
+def test_cli_mode_accepts_the_opt_in_bass_monophonic_profile(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    project = _project_copy(tmp_path)
+    _write_v1_sidecar(project)
+    monkeypatch.setattr("vgt.cli.analyze", lambda *_args, **_kwargs: read_sidecar(project))
+
+    assert main(["analyze", "--mode", "bass=bass-monophonic", str(project)]) == 0
+    assert read_sidecar(project)["analysis"]["transcription"]["modes"] == {"bass": "bass-monophonic"}
+
+
 def test_cli_mode_rejects_an_invalid_profile_with_the_valid_choices(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
     project = _project_copy(tmp_path)
     _write_v1_sidecar(project)
@@ -1149,7 +1158,7 @@ def test_cli_mode_rejects_a_profile_registered_for_another_target(tmp_path: Path
 
     error = capsys.readouterr().err
     assert "profile for 'bass' must be one of" in error
-    assert "('default', 'bass')" in error
+    assert "('default', 'bass', 'bass-monophonic')" in error
 
 
 def test_forget_transcription_targets_before_any_analysis_is_a_harmless_no_op(tmp_path: Path) -> None:

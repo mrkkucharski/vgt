@@ -216,6 +216,15 @@ _GUITAR_PROFILE = replace(
 _BASS_PROFILE = replace(
     _DEFAULT_PROFILE, name="bass", minimum_frequency_hz=30.0, maximum_frequency_hz=400.0
 )  # 5-string low B is 30.9 Hz
+# A bass is a single-line source.  This is deliberately not its default
+# profile: a separated bass stem may carry bleed, and the value of removing
+# that content needs a user listening test on a real stem.  It is reachable
+# only by an explicit `--mode bass=bass-monophonic` selection.
+_BASS_MONOPHONIC_PROFILE = replace(
+    _BASS_PROFILE,
+    name="bass-monophonic",
+    cleanup=(CleanupStage("force_monophony"),),
+)
 _VOCALS_PROFILE = replace(
     _DEFAULT_PROFILE, name="vocals", minimum_frequency_hz=70.0, maximum_frequency_hz=1200.0
 )  # bass voice to whistle-adjacent soprano
@@ -238,6 +247,11 @@ _VOCALS_PROFILE = replace(
 #    absurdly long) durations.
 # 5. `cap_simultaneous_voices` runs last so it enforces six voices on the
 #    final note lengths, which is the only place the invariant can hold.
+#
+# `bass-monophonic` has a one-stage `force_monophony` pipeline.  Its position
+# is therefore order-independent today.  Do not add it to `vocals`: LALAL's
+# vocals stem routinely contains stacked backing vocals and harmonies, which
+# are genuinely polyphonic rather than detection artifacts.
 #
 # `clamp_sustain`'s `params` starts empty: `default_spec_for_target` fills in
 # `max_duration_s` from the detected tempo (see `_instantiate_cleanup`), and
@@ -291,6 +305,7 @@ _INSTRUMENT_PROFILES: dict[str, InstrumentProfile] = {
     "default": _DEFAULT_PROFILE,
     "guitar": _GUITAR_PROFILE,
     "bass": _BASS_PROFILE,
+    "bass-monophonic": _BASS_MONOPHONIC_PROFILE,
     "vocals": _VOCALS_PROFILE,
     "guitar-acoustic": _GUITAR_ACOUSTIC_PROFILE,
 }
@@ -317,6 +332,7 @@ _PROFILE_NAMES_BY_TARGET: dict[str, tuple[str, ...]] = {
     for target in VALID_TARGETS
 }
 _PROFILE_NAMES_BY_TARGET["guitar"] = ("default", "guitar", "guitar-acoustic")
+_PROFILE_NAMES_BY_TARGET["bass"] = ("default", "bass", "bass-monophonic")
 
 
 def validate_profile_name(profile: str) -> str:
@@ -1263,12 +1279,64 @@ def _cap_simultaneous_voices(
     return [note for note in capped if note.end_s - note.start_s > min_duration_after_cap_s]
 
 
+def _force_monophony(notes: list[ParsedNote]) -> list[ParsedNote]:
+    """Leave at most one note sounding at every instant.
+
+    At an overlap, the winner is chosen deterministically by higher velocity,
+    then earlier onset, then lower pitch.  A loser that was already sounding
+    is truncated at the winner's onset rather than dropped, preserving its
+    rhythmic onset in the reference.  A losing new onset is dropped (including
+    an exact-onset tie), because truncating it at its own start would make a
+    zero-length event.  Bass is a single-line source, so every such overlap is
+    a detection artifact; this must not be used for LALAL vocals, whose stacked
+    backing vocals and harmonies are genuinely polyphonic.
+    """
+    # Process each onset chronologically, with the same priority ordering for
+    # exact ties.  `ends` is mutable state so a retired note never becomes
+    # active again during a later comparison.
+    order = sorted(
+        range(len(notes)),
+        key=lambda index: (
+            notes[index].start_s,
+            -notes[index].velocity,
+            notes[index].pitch_midi,
+            index,
+        ),
+    )
+    ends = [note.end_s for note in notes]
+    kept = [True] * len(notes)
+    active: int | None = None
+
+    def priority(index: int) -> tuple[int, float, int]:
+        note = notes[index]
+        return (-note.velocity, note.start_s, note.pitch_midi)
+
+    for index in order:
+        start = notes[index].start_s
+        if active is not None and ends[active] <= start:
+            active = None
+        if active is None:
+            active = index
+        elif priority(index) < priority(active):
+            ends[active] = start
+            active = index
+        else:
+            kept[index] = False
+
+    return [
+        replace(note, end_s=ends[index])
+        for index, note in enumerate(notes)
+        if kept[index] and ends[index] > note.start_s
+    ]
+
+
 _CLEANUP_STAGE_FUNCTIONS: dict[str, Callable[..., list[ParsedNote]]] = {
     "merge_fragments": _merge_fragments,
     "drop_isolated_notes": _drop_isolated_notes,
     "clamp_sustain": _clamp_sustain,
     "drop_harmonic_ghosts": _drop_harmonic_ghosts,
     "cap_simultaneous_voices": _cap_simultaneous_voices,
+    "force_monophony": _force_monophony,
 }
 
 
