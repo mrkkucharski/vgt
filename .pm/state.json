@@ -1,10 +1,10 @@
 {
-  "current_issue": 126,
-  "session_id": "99e1670b-fbfc-4e40-9b60-52d07b6faee4",
-  "pid": 31870,
-  "process_started_at": "Thu Jul 23 12:38:13 2026",
+  "current_issue": 130,
+  "session_id": "81a87898-7310-4925-95da-fd59715661dc",
+  "pid": 32841,
+  "process_started_at": "Thu Jul 23 12:47:02 2026",
   "agent": "codex",
-  "started_at": "2026-07-23T10:38:11.277072+00:00",
+  "started_at": "2026-07-23T10:47:00.648128+00:00",
   "scheduler_stalls": {},
   "budget": {
     "window_start": "2026-07-23T07:20:24.839872+00:00",
@@ -18,23 +18,19 @@
   "verification_followups": {
     "f0d8bfc9d2dc6da7a31609184e25c4d66d3986fd2340b33a83e98204fb86691e": "created"
   },
-  "role": "review",
-  "branch": "issue-126-test-the-installed-distribution-on-the-s",
-  "worktree_path": "/Users/marekkucharski/projects/.pm-worktrees/vgt/issue-126",
-  "pr_number": 129,
+  "role": "implement",
+  "branch": "issue-130-show-the-analyzed-key-in-reaper",
+  "worktree_path": "/Users/marekkucharski/projects/.pm-worktrees/vgt/issue-130",
+  "pr_number": null,
   "followup_generation": {
-    "fingerprint": "6021d4a15089e46af3e588574c07ffb9079cdd9b2f7f9f7110bba839557cc338",
+    "fingerprint": "056a4272775125b5e8b8abc606817bbbe39dc066df0e7ea8d264e74f6e0c6785",
     "items": {
-      "f7194a4794f6b3d50e6c0254b37fc4a5aa98edba623aa0463cfc1a7fbb63cb9d": {
-        "title": "Add an offline end-to-end goal contract test",
+      "8a757a5507dbc14c8d3b09b7c4e034e7b7d7718d567cf56791ea4236de0c8504": {
+        "title": "Show the analyzed key in REAPER",
         "status": "created"
       },
-      "aba75700fd461a55c0cd214168e0dc69324333ea5ddb46b4d50ebd8ab002c43d": {
-        "title": "Represent unknown downbeats safely in the librosa fallback",
-        "status": "created"
-      },
-      "1dae80c7f8c458ba8f6c7c68b8736097d5530ef5a369eaa6af2c44c090535c1d": {
-        "title": "Test the installed distribution on the supported macOS platform",
+      "d2fa2038e051b5de23d9e1dd046ea6145a53af043fbd3d351a59293dd33117a2": {
+        "title": "Make the goal contract exercise persistent REAPER reconciliation",
         "status": "created"
       }
     }
@@ -61,13 +57,13 @@
     "112": 2
   },
   "pending_transition": {
-    "issue": 126,
+    "issue": 130,
     "target": "working",
-    "event": "agent.review_started",
+    "event": "agent.started",
     "detail": {
-      "issue": 126,
+      "issue": 130,
       "agent": "codex",
-      "pr": 129
+      "branch": "issue-130-show-the-analyzed-key-in-reaper"
     },
     "cleanup": {}
   }
