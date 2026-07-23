@@ -302,7 +302,8 @@ Isolated blips are real but a much smaller effect: ~17 notes matched "under
 Two new passes, `_merge_fragments` and `_drop_isolated_notes`, inserted at the
 **front** of the cleanup pipeline. The full order is now merge → deblip →
 clamp → ghost → cap, and each step depends on the ones before it (see
-`_apply_guitar_cleanup`'s docstring).
+`_GUITAR_ACOUSTIC_PROFILE`'s docstring in `transcribe.py`, where this ordering
+now lives).
 
 `GUITAR_FRAGMENT_MERGE_GAP_S = 0.03` is deliberately *not* tempo-scaled,
 unlike the sustain clamp. It describes a model artifact measured in analysis

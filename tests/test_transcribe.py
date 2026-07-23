@@ -1,5 +1,7 @@
 from pathlib import Path
 import collections
+import hashlib
+import json
 import struct
 
 import pytest
@@ -7,15 +9,21 @@ import pytest
 from vgt.transcribe import (
     BasicPitchSpec,
     BasicPitchTranscriber,
+    CleanupStage,
     DrumScriptSpec,
     DrumScriptTranscriber,
+    GUITAR_GHOST_ONSET_TOLERANCE_S,
+    GUITAR_GHOST_OVERLAP_FRACTION,
+    GUITAR_GHOST_VELOCITY_SLACK,
     GUITAR_MAX_SIMULTANEOUS_VOICES,
+    GUITAR_HARMONIC_GHOST_INTERVALS,
+    GUITAR_MIN_NOTE_DURATION_AFTER_CAP_S,
     VALID_TARGETS,
     FakeTranscriber,
     ParsedNote,
     TargetTranscriberRouter,
     TranscriptionError,
-    _apply_guitar_cleanup,
+    _apply_cleanup_stages,
     _bar_duration_seconds,
     _cap_simultaneous_voices,
     _clamp_sustain,
@@ -33,6 +41,14 @@ from vgt.transcribe import (
     transcribed_entry,
     validate_target,
 )
+
+
+def _cleanup_names(spec: BasicPitchSpec) -> list[str]:
+    return [stage.name for stage in spec.cleanup]
+
+
+def _cleanup_params(spec: BasicPitchSpec, name: str) -> dict:
+    return next(stage.params for stage in spec.cleanup if stage.name == name)
 
 
 def _write_source(tmp_path: Path, name: str = "guitar.wav", content: bytes = b"fake-audio-bytes") -> Path:
@@ -67,11 +83,7 @@ def test_default_spec_leaves_electric_and_unset_guitar_at_the_generic_defaults()
         assert spec.frame_threshold == 0.3
         assert spec.minimum_note_length_ms == 60.0
         assert spec.melodia_trick is True
-        assert spec.max_simultaneous_voices is None
-        assert spec.sustain_clamp_s is None
-        assert spec.drop_harmonic_ghosts is False
-        assert spec.merge_gap_s is None
-        assert spec.drop_isolated_notes is False
+        assert spec.cleanup == ()
 
 
 def test_default_spec_narrows_acoustic_guitar_and_enables_cleanup() -> None:
@@ -82,12 +94,24 @@ def test_default_spec_narrows_acoustic_guitar_and_enables_cleanup() -> None:
     assert spec.frame_threshold == 0.65
     assert spec.minimum_note_length_ms == 100.0
     assert spec.melodia_trick is False
-    assert spec.max_simultaneous_voices == GUITAR_MAX_SIMULTANEOUS_VOICES
-    assert spec.drop_harmonic_ghosts is True
-    assert spec.merge_gap_s == pytest.approx(0.03)
-    assert spec.drop_isolated_notes is True
+    assert _cleanup_names(spec) == [
+        "merge_fragments",
+        "drop_isolated_notes",
+        "clamp_sustain",
+        "drop_harmonic_ghosts",
+        "cap_simultaneous_voices",
+    ]
+    assert _cleanup_params(spec, "cap_simultaneous_voices")["max_voices"] == GUITAR_MAX_SIMULTANEOUS_VOICES
+    assert _cleanup_params(spec, "cap_simultaneous_voices")["min_duration_after_cap_s"] == GUITAR_MIN_NOTE_DURATION_AFTER_CAP_S
+    assert _cleanup_params(spec, "merge_fragments")["max_gap_s"] == pytest.approx(0.03)
+    assert _cleanup_params(spec, "drop_harmonic_ghosts") == {
+        "intervals": GUITAR_HARMONIC_GHOST_INTERVALS,
+        "onset_tolerance_s": GUITAR_GHOST_ONSET_TOLERANCE_S,
+        "overlap_fraction": GUITAR_GHOST_OVERLAP_FRACTION,
+        "velocity_slack": GUITAR_GHOST_VELOCITY_SLACK,
+    }
     # Two bars at 120 BPM 4/4: 2 * 4 beats * 60/120 = 4.0s.
-    assert spec.sustain_clamp_s == pytest.approx(4.0)
+    assert _cleanup_params(spec, "clamp_sustain")["max_duration_s"] == pytest.approx(4.0)
 
 
 def test_default_spec_acoustic_override_is_guitar_only() -> None:
@@ -95,22 +119,22 @@ def test_default_spec_acoustic_override_is_guitar_only() -> None:
     bass = default_spec_for_target("bass", guitar_type="acoustic")
 
     assert (bass.minimum_frequency_hz, bass.maximum_frequency_hz) == (30.0, 400.0)
-    assert bass.max_simultaneous_voices is None
+    assert bass.cleanup == ()
 
 
 def test_default_spec_acoustic_sustain_clamp_scales_with_time_signature() -> None:
     spec = default_spec_for_target("guitar", guitar_type="acoustic", midi_tempo=120.0, time_signature="3/4")
 
     # 2 bars * 3 beats * 60/120 = 3.0s.
-    assert spec.sustain_clamp_s == pytest.approx(3.0)
+    assert _cleanup_params(spec, "clamp_sustain")["max_duration_s"] == pytest.approx(3.0)
 
 
 def test_default_spec_acoustic_sustain_clamp_is_none_without_a_tempo() -> None:
     spec = default_spec_for_target("guitar", guitar_type="acoustic", midi_tempo=None)
 
-    assert spec.sustain_clamp_s is None
+    assert "clamp_sustain" not in _cleanup_names(spec)
     # The rest of the acoustic override still applies.
-    assert spec.drop_harmonic_ghosts is True
+    assert "drop_harmonic_ghosts" in _cleanup_names(spec)
 
 
 def test_bar_duration_seconds_defaults_to_4_4_when_signature_is_missing_or_malformed() -> None:
@@ -147,6 +171,62 @@ def test_spec_hash_changes_when_a_target_setting_changes() -> None:
 
     spec = default_spec_for_target("guitar")
     retuned = replace(spec, onset_threshold=0.7)
+
+    assert spec_hash(spec) != spec_hash(retuned)
+
+
+def test_spec_hash_is_unchanged_for_every_target_without_a_cleanup_pipeline() -> None:
+    """The `cleanup` tuple replaced five always-present boolean/float fields
+    on `BasicPitchSpec` (`max_simultaneous_voices`, `sustain_clamp_s`,
+    `drop_harmonic_ghosts`, `merge_gap_s`, `drop_isolated_notes`). Swapping a
+    dataclass field for a new one changes every instance's serialized shape,
+    which would silently move `settings_hash` for every basic-pitch target,
+    not just guitar-acoustic. `BasicPitchSpec.to_dict` reproduces the old
+    five-field shape whenever `cleanup` is empty specifically to prevent
+    that -- this pins the resulting hash against a hand-built pre-refactor
+    dict so a regression here (e.g. someone dropping the shim) is caught."""
+    for target in ("guitar", "bass", "vocals", "piano", "strings", "instrumental", "backing", "original"):
+        spec = default_spec_for_target(target)
+        assert spec.cleanup == ()
+        pre_refactor_dict = {
+            "backend": spec.backend,
+            "package_pin": spec.package_pin,
+            "serialization": spec.serialization,
+            "onset_threshold": spec.onset_threshold,
+            "frame_threshold": spec.frame_threshold,
+            "minimum_note_length_ms": spec.minimum_note_length_ms,
+            "minimum_frequency_hz": spec.minimum_frequency_hz,
+            "maximum_frequency_hz": spec.maximum_frequency_hz,
+            "multiple_pitch_bends": spec.multiple_pitch_bends,
+            "melodia_trick": spec.melodia_trick,
+            "midi_tempo": spec.midi_tempo,
+            "max_simultaneous_voices": None,
+            "sustain_clamp_s": None,
+            "drop_harmonic_ghosts": False,
+            "merge_gap_s": None,
+            "drop_isolated_notes": False,
+        }
+        pre_refactor_hash = hashlib.sha256(json.dumps(pre_refactor_dict, sort_keys=True).encode("utf-8")).hexdigest()
+        assert spec_hash(spec) == pre_refactor_hash, target
+
+
+def test_spec_hash_changes_when_a_cleanup_stage_parameter_changes() -> None:
+    """Regression test for the bug this profile refactor exists to close: a
+    cleanup stage's tuning constant (e.g. `GUITAR_ISOLATED_MAX_DURATION_S`)
+    used to be read directly from module scope inside the cleanup function,
+    invisible to `settings_hash` -- retuning it left every cached
+    transcription silently stale. Now every stage parameter lives in
+    `spec.cleanup`, so it always flows into the hash."""
+    from dataclasses import replace
+
+    spec = default_spec_for_target("guitar", guitar_type="acoustic", midi_tempo=120.0)
+    isolated_stage_index = next(i for i, stage in enumerate(spec.cleanup) if stage.name == "drop_isolated_notes")
+    retuned_stage = replace(
+        spec.cleanup[isolated_stage_index],
+        params={**spec.cleanup[isolated_stage_index].params, "max_duration_s": 0.2},
+    )
+    retuned_cleanup = spec.cleanup[:isolated_stage_index] + (retuned_stage,) + spec.cleanup[isolated_stage_index + 1 :]
+    retuned = replace(spec, cleanup=retuned_cleanup)
 
     assert spec_hash(spec) != spec_hash(retuned)
 
@@ -189,8 +269,8 @@ def test_router_threads_guitar_type_and_time_signature_through_to_the_spec() -> 
 
     spec = router.spec_for_target("guitar", midi_tempo=120.0, guitar_type="acoustic", time_signature="3/4")
 
-    assert spec.drop_harmonic_ghosts is True
-    assert spec.sustain_clamp_s == pytest.approx(3.0)
+    assert "drop_harmonic_ghosts" in _cleanup_names(spec)
+    assert _cleanup_params(spec, "clamp_sustain")["max_duration_s"] == pytest.approx(3.0)
 
 
 def test_production_router_sends_drums_to_drumscript_and_everything_else_to_basic_pitch() -> None:
@@ -526,7 +606,13 @@ def test_drop_harmonic_ghosts_removes_an_octave_partial_of_a_louder_concurrent_n
     fundamental = _note(10.0, 12.0, 48, velocity=95)
     octave_ghost = _note(10.02, 11.9, 60, velocity=80)  # 12 semitones above, near-identical span
 
-    kept = _drop_harmonic_ghosts([fundamental, octave_ghost])
+    kept = _drop_harmonic_ghosts(
+        [fundamental, octave_ghost],
+        intervals=GUITAR_HARMONIC_GHOST_INTERVALS,
+        onset_tolerance_s=GUITAR_GHOST_ONSET_TOLERANCE_S,
+        overlap_fraction=GUITAR_GHOST_OVERLAP_FRACTION,
+        velocity_slack=GUITAR_GHOST_VELOCITY_SLACK,
+    )
 
     assert kept == [fundamental]
 
@@ -536,7 +622,13 @@ def test_drop_harmonic_ghosts_keeps_an_independent_note_at_a_harmonic_interval()
     first = _note(0.0, 1.0, 48)
     second = _note(5.0, 6.0, 60)  # same interval, but not concurrent
 
-    kept = _drop_harmonic_ghosts([first, second])
+    kept = _drop_harmonic_ghosts(
+        [first, second],
+        intervals=GUITAR_HARMONIC_GHOST_INTERVALS,
+        onset_tolerance_s=GUITAR_GHOST_ONSET_TOLERANCE_S,
+        overlap_fraction=GUITAR_GHOST_OVERLAP_FRACTION,
+        velocity_slack=GUITAR_GHOST_VELOCITY_SLACK,
+    )
 
     assert kept == [first, second]
 
@@ -547,7 +639,13 @@ def test_drop_harmonic_ghosts_keeps_a_louder_note_even_at_a_harmonic_interval() 
     lower_quiet = _note(0.0, 2.0, 48, velocity=40)
     upper_loud = _note(0.0, 2.0, 60, velocity=100)
 
-    kept = _drop_harmonic_ghosts([lower_quiet, upper_loud])
+    kept = _drop_harmonic_ghosts(
+        [lower_quiet, upper_loud],
+        intervals=GUITAR_HARMONIC_GHOST_INTERVALS,
+        onset_tolerance_s=GUITAR_GHOST_ONSET_TOLERANCE_S,
+        overlap_fraction=GUITAR_GHOST_OVERLAP_FRACTION,
+        velocity_slack=GUITAR_GHOST_VELOCITY_SLACK,
+    )
 
     assert kept == [lower_quiet, upper_loud]
 
@@ -560,7 +658,11 @@ def test_cap_simultaneous_voices_truncates_the_quietest_active_voice_when_a_new_
     loud_chord = [_note(0.0, 5.0, 40 + i, velocity=90) for i in range(2)]
     new_arrival = _note(1.0, 4.0, 55, velocity=95)  # the trio is already full when this arrives
 
-    capped = _cap_simultaneous_voices([quiet_holdover, *loud_chord, new_arrival], max_voices=3)
+    capped = _cap_simultaneous_voices(
+        [quiet_holdover, *loud_chord, new_arrival],
+        max_voices=3,
+        min_duration_after_cap_s=GUITAR_MIN_NOTE_DURATION_AFTER_CAP_S,
+    )
 
     quiet_result = next(note for note in capped if note.pitch_midi == 90)
     assert quiet_result.end_s == pytest.approx(1.0)  # truncated at the new arrival's onset, not deleted
@@ -571,7 +673,11 @@ def test_cap_simultaneous_voices_truncates_the_quietest_active_voice_when_a_new_
 def test_cap_simultaneous_voices_preserves_a_chord_within_the_limit() -> None:
     chord = [_note(0.0, 5.0, 40 + i, velocity=90) for i in range(6)]
 
-    capped = _cap_simultaneous_voices(chord, max_voices=6)
+    capped = _cap_simultaneous_voices(
+        chord,
+        max_voices=6,
+        min_duration_after_cap_s=GUITAR_MIN_NOTE_DURATION_AFTER_CAP_S,
+    )
 
     assert len(capped) == 6
     assert capped == chord
@@ -584,7 +690,11 @@ def test_cap_simultaneous_voices_retires_forward_not_only_at_the_new_notes_onset
     fillers = [_note(1.0, 9.0, 50 + i, velocity=90) for i in range(3)]
     another_new_note = _note(2.0, 9.0, 70, velocity=90)
 
-    capped = _cap_simultaneous_voices([long_quiet, *fillers, another_new_note], max_voices=3)
+    capped = _cap_simultaneous_voices(
+        [long_quiet, *fillers, another_new_note],
+        max_voices=3,
+        min_duration_after_cap_s=GUITAR_MIN_NOTE_DURATION_AFTER_CAP_S,
+    )
 
     quiet_result = next(note for note in capped if note.pitch_midi == 40)
     assert quiet_result.end_s <= 1.0  # retired at the first filler's onset, not later
@@ -609,9 +719,10 @@ def test_apply_guitar_cleanup_runs_every_stage_in_order() -> None:
     # (e.g. 40+24=64), or the ghost-drop step would remove one of these too.
     extra_voices = [_note(0.5, 3.0, 90 + i, velocity=90) for i in range(6)]  # pushes over 6 voices
 
-    cleaned = _apply_guitar_cleanup([runaway_fundamental, ghost, blip, *extra_voices], spec)
+    cleaned = _apply_cleanup_stages([runaway_fundamental, ghost, blip, *extra_voices], spec)
 
-    assert all(note.end_s - note.start_s <= spec.sustain_clamp_s + 1e-9 for note in cleaned)
+    sustain_clamp_s = _cleanup_params(spec, "clamp_sustain")["max_duration_s"]
+    assert all(note.end_s - note.start_s <= sustain_clamp_s + 1e-9 for note in cleaned)
     assert 52 not in {note.pitch_midi for note in cleaned}  # ghost dropped
     assert 77 not in {note.pitch_midi for note in cleaned}  # isolated blip dropped
     assert _max_polyphony(cleaned) <= GUITAR_MAX_SIMULTANEOUS_VOICES
@@ -634,10 +745,10 @@ def test_apply_guitar_cleanup_merges_fragments_before_clamping_sustain() -> None
     spec = default_spec_for_target("guitar", guitar_type="acoustic", midi_tempo=120.0)
     fragments = [_note(0.0, 3.5, 60), _note(3.5, 7.0, 60)]  # zero-width split, each under the clamp
 
-    cleaned = _apply_guitar_cleanup(fragments, spec)
+    cleaned = _apply_cleanup_stages(fragments, spec)
 
     assert len(cleaned) == 1
-    assert cleaned[0].end_s - cleaned[0].start_s == pytest.approx(spec.sustain_clamp_s)
+    assert cleaned[0].end_s - cleaned[0].start_s == pytest.approx(_cleanup_params(spec, "clamp_sustain")["max_duration_s"])
     assert _max_polyphony(cleaned) <= GUITAR_MAX_SIMULTANEOUS_VOICES
 
 
@@ -676,7 +787,8 @@ def test_transcribe_applies_guitar_cleanup_and_rewrites_both_artifacts(
     spec = default_spec_for_target("guitar", guitar_type="acoustic", midi_tempo=120.0)
     result = BasicPitchTranscriber().transcribe(source, destination, spec)
 
-    assert result.last_note_s <= spec.sustain_clamp_s + 1e-6
+    sustain_clamp_s = _cleanup_params(spec, "clamp_sustain")["max_duration_s"]
+    assert result.last_note_s <= sustain_clamp_s + 1e-6
     csv_text = result.notes_path.read_text(encoding="utf-8")
     assert "60.0" not in csv_text  # the raw 60s end time must not survive
     midi_bytes = result.midi_path.read_bytes()
