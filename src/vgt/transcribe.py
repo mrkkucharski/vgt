@@ -1138,10 +1138,10 @@ def _clamp_sustain(notes: list[ParsedNote], max_duration_s: float) -> list[Parse
 
 def _drop_harmonic_ghosts(
     notes: list[ParsedNote],
-    intervals: tuple[int, ...] = GUITAR_HARMONIC_GHOST_INTERVALS,
-    onset_tolerance_s: float = GUITAR_GHOST_ONSET_TOLERANCE_S,
-    overlap_fraction: float = GUITAR_GHOST_OVERLAP_FRACTION,
-    velocity_slack: float = GUITAR_GHOST_VELOCITY_SLACK,
+    intervals: tuple[int, ...],
+    onset_tolerance_s: float,
+    overlap_fraction: float,
+    velocity_slack: float,
 ) -> list[ParsedNote]:
     """Drop a note that is almost certainly the acoustic partial of a louder,
     lower note already sounding underneath it.
@@ -1172,7 +1172,7 @@ def _drop_harmonic_ghosts(
 
 
 def _cap_simultaneous_voices(
-    notes: list[ParsedNote], max_voices: int, min_duration_after_cap_s: float = GUITAR_MIN_NOTE_DURATION_AFTER_CAP_S
+    notes: list[ParsedNote], max_voices: int, min_duration_after_cap_s: float
 ) -> list[ParsedNote]:
     """Never let more than `max_voices` notes sound at once -- a guitar has
     only that many strings, so anything above it is a detection artifact, not

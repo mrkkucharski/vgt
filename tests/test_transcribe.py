@@ -12,7 +12,12 @@ from vgt.transcribe import (
     CleanupStage,
     DrumScriptSpec,
     DrumScriptTranscriber,
+    GUITAR_GHOST_ONSET_TOLERANCE_S,
+    GUITAR_GHOST_OVERLAP_FRACTION,
+    GUITAR_GHOST_VELOCITY_SLACK,
     GUITAR_MAX_SIMULTANEOUS_VOICES,
+    GUITAR_HARMONIC_GHOST_INTERVALS,
+    GUITAR_MIN_NOTE_DURATION_AFTER_CAP_S,
     VALID_TARGETS,
     FakeTranscriber,
     ParsedNote,
@@ -97,7 +102,14 @@ def test_default_spec_narrows_acoustic_guitar_and_enables_cleanup() -> None:
         "cap_simultaneous_voices",
     ]
     assert _cleanup_params(spec, "cap_simultaneous_voices")["max_voices"] == GUITAR_MAX_SIMULTANEOUS_VOICES
+    assert _cleanup_params(spec, "cap_simultaneous_voices")["min_duration_after_cap_s"] == GUITAR_MIN_NOTE_DURATION_AFTER_CAP_S
     assert _cleanup_params(spec, "merge_fragments")["max_gap_s"] == pytest.approx(0.03)
+    assert _cleanup_params(spec, "drop_harmonic_ghosts") == {
+        "intervals": GUITAR_HARMONIC_GHOST_INTERVALS,
+        "onset_tolerance_s": GUITAR_GHOST_ONSET_TOLERANCE_S,
+        "overlap_fraction": GUITAR_GHOST_OVERLAP_FRACTION,
+        "velocity_slack": GUITAR_GHOST_VELOCITY_SLACK,
+    }
     # Two bars at 120 BPM 4/4: 2 * 4 beats * 60/120 = 4.0s.
     assert _cleanup_params(spec, "clamp_sustain")["max_duration_s"] == pytest.approx(4.0)
 
@@ -594,7 +606,13 @@ def test_drop_harmonic_ghosts_removes_an_octave_partial_of_a_louder_concurrent_n
     fundamental = _note(10.0, 12.0, 48, velocity=95)
     octave_ghost = _note(10.02, 11.9, 60, velocity=80)  # 12 semitones above, near-identical span
 
-    kept = _drop_harmonic_ghosts([fundamental, octave_ghost])
+    kept = _drop_harmonic_ghosts(
+        [fundamental, octave_ghost],
+        intervals=GUITAR_HARMONIC_GHOST_INTERVALS,
+        onset_tolerance_s=GUITAR_GHOST_ONSET_TOLERANCE_S,
+        overlap_fraction=GUITAR_GHOST_OVERLAP_FRACTION,
+        velocity_slack=GUITAR_GHOST_VELOCITY_SLACK,
+    )
 
     assert kept == [fundamental]
 
@@ -604,7 +622,13 @@ def test_drop_harmonic_ghosts_keeps_an_independent_note_at_a_harmonic_interval()
     first = _note(0.0, 1.0, 48)
     second = _note(5.0, 6.0, 60)  # same interval, but not concurrent
 
-    kept = _drop_harmonic_ghosts([first, second])
+    kept = _drop_harmonic_ghosts(
+        [first, second],
+        intervals=GUITAR_HARMONIC_GHOST_INTERVALS,
+        onset_tolerance_s=GUITAR_GHOST_ONSET_TOLERANCE_S,
+        overlap_fraction=GUITAR_GHOST_OVERLAP_FRACTION,
+        velocity_slack=GUITAR_GHOST_VELOCITY_SLACK,
+    )
 
     assert kept == [first, second]
 
@@ -615,7 +639,13 @@ def test_drop_harmonic_ghosts_keeps_a_louder_note_even_at_a_harmonic_interval() 
     lower_quiet = _note(0.0, 2.0, 48, velocity=40)
     upper_loud = _note(0.0, 2.0, 60, velocity=100)
 
-    kept = _drop_harmonic_ghosts([lower_quiet, upper_loud])
+    kept = _drop_harmonic_ghosts(
+        [lower_quiet, upper_loud],
+        intervals=GUITAR_HARMONIC_GHOST_INTERVALS,
+        onset_tolerance_s=GUITAR_GHOST_ONSET_TOLERANCE_S,
+        overlap_fraction=GUITAR_GHOST_OVERLAP_FRACTION,
+        velocity_slack=GUITAR_GHOST_VELOCITY_SLACK,
+    )
 
     assert kept == [lower_quiet, upper_loud]
 
@@ -628,7 +658,11 @@ def test_cap_simultaneous_voices_truncates_the_quietest_active_voice_when_a_new_
     loud_chord = [_note(0.0, 5.0, 40 + i, velocity=90) for i in range(2)]
     new_arrival = _note(1.0, 4.0, 55, velocity=95)  # the trio is already full when this arrives
 
-    capped = _cap_simultaneous_voices([quiet_holdover, *loud_chord, new_arrival], max_voices=3)
+    capped = _cap_simultaneous_voices(
+        [quiet_holdover, *loud_chord, new_arrival],
+        max_voices=3,
+        min_duration_after_cap_s=GUITAR_MIN_NOTE_DURATION_AFTER_CAP_S,
+    )
 
     quiet_result = next(note for note in capped if note.pitch_midi == 90)
     assert quiet_result.end_s == pytest.approx(1.0)  # truncated at the new arrival's onset, not deleted
@@ -639,7 +673,11 @@ def test_cap_simultaneous_voices_truncates_the_quietest_active_voice_when_a_new_
 def test_cap_simultaneous_voices_preserves_a_chord_within_the_limit() -> None:
     chord = [_note(0.0, 5.0, 40 + i, velocity=90) for i in range(6)]
 
-    capped = _cap_simultaneous_voices(chord, max_voices=6)
+    capped = _cap_simultaneous_voices(
+        chord,
+        max_voices=6,
+        min_duration_after_cap_s=GUITAR_MIN_NOTE_DURATION_AFTER_CAP_S,
+    )
 
     assert len(capped) == 6
     assert capped == chord
@@ -652,7 +690,11 @@ def test_cap_simultaneous_voices_retires_forward_not_only_at_the_new_notes_onset
     fillers = [_note(1.0, 9.0, 50 + i, velocity=90) for i in range(3)]
     another_new_note = _note(2.0, 9.0, 70, velocity=90)
 
-    capped = _cap_simultaneous_voices([long_quiet, *fillers, another_new_note], max_voices=3)
+    capped = _cap_simultaneous_voices(
+        [long_quiet, *fillers, another_new_note],
+        max_voices=3,
+        min_duration_after_cap_s=GUITAR_MIN_NOTE_DURATION_AFTER_CAP_S,
+    )
 
     quiet_result = next(note for note in capped if note.pitch_midi == 40)
     assert quiet_result.end_s <= 1.0  # retired at the first filler's onset, not later
