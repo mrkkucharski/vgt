@@ -142,6 +142,8 @@ def test_phase1_apply_reads_analysis_and_uses_only_reaper_api() -> None:
     assert "managed[region_id]" in script
     assert "reaper.DeleteProjectMarker(0, region_id, true)" in script
     assert '"managed_region_ids"' in script
+    assert "tempo.downbeat_detected ~= true" in script
+    assert "type(tempo.beat_times) == \"table\"" in script
 
 
 def test_beats_and_chords_tracks_are_both_unmuted() -> None:

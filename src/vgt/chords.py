@@ -169,7 +169,7 @@ def _bar_aggregation_beats(settings: dict[str, Any], tempo: dict[str, Any] | Non
         raise ChordDetectionError("chords.bar_aggregation_beats must be a non-negative integer.")
     if requested == 0:
         return None
-    if not tempo or tempo.get("backend") != "madmom" or tempo.get("time_signature") != "4/4":
+    if not tempo or tempo.get("downbeat_detected") is not True or tempo.get("time_signature") != "4/4":
         return None
     if not isinstance(tempo.get("downbeat_offset_seconds"), (int, float)):
         return None

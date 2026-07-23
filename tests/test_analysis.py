@@ -126,7 +126,7 @@ def test_upgrade_keeps_v1_fields_and_adds_v2_analysis_skeleton() -> None:
 
     upgraded = upgrade(v1)
 
-    assert upgraded["schema_version"] == 10
+    assert upgraded["schema_version"] == 11
     assert upgraded["managed_region_ids"] == []
     assert upgraded["managed_track_guids"] == ["{AAAA}", "{BBBB}"]
     assert upgraded["config"] == {"reference_track_guid": REFERENCE_GUID}
@@ -174,6 +174,15 @@ def test_upgrade_backfills_detected_from_value_for_v2_chords() -> None:
     assert chords["detected"] is not chords["value"]  # backfill copies, doesn't alias
 
 
+def test_upgrade_marks_legacy_librosa_tempo_as_unknown_bar_phase() -> None:
+    upgraded = upgrade({"schema_version": 10, "analysis": {"tempo": {"value": {
+        "backend": "librosa", "bpm": 120.0, "downbeat_offset_seconds": 0.25,
+    }}}})
+
+    assert upgraded["schema_version"] == 11
+    assert upgraded["analysis"]["tempo"]["value"]["downbeat_detected"] is False
+
+
 def test_upgrade_backfills_detected_from_value_for_v4_sections() -> None:
     """Same v2 -> v3 chords backfill, applied to sections for the v4 -> v5
     migration (#33): a v4 sidecar has no `detected` field on the sections
@@ -209,7 +218,7 @@ def test_upgrade_adds_v10_transcription_block_to_a_v8_sidecar() -> None:
 
     upgraded = upgrade(v8)
 
-    assert upgraded["schema_version"] == 10
+    assert upgraded["schema_version"] == 11
     assert upgraded["analysis"]["transcription"] == {"requested_targets": ["guitar"], "modes": {}, "targets": {}}
     # Unrelated v8 fields survive the upgrade untouched.
     assert upgraded["analysis"]["stems"]["artifact_namespace"] == "abc12345"
@@ -367,7 +376,7 @@ def test_analyze_writes_v2_sidecar_with_skeleton_and_provenance(tmp_path: Path) 
 
     result = analyze(project)
 
-    assert result["schema_version"] == 10
+    assert result["schema_version"] == 11
     assert result["managed_track_guids"] == ["{AAAA}", "{BBBB}"]  # phase 0 fields intact
     for stage in ANALYSIS_STAGES:
         if stage == "transcription":
@@ -584,6 +593,7 @@ def test_manual_correction_survives_rerun(tmp_path: Path) -> None:
         "bpm": 118.0,
         "downbeat_offset_seconds": 0.25,
         "time_signature": "4/4",
+        "downbeat_detected": True,
     }
     assert result["analysis"]["tempo"]["human_verified"] is True
     # Untouched stages still refresh normally.
@@ -820,7 +830,7 @@ def test_cli_analyze_preserves_local_results_when_lalal_is_unavailable(
     captured = capsys.readouterr()
     assert captured.out == ""
     sidecar = read_sidecar(project)
-    assert sidecar["schema_version"] == 10
+    assert sidecar["schema_version"] == 11
     assert sidecar["analysis"]["tempo"]["value"] is not None
     assert "stem separation unavailable; continuing with available sources" in captured.err
 
