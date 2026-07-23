@@ -1,19 +1,11 @@
 {
-  "current_issue": 138,
-  "session_id": "210d50f0-a2c6-4808-adad-109f6613812e",
-  "pid": 78473,
-  "process_started_at": "Thu Jul 23 23:51:01 2026",
+  "current_issue": 139,
+  "session_id": "e471a6e1-4d61-4cbf-8aaf-ce575ebc3b1e",
+  "pid": 78831,
+  "process_started_at": "Thu Jul 23 23:52:25 2026",
   "agent": "claude",
-  "started_at": "2026-07-23T21:51:00.535919+00:00",
-  "scheduler_stalls": {
-    "deferred_passes": {
-      "budget": {
-        "first_seen_at": "2026-07-23T17:31:51.598991+00:00",
-        "last_seen_at": "2026-07-23T21:49:43.509587+00:00",
-        "consecutive_passes": 208
-      }
-    }
-  },
+  "started_at": "2026-07-23T21:52:24.012685+00:00",
+  "scheduler_stalls": {},
   "budget": {
     "window_start": "2026-07-23T20:11:37.282219+00:00",
     "seconds_used": 0.0,
@@ -23,10 +15,10 @@
   "verification_followups": {
     "f0d8bfc9d2dc6da7a31609184e25c4d66d3986fd2340b33a83e98204fb86691e": "created"
   },
-  "role": "review",
-  "branch": "issue-138-make-reascript-sidecar-updates-atomic-an",
-  "worktree_path": "/Users/marekkucharski/projects/.pm-worktrees/vgt/issue-138",
-  "pr_number": 142,
+  "role": "implement",
+  "branch": "issue-139-recover-safely-from-interrupted-vgt-temp",
+  "worktree_path": "/Users/marekkucharski/projects/.pm-worktrees/vgt/issue-139",
+  "pr_number": null,
   "followup_generation": {
     "fingerprint": "d982f8926d0e86fe89dd3034f7dcb5ecbd29ae33e0d5db1334bdc33e99111ddf",
     "items": {
@@ -71,13 +63,13 @@
     "131": 2
   },
   "pending_transition": {
-    "issue": 138,
+    "issue": 139,
     "target": "working",
-    "event": "agent.review_started",
+    "event": "agent.started",
     "detail": {
-      "issue": 138,
+      "issue": 139,
       "agent": "claude",
-      "pr": 142
+      "branch": "issue-139-recover-safely-from-interrupted-vgt-temp"
     },
     "cleanup": {}
   }
