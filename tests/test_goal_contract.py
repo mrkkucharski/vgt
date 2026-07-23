@@ -85,29 +85,16 @@ def deterministic_detectors(monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setattr(analysis_module, "_tempo_beat_times", lambda *_args: [0.0, 1.0, 2.0])
 
 
-def _lua_state(
-    project: Path, managed: list[tuple[str, str]] = [], correction: bool = False, managed_region_id: int | None = None
-) -> str:
-    """An in-memory REAPER project with user objects plus optionally stale vgt objects."""
-    chord_items = "{{position=10.25,length=0.75,take={name='Dm'}}}" if correction else "{}"
-    managed_lua = ",".join(
-        "{guid=%s,name=%s,items=%s}" % (json.dumps(guid), json.dumps(name), chord_items if correction and name == "[vgt] Chords" else "{}")
-        for guid, name in managed
-    )
-    regions = "{id=900,start=11,finish=12,name='User region'}"
-    if correction:
-        assert managed_region_id is not None
-        regions = f"{{id=900,start=11,finish=12,name='User region'}},{{id={managed_region_id},start=10.25,finish=11.0,name='[vgt] Bridge'}}"
+def _lua_state(project: Path) -> str:
+    """A serializable, in-memory REAPER project for the whole contract workflow."""
     return f"""
-local tracks = {{
-  {{guid='{{CLICK}}', name='Click', items={{{{position=0,length=1,take={{source=''}}}}}}}},
-  {{guid='{REFERENCE_GUID}', name='The Seven Rivers (Full March - 3_00)', items={{{{position=10,length=4,take={{source='Media/The Seven Rivers (Full March - 3_00).mp3'}}}}}}}},
-  {{guid='{{PARIS}}', name='Paris Metro Punk', items={{{{position=2,length=3,take={{source='Media/Paris Metro Punk.mp3'}}}}}}}},
-  {managed_lua}
-}}
-local regions = {{{regions}}}
-local markers = {{{{time=0,bpm=100,num=4,den=4}}}}
-local next_guid, next_region, tempo_writes = 1, 1000, 0
+local state = {{tracks={{
+  {{guid='{{CLICK}}', name='Click', B_MUTE=0, items={{{{position=0,length=1,C_LOCK=0,take={{name='Count in',source=''}}}}}}}},
+  {{guid='{REFERENCE_GUID}', name='The Seven Rivers (Full March - 3_00)', B_MUTE=0, items={{{{position=10,length=4,C_LOCK=0,take={{name='Original mix',source='Media/The Seven Rivers (Full March - 3_00).mp3'}}}}}}}},
+  {{guid='{{PARIS}}', name='Paris Metro Punk', B_MUTE=1, items={{{{position=2,length=3,C_LOCK=1,take={{name='Paris source',source='Media/Paris Metro Punk.mp3'}}}}}}}}
+}},regions={{{{id=900,start=11,finish=12,name='User region',color=42}}}},markers={{{{time=0,bpm=100,num=4,den=4}}}},next_guid=1,next_region=1000,tempo_writes=0}}
+local tracks, regions, markers = state.tracks, state.regions, state.markers
+local next_guid, next_region, tempo_writes = state.next_guid, state.next_region, state.tempo_writes
 reaper = {{}}
 function reaper.EnumProjects() return true, arg[1] end
 function reaper.CountTracks() return #tracks end
@@ -150,22 +137,50 @@ function reaper.MarkProjectDirty() end
 function reaper.UpdateArrange() end
 function reaper.ShowConsoleMsg() end
 function reaper.ShowMessageBox(msg) error(msg) end
-function snapshot()
+function report()
   local names, user_items, vgt = {{}}, 0, 0
   for _,t in ipairs(tracks) do names[#names+1]=t.name; if t.name:sub(1,5)=='[vgt]' then vgt=vgt+1 end; if t.name=='The Seven Rivers (Full March - 3_00)' or t.name=='Paris Metro Punk' then user_items=user_items+#t.items end end
   io.write(table.concat(names,'|') .. '#' .. user_items .. '#' .. #regions .. '#' .. vgt .. '#' .. tempo_writes)
 end
+function lua_value(value)
+  if type(value) == 'string' then return string.format('%q', value) end
+  if type(value) == 'number' or type(value) == 'boolean' then return tostring(value) end
+  local keys = {{}}
+  for key in pairs(value) do keys[#keys + 1] = key end
+  table.sort(keys, function(a,b) return tostring(a) < tostring(b) end)
+  local parts = {{}}
+  for _, key in ipairs(keys) do parts[#parts + 1] = '[' .. lua_value(key) .. ']=' .. lua_value(value[key]) end
+  return '{{' .. table.concat(parts, ',') .. '}}'
+end
+function user_snapshot()
+  local user_tracks, user_regions = {{}}, {{}}
+  for _, track in ipairs(tracks) do if track.name:sub(1,5) ~= '[vgt]' then user_tracks[#user_tracks + 1] = track end end
+  for _, region in ipairs(regions) do if region.id == 900 then user_regions[#user_regions + 1] = region end end
+  return lua_value({{tracks=user_tracks,regions=user_regions,markers=markers}})
+end
+function emit_state()
+  state.next_guid, state.next_region, state.tempo_writes = next_guid, next_region, tempo_writes
+  io.write('\\n__VGT_STATE__' .. lua_value(state))
+end
 """
 
 
-def _run_apply(project: Path, state: str) -> str:
-    module = APPLY_SCRIPT.read_text(encoding="utf-8").split("local ok, error_message = xpcall", 1)[0]
-    result = subprocess.run([LUA, "-", str(project)], input="\n".join([state, module, "apply(); snapshot()"]), text=True, capture_output=True)
+def _run(project: Path, state: str, module: str, program: str) -> tuple[str, str]:
+    result = subprocess.run([LUA, "-", str(project)], input="\n".join([state, module, program, "emit_state()"]), text=True, capture_output=True)
     assert result.returncode == 0, result.stderr
-    return result.stdout
+    output, persisted = result.stdout.rsplit("\n__VGT_STATE__", 1)
+    api_start = _lua_state(project).index("reaper = {}")
+    api = _lua_state(project)[api_start:]
+    restored = "local state = " + persisted + "\nlocal tracks, regions, markers = state.tracks, state.regions, state.markers\nlocal next_guid, next_region, tempo_writes = state.next_guid, state.next_region, state.tempo_writes\n"
+    return restored + api, output
 
 
-def _run_apply_key_snapshot(project: Path, state: str) -> str:
+def _run_apply(project: Path, state: str) -> tuple[str, str]:
+    module = APPLY_SCRIPT.read_text(encoding="utf-8").split("local ok, error_message = xpcall", 1)[0]
+    return _run(project, state, module, "apply(); report()")
+
+
+def _run_apply_key_snapshot(project: Path, state: str) -> tuple[str, str]:
     """Read the managed Key display from the same offline REAPER fixture."""
     module = APPLY_SCRIPT.read_text(encoding="utf-8").split("local ok, error_message = xpcall", 1)[0]
     program = """
@@ -180,23 +195,84 @@ for _, track in ipairs(tracks) do
 end
 io.write(count .. '#' .. detail)
 """
-    result = subprocess.run([LUA, "-", str(project)], input="\n".join([state, module, program]), text=True, capture_output=True)
-    assert result.returncode == 0, result.stderr
-    return result.stdout
+    return _run(project, state, module, program)
 
 
-def _run_sync(project: Path, state: str) -> None:
+def _run_sync(project: Path, state: str) -> str:
     module = SYNC_SCRIPT.read_text(encoding="utf-8").split("local ok, error_message = xpcall", 1)[0]
-    result = subprocess.run([LUA, "-", str(project)], input="\n".join([state, module, "sync()"]), text=True, capture_output=True)
-    assert result.returncode == 0, result.stderr
+    state, _ = _run(project, state, module, "sync()")
+    return state
+
+
+def _user_snapshot(project: Path, state: str) -> str:
+    _, snapshot = _run(project, state, "", "io.write(user_snapshot())")
+    return snapshot
+
+
+def _assert_managed_contract(project: Path, state: str) -> None:
+    """Check the exact vgt inventory in the persistent offline project."""
+    _, output = _run(project, state, "", r'''
+local expected = {
+  ['[vgt] The Seven Rivers (Full March - 3_00)']=true, ['[vgt] Beats']=true, ['[vgt] Click']=true,
+  ['[vgt] Key']=true, ['[vgt] Chords']=true, ['[vgt] Vocals']=true,
+  ['[vgt] Instrumental']=true, ['[vgt] Bass']=true, ['[vgt] Drums']=true,
+  ['[vgt] Guitar']=true, ['[vgt] Backing (no guitar)']=true,
+  ['[vgt] Guitar Ref (MIDI)']=true,
+}
+local seen_guids, seen_names, managed_count, managed_guids = {}, {}, 0, {}
+for _, track in ipairs(tracks) do
+  if track.name:sub(1, 5) == '[vgt]' then
+    assert(expected[track.name] and not seen_names[track.name], 'unexpected or duplicate managed track: ' .. track.name)
+    assert(not seen_guids[track.guid], 'duplicate managed GUID: ' .. track.guid)
+    seen_guids[track.guid], seen_names[track.name], managed_count = true, true, managed_count + 1
+    managed_guids[#managed_guids + 1] = track.guid
+    if track.name == '[vgt] Beats' then
+      assert(#track.items == 3 and track.items[1].notes == 'Beat 1' and track.items[3].C_LOCK == 1, 'beat annotations')
+    elseif track.name == '[vgt] Key' then
+      assert(#track.items == 1 and track.items[1].notes == 'E minor' and track.items[1].C_LOCK == 1, 'key annotation')
+    elseif track.name == '[vgt] Chords' then
+      assert(#track.items == 1 and track.items[1].take.name == 'Dm' and track.items[1].C_LOCK == nil, 'chord annotations')
+    elseif track.name == '[vgt] Click' then
+      assert(track.B_MUTE == 1 and track.items[1].take.source.path:match('/vgt/.+/tempo%-click%.wav$'), tostring(track.items[1].take.source.path))
+    elseif track.name:match('Ref %(MIDI%)') then
+      assert(track.items[1].take.source.path:match('/vgt/.+/transcription/guitar%.mid$'), tostring(track.items[1].take.source.path))
+    elseif track.name ~= '[vgt] The Seven Rivers (Full March - 3_00)' then
+      local stem = track.name:sub(7):lower():gsub(' %(no guitar%)', '')
+      if stem ~= 'beats' and stem ~= 'key' and stem ~= 'chords' then
+        assert(track.items[1].take.source.path:match('/vgt/.+/stems/.+%.wav$'), tostring(track.items[1].take.source.path))
+      end
+    end
+  end
+end
+assert(managed_count == 12)
+for name in pairs(expected) do assert(seen_names[name], 'missing managed track: ' .. name) end
+local seen_regions, managed_regions, managed_region_ids = {}, 0, {}
+for _, region in ipairs(regions) do
+  if region.name:sub(1, 5) == '[vgt]' then
+    assert(not seen_regions[region.id], 'duplicate managed region ID: ' .. region.id)
+    seen_regions[region.id], managed_regions = true, managed_regions + 1
+    managed_region_ids[#managed_region_ids + 1] = tostring(region.id)
+  end
+end
+assert(managed_regions == 2)
+table.sort(managed_guids)
+table.sort(managed_region_ids)
+io.write('managed contract ok#' .. table.concat(managed_guids, ',') .. '#' .. table.concat(managed_region_ids, ','))
+''')
+    message, guids, region_ids = output.split("#")
+    sidecar = read_sidecar(project)
+    assert message == "managed contract ok"
+    assert guids.split(",") == sorted(sidecar["managed_track_guids"])
+    assert region_ids.split(",") == sorted(map(str, sidecar["managed_region_ids"]))
 
 
 def test_goal_contract_is_offline_non_destructive_and_idempotent(tmp_path: Path, deterministic_detectors: None) -> None:
     project = _copy_project(tmp_path)
 
     # Initialization selects the real fixture's reference identity and writes only a sidecar.
-    _run_apply(project, _lua_state(project))
+    state, _ = _run_apply(project, _lua_state(project))
     assert read_sidecar(project)["config"]["reference_track_guid"] == REFERENCE_GUID
+    before = _user_snapshot(project, state)
 
     separator, transcriber = CountingSeparator(), CountingTranscriber()
     analyze(project, stages=("tempo", "key", "sections"))
@@ -205,15 +281,25 @@ def test_goal_contract_is_offline_non_destructive_and_idempotent(tmp_path: Path,
     assert (separator.calls, transcriber.calls) == (5, 1)
 
     # The existing 100 BPM map must remain untouched, so apply offers beat labels instead.
-    first_apply = _run_apply(project, _lua_state(project))
+    state, first_apply = _run_apply(project, state)
     names, user_items, region_count, vgt_count, tempo_writes = first_apply.split("#")
     assert user_items == "2" and region_count == "3" and tempo_writes == "0"
     assert "[vgt] Beats" in names and "[vgt] Key" in names and "[vgt] Guitar Ref (MIDI)" in names
     assert int(vgt_count) == 12  # folder, beats/click/key/chords, six stems, MIDI
 
     sidecar = read_sidecar(project)
-    managed = [(guid, "[vgt] Chords" if index == 3 else "[vgt] stale") for index, guid in enumerate(sidecar["managed_track_guids"])]
-    _run_sync(project, _lua_state(project, managed, correction=True, managed_region_id=sidecar["managed_region_ids"][0]))
+    # These are real edits to the state produced by apply, not a newly-built
+    # approximation of it.  Sync must read them while preserving every other object.
+    sync_module = SYNC_SCRIPT.read_text(encoding="utf-8").split("local ok, error_message = xpcall", 1)[0]
+    state, _ = _run(project, state, sync_module, """
+for _, track in ipairs(tracks) do
+  if track.name == '[vgt] Chords' then track.items = {{position=10.25,length=0.75,take={name='Dm'}}} end
+end
+for _, region in ipairs(regions) do
+  if region.id == %d then region.start=10.25; region.finish=11; region.name='[vgt] Bridge' end
+end
+sync()
+""" % sidecar["managed_region_ids"][0])
     synced = read_sidecar(project)
     assert synced["analysis"]["chords"]["value"]["segments"][0]["chord"] == "Dm"
     assert synced["analysis"]["sections"]["value"][0]["label"] == "Bridge"
@@ -237,12 +323,14 @@ def test_goal_contract_is_offline_non_destructive_and_idempotent(tmp_path: Path,
     reconciled["analysis"]["key"]["value"] = {"root": "E", "scale": "minor", "backend": "human"}
     reconciled["analysis"]["key"]["human_verified"] = True
     project.with_suffix(".vgt").write_text(json.dumps(reconciled), encoding="utf-8")
-    managed = [(guid, "[vgt] stale") for guid in reconciled["managed_track_guids"]]
-    second_apply = _run_apply(project, _lua_state(project, managed))
+    state, second_apply = _run_apply(project, state)
     names, user_items, region_count, vgt_count, tempo_writes = second_apply.split("#")
-    assert user_items == "2" and region_count == "2" and tempo_writes == "0"
+    assert user_items == "2" and region_count == "3" and tempo_writes == "0"
     assert int(vgt_count) == 12 and names.split("|").count("[vgt] Guitar") == 1
-    assert _run_apply_key_snapshot(project, _lua_state(project, managed)) == "1#0:E minor:1"
+    state, key_snapshot = _run_apply_key_snapshot(project, state)
+    assert key_snapshot == "1#0:E minor:1"
+    _assert_managed_contract(project, state)
+    assert _user_snapshot(project, state) == before
 
 
 def test_reascript_uses_beats_not_a_tempo_map_when_bar_phase_is_unknown(tmp_path: Path) -> None:
@@ -257,7 +345,8 @@ def test_reascript_uses_beats_not_a_tempo_map_when_bar_phase_is_unknown(tmp_path
     }))
     # A default map would otherwise be eligible for vgt ownership.
     state = _lua_state(project).replace("time=0,bpm=100,num=4,den=4", "time=0,bpm=120,num=4,den=4")
-    names, _user_items, _regions, _vgt, tempo_writes = _run_apply(project, state).split("#")
+    _, result = _run_apply(project, state)
+    names, _user_items, _regions, _vgt, tempo_writes = result.split("#")
 
     assert "[vgt] Beats" in names
     assert tempo_writes == "0"
@@ -275,7 +364,8 @@ def test_reascript_keeps_tempo_map_behavior_for_detected_downbeats(tmp_path: Pat
         }}},
     }))
     state = _lua_state(project).replace("time=0,bpm=100,num=4,den=4", "time=0,bpm=120,num=4,den=4")
-    names, _user_items, _regions, _vgt, tempo_writes = _run_apply(project, state).split("#")
+    _, result = _run_apply(project, state)
+    names, _user_items, _regions, _vgt, tempo_writes = result.split("#")
 
     assert "[vgt] Beats" not in names
     assert int(tempo_writes) >= 2
