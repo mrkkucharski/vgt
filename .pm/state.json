@@ -1,17 +1,17 @@
 {
   "current_issue": 112,
-  "session_id": "6a8f6354-03c3-41cd-9316-dba15bc5c2b9",
-  "pid": 19275,
-  "process_started_at": "Thu Jul 23 10:51:16 2026",
+  "session_id": "d4d98424-4fa9-4dd6-92ee-84b22282558c",
+  "pid": 20302,
+  "process_started_at": "Thu Jul 23 11:00:23 2026",
   "agent": "codex",
-  "started_at": "2026-07-23T08:51:15.322335+00:00",
+  "started_at": "2026-07-23T09:00:21.941272+00:00",
   "scheduler_stalls": {},
   "budget": {
     "window_start": "2026-07-23T07:20:24.839872+00:00",
-    "seconds_used": 1452.786032,
+    "seconds_used": 1996.994114,
     "dollars_used": 1.0134178,
     "seconds_used_by_agent": {
-      "codex": 768.3230169999999,
+      "codex": 1312.5310989999998,
       "claude": 684.463015
     }
   },
@@ -50,7 +50,7 @@
     "97": 2,
     "110": 2,
     "111": 1,
-    "112": 1
+    "112": 2
   },
   "pending_transition": {
     "issue": 112,
@@ -59,7 +59,7 @@
     "detail": {
       "issue": 112,
       "agent": "codex",
-      "fix_count": 1
+      "fix_count": 2
     },
     "cleanup": {}
   }
