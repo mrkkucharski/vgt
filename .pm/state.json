@@ -1,10 +1,10 @@
 {
-  "current_issue": null,
-  "session_id": null,
-  "pid": null,
-  "process_started_at": null,
-  "agent": null,
-  "started_at": null,
+  "current_issue": 126,
+  "session_id": "99e1670b-fbfc-4e40-9b60-52d07b6faee4",
+  "pid": 31870,
+  "process_started_at": "Thu Jul 23 12:38:13 2026",
+  "agent": "codex",
+  "started_at": "2026-07-23T10:38:11.277072+00:00",
   "scheduler_stalls": {},
   "budget": {
     "window_start": "2026-07-23T07:20:24.839872+00:00",
@@ -18,7 +18,7 @@
   "verification_followups": {
     "f0d8bfc9d2dc6da7a31609184e25c4d66d3986fd2340b33a83e98204fb86691e": "created"
   },
-  "role": null,
+  "role": "review",
   "branch": "issue-126-test-the-installed-distribution-on-the-s",
   "worktree_path": "/Users/marekkucharski/projects/.pm-worktrees/vgt/issue-126",
   "pr_number": 129,
@@ -59,5 +59,16 @@
     "110": 2,
     "111": 1,
     "112": 2
+  },
+  "pending_transition": {
+    "issue": 126,
+    "target": "working",
+    "event": "agent.review_started",
+    "detail": {
+      "issue": 126,
+      "agent": "codex",
+      "pr": 129
+    },
+    "cleanup": {}
   }
 }
