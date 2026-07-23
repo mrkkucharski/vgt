@@ -234,6 +234,9 @@ local expected_sources = {
   ['[vgt] Guitar']='stems/guitar.wav', ['[vgt] Backing (no guitar)']='stems/backing-no-guitar.wav',
   ['[vgt] Guitar Ref (MIDI)']='transcription/guitar.mid', ['[vgt] Click']='tempo-click.wav',
 }
+local expected_empty_tracks = {
+  ['[vgt] The Seven Rivers (Full March - 3_00)']=true,
+}
 local seen_guids, seen_names, managed_count, managed_guids = {}, {}, 0, {}
 for _, track in ipairs(tracks) do
   if track.name:sub(1, 5) == '[vgt]' then
@@ -241,7 +244,9 @@ for _, track in ipairs(tracks) do
     assert(not seen_guids[track.guid], 'duplicate managed GUID: ' .. track.guid)
     seen_guids[track.guid], seen_names[track.name], managed_count = true, true, managed_count + 1
     managed_guids[#managed_guids + 1] = track.guid
-    if track.name == '[vgt] Beats' then
+    if expected_empty_tracks[track.name] then
+      assert(#track.items == 0, 'unexpected item on managed folder')
+    elseif track.name == '[vgt] Beats' then
       assert(#track.items == 3, 'beat item count')
       for index, item in ipairs(track.items) do
         local expected_length = index < 3 and 1 or 2
@@ -267,15 +272,24 @@ for _, track in ipairs(tracks) do
 end
 assert(managed_count == 12)
 for name in pairs(expected) do assert(seen_names[name], 'missing managed track: ' .. name) end
-local seen_regions, managed_regions, managed_region_ids = {}, 0, {}
+local expected_regions = {
+  ['[vgt] Bridge']={start=10.25, finish=11},
+  ['[vgt] Chorus']={start=11, finish=12},
+}
+local seen_regions, seen_region_names, managed_regions, managed_region_ids = {}, {}, 0, {}
 for _, region in ipairs(regions) do
   if region.name:sub(1, 5) == '[vgt]' then
     assert(not seen_regions[region.id], 'duplicate managed region ID: ' .. region.id)
-    seen_regions[region.id], managed_regions = true, managed_regions + 1
+    local expected_region = expected_regions[region.name]
+    assert(expected_region and not seen_region_names[region.name], 'unexpected or duplicate managed region: ' .. region.name)
+    assert(region.start == expected_region.start and region.finish == expected_region.finish,
+      'wrong managed region geometry: ' .. region.name)
+    seen_regions[region.id], seen_region_names[region.name], managed_regions = true, true, managed_regions + 1
     managed_region_ids[#managed_region_ids + 1] = tostring(region.id)
   end
 end
 assert(managed_regions == 2)
+for name in pairs(expected_regions) do assert(seen_region_names[name], 'missing managed region: ' .. name) end
 table.sort(managed_guids)
 table.sort(managed_region_ids)
 io.write('managed contract ok#' .. table.concat(managed_guids, ',') .. '#' .. table.concat(managed_region_ids, ','))
