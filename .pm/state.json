@@ -1,17 +1,18 @@
 {
   "current_issue": 111,
-  "session_id": "fbc5cd20-e0d8-43d7-beab-fe7a854be823",
-  "pid": 15420,
-  "process_started_at": "Thu Jul 23 10:17:57 2026",
-  "agent": "claude",
-  "started_at": "2026-07-23T08:17:55.461983+00:00",
+  "session_id": "1ca7913b-90dd-4ae2-bddb-2856de56ca01",
+  "pid": 16074,
+  "process_started_at": "Thu Jul 23 10:24:17 2026",
+  "agent": "codex",
+  "started_at": "2026-07-23T08:24:15.926205+00:00",
   "scheduler_stalls": {},
   "budget": {
     "window_start": "2026-07-23T07:20:24.839872+00:00",
-    "seconds_used": 459.39771499999995,
-    "dollars_used": 0.0,
+    "seconds_used": 838.282749,
+    "dollars_used": 0.5550714,
     "seconds_used_by_agent": {
-      "codex": 459.39771499999995
+      "codex": 459.39771499999995,
+      "claude": 378.885034
     }
   },
   "verification_followups": {
@@ -55,7 +56,7 @@
     "event": "agent.review_started",
     "detail": {
       "issue": 111,
-      "agent": "claude",
+      "agent": "codex",
       "pr": 115
     },
     "cleanup": {}
