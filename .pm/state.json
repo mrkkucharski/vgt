@@ -1,10 +1,10 @@
 {
-  "current_issue": 112,
-  "session_id": "225c89af-627b-4f88-91ac-fcc9bab832a0",
-  "pid": 21717,
-  "process_started_at": "Thu Jul 23 11:13:17 2026",
+  "current_issue": 113,
+  "session_id": "ec535e15-1717-4077-a46e-2182ba7da942",
+  "pid": 22166,
+  "process_started_at": "Thu Jul 23 11:15:56 2026",
   "agent": "codex",
-  "started_at": "2026-07-23T09:13:15.174162+00:00",
+  "started_at": "2026-07-23T09:15:54.865107+00:00",
   "scheduler_stalls": {},
   "budget": {
     "window_start": "2026-07-23T07:20:24.839872+00:00",
@@ -18,10 +18,10 @@
   "verification_followups": {
     "f0d8bfc9d2dc6da7a31609184e25c4d66d3986fd2340b33a83e98204fb86691e": "created"
   },
-  "role": "review",
-  "branch": "issue-112-generalize-the-transcription-probe-to-an",
-  "worktree_path": "/Users/marekkucharski/projects/.pm-worktrees/vgt/issue-112",
-  "pr_number": 116,
+  "role": "implement",
+  "branch": "issue-113-add-a-force-monophony-cleanup-stage-and",
+  "worktree_path": "/Users/marekkucharski/projects/.pm-worktrees/vgt/issue-113",
+  "pr_number": null,
   "followup_generation": {
     "fingerprint": "6973a30453e2580633930a6b109df201d6cfd1b53fba5d773cbc376bb9c8311e",
     "items": {
@@ -53,13 +53,13 @@
     "112": 2
   },
   "pending_transition": {
-    "issue": 112,
+    "issue": 113,
     "target": "working",
-    "event": "agent.review_started",
+    "event": "agent.started",
     "detail": {
-      "issue": 112,
+      "issue": 113,
       "agent": "codex",
-      "pr": 116
+      "branch": "issue-113-add-a-force-monophony-cleanup-stage-and"
     },
     "cleanup": {}
   }
