@@ -92,9 +92,9 @@ local state = {{tracks={{
   {{guid='{{CLICK}}', name='Click', B_MUTE=0, items={{{{position=0,length=1,C_LOCK=0,take={{name='Count in',source=''}}}}}}}},
   {{guid='{REFERENCE_GUID}', name='The Seven Rivers (Full March - 3_00)', B_MUTE=0, items={{{{position=10,length=4,C_LOCK=0,take={{name='Original mix',source='Media/The Seven Rivers (Full March - 3_00).mp3'}}}}}}}},
   {{guid='{{PARIS}}', name='Paris Metro Punk', B_MUTE=1, items={{{{position=2,length=3,C_LOCK=1,take={{name='Paris source',source='Media/Paris Metro Punk.mp3'}}}}}}}}
-}},regions={{{{id=900,start=11,finish=12,name='User region',color=42}}}},markers={{{{time=0,bpm=100,num=4,den=4}}}},next_guid=1,next_region=1000,tempo_writes=0}}
+}},regions={{{{id=900,start=11,finish=12,name='User region',color=42}}}},markers={{{{time=0,bpm=100,num=4,den=4}}}},next_guid=1,next_region=1000,tempo_writes=0,proj_ext={{}}}}
 local tracks, regions, markers = state.tracks, state.regions, state.markers
-local next_guid, next_region, tempo_writes = state.next_guid, state.next_region, state.tempo_writes
+local next_guid, next_region, tempo_writes, proj_ext = state.next_guid, state.next_region, state.tempo_writes, state.proj_ext
 reaper = {{}}
 function reaper.EnumProjects() return true, arg[1] end
 function reaper.CountTracks() return #tracks end
@@ -133,6 +133,8 @@ function reaper.CountProjectMarkers() return #regions end
 function reaper.EnumProjectMarkers3(_,i) local r=regions[i+1]; return true,true,r.start,r.finish,r.name,r.id,0 end
 function reaper.DeleteProjectMarker(_,id) for i,r in ipairs(regions) do if r.id==id then table.remove(regions,i); return end end end
 function reaper.AddProjectMarker2(_,_,start,finish,name) local id=next_region; next_region=next_region+1; table.insert(regions,{{id=id,start=start,finish=finish,name=name}}); return id end
+function reaper.SetProjExtState(_,section,key,value) proj_ext[section .. ':' .. key] = value end
+function reaper.GetProjExtState(_,section,key) local value = proj_ext[section .. ':' .. key]; return value and 1 or 0, value or '' end
 function reaper.CountTempoTimeSigMarkers() return #markers end
 function reaper.GetTempoTimeSigMarker(_,i) local m=markers[i+1]; return true,m.time,0,0,m.bpm,m.num,m.den end
 function reaper.SetTempoTimeSigMarker(_,_,time,_,_,bpm,num,den) tempo_writes=tempo_writes+1; markers={{{{time=time,bpm=bpm,num=num,den=den}}}} end
@@ -174,7 +176,7 @@ function user_snapshot(managed_track_guids, managed_region_ids)
   return lua_value({{tracks=user_tracks,regions=user_regions,markers=markers}})
 end
 function emit_state()
-  state.next_guid, state.next_region, state.tempo_writes = next_guid, next_region, tempo_writes
+  state.next_guid, state.next_region, state.tempo_writes, state.proj_ext = next_guid, next_region, tempo_writes, proj_ext
   io.write('\\n__VGT_STATE__' .. lua_value(state))
 end
 """
@@ -186,7 +188,7 @@ def _run(project: Path, state: str, module: str, program: str) -> tuple[str, str
     output, persisted = result.stdout.rsplit("\n__VGT_STATE__", 1)
     api_start = _lua_state(project).index("reaper = {}")
     api = _lua_state(project)[api_start:]
-    restored = "local state = " + persisted + "\nlocal tracks, regions, markers = state.tracks, state.regions, state.markers\nlocal next_guid, next_region, tempo_writes = state.next_guid, state.next_region, state.tempo_writes\n"
+    restored = "local state = " + persisted + "\nlocal tracks, regions, markers = state.tracks, state.regions, state.markers\nlocal next_guid, next_region, tempo_writes, proj_ext = state.next_guid, state.next_region, state.tempo_writes, state.proj_ext or {}\n"
     return restored + api, output
 
 
@@ -383,6 +385,79 @@ sync()
     assert key_snapshot == "1#0:E minor:1"
     _assert_managed_contract(project, state)
     final_sidecar = read_sidecar(project)
+    assert _user_snapshot(
+        project,
+        state,
+        managed_tracks=final_sidecar["managed_track_guids"],
+        managed_regions=final_sidecar["managed_region_ids"],
+    ) == before
+
+
+def test_apply_recovers_managed_regions_after_an_interrupted_sidecar_commit(tmp_path: Path, deterministic_detectors: None) -> None:
+    """Simulates a crash between building the `[vgt]` section regions and the
+    final sidecar write: apply is interrupted right as write_settings tries to
+    open its temp file, after every section region has already been created
+    via AddProjectMarker2 -- exactly the window issue #137 is about. The
+    sidecar is left stale (no record of the two new regions), but the durable
+    ProjExtState record (see record_region_ids_ext_state in
+    vgt_initialize.lua) still has them. Re-running apply must reconcile using
+    the union of that stale sidecar and ProjExtState, producing exactly one
+    managed region inventory rather than appending a duplicate block, while
+    every user region remains byte-for-byte unchanged."""
+    project = _copy_project(tmp_path)
+    state = _lua_state(project)
+    before = _user_snapshot(project, state)
+
+    state, _ = _run_apply(project, state)
+    assert read_sidecar(project)["config"]["reference_track_guid"] == REFERENCE_GUID
+    assert read_sidecar(project)["managed_region_ids"] == []
+
+    analyze(project, stages=("tempo", "key", "sections"))
+
+    module = APPLY_SCRIPT.read_text(encoding="utf-8").split("local ok, error_message = xpcall", 1)[0]
+    failure_injection = """
+local real_open = io.open
+io.open = function(path, mode)
+  if mode == "w" and path:sub(-4) == ".tmp" then return nil, "simulated disk failure" end
+  return real_open(path, mode)
+end
+local ok, err = pcall(apply)
+assert(not ok, "apply should have failed")
+assert(tostring(err):find("simulated disk failure"), tostring(err))
+io.open = real_open
+report()
+"""
+    state, interrupted = _run(project, state, module, failure_injection)
+    _names, _user_items, region_count, _vgt_count, _tempo_writes = interrupted.split("#")
+    # The user's pre-existing region plus both new section regions, created
+    # in the live project but never committed to the sidecar.
+    assert region_count == "3"
+
+    # write_settings never got to rename its temp file into place, so the
+    # sidecar on disk is exactly as stale as before this apply attempt.
+    stale_sidecar = read_sidecar(project)
+    assert stale_sidecar["managed_region_ids"] == []
+
+    state, recovered = _run_apply(project, state)
+    _names, _user_items, region_count, _vgt_count, _tempo_writes = recovered.split("#")
+    assert region_count == "3"
+
+    _, output = _run(project, state, "", r"""
+local seen_names, managed = {}, 0
+for _, region in ipairs(regions) do
+  if region.name:sub(1, 5) == '[vgt]' then
+    assert(not seen_names[region.name], 'duplicate managed region: ' .. region.name)
+    seen_names[region.name], managed = true, managed + 1
+  end
+end
+assert(managed == 2, 'expected exactly 2 managed regions, got ' .. managed)
+assert(seen_names['[vgt] Verse'] and seen_names['[vgt] Chorus'], 'missing an expected managed region')
+io.write('ok')
+""")
+    assert output == "ok"
+
+    final_sidecar = read_sidecar(project)
+    assert final_sidecar["managed_region_ids"] != []
     assert _user_snapshot(
         project,
         state,

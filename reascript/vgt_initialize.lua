@@ -80,6 +80,32 @@ local function track_is_marked_managed(track)
   return value == "1"
 end
 
+-- Regions have no per-object equivalent of a track's P_EXT mark, but they
+-- need the same durability: `managed_region_ids` is regenerated wholesale and
+-- persisted last, so the same crash/restored-backup/copied-folder window that
+-- motivated mark_track_managed above would otherwise leave a fully-built
+-- section block with no sidecar record at all. REAPER's project-scoped
+-- ProjExtState is persisted in the RPP itself (independent of the sidecar),
+-- so recording each region's ID here as soon as it is created -- rather than
+-- waiting for write_settings -- means that record survives even if
+-- write_settings itself never runs or fails partway through.
+local PROJ_EXT_SECTION = "vgt"
+local PROJ_EXT_REGION_KEY = "managed_region_ids"
+
+local function record_region_ids_ext_state(region_ids)
+  local ids = {}
+  for _, id in ipairs(region_ids) do ids[#ids + 1] = tostring(id) end
+  reaper.SetProjExtState(0, PROJ_EXT_SECTION, PROJ_EXT_REGION_KEY, table.concat(ids, ","))
+end
+
+local function read_region_ids_ext_state()
+  local ids = {}
+  local _, value = reaper.GetProjExtState(0, PROJ_EXT_SECTION, PROJ_EXT_REGION_KEY)
+  if not value or value == "" then return ids end
+  for id in value:gmatch("%-?%d+") do ids[tonumber(id)] = true end
+  return ids
+end
+
 -- How many of a track's items have an active take with a file-backed source.
 -- Zero is a track with no real audio (no items, MIDI-only, or a REAPER-native
 -- generator such as a count-in click track's <SOURCE CLICK>, which has no
@@ -771,7 +797,14 @@ local function add_stem_tracks(index, stems, transcription, reference_start, man
 end
 
 local function remove_previous_managed_regions()
+  -- Either the sidecar's list or the durable ProjExtState record is evidence
+  -- of ownership -- see record_region_ids_ext_state above for why the latter
+  -- is necessary. A region ID is deleted purely by identity: unlike tracks, a
+  -- `[vgt]`-prefixed name is never itself required or sufficient, so a region
+  -- the user renamed (see vgt_sync.lua, which reads corrected names/geometry
+  -- back by ID regardless of prefix) is still reconciled correctly here.
   local managed = read_managed_region_ids()
+  for id in pairs(read_region_ids_ext_state()) do managed[id] = true end
   for index = reaper.CountProjectMarkers(0) - 1, 0, -1 do
     local _, is_region, _, _, _, region_id = reaper.EnumProjectMarkers3(0, index)
     if is_region and managed[region_id] then reaper.DeleteProjectMarker(0, region_id, true) end
@@ -780,15 +813,23 @@ end
 
 local function add_sections(sections, reference_start)
   local region_ids = {}
-  if type(sections) ~= "table" then return end
-  for _, section in ipairs(sections) do
-    local start_time = reference_start + (tonumber(section.start_seconds) or 0)
-    local end_time = reference_start + (tonumber(section.end_seconds) or 0)
-    local label = tostring(section.label or section.name or "section")
-    if end_time > start_time then
-      region_ids[#region_ids + 1] = reaper.AddProjectMarker2(0, true, start_time, end_time, PREFIX .. " " .. label, -1, 0)
+  if type(sections) == "table" then
+    for _, section in ipairs(sections) do
+      local start_time = reference_start + (tonumber(section.start_seconds) or 0)
+      local end_time = reference_start + (tonumber(section.end_seconds) or 0)
+      local label = tostring(section.label or section.name or "section")
+      if end_time > start_time then
+        region_ids[#region_ids + 1] = reaper.AddProjectMarker2(0, true, start_time, end_time, PREFIX .. " " .. label, -1, 0)
+        -- Recorded immediately after each region is created, well before
+        -- write_settings runs -- see record_region_ids_ext_state.
+        record_region_ids_ext_state(region_ids)
+      end
     end
   end
+  -- Refresh unconditionally, including the empty-list case: a re-apply that
+  -- ends up with fewer (or zero) sections must not leave a prior run's now-
+  -- deleted IDs sitting in ProjExtState.
+  record_region_ids_ext_state(region_ids)
   return region_ids
 end
 

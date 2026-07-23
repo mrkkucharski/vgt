@@ -280,6 +280,12 @@ the user should, in a real REAPER session:
 - vgt changes only objects it created and recorded as `[vgt]`-managed.
 - Re-running initialization or analysis creates no duplicate managed tracks,
   regions, or stems.
+- Managed track and region ownership is durable against an interrupted apply:
+  a crash, restored backup, or copied project folder between building the
+  `[vgt]` area and the final sidecar write cannot cause a re-apply to append a
+  duplicate block, because ownership is also recorded directly in the REAPER
+  project (a per-track mark for tracks, project-scoped extended state for
+  regions) and reconciled from the union of both records.
 - Project mutation uses REAPER's API, never RPP text editing.
 - Heavy analysis runs in the CLI, not inside REAPER.
 - vgt-owned audio is time-based and does not stretch with tempo-map changes.
