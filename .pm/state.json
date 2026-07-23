@@ -1,10 +1,10 @@
 {
   "current_issue": 112,
-  "session_id": "d4d98424-4fa9-4dd6-92ee-84b22282558c",
-  "pid": 20302,
-  "process_started_at": "Thu Jul 23 11:00:23 2026",
-  "agent": "codex",
-  "started_at": "2026-07-23T09:00:21.941272+00:00",
+  "session_id": "7f545ec1-e780-48bd-9748-3a7d1f498e29",
+  "pid": 21075,
+  "process_started_at": "Thu Jul 23 11:06:52 2026",
+  "agent": "claude",
+  "started_at": "2026-07-23T09:06:50.348264+00:00",
   "scheduler_stalls": {},
   "budget": {
     "window_start": "2026-07-23T07:20:24.839872+00:00",
@@ -18,7 +18,7 @@
   "verification_followups": {
     "f0d8bfc9d2dc6da7a31609184e25c4d66d3986fd2340b33a83e98204fb86691e": "created"
   },
-  "role": "fix",
+  "role": "review",
   "branch": "issue-112-generalize-the-transcription-probe-to-an",
   "worktree_path": "/Users/marekkucharski/projects/.pm-worktrees/vgt/issue-112",
   "pr_number": 116,
@@ -55,11 +55,11 @@
   "pending_transition": {
     "issue": 112,
     "target": "working",
-    "event": "agent.fix_started",
+    "event": "agent.review_started",
     "detail": {
       "issue": 112,
-      "agent": "codex",
-      "fix_count": 2
+      "agent": "claude",
+      "pr": 116
     },
     "cleanup": {}
   }
