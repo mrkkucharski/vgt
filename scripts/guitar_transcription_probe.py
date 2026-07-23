@@ -1,16 +1,21 @@
-"""Measure the quality of a Basic Pitch guitar transcription.
+"""Measure the quality of a Basic Pitch transcription against a named profile.
 
 Evaluation-only. Reads a Basic Pitch note-events CSV and reports the metrics
-that distinguish a usable guitar reference from an unplayable one: note count,
+that distinguish a usable instrument reference from an unplayable one: note count,
 sustain runaway, simultaneous voices, fragmentation, harmonic ghosts, and
 agreement with vgt's own detected chords. It neither runs a model nor writes
 into a vgt project.
 
-    uv run python scripts/guitar_transcription_probe.py NOTES.csv [--chords chords.txt]
+    uv run python scripts/guitar_transcription_probe.py NOTES.csv [--profile guitar-acoustic] [--chords chords.txt]
 
 `--chords` points at the `chords.txt` vgt already wrote for the same project;
 without it the chord-tone columns are omitted. Pass several CSVs to compare
 parameter variants side by side.
+
+The profile defaults to `guitar-acoustic`: that preserves the exact bounds
+used for the published guitar findings, so profile-less historical commands
+remain comparable. Profiles without measured probe expectations are rejected
+and the error names the profiles this evaluation harness can use.
 
 Two chord-agreement columns are reported, and the difference matters:
 
@@ -33,17 +38,7 @@ import re
 import statistics
 from pathlib import Path
 
-# A guitar has six strings; anything above this is a detection artifact, not a
-# voicing a learner could play.
-GUITAR_VOICES = 6
-
-# Intervals at which a distorted guitar's partials show up as phantom notes:
-# octave, twelfth, double octave, and the next two partials.
-HARMONIC_INTERVALS = (12, 19, 24, 28, 31, 36)
-
-# Sustains longer than this are frame-threshold runaway rather than a played
-# note -- only used to keep chord agreement from being dominated by one drone.
-SUSTAIN_CAP_S = 4.0
+from vgt.transcribe import ProbeExpectations, TranscriptionError, VALID_PROFILE_NAMES, instrument_profile
 
 PITCH_CLASSES = {
     "C": 0, "C#": 1, "D": 2, "D#": 3, "E": 4, "F": 5,
@@ -84,9 +79,9 @@ def load_chords(path: Path) -> list[tuple[float, frozenset[int]]]:
     return chords
 
 
-def polyphony(notes: list[Note]) -> tuple[int, int, float]:
+def polyphony(notes: list[Note], expected_voice_count: int) -> tuple[int, int, float]:
     """Peak voices, time-weighted median voices, and the share of sounding
-    time spent above `GUITAR_VOICES`."""
+    time spent above the selected profile's expected voice count."""
     edges: list[tuple[float, int]] = []
     for start, end, _, _ in notes:
         edges.append((start, 1))
@@ -111,11 +106,11 @@ def polyphony(notes: list[Note]) -> tuple[int, int, float]:
         if running >= total / 2:
             median = count
             break
-    crowded = sum(seconds for count, seconds in held.items() if count > GUITAR_VOICES)
+    crowded = sum(seconds for count, seconds in held.items() if count > expected_voice_count)
     return peak, median, crowded / total
 
 
-def harmonic_ghost_share(notes: list[Note], step_s: float = 0.02) -> float:
+def harmonic_ghost_share(notes: list[Note], harmonic_intervals: tuple[int, ...], step_s: float = 0.02) -> float:
     """Share of sounding-note samples that sit a harmonic interval above
     another note sounding at the same instant."""
     if not notes:
@@ -136,14 +131,16 @@ def harmonic_ghost_share(notes: list[Note], step_s: float = 0.02) -> float:
             pitches = {note[2] for note in active}
             ghosts += sum(
                 1 for pitch in pitches
-                if any((pitch - other) in HARMONIC_INTERVALS for other in pitches)
+                if any((pitch - other) in harmonic_intervals for other in pitches)
             )
             sampled += len(pitches)
         time += step_s
     return ghosts / sampled if sampled else 0.0
 
 
-def chord_tone_share_onset(notes: list[Note], chords: list[tuple[float, frozenset[int]]]) -> float | None:
+def chord_tone_share_onset(
+    notes: list[Note], chords: list[tuple[float, frozenset[int]]], sustain_cap_s: float
+) -> float | None:
     """Share of note-time on a chord tone, attributing each note wholly to the
     chord under its onset.
 
@@ -159,7 +156,7 @@ def chord_tone_share_onset(notes: list[Note], chords: list[tuple[float, frozense
         index = bisect.bisect_right(boundaries, start) - 1
         if index < 0:
             continue
-        duration = min(end, start + SUSTAIN_CAP_S) - start
+        duration = min(end, start + sustain_cap_s) - start
         if pitch % 12 in chords[index][1]:
             on += duration
         else:
@@ -169,7 +166,7 @@ def chord_tone_share_onset(notes: list[Note], chords: list[tuple[float, frozense
 
 
 def chord_tone_share_timewise(
-    notes: list[Note], chords: list[tuple[float, frozenset[int]]], step_s: float = 0.02
+    notes: list[Note], chords: list[tuple[float, frozenset[int]]], sustain_cap_s: float, step_s: float = 0.02
 ) -> float | None:
     """Share of sounding time on a chord tone, scored against the chord
     actually sounding at each sampled instant.
@@ -184,7 +181,7 @@ def chord_tone_share_timewise(
     on = off = 0
     for start, end, pitch, _ in notes:
         time = start
-        limit = min(end, start + SUSTAIN_CAP_S)
+        limit = min(end, start + sustain_cap_s)
         while time < limit:
             index = bisect.bisect_right(boundaries, time) - 1
             if index >= 0:
@@ -211,22 +208,24 @@ def fragmentation_count(notes: list[Note], max_gap_s: float = 0.03) -> int:
     return fragments
 
 
-def report(path: Path, label: str, chords: list[tuple[float, frozenset[int]]]) -> None:
+def report(
+    path: Path, label: str, chords: list[tuple[float, frozenset[int]]], expectations: ProbeExpectations
+) -> None:
     notes = load_notes(path)
     if not notes:
         print(f"{label:<20} (no notes)")
         return
     durations = [end - start for start, end, _, _ in notes]
-    peak, median, crowded = polyphony(notes)
-    onset_share = chord_tone_share_onset(notes, chords)
-    time_share = chord_tone_share_timewise(notes, chords)
+    peak, median, crowded = polyphony(notes, expectations.expected_voice_count)
+    onset_share = chord_tone_share_onset(notes, chords, expectations.sustain_cap_s)
+    time_share = chord_tone_share_timewise(notes, chords, expectations.sustain_cap_s)
     fmt = lambda value: "--" if value is None else format(value * 100, ".1f")  # noqa: E731
     print(
         f"{label:<20} {len(notes):>6} {statistics.median(durations) * 1000:>8.0f}"
         f" {max(durations):>8.1f} {sum(1 for d in durations if d > 5):>6}"
         f" {peak:>8} {median:>8} {crowded * 100:>8.0f}"
         f" {fragmentation_count(notes):>6}"
-        f" {harmonic_ghost_share(notes) * 100:>8.1f}"
+        f" {harmonic_ghost_share(notes, expectations.harmonic_ghost_intervals) * 100:>8.1f}"
         f" {fmt(onset_share):>7} {fmt(time_share):>7}"
     )
 
@@ -234,8 +233,24 @@ def report(path: Path, label: str, chords: list[tuple[float, frozenset[int]]]) -
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("notes", nargs="+", type=Path, help="Basic Pitch note-events CSV(s)")
+    parser.add_argument(
+        "--profile",
+        default="guitar-acoustic",
+        help="instrument profile for evaluation (default: guitar-acoustic)",
+    )
     parser.add_argument("--chords", type=Path, help="vgt chords.txt for the same project")
     args = parser.parse_args()
+
+    try:
+        profile = instrument_profile(args.profile)
+    except TranscriptionError as error:
+        parser.error(f"{error}; available profiles: {', '.join(VALID_PROFILE_NAMES)}")
+    expectations = profile.probe_expectations
+    if expectations is None:
+        available = ", ".join(
+            name for name in VALID_PROFILE_NAMES if instrument_profile(name).probe_expectations is not None
+        )
+        parser.error(f"profile {args.profile!r} has no measured probe expectations; available: {available}")
 
     chords = load_chords(args.chords) if args.chords else []
     # A parameter sweep writes one identically-named CSV per variant directory,
@@ -245,11 +260,11 @@ def main() -> None:
 
     print(
         f"{'variant':<20} {'notes':>6} {'med_ms':>8} {'max_s':>8} {'>5s':>6}"
-        f" {'maxpoly':>8} {'medpoly':>8} {'%>6vc':>8} {'frag':>6} {'%ghost':>8}"
+        f" {'maxpoly':>8} {'medpoly':>8} {'%>{expectations.expected_voice_count}vc':>8} {'frag':>6} {'%ghost':>8}"
         f" {'%ct-on':>7} {'%ct-t':>7}"
     )
     for path, label in zip(args.notes, labels):
-        report(path, label, chords)
+        report(path, label, chords, expectations)
 
 
 if __name__ == "__main__":
