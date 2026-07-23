@@ -152,10 +152,16 @@ function lua_value(value)
   for _, key in ipairs(keys) do parts[#parts + 1] = '[' .. lua_value(key) .. ']=' .. lua_value(value[key]) end
   return '{{' .. table.concat(parts, ',') .. '}}'
 end
-function user_snapshot()
+function user_snapshot(managed_track_guids, managed_region_ids)
+  local managed_tracks, managed_regions = {{}}, {{}}
+  for _, guid in ipairs(managed_track_guids or {{}}) do managed_tracks[guid] = true end
+  for _, id in ipairs(managed_region_ids or {{}}) do managed_regions[id] = true end
   local user_tracks, user_regions = {{}}, {{}}
-  for _, track in ipairs(tracks) do if track.name:sub(1,5) ~= '[vgt]' then user_tracks[#user_tracks + 1] = track end end
-  for _, region in ipairs(regions) do if region.id == 900 then user_regions[#user_regions + 1] = region end end
+  -- Filter by the immutable ownership records, rather than mutable labels or
+  -- a fixture-specific ID.  A bug that renames or changes the GUID of a user
+  -- object must therefore appear in the snapshot comparison.
+  for _, track in ipairs(tracks) do if not managed_tracks[track.guid] then user_tracks[#user_tracks + 1] = track end end
+  for _, region in ipairs(regions) do if not managed_regions[region.id] then user_regions[#user_regions + 1] = region end end
   return lua_value({{tracks=user_tracks,regions=user_regions,markers=markers}})
 end
 function emit_state()
@@ -204,8 +210,11 @@ def _run_sync(project: Path, state: str) -> str:
     return state
 
 
-def _user_snapshot(project: Path, state: str) -> str:
-    _, snapshot = _run(project, state, "", "io.write(user_snapshot())")
+def _user_snapshot(project: Path, state: str, *, managed_tracks: list[str] | None = None, managed_regions: list[int] | None = None) -> str:
+    """Return a stable byte-for-byte snapshot of every user-owned object."""
+    tracks = "{" + ",".join(json.dumps(guid) for guid in managed_tracks or []) + "}"
+    regions = "{" + ",".join(str(region_id) for region_id in managed_regions or []) + "}"
+    _, snapshot = _run(project, state, "", f"io.write(user_snapshot({tracks}, {regions}))")
     return snapshot
 
 
@@ -219,6 +228,12 @@ local expected = {
   ['[vgt] Guitar']=true, ['[vgt] Backing (no guitar)']=true,
   ['[vgt] Guitar Ref (MIDI)']=true,
 }
+local expected_sources = {
+  ['[vgt] Vocals']='stems/vocals.wav', ['[vgt] Instrumental']='stems/instrumental.wav',
+  ['[vgt] Bass']='stems/bass.wav', ['[vgt] Drums']='stems/drums.wav',
+  ['[vgt] Guitar']='stems/guitar.wav', ['[vgt] Backing (no guitar)']='stems/backing-no-guitar.wav',
+  ['[vgt] Guitar Ref (MIDI)']='transcription/guitar.mid', ['[vgt] Click']='tempo-click.wav',
+}
 local seen_guids, seen_names, managed_count, managed_guids = {}, {}, 0, {}
 for _, track in ipairs(tracks) do
   if track.name:sub(1, 5) == '[vgt]' then
@@ -227,20 +242,26 @@ for _, track in ipairs(tracks) do
     seen_guids[track.guid], seen_names[track.name], managed_count = true, true, managed_count + 1
     managed_guids[#managed_guids + 1] = track.guid
     if track.name == '[vgt] Beats' then
-      assert(#track.items == 3 and track.items[1].notes == 'Beat 1' and track.items[3].C_LOCK == 1, 'beat annotations')
-    elseif track.name == '[vgt] Key' then
-      assert(#track.items == 1 and track.items[1].notes == 'E minor' and track.items[1].C_LOCK == 1, 'key annotation')
-    elseif track.name == '[vgt] Chords' then
-      assert(#track.items == 1 and track.items[1].take.name == 'Dm' and track.items[1].C_LOCK == nil, 'chord annotations')
-    elseif track.name == '[vgt] Click' then
-      assert(track.B_MUTE == 1 and track.items[1].take.source.path:match('/vgt/.+/tempo%-click%.wav$'), tostring(track.items[1].take.source.path))
-    elseif track.name:match('Ref %(MIDI%)') then
-      assert(track.items[1].take.source.path:match('/vgt/.+/transcription/guitar%.mid$'), tostring(track.items[1].take.source.path))
-    elseif track.name ~= '[vgt] The Seven Rivers (Full March - 3_00)' then
-      local stem = track.name:sub(7):lower():gsub(' %(no guitar%)', '')
-      if stem ~= 'beats' and stem ~= 'key' and stem ~= 'chords' then
-        assert(track.items[1].take.source.path:match('/vgt/.+/stems/.+%.wav$'), tostring(track.items[1].take.source.path))
+      assert(#track.items == 3, 'beat item count')
+      for index, item in ipairs(track.items) do
+        local expected_length = index < 3 and 1 or 2
+        assert(item.position == 9 + index and item.length == expected_length and item.notes == ('Beat ' .. index)
+          and item.take.name == ('Beat ' .. index) and item.C_LOCK == 1, 'beat annotations')
       end
+    elseif track.name == '[vgt] Key' then
+      assert(#track.items == 1 and track.items[1].position == 10 and track.items[1].length == 4
+        and track.items[1].notes == 'E minor' and track.items[1].take.name == 'E minor'
+        and track.items[1].C_LOCK == 1, 'key annotation')
+    elseif track.name == '[vgt] Chords' then
+      assert(#track.items == 1 and track.items[1].position == 10.25 and track.items[1].length == 0.75
+        and track.items[1].notes == 'Dm' and track.items[1].take.name == 'Dm' and track.items[1].C_LOCK == nil, 'chord annotations')
+    elseif expected_sources[track.name] then
+      assert(#track.items == 1 and track.items[1].position == 10 and track.items[1].length == 1,
+        'source item placement: ' .. track.name)
+      local source_path, expected_source = track.items[1].take.source.path, expected_sources[track.name]
+      assert(source_path:match('/vgt/') and source_path:sub(-#expected_source) == expected_source,
+        'wrong source association for ' .. track.name .. ': ' .. tostring(source_path))
+      if track.name == '[vgt] Click' then assert(track.B_MUTE == 1, 'click must be muted') end
     end
   end
 end
@@ -269,10 +290,15 @@ io.write('managed contract ok#' .. table.concat(managed_guids, ',') .. '#' .. ta
 def test_goal_contract_is_offline_non_destructive_and_idempotent(tmp_path: Path, deterministic_detectors: None) -> None:
     project = _copy_project(tmp_path)
 
-    # Initialization selects the real fixture's reference identity and writes only a sidecar.
-    state, _ = _run_apply(project, _lua_state(project))
-    assert read_sidecar(project)["config"]["reference_track_guid"] == REFERENCE_GUID
+    # This baseline precedes even initialization, and includes every user
+    # track/item/region plus the pre-existing tempo map.  It is deliberately
+    # not name-based: the final comparison must catch user-object renames.
+    state = _lua_state(project)
     before = _user_snapshot(project, state)
+
+    # Initialization selects the real fixture's reference identity and writes only a sidecar.
+    state, _ = _run_apply(project, state)
+    assert read_sidecar(project)["config"]["reference_track_guid"] == REFERENCE_GUID
 
     separator, transcriber = CountingSeparator(), CountingTranscriber()
     analyze(project, stages=("tempo", "key", "sections"))
@@ -330,7 +356,13 @@ sync()
     state, key_snapshot = _run_apply_key_snapshot(project, state)
     assert key_snapshot == "1#0:E minor:1"
     _assert_managed_contract(project, state)
-    assert _user_snapshot(project, state) == before
+    final_sidecar = read_sidecar(project)
+    assert _user_snapshot(
+        project,
+        state,
+        managed_tracks=final_sidecar["managed_track_guids"],
+        managed_regions=final_sidecar["managed_region_ids"],
+    ) == before
 
 
 def test_reascript_uses_beats_not_a_tempo_map_when_bar_phase_is_unknown(tmp_path: Path) -> None:
