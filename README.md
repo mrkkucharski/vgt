@@ -36,3 +36,16 @@ uv run pytest -q
 
 CI runs the same tests with mocked LALAL API v1 fixtures; it does not receive
 credentials or make live LALAL requests.
+
+GitHub Actions runs this offline regression suite automatically for every push
+and pull request, as well as on manual dispatch. It uses Python 3.11 on Linux
+and Lua 5.4 only to execute mocked ReaScript fixtures. Every test gets isolated
+pytest temporary paths; the runner fixes UTC, the C.UTF-8 locale, Python hash
+ordering, pytest plugin loading, BLAS/Numba worker counts, and the Lua
+executable. The suite covers the
+CLI, sidecar migrations and locking, analysis and separation state machines,
+ReaScript fixture behavior, package contents, and transcription routing/output
+validation. LALAL uses `httpx.MockTransport`; Basic Pitch and DrumScript
+subprocesses are fixture writers. It never supplies credentials, sends network
+requests, downloads model environments, starts REAPER, or requires human
+verification.

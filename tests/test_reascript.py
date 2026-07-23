@@ -1,5 +1,6 @@
 from pathlib import Path
 import json
+import os
 import subprocess
 
 
@@ -10,6 +11,7 @@ TRANSCRIPTION_VERIFY_SCRIPT = Path(__file__).parents[1] / "scripts" / "verify_tr
 SYNC_VERIFY_SCRIPT = Path(__file__).parents[1] / "scripts" / "verify_phase1_sync.py"
 APPLY_SCRIPT = Path(__file__).parents[1] / "reascript" / "vgt_initialize.lua"
 SYNC_SCRIPT = Path(__file__).parents[1] / "reascript" / "vgt_sync.lua"
+LUA = os.environ.get("VGT_TEST_LUA", "lua")
 
 
 def test_apply_uses_reaper_api_and_never_edits_rpp_text() -> None:
@@ -51,7 +53,7 @@ def test_has_file_backed_media_requires_a_real_file_backed_item() -> None:
             "io.write(tostring(has_file_backed_media(tracks[1])), ':', tostring(has_file_backed_media(tracks[2])), ':', tostring(has_file_backed_media(tracks[3])))",
         ]
     )
-    result = subprocess.run(["lua", "-", "song.RPP"], input=lua_program, text=True, capture_output=True, check=True)
+    result = subprocess.run([LUA, "-", "song.RPP"], input=lua_program, text=True, capture_output=True, check=True)
     assert result.stdout == "true:false:false"
 
 
@@ -81,7 +83,7 @@ def test_candidate_tracks_excludes_vgt_and_non_file_backed_tracks() -> None:
             "io.write(table.concat(names, ','))",
         ]
     )
-    result = subprocess.run(["lua", "-", "song.RPP"], input=lua_program, text=True, capture_output=True, check=True)
+    result = subprocess.run([LUA, "-", "song.RPP"], input=lua_program, text=True, capture_output=True, check=True)
     assert result.stdout == "Song A,Song B"
 
 
@@ -98,7 +100,7 @@ def test_choose_reference_skips_the_menu_for_a_lone_candidate() -> None:
             "io.write(tostring(choose_reference({track}) == track))",
         ]
     )
-    result = subprocess.run(["lua", "-", "song.RPP"], input=lua_program, text=True, capture_output=True, check=True)
+    result = subprocess.run([LUA, "-", "song.RPP"], input=lua_program, text=True, capture_output=True, check=True)
     assert result.stdout == "true"
 
 
@@ -115,7 +117,7 @@ def test_choose_reference_still_honors_an_automation_override_with_one_candidate
             "io.write(tostring(choose_reference({track}) == track))",
         ]
     )
-    result = subprocess.run(["lua", "-", "song.RPP"], input=lua_program, text=True, capture_output=True, check=True)
+    result = subprocess.run([LUA, "-", "song.RPP"], input=lua_program, text=True, capture_output=True, check=True)
     assert result.stdout == "true"
 
 
@@ -211,7 +213,7 @@ def test_add_click_track_imports_the_rendered_click_wav_muted(tmp_path: Path) ->
             "io.write(track.name, ':', track.mute, ':', item.values.D_POSITION, ':', item.values.D_LENGTH, ':', item.values.C_BEATATTACHMODE, ':', #managed_tracks)",
         ]
     )
-    result = subprocess.run(["lua", "-", str(rpp)], input=lua_program, text=True, capture_output=True, check=True)
+    result = subprocess.run([LUA, "-", str(rpp)], input=lua_program, text=True, capture_output=True, check=True)
     assert result.stdout == "[vgt] Click:1:1.5:2.5:0:1"
 
 
@@ -230,7 +232,7 @@ def test_add_click_track_is_absent_when_no_click_artifact_exists(tmp_path: Path)
             "io.write(#managed_tracks, ':', #__tracks, ':', #__items)",
         ]
     )
-    result = subprocess.run(["lua", "-", str(rpp)], input=lua_program, text=True, capture_output=True, check=True)
+    result = subprocess.run([LUA, "-", str(rpp)], input=lua_program, text=True, capture_output=True, check=True)
     assert result.stdout == "0:0:0"
 
 
@@ -251,7 +253,7 @@ def test_add_click_track_is_absent_when_no_artifact_namespace_recorded(tmp_path:
             "io.write(#managed_tracks, ':', #__tracks, ':', #__items)",
         ]
     )
-    result = subprocess.run(["lua", "-", str(rpp)], input=lua_program, text=True, capture_output=True, check=True)
+    result = subprocess.run([LUA, "-", str(rpp)], input=lua_program, text=True, capture_output=True, check=True)
     assert result.stdout == "0:0:0"
 
 
@@ -277,7 +279,7 @@ def test_add_stem_tracks_imports_only_committed_namespace_wavs_time_based_and_of
         "for i = 4, 9 do local track = __tracks[i]; local item = __items[i - 3]; io.write(track.name, ':', item.values.D_POSITION, ':', item.values.D_LENGTH, ':', item.values.C_BEATATTACHMODE, ';') end",
         "io.write('#', #managed_tracks)",
     ])
-    result = subprocess.run(["lua", "-", str(rpp)], input=lua_program, text=True, capture_output=True, check=True)
+    result = subprocess.run([LUA, "-", str(rpp)], input=lua_program, text=True, capture_output=True, check=True)
     assert result.stdout == (
         "[vgt] Vocals:12.25:2.5:0;[vgt] Instrumental:12.25:2.5:0;[vgt] Bass:12.25:2.5:0;"
         "[vgt] Drums:12.25:2.5:0;[vgt] Guitar:12.25:2.5:0;[vgt] Backing (no guitar):12.25:2.5:0;#6"
@@ -309,7 +311,7 @@ def test_add_stem_tracks_accepts_the_file_form_the_separator_actually_commits(tm
         f"{{file = '{recorded_file}', size_bytes = 16, duration_seconds = 2.5}}}}}}, 0, managed_tracks)",
         "io.write(#managed_tracks, ':', __tracks[4].name)",
     ])
-    result = subprocess.run(["lua", "-", str(rpp)], input=lua_program, text=True, capture_output=True, check=True)
+    result = subprocess.run([LUA, "-", str(rpp)], input=lua_program, text=True, capture_output=True, check=True)
     assert "outside the expected stem namespace" not in result.stderr
     assert result.stdout == "1:[vgt] Vocals"
 
@@ -327,7 +329,7 @@ def test_add_stem_tracks_imports_opt_in_strings_and_piano(tmp_path: Path) -> Non
         "add_stem_tracks(3, {artifact_namespace = 'song-abc123', artifacts = {strings = {file = 'vgt/song-abc123/stems/strings.wav', size_bytes = 16, duration_seconds = 2.5}, piano = {file = 'vgt/song-abc123/stems/piano.wav', size_bytes = 16, duration_seconds = 2.5}}}, 0, managed_tracks)",
         "io.write(__tracks[4].name, ':', __tracks[5].name, ':', #managed_tracks)",
     ])
-    result = subprocess.run(["lua", "-", str(rpp)], input=lua_program, text=True, capture_output=True, check=True)
+    result = subprocess.run([LUA, "-", str(rpp)], input=lua_program, text=True, capture_output=True, check=True)
     assert result.stdout == "[vgt] Strings:[vgt] Keys / Piano:2"
 
 
@@ -343,7 +345,7 @@ def test_add_stem_tracks_skips_missing_or_outside_namespace_artifacts_with_a_war
         "add_stem_tracks(3, {artifact_namespace = 'song-abc123', artifacts = {vocals = {file = '../user.wav'}}}, 0, managed_tracks)",
         "io.write(#managed_tracks, ':', #__tracks, ':', #__items)",
     ])
-    result = subprocess.run(["lua", "-", str(rpp)], input=lua_program, text=True, capture_output=True, check=True)
+    result = subprocess.run([LUA, "-", str(rpp)], input=lua_program, text=True, capture_output=True, check=True)
     assert result.stdout == "0:0:0"
     assert "skipping stem vocals: sidecar file is outside the expected stem namespace" in result.stderr
 
@@ -363,7 +365,7 @@ def test_transcription_tracks_follow_their_stems_and_are_unmuted_time_based(tmp_
         "add_stem_tracks(0, {artifact_namespace = 'song-abc123', artifacts = {bass = {file = 'vgt/song-abc123/stems/bass.wav', size_bytes = 16, duration_seconds = 2.5}, guitar = {file = 'vgt/song-abc123/stems/guitar.wav', size_bytes = 16, duration_seconds = 2.5}}}, {targets = {guitar = {status = 'transcribed', midi_file = 'transcription/guitar.mid'}, bass = {status = 'transcribed', midi_file = 'transcription/bass.mid'}}}, 12.25, managed_tracks)",
         "for i, track in ipairs(__tracks) do local item = __items[i]; io.write(track.name, ':', track.mute, ':', item.values.D_POSITION, ':', item.values.C_BEATATTACHMODE, ';') end io.write('#', #managed_tracks)",
     ])
-    result = subprocess.run(["lua", "-", str(rpp)], input=lua_program, text=True, capture_output=True, check=True)
+    result = subprocess.run([LUA, "-", str(rpp)], input=lua_program, text=True, capture_output=True, check=True)
     assert result.stdout == (
         "[vgt] Bass:0:12.25:0;[vgt] Bass Ref (MIDI):0:12.25:0;"
         "[vgt] Guitar:0:12.25:0;[vgt] Guitar Ref (MIDI):0:12.25:0;#4"
@@ -393,7 +395,7 @@ def test_drumscript_record_imports_channel_10_polyphony_immediately_after_drums(
         "add_stem_tracks(0, {artifact_namespace = 'song-abc123', artifacts = {drums = {file = 'vgt/song-abc123/stems/drums.wav', size_bytes = 16, duration_seconds = 2.5}}}, {targets = {drums = {status = 'transcribed', midi_file = 'transcription/drums.mid', events_file = 'transcription/drums.json'}}}, 7.75, managed_tracks)",
         "local item = __items[2]; io.write(__tracks[1].name, ';', __tracks[2].name, ':', item.values.D_POSITION, ':', item.values.C_BEATATTACHMODE, ':', item.take.source.path, ':', #managed_tracks)",
     ])
-    result = subprocess.run(["lua", "-", str(rpp)], input=lua_program, text=True, capture_output=True, check=True)
+    result = subprocess.run([LUA, "-", str(rpp)], input=lua_program, text=True, capture_output=True, check=True)
 
     assert result.stdout == f"[vgt] Drums;[vgt] Drums Ref (MIDI):7.75:0:{midi_path}:2"
     # The importer receives the recorded artifact itself; it neither rewrites
@@ -423,7 +425,7 @@ def test_removal_touches_only_the_recorded_vgt_drum_reference(tmp_path: Path) ->
         "remove_previous_managed_tracks()",
         "for _, track in ipairs(tracks) do io.write(track.name, ':', track.guid, ';') end",
     ])
-    result = subprocess.run(["lua", "-", str(rpp)], input=lua_program, text=True, capture_output=True, check=True)
+    result = subprocess.run([LUA, "-", str(rpp)], input=lua_program, text=True, capture_output=True, check=True)
 
     assert result.stdout == "[vgt] Drums Ref (MIDI):{B00B-0002};User Drums:{C0DE-0003};"
 
@@ -441,7 +443,7 @@ def test_transcription_skips_expected_states_and_appends_orphans_in_target_order
         "add_stem_tracks(0, {artifact_namespace = 'song-abc123', artifacts = {}}, {targets = {guitar = {status = 'transcribed', midi_file = 'transcription/guitar.mid'}, bass = {status = 'transcribed', midi_file = 'transcription/bass.mid'}, original = {status = 'transcribed', midi_file = 'transcription/original.mid'}, vocals = {status = 'skipped-missing-source'}, drums = {status = 'error'}}}, 2, managed_tracks)",
         "for _, track in ipairs(__tracks) do io.write(track.name, ';') end io.write('#', #managed_tracks)",
     ])
-    result = subprocess.run(["lua", "-", str(rpp)], input=lua_program, text=True, capture_output=True, check=True)
+    result = subprocess.run([LUA, "-", str(rpp)], input=lua_program, text=True, capture_output=True, check=True)
     assert result.stdout == "[vgt] Guitar Ref (MIDI);[vgt] Bass Ref (MIDI);[vgt] Original Ref (MIDI);#3"
     assert result.stderr == ""
 
@@ -455,7 +457,7 @@ def test_transcription_rejects_outside_namespace_midi_path(tmp_path: Path) -> No
         "add_stem_tracks(0, {artifact_namespace = 'song-abc123', artifacts = {}}, {targets = {guitar = {status = 'transcribed', midi_file = '../user.mid'}}}, 0, managed_tracks)",
         "io.write(#managed_tracks, ':', #__tracks)",
     ])
-    result = subprocess.run(["lua", "-", str(rpp)], input=lua_program, text=True, capture_output=True, check=True)
+    result = subprocess.run([LUA, "-", str(rpp)], input=lua_program, text=True, capture_output=True, check=True)
     assert result.stdout == "0:0"
     assert "skipping transcription guitar: sidecar MIDI file is outside the expected transcription namespace" in result.stderr
 
@@ -469,7 +471,7 @@ def test_drum_transcription_rejects_any_path_except_its_recorded_namespace_file(
         "add_stem_tracks(0, {artifact_namespace = 'song-abc123', artifacts = {}}, {targets = {drums = {status = 'transcribed', midi_file = 'transcription/guitar.mid'}}}, 0, managed_tracks)",
         "io.write(#managed_tracks, ':', #__tracks)",
     ])
-    result = subprocess.run(["lua", "-", str(rpp)], input=lua_program, text=True, capture_output=True, check=True)
+    result = subprocess.run([LUA, "-", str(rpp)], input=lua_program, text=True, capture_output=True, check=True)
 
     assert result.stdout == "0:0"
     assert "skipping transcription drums: sidecar MIDI file is outside the expected transcription namespace" in result.stderr
@@ -496,7 +498,7 @@ def test_live_stem_lease_is_detected_without_mutating_the_project(tmp_path: Path
         "local stamp = string.format('%04d-%02d-%02dT%02d:%02d:%02dZ', now.year, now.month, now.day, now.hour, now.min, now.sec)",
         "io.write(tostring(stems_lease_is_live({in_progress = {heartbeat_at = stamp}})), ':', tostring(stems_lease_is_live({in_progress = {heartbeat_at = '2000-01-01T00:00:00Z'}})))",
     ])
-    result = subprocess.run(["lua", "-", str(tmp_path / "song.RPP")], input=lua_program, text=True, capture_output=True, check=True)
+    result = subprocess.run([LUA, "-", str(tmp_path / "song.RPP")], input=lua_program, text=True, capture_output=True, check=True)
     assert result.stdout == "true:false"
 
 
@@ -519,7 +521,7 @@ def test_apply_preserves_analysis_json_with_braces_inside_strings(tmp_path: Path
         ]
     )
     result = subprocess.run(
-        ["lua", "-", str(tmp_path / "song.RPP")],
+        [LUA, "-", str(tmp_path / "song.RPP")],
         input=lua_program,
         text=True,
         capture_output=True,
@@ -550,7 +552,7 @@ def test_apply_removes_only_sidecar_recorded_region_ids(tmp_path: Path) -> None:
         ]
     )
     result = subprocess.run(
-        ["lua", "-", str(tmp_path / "song.RPP")], input=lua_program, text=True, capture_output=True, check=True
+        [LUA, "-", str(tmp_path / "song.RPP")], input=lua_program, text=True, capture_output=True, check=True
     )
     assert result.stdout == "17:true:1"
 
@@ -575,7 +577,7 @@ def test_current_tempo_fingerprint_reflects_every_live_marker(tmp_path: Path) ->
         ]
     )
     result = subprocess.run(
-        ["lua", "-", str(tmp_path / "song.RPP")], input=lua_program, text=True, capture_output=True, check=True
+        [LUA, "-", str(tmp_path / "song.RPP")], input=lua_program, text=True, capture_output=True, check=True
     )
     assert result.stdout == "0.000000:120.000:4:4;10.500000:140.250:3:4"
 
@@ -593,7 +595,7 @@ def test_prior_tempo_map_fingerprint_reads_the_sidecar_config_field(tmp_path: Pa
         ]
     )
     result = subprocess.run(
-        ["lua", "-", str(tmp_path / "song.RPP")], input=lua_program, text=True, capture_output=True, check=True
+        [LUA, "-", str(tmp_path / "song.RPP")], input=lua_program, text=True, capture_output=True, check=True
     )
     assert result.stdout == "0.000000:120.000:4:4"
 
@@ -613,7 +615,7 @@ def test_prior_tempo_map_fingerprint_is_empty_when_never_recorded(tmp_path: Path
         ]
     )
     result = subprocess.run(
-        ["lua", "-", str(tmp_path / "song.RPP")], input=lua_program, text=True, capture_output=True, check=True
+        [LUA, "-", str(tmp_path / "song.RPP")], input=lua_program, text=True, capture_output=True, check=True
     )
     assert result.stdout == "[]"
 
@@ -715,7 +717,7 @@ def _run_lua_module(script: str, rpp_path: Path, program: str) -> subprocess.Com
     driver_start = script.index("local ok, error_message = xpcall")
     module = script[:driver_start]
     return subprocess.run(
-        ["lua", "-", str(rpp_path)],
+        [LUA, "-", str(rpp_path)],
         input="\n".join([module, program]),
         text=True,
         capture_output=True,
@@ -863,6 +865,6 @@ _G.__messages = messages
     # Run the full script, including its xpcall driver, so a missing-track
     # error is reported through ShowMessageBox exactly as it would be live.
     full_program = "\n".join([lua_mock, SYNC_SCRIPT.read_text(), "io.write(__messages[1] or '')"])
-    result = subprocess.run(["lua", "-", str(rpp)], input=full_program, text=True, capture_output=True)
+    result = subprocess.run([LUA, "-", str(rpp)], input=full_program, text=True, capture_output=True)
     assert result.returncode == 0, result.stderr
     assert "No [vgt] Chords track found" in result.stdout
