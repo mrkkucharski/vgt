@@ -56,6 +56,7 @@ from .transcribe import (
     spec_hash,
     target_input_hash,
     transcribed_entry,
+    validate_profile_for_target,
     validate_target,
 )
 
@@ -215,15 +216,15 @@ def _refresh_target(
     Never falls back to the mix and never triggers separation -- a target
     whose stem hasn't arrived yet is simply retained as
     `skipped-missing-source` until a later run finds it (see
-    `sidecar.py` schema v9 and `docs/transcription-plan.md` section 2).
+    `sidecar.py` schema v10 and `docs/transcription-plan.md` section 2).
     """
     validate_target(target)
     tempo_value = analysis["tempo"].get("value")
     midi_tempo = tempo_value.get("bpm") if isinstance(tempo_value, dict) else None
     time_signature = tempo_value.get("time_signature") if isinstance(tempo_value, dict) else None
-    guitar_type = (analysis.get("stems") or {}).get("guitar_type")
+    modes = analysis["transcription"].get("modes")
     transcriber = router.for_target(target)
-    spec = router.spec_for_target(target, midi_tempo=midi_tempo, guitar_type=guitar_type, time_signature=time_signature)
+    spec = router.spec_for_target(target, midi_tempo=midi_tempo, modes=modes, time_signature=time_signature)
     settings_hash = spec_hash(spec)
 
     resolved = resolve_target_source(project_path, target, analysis, reference_source=reference_source)
@@ -456,7 +457,7 @@ def analyze(
     total = len(selected_stages)
     for position, stage in enumerate(selected_stages, start=1):
         if stage == "transcription":
-            # Owns a per-target index (see sidecar.py schema v9) rather than
+            # Owns a per-target index (see sidecar.py schema v10) rather than
             # the single input_hash/settings_hash pair this generic loop
             # drives, so each target is reconciled independently below.
             targets_to_run = (
@@ -564,6 +565,21 @@ def add_transcription_targets(project: str | Path | None, targets: tuple[str, ..
     def update(current: dict[str, Any]) -> None:
         existing = current["transcription"]["requested_targets"]
         current["transcription"]["requested_targets"] = list(dict.fromkeys([*existing, *targets]))
+
+    try:
+        return update_analysis(project_path, update)
+    except SidecarError as exc:
+        raise AnalysisError(str(exc)) from exc
+
+
+def set_transcription_modes(project: str | Path | None, modes: dict[str, str]) -> dict[str, Any]:
+    """Persist validated target-to-profile selections in the sidecar."""
+    for target, profile in modes.items():
+        validate_profile_for_target(target, profile)
+    project_path = locate_project(project)
+
+    def update(current: dict[str, Any]) -> None:
+        current["transcription"]["modes"].update(modes)
 
     try:
         return update_analysis(project_path, update)

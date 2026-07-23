@@ -8,7 +8,7 @@ import sys
 import pytest
 
 from vgt import analysis as analysis_module
-from vgt.analysis import AnalysisError, add_transcription_targets, analyze, chord_sources, forget_transcription_targets
+from vgt.analysis import AnalysisError, add_transcription_targets, analyze, chord_sources, forget_transcription_targets, set_transcription_modes
 from vgt.cli import main
 from vgt.sidecar import (
     ANALYSIS_STAGES,
@@ -18,7 +18,16 @@ from vgt.sidecar import (
     upgrade,
     write_sidecar,
 )
-from vgt.transcribe import FakeTranscriber, TargetTranscriberRouter, TranscriptionError, events_artifact_name, midi_artifact_name, notes_artifact_name
+from vgt.transcribe import (
+    FakeTranscriber,
+    TargetTranscriberRouter,
+    TranscriptionError,
+    default_spec_for_target,
+    events_artifact_name,
+    midi_artifact_name,
+    notes_artifact_name,
+    spec_hash,
+)
 
 
 FIXTURE_DIR = Path(__file__).parents[1] / "test" / "Reaper Project"
@@ -71,7 +80,7 @@ def test_upgrade_keeps_v1_fields_and_adds_v2_analysis_skeleton() -> None:
 
     upgraded = upgrade(v1)
 
-    assert upgraded["schema_version"] == 9
+    assert upgraded["schema_version"] == 10
     assert upgraded["managed_region_ids"] == []
     assert upgraded["managed_track_guids"] == ["{AAAA}", "{BBBB}"]
     assert upgraded["config"] == {"reference_track_guid": REFERENCE_GUID}
@@ -91,7 +100,7 @@ def test_upgrade_keeps_v1_fields_and_adds_v2_analysis_skeleton() -> None:
             expected["detected_input_hash"] = None
             expected["detected_settings_hash"] = None
         assert upgraded["analysis"][stage] == expected
-    assert upgraded["analysis"]["transcription"] == {"requested_targets": ["guitar"], "targets": {}}
+    assert upgraded["analysis"]["transcription"] == {"requested_targets": ["guitar"], "modes": {}, "targets": {}}
     assert upgraded["analysis"]["provenance"]["tool"] == "vgt"
 
 
@@ -143,7 +152,7 @@ def test_upgrade_backfills_detected_from_value_for_v4_sections() -> None:
     assert sections["detected"] is not sections["value"]  # backfill copies, doesn't alias
 
 
-def test_upgrade_adds_v9_transcription_block_to_a_v8_sidecar() -> None:
+def test_upgrade_adds_v10_transcription_block_to_a_v8_sidecar() -> None:
     v8 = {
         "schema_version": 8,
         "config": {"reference_track_guid": REFERENCE_GUID},
@@ -154,8 +163,8 @@ def test_upgrade_adds_v9_transcription_block_to_a_v8_sidecar() -> None:
 
     upgraded = upgrade(v8)
 
-    assert upgraded["schema_version"] == 9
-    assert upgraded["analysis"]["transcription"] == {"requested_targets": ["guitar"], "targets": {}}
+    assert upgraded["schema_version"] == 10
+    assert upgraded["analysis"]["transcription"] == {"requested_targets": ["guitar"], "modes": {}, "targets": {}}
     # Unrelated v8 fields survive the upgrade untouched.
     assert upgraded["analysis"]["stems"]["artifact_namespace"] == "abc12345"
     assert upgraded["analysis"]["stems"]["optional_stems"] == ["piano"]
@@ -176,6 +185,7 @@ def test_upgrade_preserves_an_existing_transcription_block() -> None:
 
     assert upgraded["analysis"]["transcription"] == {
         "requested_targets": ["guitar", "bass"],
+        "modes": {},
         "targets": {"guitar": {"status": "transcribed", "note_count": 872}},
     }
 
@@ -187,7 +197,32 @@ def test_upgrade_preserves_an_intentionally_empty_transcription_target_set() -> 
 
     upgraded = upgrade(v9)
 
-    assert upgraded["analysis"]["transcription"] == {"requested_targets": [], "targets": {}}
+    assert upgraded["analysis"]["transcription"] == {"requested_targets": [], "modes": {}, "targets": {}}
+
+
+def test_upgrade_migrates_v9_acoustic_guitar_to_its_equivalent_profile_hash() -> None:
+    v9 = {
+        "schema_version": 9,
+        "analysis": {"stems": {"guitar_type": "acoustic"}, "transcription": {"requested_targets": ["guitar"], "targets": {}}},
+    }
+
+    upgraded = upgrade(v9)
+
+    modes = upgraded["analysis"]["transcription"]["modes"]
+    assert modes == {"guitar": "guitar-acoustic"}
+    # #110 selected this exact acoustic profile from stems.guitar_type. The
+    # migration must preserve its settings identity, not invalidate its cache.
+    assert spec_hash(default_spec_for_target("guitar", modes=modes, midi_tempo=120.0)) == (
+        "5e5521244ba806c51930879306fd1339b24e563368c8ce36f16370646a31a3e7"
+    )
+
+
+def test_upgrade_keeps_an_explicit_transcription_mode_over_the_legacy_declaration() -> None:
+    upgraded = upgrade(
+        {"schema_version": 9, "analysis": {"stems": {"guitar_type": "acoustic"}, "transcription": {"modes": {"guitar": "guitar"}}}}
+    )
+
+    assert upgraded["analysis"]["transcription"]["modes"] == {"guitar": "guitar"}
 
 
 def test_upgrade_does_not_clobber_an_existing_detected_field() -> None:
@@ -286,7 +321,7 @@ def test_analyze_writes_v2_sidecar_with_skeleton_and_provenance(tmp_path: Path) 
 
     result = analyze(project)
 
-    assert result["schema_version"] == 9
+    assert result["schema_version"] == 10
     assert result["managed_track_guids"] == ["{AAAA}", "{BBBB}"]  # phase 0 fields intact
     for stage in ANALYSIS_STAGES:
         if stage == "transcription":
@@ -739,7 +774,7 @@ def test_cli_analyze_preserves_local_results_when_lalal_is_unavailable(
     captured = capsys.readouterr()
     assert captured.out == ""
     sidecar = read_sidecar(project)
-    assert sidecar["schema_version"] == 9
+    assert sidecar["schema_version"] == 10
     assert sidecar["analysis"]["tempo"]["value"] is not None
     assert "stem separation unavailable; continuing with available sources" in captured.err
 
@@ -888,6 +923,25 @@ def test_refresh_target_per_target_cache_independence(tmp_path: Path) -> None:
 
     second = analyze(project, stages=("transcription",), transcription_targets=("guitar", "bass"), transcriber=FakeTranscriber())
     assert second["analysis"]["transcription"]["targets"]["guitar"]["input_hash"] != guitar_first["input_hash"]
+    assert second["analysis"]["transcription"]["targets"]["bass"] == bass_first
+
+
+def test_selecting_one_mode_changes_only_its_target_settings_hash(tmp_path: Path) -> None:
+    project = _project_copy(tmp_path)
+    _write_v1_sidecar(project)
+    sidecar = read_sidecar(project)
+    _add_fake_stem(project, sidecar, "guitar", b"guitar-audio")
+    _add_fake_stem(project, sidecar, "bass", b"bass-audio")
+    write_sidecar(project, sidecar)
+
+    first = analyze(project, stages=("transcription",), transcription_targets=("guitar", "bass"), transcriber=FakeTranscriber())
+    bass_first = first["analysis"]["transcription"]["targets"]["bass"]
+    guitar_first = first["analysis"]["transcription"]["targets"]["guitar"]
+
+    set_transcription_modes(project, {"guitar": "guitar-acoustic"})
+    second = analyze(project, stages=("transcription",), transcription_targets=("guitar", "bass"), transcriber=FakeTranscriber())
+
+    assert second["analysis"]["transcription"]["targets"]["guitar"]["settings_hash"] != guitar_first["settings_hash"]
     assert second["analysis"]["transcription"]["targets"]["bass"] == bass_first
 
 
@@ -1065,6 +1119,37 @@ def test_cli_transcribe_persists_a_target_across_later_runs(tmp_path: Path, monk
     # A later run needs no flag: the persisted set already includes it.
     assert main(["analyze", str(project)]) == 0
     assert read_sidecar(project)["analysis"]["transcription"]["requested_targets"] == ["guitar", "bass"]
+
+
+def test_cli_mode_persists_a_valid_target_profile_pair(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    project = _project_copy(tmp_path)
+    _write_v1_sidecar(project)
+    monkeypatch.setattr("vgt.cli.analyze", lambda *_args, **_kwargs: read_sidecar(project))
+
+    assert main(["analyze", "--mode", "guitar=guitar-acoustic", str(project)]) == 0
+    assert read_sidecar(project)["analysis"]["transcription"]["modes"] == {"guitar": "guitar-acoustic"}
+
+
+def test_cli_mode_rejects_an_invalid_profile_with_the_valid_choices(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    project = _project_copy(tmp_path)
+    _write_v1_sidecar(project)
+
+    assert main(["analyze", "--mode", "guitar=banjo", str(project)]) == 2
+
+    error = capsys.readouterr().err
+    assert "profile for 'guitar' must be one of" in error
+    assert "guitar-acoustic" in error
+
+
+def test_cli_mode_rejects_a_profile_registered_for_another_target(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    project = _project_copy(tmp_path)
+    _write_v1_sidecar(project)
+
+    assert main(["analyze", "--mode", "bass=guitar-acoustic", str(project)]) == 2
+
+    error = capsys.readouterr().err
+    assert "profile for 'bass' must be one of" in error
+    assert "('default', 'bass')" in error
 
 
 def test_forget_transcription_targets_before_any_analysis_is_a_harmless_no_op(tmp_path: Path) -> None:

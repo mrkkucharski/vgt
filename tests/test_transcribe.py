@@ -70,12 +70,10 @@ def test_default_spec_applies_the_per_target_frequency_table() -> None:
     assert (piano.minimum_frequency_hz, piano.maximum_frequency_hz) == (None, None)
 
 
-def test_default_spec_leaves_electric_and_unset_guitar_at_the_generic_defaults() -> None:
-    """Only `guitar_type: acoustic` is measured (see
-    docs/guitar-transcription-findings.md); electric and unset must keep
-    behaving exactly as before this override existed."""
+def test_default_spec_leaves_unrecognised_and_unset_guitar_at_the_generic_defaults() -> None:
+    """Stored modes from a retired registry entry safely use the default."""
     unset = default_spec_for_target("guitar")
-    electric = default_spec_for_target("guitar", guitar_type="electric")
+    electric = default_spec_for_target("guitar", modes={"guitar": "electric"})
 
     for spec in (unset, electric):
         assert (spec.minimum_frequency_hz, spec.maximum_frequency_hz) == (70.0, 1400.0)
@@ -87,7 +85,7 @@ def test_default_spec_leaves_electric_and_unset_guitar_at_the_generic_defaults()
 
 
 def test_default_spec_narrows_acoustic_guitar_and_enables_cleanup() -> None:
-    spec = default_spec_for_target("guitar", guitar_type="acoustic", midi_tempo=120.0)
+    spec = default_spec_for_target("guitar", modes={"guitar": "guitar-acoustic"}, midi_tempo=120.0)
 
     assert (spec.minimum_frequency_hz, spec.maximum_frequency_hz) == (80.0, 1200.0)
     assert spec.onset_threshold == 0.6
@@ -114,23 +112,30 @@ def test_default_spec_narrows_acoustic_guitar_and_enables_cleanup() -> None:
     assert _cleanup_params(spec, "clamp_sustain")["max_duration_s"] == pytest.approx(4.0)
 
 
-def test_default_spec_acoustic_override_is_guitar_only() -> None:
-    """`guitar_type` must never leak into another target's spec."""
-    bass = default_spec_for_target("bass", guitar_type="acoustic")
+def test_default_spec_mode_override_is_target_local() -> None:
+    bass = default_spec_for_target("bass", modes={"guitar": "guitar-acoustic"})
+
+    assert (bass.minimum_frequency_hz, bass.maximum_frequency_hz) == (30.0, 400.0)
+    assert bass.cleanup == ()
+
+
+def test_default_spec_ignores_a_stored_profile_for_another_target() -> None:
+    """A stale or malformed sidecar mode must retain the target default."""
+    bass = default_spec_for_target("bass", modes={"bass": "guitar-acoustic"})
 
     assert (bass.minimum_frequency_hz, bass.maximum_frequency_hz) == (30.0, 400.0)
     assert bass.cleanup == ()
 
 
 def test_default_spec_acoustic_sustain_clamp_scales_with_time_signature() -> None:
-    spec = default_spec_for_target("guitar", guitar_type="acoustic", midi_tempo=120.0, time_signature="3/4")
+    spec = default_spec_for_target("guitar", modes={"guitar": "guitar-acoustic"}, midi_tempo=120.0, time_signature="3/4")
 
     # 2 bars * 3 beats * 60/120 = 3.0s.
     assert _cleanup_params(spec, "clamp_sustain")["max_duration_s"] == pytest.approx(3.0)
 
 
 def test_default_spec_acoustic_sustain_clamp_is_none_without_a_tempo() -> None:
-    spec = default_spec_for_target("guitar", guitar_type="acoustic", midi_tempo=None)
+    spec = default_spec_for_target("guitar", modes={"guitar": "guitar-acoustic"}, midi_tempo=None)
 
     assert "clamp_sustain" not in _cleanup_names(spec)
     # The rest of the acoustic override still applies.
@@ -219,7 +224,7 @@ def test_spec_hash_changes_when_a_cleanup_stage_parameter_changes() -> None:
     `spec.cleanup`, so it always flows into the hash."""
     from dataclasses import replace
 
-    spec = default_spec_for_target("guitar", guitar_type="acoustic", midi_tempo=120.0)
+    spec = default_spec_for_target("guitar", modes={"guitar": "guitar-acoustic"}, midi_tempo=120.0)
     isolated_stage_index = next(i for i, stage in enumerate(spec.cleanup) if stage.name == "drop_isolated_notes")
     retuned_stage = replace(
         spec.cleanup[isolated_stage_index],
@@ -264,10 +269,10 @@ def test_router_routes_only_drums_to_an_injected_drum_backend() -> None:
     assert isinstance(router.spec_for_target("guitar", midi_tempo=120.0), BasicPitchSpec)
 
 
-def test_router_threads_guitar_type_and_time_signature_through_to_the_spec() -> None:
+def test_router_threads_modes_and_time_signature_through_to_the_spec() -> None:
     router = TargetTranscriberRouter(FakeTranscriber(), FakeTranscriber())
 
-    spec = router.spec_for_target("guitar", midi_tempo=120.0, guitar_type="acoustic", time_signature="3/4")
+    spec = router.spec_for_target("guitar", midi_tempo=120.0, modes={"guitar": "guitar-acoustic"}, time_signature="3/4")
 
     assert "drop_harmonic_ghosts" in _cleanup_names(spec)
     assert _cleanup_params(spec, "clamp_sustain")["max_duration_s"] == pytest.approx(3.0)
@@ -711,7 +716,7 @@ def _max_polyphony(notes: list[ParsedNote]) -> int:
 
 
 def test_apply_guitar_cleanup_runs_every_stage_in_order() -> None:
-    spec = default_spec_for_target("guitar", guitar_type="acoustic", midi_tempo=120.0)
+    spec = default_spec_for_target("guitar", modes={"guitar": "guitar-acoustic"}, midi_tempo=120.0)
     runaway_fundamental = _note(0.0, 999.0, 40, velocity=95)
     ghost = _note(0.0, 999.0, 52, velocity=80)  # octave above, would ghost off the fundamental
     blip = _note(500.0, 500.04, 77)  # short, nothing else at pitch 77
@@ -742,7 +747,7 @@ def test_apply_guitar_cleanup_merges_fragments_before_clamping_sustain() -> None
     either order because the voice cap may simply drop the offending pitch
     outright.
     """
-    spec = default_spec_for_target("guitar", guitar_type="acoustic", midi_tempo=120.0)
+    spec = default_spec_for_target("guitar", modes={"guitar": "guitar-acoustic"}, midi_tempo=120.0)
     fragments = [_note(0.0, 3.5, 60), _note(3.5, 7.0, 60)]  # zero-width split, each under the clamp
 
     cleaned = _apply_cleanup_stages(fragments, spec)
@@ -784,7 +789,7 @@ def test_transcribe_applies_guitar_cleanup_and_rewrites_both_artifacts(
     monkeypatch.setattr(subprocess, "run", fake_run)
     monkeypatch.setattr("shutil.which", lambda _name: "/usr/bin/uvx")
 
-    spec = default_spec_for_target("guitar", guitar_type="acoustic", midi_tempo=120.0)
+    spec = default_spec_for_target("guitar", modes={"guitar": "guitar-acoustic"}, midi_tempo=120.0)
     result = BasicPitchTranscriber().transcribe(source, destination, spec)
 
     sustain_clamp_s = _cleanup_params(spec, "clamp_sustain")["max_duration_s"]

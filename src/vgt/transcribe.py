@@ -18,7 +18,7 @@ from __future__ import annotations
 
 from dataclasses import asdict, dataclass, field, replace
 from pathlib import Path
-from typing import Any, Callable, Protocol
+from typing import Any, Callable, Mapping, Protocol
 import hashlib
 import json
 import math
@@ -270,17 +270,52 @@ _INSTRUMENT_PROFILES: dict[str, InstrumentProfile] = {
     "vocals": _VOCALS_PROFILE,
     "guitar-acoustic": _GUITAR_ACOUSTIC_PROFILE,
 }
+VALID_PROFILE_NAMES: tuple[str, ...] = tuple(_INSTRUMENT_PROFILES)
+
+# A profile is an instrument-specific transcription identity.  ``default``
+# deliberately remains available for every target: selecting it explicitly is
+# useful when a user wants to opt out of that target's tuned default.  Stored
+# sidecars may name profiles that were later removed or moved to another
+# target, so lookup still falls back safely below.
+_PROFILE_NAMES_BY_TARGET: dict[str, tuple[str, ...]] = {
+    target: ("default", target) if target in _INSTRUMENT_PROFILES else ("default",)
+    for target in VALID_TARGETS
+}
+_PROFILE_NAMES_BY_TARGET["guitar"] = ("default", "guitar", "guitar-acoustic")
 
 
-def _profile_for_target(target: str, guitar_type: str | None) -> InstrumentProfile:
-    """The instrument profile `target` resolves to.
+def validate_profile_name(profile: str) -> str:
+    if profile not in _INSTRUMENT_PROFILES:
+        raise TranscriptionError(f"profile must be one of {VALID_PROFILE_NAMES}, got {profile!r}")
+    return profile
 
-    `guitar_type == "acoustic"` is the one case that resolves to a different
-    profile than its target name -- see `_GUITAR_ACOUSTIC_PROFILE`'s
-    docstring for why electric and unset guitars must not take this path.
+
+def valid_profile_names_for_target(target: str) -> tuple[str, ...]:
+    """Return the registry profiles an explicit mode may select for target."""
+    validate_target(target)
+    return _PROFILE_NAMES_BY_TARGET[target]
+
+
+def validate_profile_for_target(target: str, profile: str) -> str:
+    """Validate an explicit ``TARGET=PROFILE`` selection from the CLI/API."""
+    valid_profiles = valid_profile_names_for_target(target)
+    if profile not in valid_profiles:
+        raise TranscriptionError(
+            f"profile for {target!r} must be one of {valid_profiles}, got {profile!r}"
+        )
+    return profile
+
+
+def _profile_for_target(target: str, modes: Mapping[str, str] | None) -> InstrumentProfile:
+    """Resolve ``target`` through an optional target-to-profile map.
+
+    A sidecar can outlive the profile registry that wrote it.  Missing or
+    unrecognised stored selections therefore safely use the target's default;
+    only explicit CLI input is validated by :func:`validate_profile_for_target`.
     """
-    if target == "guitar" and guitar_type == "acoustic":
-        return _GUITAR_ACOUSTIC_PROFILE
+    profile_name = modes.get(target) if isinstance(modes, Mapping) else None
+    if profile_name in valid_profile_names_for_target(target):
+        return _INSTRUMENT_PROFILES[profile_name]
     return _INSTRUMENT_PROFILES.get(target, _DEFAULT_PROFILE)
 
 
@@ -422,7 +457,7 @@ def default_spec_for_target(
     package_pin: str = BASIC_PITCH_PACKAGE_PIN,
     serialization: str = BASIC_PITCH_SERIALIZATION,
     midi_tempo: float | None = None,
-    guitar_type: str | None = None,
+    modes: Mapping[str, str] | None = None,
     time_signature: str | None = None,
     drumscript_runtime_version: str = DRUMSCRIPT_RUNTIME_VERSION,
     drumscript_classifier_mode: str = DRUMSCRIPT_CLASSIFIER_MODE,
@@ -430,9 +465,8 @@ def default_spec_for_target(
 ) -> TranscriptionSpec:
     """The per-target default spec, resolved through `_INSTRUMENT_PROFILES`.
 
-    `guitar_type` and `time_signature` only affect the `guitar` target, and
-    only when `guitar_type == "acoustic"`: they select `_GUITAR_ACOUSTIC_PROFILE`
-    (see docs/guitar-transcription-findings.md). `time_signature` (a
+    ``modes`` selects a named profile independently for each target. An absent
+    or stale selection falls back to that target's default. `time_signature` (a
     tempo-stage string like `"4/4"`) converts that profile's cleanup stage's
     bar-based sustain clamp to seconds at this specific tempo.
     """
@@ -445,7 +479,7 @@ def default_spec_for_target(
             classifier_mode=drumscript_classifier_mode,
             time_signature=drumscript_time_signature,
         )
-    profile = _profile_for_target(target, guitar_type)
+    profile = _profile_for_target(target, modes)
     bar_seconds = _bar_duration_seconds(midi_tempo, time_signature)
     sustain_clamp_s = bar_seconds * GUITAR_SUSTAIN_CLAMP_BARS if bar_seconds else None
     return BasicPitchSpec(
@@ -682,7 +716,7 @@ class TranscriberRouter(Protocol):
     def for_target(self, target: str) -> Transcriber: ...
 
     def spec_for_target(
-        self, target: str, *, midi_tempo: float | None, guitar_type: str | None = None, time_signature: str | None = None
+        self, target: str, *, midi_tempo: float | None, modes: Mapping[str, str] | None = None, time_signature: str | None = None
     ) -> TranscriptionSpec: ...
 
 
@@ -708,7 +742,7 @@ class TargetTranscriberRouter:
         return self.drumscript if target in self.drumscript_targets else self.basic_pitch
 
     def spec_for_target(
-        self, target: str, *, midi_tempo: float | None, guitar_type: str | None = None, time_signature: str | None = None
+        self, target: str, *, midi_tempo: float | None, modes: Mapping[str, str] | None = None, time_signature: str | None = None
     ) -> TranscriptionSpec:
         backend = self.for_target(target).name
         if backend == "drumscript":
@@ -722,7 +756,7 @@ class TargetTranscriberRouter:
                 drumscript_time_signature=self.drumscript_time_signature,
             )
         return default_spec_for_target(
-            target, backend=backend, midi_tempo=midi_tempo, guitar_type=guitar_type, time_signature=time_signature
+            target, backend=backend, midi_tempo=midi_tempo, modes=modes, time_signature=time_signature
         )
 
 
