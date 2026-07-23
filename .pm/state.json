@@ -1,10 +1,10 @@
 {
-  "current_issue": 137,
-  "session_id": "3253085a-1d27-49c8-bc6c-5c21c6baef23",
-  "pid": 60257,
-  "process_started_at": "Thu Jul 23 19:13:58 2026",
+  "current_issue": 138,
+  "session_id": "8fd18e6b-9cfe-4f25-9959-4ca6f2bb1ad5",
+  "pid": 60715,
+  "process_started_at": "Thu Jul 23 19:16:40 2026",
   "agent": "claude",
-  "started_at": "2026-07-23T17:13:56.668190+00:00",
+  "started_at": "2026-07-23T17:16:38.763211+00:00",
   "scheduler_stalls": {},
   "budget": {
     "window_start": "2026-07-23T15:10:50.948523+00:00",
@@ -15,10 +15,10 @@
   "verification_followups": {
     "f0d8bfc9d2dc6da7a31609184e25c4d66d3986fd2340b33a83e98204fb86691e": "created"
   },
-  "role": "review",
-  "branch": "issue-137-make-managed-region-ownership-durable-ac",
-  "worktree_path": "/Users/marekkucharski/projects/.pm-worktrees/vgt/issue-137",
-  "pr_number": 141,
+  "role": "implement",
+  "branch": "issue-138-make-reascript-sidecar-updates-atomic-an",
+  "worktree_path": "/Users/marekkucharski/projects/.pm-worktrees/vgt/issue-138",
+  "pr_number": null,
   "followup_generation": {
     "fingerprint": "d982f8926d0e86fe89dd3034f7dcb5ecbd29ae33e0d5db1334bdc33e99111ddf",
     "items": {
@@ -63,13 +63,13 @@
     "131": 2
   },
   "pending_transition": {
-    "issue": 137,
+    "issue": 138,
     "target": "working",
-    "event": "agent.review_started",
+    "event": "agent.started",
     "detail": {
-      "issue": 137,
+      "issue": 138,
       "agent": "claude",
-      "pr": 141
+      "branch": "issue-138-make-reascript-sidecar-updates-atomic-an"
     },
     "cleanup": {}
   }
