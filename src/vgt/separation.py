@@ -100,6 +100,10 @@ def declared_guitar_type(sidecar: dict[str, Any], override: str | None = None) -
     REAPER records its first-run answer in ``config`` before an analysis block
     exists.  The stem workflow stores the canonical value in ``analysis.stems``;
     retaining the config fallback makes those two entry points interoperable.
+    It is deliberately separate from ``analysis.transcription.modes``: an
+    acoustic declaration also seeds that map during sidecar migration for
+    backwards-compatible MIDI settings, while this value alone chooses the
+    LALAL split target.
     """
     stems = sidecar["analysis"]["stems"]
     config = sidecar.get("config") or {}

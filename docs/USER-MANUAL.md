@@ -150,6 +150,16 @@ vgt analyze --transcribe bass --transcribe drums "Song.RPP"
   instead).
 - `--no-transcribe` skips transcription for this run without changing the
   persisted set.
+- `--mode <target>=<profile>` persists a transcription profile for one target;
+  repeat it to select several. Current profiles are `default`, `guitar`,
+  `bass`, `vocals`, and `guitar-acoustic`. For example,
+  `vgt analyze --mode guitar=guitar-acoustic "Song.RPP"`. A stale mode from
+  an older sidecar safely falls back to the target default, but a profile named
+  explicitly on the command line must be valid.
+
+The guitar declaration (`--guitar electric|acoustic`) remains a stem-separation
+choice for LALAL. Existing acoustic declarations automatically retain the
+equivalent `guitar-acoustic` transcription profile when their sidecar upgrades.
 
 If a backend's execution or output validation fails, `drums` (or any other
 target) is recorded with `status: error` and analysis continues for every

@@ -91,6 +91,10 @@ Schema versions:
          }
        Older sidecars migrate to `requested_targets: ["guitar"]` and an empty
        `targets` index -- no data migration, since there is nothing to migrate.
+ 10 -- `analysis.transcription.modes` stores target -> named transcription
+      profile selections. A v9 `stems.guitar_type: acoustic` migrates to
+      `{"guitar": "guitar-acoustic"}` so its transcription settings identity
+      remains unchanged. `stems.guitar_type` still controls LALAL separation.
 
 Every stage entry has the same shape:
   {
@@ -136,7 +140,7 @@ import shutil
 import tempfile
 import uuid
 
-SCHEMA_VERSION = 9
+SCHEMA_VERSION = 10
 STEMS_LEASE_TIMEOUT = timedelta(minutes=30)
 
 ANALYSIS_STAGES = ("tempo", "key", "sections", "chords", "transcription")
@@ -267,7 +271,7 @@ def _empty_stems_block() -> dict[str, Any]:
 
 
 def _empty_transcription_block() -> dict[str, Any]:
-    return {"requested_targets": list(DEFAULT_TRANSCRIPTION_TARGETS), "targets": {}}
+    return {"requested_targets": list(DEFAULT_TRANSCRIPTION_TARGETS), "modes": {}, "targets": {}}
 
 
 def read_sidecar(project_path: str | Path) -> dict[str, Any]:
@@ -320,6 +324,12 @@ def upgrade(data: dict[str, Any]) -> dict[str, Any]:
         list(requested_targets) if isinstance(requested_targets, list) else list(DEFAULT_TRANSCRIPTION_TARGETS)
     )
     transcription["targets"] = dict(transcription.get("targets") or {})
+    modes = transcription.get("modes")
+    transcription["modes"] = dict(modes) if isinstance(modes, dict) else {}
+    # This is a migration compatibility bridge, not a new coupling: the
+    # declaration continues to choose LALAL's split target in separation.py.
+    if stems.get("guitar_type") == "acoustic" and "guitar" not in transcription["modes"]:
+        transcription["modes"]["guitar"] = "guitar-acoustic"
     analysis["transcription"] = transcription
 
     upgraded["analysis"] = analysis

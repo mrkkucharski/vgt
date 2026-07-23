@@ -7,13 +7,13 @@ import json
 from pathlib import Path
 import sys
 
-from .analysis import AnalysisError, add_transcription_targets, analyze, forget_transcription_targets
+from .analysis import AnalysisError, add_transcription_targets, analyze, forget_transcription_targets, set_transcription_modes
 from .lalal import LalalError, LalalSeparator
 from .project import ProjectError, locate_project, read_project
 from .separation import GUITAR_TYPES, OPTIONAL_STEMS, SeparationError, declared_guitar_type, separate, separation_preview
 from .sidecar import read_sidecar, write_sidecar
 from .status import StatusError, build_status, format_status
-from .transcribe import VALID_TARGETS
+from .transcribe import VALID_PROFILE_NAMES, VALID_TARGETS, TranscriptionError, validate_profile_name, validate_target
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -67,6 +67,12 @@ def _parser() -> argparse.ArgumentParser:
         help="Also transcribe this target's stem to MIDI; persists across future runs (repeat for multiple targets).",
     )
     analyze_parser.add_argument(
+        "--mode",
+        action="append",
+        metavar="TARGET=PROFILE",
+        help=f"Persist a transcription profile for one target (profiles: {', '.join(VALID_PROFILE_NAMES)}; repeatable).",
+    )
+    analyze_parser.add_argument(
         "--forget-transcription",
         action="append",
         choices=VALID_TARGETS,
@@ -99,6 +105,21 @@ def _prompt_for_guitar_type() -> str:
         print("Please enter 'electric' or 'acoustic'.", file=sys.stderr)
 
 
+def _parse_modes(values: list[str] | None) -> dict[str, str]:
+    modes: dict[str, str] = {}
+    for value in values or []:
+        target, separator, profile = value.partition("=")
+        if not separator or not target or not profile:
+            raise AnalysisError("--mode must be TARGET=PROFILE")
+        try:
+            validate_target(target)
+            validate_profile_name(profile)
+        except TranscriptionError as exc:
+            raise AnalysisError(str(exc)) from exc
+        modes[target] = profile
+    return modes
+
+
 def main(argv: list[str] | None = None) -> int:
     # Phase 0's primary invocation is `vgt [project.rpp]`; retain explicit
     # subcommands for scripts that want to state their intent.
@@ -121,6 +142,7 @@ def main(argv: list[str] | None = None) -> int:
                 raise AnalysisError("--transcribe-only and --no-transcribe are mutually exclusive")
             if args.transcribe and args.forget_transcription and set(args.transcribe) & set(args.forget_transcription):
                 raise AnalysisError("a target cannot be both --transcribe and --forget-transcription in the same run")
+            modes = _parse_modes(args.mode)
 
             # `--force` is intentionally local-only.  Paid work can only be
             # refreshed through the separate, conspicuous --force-stems path.
@@ -235,6 +257,9 @@ def main(argv: list[str] | None = None) -> int:
             if args.transcribe:
                 add_transcription_targets(project, tuple(args.transcribe))
                 report(f"transcription target(s) persisted: {', '.join(args.transcribe)}")
+            if modes:
+                set_transcription_modes(project, modes)
+                report(f"transcription mode(s) persisted: {', '.join(f'{target}={profile}' for target, profile in modes.items())}")
 
             transcription_stages = () if args.no_transcribe else ("transcription",)
             analyze(
