@@ -189,8 +189,11 @@ failed DrumScript run never silently substitutes Basic Pitch output, and vice
 versa.
 
 `vgt status "Song.RPP"` reports transcription as a multi-target block: how many
-targets are requested and, for each one, its note/event count, a missing-source
-skip, or an error. For `drums`, the status line summarizes DrumScript's
+targets are requested and, for each one, its effective transcription profile,
+note/event count, a missing-source skip, or an error. `vgt status --json` also
+reports each target's persisted `requested_mode` (or `null`) and the resolved
+`effective_profile`; stale modes and old acoustic declarations use the same
+safe fallback and migration rules as analysis. For `drums`, the status line summarizes DrumScript's
 per-instrument event counts (for example, `drums 428 events (kick 91, snare
 87, hats 201, other 49), drumscript 0.1.6`) instead of a MIDI pitch range. The
 status artifact list includes each target's MIDI and, depending on backend,

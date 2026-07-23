@@ -70,9 +70,9 @@ def test_status_reports_analysis_corrections_artifacts_and_json(tmp_path: Path, 
     assert "Last human correction: 2026-07-19T11:00:00Z" in text
     assert "click: present" in text
     assert "transcription (basic-pitch[onnx]==0.4.0): 3 requested" in text
-    assert "guitar   872 notes, MIDI 40-76, transcribed 2026-07-19T10:05:00Z" in text
-    assert "bass     error - basic-pitch exited with status 1" in text
-    assert "vocals   skipped - no vocals stem available" in text
+    assert "guitar   872 notes, MIDI 40-76, profile guitar, transcribed 2026-07-19T10:05:00Z" in text
+    assert "bass     error - basic-pitch exited with status 1, profile bass" in text
+    assert "vocals   skipped - no vocals stem available, profile vocals" in text
 
     assert main(["status", "--json", str(project)]) == 0
     status = json.loads(capsys.readouterr().out)
@@ -89,6 +89,8 @@ def test_status_reports_analysis_corrections_artifacts_and_json(tmp_path: Path, 
     assert transcription["requested_targets"] == ["guitar", "bass", "vocals"]
     assert transcription["backend"] == "basic-pitch"
     assert transcription["targets"]["guitar"]["status"] == "transcribed"
+    assert transcription["targets"]["guitar"]["requested_mode"] is None
+    assert transcription["targets"]["guitar"]["effective_profile"] == "guitar"
     assert transcription["targets"]["guitar"]["note_count"] == 872
     assert transcription["targets"]["bass"]["status"] == "error"
     assert transcription["targets"]["vocals"]["status"] == "skipped-missing-source"
@@ -120,3 +122,41 @@ def test_status_json_loads_legacy_transcription_record_without_events_file(tmp_p
     }))
     assert main(["status", "--json", str(project)]) == 0
     assert json.loads(capsys.readouterr().out)["transcription"]["targets"]["guitar"]["events_file"] is None
+
+
+def test_status_resolves_profiles_for_legacy_and_mixed_targets(tmp_path: Path, capsys) -> None:
+    project = _project_copy(tmp_path)
+    project.with_suffix(".vgt").write_text(json.dumps({
+        "schema_version": 9,
+        "config": {},
+        "analysis": {
+            "stems": {"guitar_type": "acoustic"},
+            "transcription": {
+                "requested_targets": ["guitar", "bass", "drums", "vocals"],
+                "modes": {"bass": "bass-monophonic", "vocals": "retired-profile"},
+                "targets": {
+                    "guitar": {"status": "transcribed", "note_count": 1, "pitch_range_midi": [40, 40]},
+                    "bass": {"status": "skipped-missing-source"},
+                    "drums": {"status": "error", "error": "backend failed"},
+                },
+            },
+        },
+    }))
+
+    assert main(["status", str(project)]) == 0
+    text = capsys.readouterr().out
+    assert "guitar   1 notes, MIDI 40-40, profile guitar-acoustic" in text
+    assert "bass     skipped - no bass stem available, profile bass-monophonic" in text
+    assert "drums    error - backend failed, profile default" in text
+    assert "vocals   not yet run, profile vocals" in text
+
+    assert main(["status", "--json", str(project)]) == 0
+    targets = json.loads(capsys.readouterr().out)["transcription"]["targets"]
+    assert targets["guitar"]["requested_mode"] == "guitar-acoustic"
+    assert targets["guitar"]["effective_profile"] == "guitar-acoustic"
+    assert targets["bass"]["requested_mode"] == "bass-monophonic"
+    assert targets["bass"]["effective_profile"] == "bass-monophonic"
+    assert targets["drums"]["requested_mode"] is None
+    assert targets["drums"]["effective_profile"] == "default"
+    assert targets["vocals"]["requested_mode"] == "retired-profile"
+    assert targets["vocals"]["effective_profile"] == "vocals"
