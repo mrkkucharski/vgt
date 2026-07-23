@@ -909,6 +909,7 @@ def test_apply_removes_only_sidecar_recorded_region_ids(tmp_path: Path) -> None:
             "function reaper.CountProjectMarkers() return #regions end",
             "function reaper.EnumProjectMarkers3(_, index) local region = regions[index + 1]; return true, true, 0, 1, region.name, region.id, 0 end",
             "function reaper.DeleteProjectMarker(_, id, is_region) deleted[#deleted + 1] = {id, is_region} end",
+            "function reaper.GetProjExtState() return 0, '' end",
             script[:helpers_end],
             "remove_previous_managed_regions()",
             "io.write(deleted[1][1], ':', tostring(deleted[1][2]), ':', #deleted)",
@@ -918,6 +919,112 @@ def test_apply_removes_only_sidecar_recorded_region_ids(tmp_path: Path) -> None:
         [LUA, "-", str(tmp_path / "song.RPP")], input=lua_program, text=True, capture_output=True, check=True
     )
     assert result.stdout == "17:true:1"
+
+
+def test_removal_falls_back_to_the_durable_proj_ext_state_when_the_sidecar_region_list_is_stale(tmp_path: Path) -> None:
+    """A `managed_region_ids` list that never reached disk (crash between
+    building the section regions and write_settings, a restored Backups/
+    copy, or a copied project folder) must not leave the stale block behind
+    to be duplicated on re-apply: the durable ProjExtState record set at
+    creation time (see record_region_ids_ext_state) is independent evidence
+    of ownership, honored even when the sidecar's list is empty."""
+    sidecar = tmp_path / "song.vgt"
+    sidecar.write_text(json.dumps({"managed_region_ids": []}))
+    script = APPLY_SCRIPT.read_text()
+    helpers_end = script.index("local function write_settings")
+    lua_program = "\n".join(
+        [
+            "local deleted = {}",
+            "local regions = {{id = 17, name = '[vgt] Verse'}, {id = 18, name = 'Chorus'}, {id = 19, name = 'user'}}",
+            "reaper = {}",
+            "function reaper.EnumProjects() return true, arg[1] end",
+            "function reaper.CountProjectMarkers() return #regions end",
+            "function reaper.EnumProjectMarkers3(_, index) local region = regions[index + 1]; return true, true, 0, 1, region.name, region.id, 0 end",
+            "function reaper.DeleteProjectMarker(_, id, is_region) deleted[#deleted + 1] = {id, is_region} end",
+            "function reaper.GetProjExtState() return 0, '17,18' end",
+            script[:helpers_end],
+            "remove_previous_managed_regions()",
+            "table.sort(deleted, function(a, b) return a[1] < b[1] end)",
+            "io.write(deleted[1][1], ',', deleted[2][1], ':', #deleted)",
+        ]
+    )
+    result = subprocess.run(
+        [LUA, "-", str(tmp_path / "song.RPP")], input=lua_program, text=True, capture_output=True, check=True
+    )
+    assert result.stdout == "17,18:2"
+
+
+def test_removal_tolerates_a_recorded_region_id_whose_region_no_longer_exists(tmp_path: Path) -> None:
+    """Both ownership records can outlive the region they refer to (the user
+    deleted it by hand, or a prior reconciliation already removed it) --
+    reconciliation must silently skip an ID that matches no live region rather
+    than erroring, and must still delete every other recorded ID normally."""
+    sidecar = tmp_path / "song.vgt"
+    sidecar.write_text(json.dumps({"managed_region_ids": [999]}))
+    script = APPLY_SCRIPT.read_text()
+    helpers_end = script.index("local function write_settings")
+    lua_program = "\n".join(
+        [
+            "local deleted = {}",
+            "local regions = {{id = 17, name = '[vgt] Verse'}, {id = 19, name = 'user'}}",
+            "reaper = {}",
+            "function reaper.EnumProjects() return true, arg[1] end",
+            "function reaper.CountProjectMarkers() return #regions end",
+            "function reaper.EnumProjectMarkers3(_, index) local region = regions[index + 1]; return true, true, 0, 1, region.name, region.id, 0 end",
+            "function reaper.DeleteProjectMarker(_, id, is_region) deleted[#deleted + 1] = {id, is_region} end",
+            "function reaper.GetProjExtState() return 1, '17,999' end",
+            script[:helpers_end],
+            "remove_previous_managed_regions()",
+            "io.write(deleted[1][1], ':', tostring(deleted[1][2]), ':', #deleted)",
+        ]
+    )
+    result = subprocess.run(
+        [LUA, "-", str(tmp_path / "song.RPP")], input=lua_program, text=True, capture_output=True, check=True
+    )
+    assert result.stdout == "17:true:1"
+
+
+def test_add_sections_records_each_region_id_in_proj_ext_state_immediately(tmp_path: Path) -> None:
+    """Every region must be durably recorded as soon as it is created --
+    before write_settings ever runs -- so a crash partway through leaves
+    ProjExtState matching exactly what was actually built so far."""
+    script = APPLY_SCRIPT.read_text()
+    helpers_end = script.index("local function write_settings")
+    lua_program = "\n".join(
+        [
+            "local calls = {}",
+            "local next_id = 100",
+            "reaper = {}",
+            "function reaper.AddProjectMarker2(_, _, start, finish, name) next_id = next_id + 1; return next_id end",
+            "function reaper.SetProjExtState(_, section, key, value) calls[#calls + 1] = section .. ':' .. key .. '=' .. value end",
+            script[:helpers_end],
+            "local sections = {{label = 'A', start_seconds = 0, end_seconds = 1}, {label = 'B', start_seconds = 1, end_seconds = 2}}",
+            "add_sections(sections, 0)",
+            "io.write(table.concat(calls, ';'))",
+        ]
+    )
+    result = subprocess.run([LUA, "-", str(tmp_path / "song.RPP")], input=lua_program, text=True, capture_output=True, check=True)
+    assert result.stdout == "vgt:managed_region_ids=101;vgt:managed_region_ids=101,102;vgt:managed_region_ids=101,102"
+
+
+def test_add_sections_clears_proj_ext_state_when_no_sections_remain(tmp_path: Path) -> None:
+    """A re-apply that ends up with zero (or fewer) sections must refresh
+    ProjExtState to match, not leave a prior run's now-deleted IDs behind."""
+    script = APPLY_SCRIPT.read_text()
+    helpers_end = script.index("local function write_settings")
+    lua_program = "\n".join(
+        [
+            "local calls = {}",
+            "reaper = {}",
+            "function reaper.AddProjectMarker2() error('no region should be created') end",
+            "function reaper.SetProjExtState(_, section, key, value) calls[#calls + 1] = section .. ':' .. key .. '=' .. value end",
+            script[:helpers_end],
+            "add_sections({}, 0)",
+            "io.write(table.concat(calls, ';'))",
+        ]
+    )
+    result = subprocess.run([LUA, "-", str(tmp_path / "song.RPP")], input=lua_program, text=True, capture_output=True, check=True)
+    assert result.stdout == "vgt:managed_region_ids="
 
 
 def test_current_tempo_fingerprint_reflects_every_live_marker(tmp_path: Path) -> None:
