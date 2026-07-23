@@ -1,10 +1,10 @@
 {
-  "current_issue": 120,
-  "session_id": "1ff2f329-71dd-4290-a3f1-024f02aa4d5e",
-  "pid": 27873,
-  "process_started_at": "Thu Jul 23 12:06:51 2026",
-  "agent": "claude",
-  "started_at": "2026-07-23T10:06:50.010895+00:00",
+  "current_issue": 124,
+  "session_id": "1e5d1016-e1b8-4137-8e45-ada7e6bdd2a9",
+  "pid": 28805,
+  "process_started_at": "Thu Jul 23 12:16:03 2026",
+  "agent": "codex",
+  "started_at": "2026-07-23T10:16:02.230345+00:00",
   "scheduler_stalls": {},
   "budget": {
     "window_start": "2026-07-23T07:20:24.839872+00:00",
@@ -18,23 +18,23 @@
   "verification_followups": {
     "f0d8bfc9d2dc6da7a31609184e25c4d66d3986fd2340b33a83e98204fb86691e": "created"
   },
-  "role": "review",
-  "branch": "issue-120-show-effective-transcription-profiles-in",
-  "worktree_path": "/Users/marekkucharski/projects/.pm-worktrees/vgt/issue-120",
-  "pr_number": 123,
+  "role": "implement",
+  "branch": "issue-124-add-an-offline-end-to-end-goal-contract",
+  "worktree_path": "/Users/marekkucharski/projects/.pm-worktrees/vgt/issue-124",
+  "pr_number": null,
   "followup_generation": {
-    "fingerprint": "8a8114dbbcfa5412ed926d47bdb9dd93f2747f8c177e02504fa0800109811ad2",
+    "fingerprint": "6021d4a15089e46af3e588574c07ffb9079cdd9b2f7f9f7110bba839557cc338",
     "items": {
-      "fa0723839580189ff19cf04d2349cad10684e30be76ba358763ac52d222ead44": {
-        "title": "Package and install the required ReaScripts",
+      "f7194a4794f6b3d50e6c0254b37fc4a5aa98edba623aa0463cfc1a7fbb63cb9d": {
+        "title": "Add an offline end-to-end goal contract test",
         "status": "created"
       },
-      "9a431896665a927b5b1cd21dc292b3c9d5896c07b5243df49a6b9daf7ec2af6f": {
-        "title": "Stabilize and restore automatic offline CI",
+      "aba75700fd461a55c0cd214168e0dc69324333ea5ddb46b4d50ebd8ab002c43d": {
+        "title": "Represent unknown downbeats safely in the librosa fallback",
         "status": "created"
       },
-      "cdd5424144e028b169eaf256adc229c58d261b43f2887da1f28414aea0989313": {
-        "title": "Show effective transcription profiles in status",
+      "1dae80c7f8c458ba8f6c7c68b8736097d5530ef5a369eaa6af2c44c090535c1d": {
+        "title": "Test the installed distribution on the supported macOS platform",
         "status": "created"
       }
     }
@@ -61,13 +61,13 @@
     "112": 2
   },
   "pending_transition": {
-    "issue": 120,
+    "issue": 124,
     "target": "working",
-    "event": "agent.review_started",
+    "event": "agent.started",
     "detail": {
-      "issue": 120,
-      "agent": "claude",
-      "pr": 123
+      "issue": 124,
+      "agent": "codex",
+      "branch": "issue-124-add-an-offline-end-to-end-goal-contract"
     },
     "cleanup": {}
   }
