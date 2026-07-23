@@ -31,6 +31,18 @@ def test_apply_asks_for_a_reference_track_and_names_the_folder_after_it() -> Non
     assert 'PREFIX .. " " .. track_name(reference)' in script
 
 
+def test_apply_prefers_the_persisted_reference_over_the_candidate_picker() -> None:
+    """The persisted GUID is authoritative once recorded (issue #136): apply
+    must check it first and only fall through to choose_reference/candidate_tracks
+    when nothing has been persisted yet."""
+    script = APPLY_SCRIPT.read_text()
+    apply_start = script.index("local function apply()")
+    resolution = script[apply_start : script.index("local reference_guid = reaper.GetTrackGUID(reference)", apply_start)]
+    assert "local persisted_guid = persisted_reference_guid()" in resolution
+    assert "resolve_persisted_reference(persisted_guid)" in resolution
+    assert resolution.index("persisted_reference_guid()") < resolution.index("choose_reference(candidate_tracks())")
+
+
 def test_has_file_backed_media_requires_a_real_file_backed_item() -> None:
     """REAPER-native generators (e.g. a count-in `<SOURCE CLICK>` track) have
     an active take but no underlying file, so they must not count."""
@@ -119,6 +131,197 @@ def test_choose_reference_still_honors_an_automation_override_with_one_candidate
     )
     result = subprocess.run([LUA, "-", "song.RPP"], input=lua_program, text=True, capture_output=True, check=True)
     assert result.stdout == "true"
+
+
+def test_has_file_backed_media_rejects_a_track_with_more_than_one_file_backed_item() -> None:
+    """An unambiguous reference is exactly one file-backed mix item (issue #136):
+    two file-backed items on the same track is rejected, not silently accepted
+    as a candidate whose first item wins."""
+    script = APPLY_SCRIPT.read_text()
+    helpers_end = script.index("local function read_sidecar_body()")
+    lua_program = "\n".join(
+        [
+            "reaper = {}",
+            "local track = {items = {{take = {source = 'a.mp3'}}, {take = {source = 'b.mp3'}}}}",
+            "function reaper.CountTrackMediaItems(t) return #t.items end",
+            "function reaper.GetTrackMediaItem(t, index) return t.items[index + 1] end",
+            "function reaper.GetActiveTake(item) return item.take end",
+            "function reaper.GetMediaItemTake_Source(take) return take.source end",
+            "function reaper.GetMediaSourceFileName(source, buf) return source end",
+            script[:helpers_end],
+            "io.write(file_backed_item_count(track), ':', tostring(has_file_backed_media(track)))",
+        ]
+    )
+    result = subprocess.run([LUA, "-", "song.RPP"], input=lua_program, text=True, capture_output=True, check=True)
+    assert result.stdout == "2:false"
+
+
+def test_persisted_reference_guid_reads_the_sidecar_config_field(tmp_path: Path) -> None:
+    sidecar = tmp_path / "song.vgt"
+    sidecar.write_text(json.dumps({"config": {"reference_track_guid": "{A11CE-0001}"}}))
+    script = APPLY_SCRIPT.read_text()
+    helpers_end = script.index("local function read_managed_guids()")
+    lua_program = "\n".join(
+        [
+            "reaper = {EnumProjects = function() return true, arg[1] end}",
+            script[:helpers_end],
+            "io.write('[', persisted_reference_guid(), ']')",
+        ]
+    )
+    result = subprocess.run([LUA, "-", str(tmp_path / "song.RPP")], input=lua_program, text=True, capture_output=True, check=True)
+    assert result.stdout == "[{A11CE-0001}]"
+
+
+def test_persisted_reference_guid_is_empty_before_first_initialization(tmp_path: Path) -> None:
+    script = APPLY_SCRIPT.read_text()
+    helpers_end = script.index("local function read_managed_guids()")
+    lua_program = "\n".join(
+        [
+            "reaper = {EnumProjects = function() return true, arg[1] end}",
+            script[:helpers_end],
+            "io.write('[', persisted_reference_guid(), ']')",
+        ]
+    )
+    result = subprocess.run([LUA, "-", str(tmp_path / "song.RPP")], input=lua_program, text=True, capture_output=True, check=True)
+    assert result.stdout == "[]"
+
+
+def _resolve_persisted_reference_lua_mock(tracks_literal: str) -> str:
+    return "\n".join(
+        [
+            f"local tracks = {tracks_literal}",
+            "reaper = {}",
+            "function reaper.CountTracks() return #tracks end",
+            "function reaper.GetTrack(_, index) return tracks[index + 1] end",
+            "function reaper.GetTrackGUID(track) return track.guid end",
+            "function reaper.GetTrackName(track) return true, track.name end",
+            "function reaper.CountTrackMediaItems(track) return #track.items end",
+            "function reaper.GetTrackMediaItem(track, index) return track.items[index + 1] end",
+            "function reaper.GetActiveTake(item) return item.take end",
+            "function reaper.GetMediaItemTake_Source(take) return take.source end",
+            "function reaper.GetMediaSourceFileName(source, buf) return source end",
+        ]
+    )
+
+
+def test_resolve_persisted_reference_reuses_a_valid_non_vgt_single_item_track() -> None:
+    """Later applies in a multi-track project must reuse the persisted GUID
+    without prompting -- reference resolution alone must never touch gfx."""
+    script = APPLY_SCRIPT.read_text()
+    helpers_end = script.index("local function add_labeled_item(")
+    lua_program = "\n".join(
+        [
+            _resolve_persisted_reference_lua_mock(
+                "{"
+                "{name = 'Song A', guid = '{A}', items = {{take = {source = 'a.mp3'}}}},"
+                "{name = 'Song B', guid = '{B}', items = {{take = {source = 'b.mp3'}}}},"
+                "}"
+            ),
+            "gfx = setmetatable({}, {__index = function() error('must not prompt for a persisted reference') end})",
+            script[:helpers_end],
+            "local reference = resolve_persisted_reference('{B}')",
+            "io.write(tostring(reference.guid))",
+        ]
+    )
+    result = subprocess.run([LUA, "-", "song.RPP"], input=lua_program, text=True, capture_output=True, check=True)
+    assert result.stdout == "{B}"
+
+
+def test_resolve_persisted_reference_stops_with_a_recovery_message_when_the_track_is_missing() -> None:
+    script = APPLY_SCRIPT.read_text()
+    helpers_end = script.index("local function add_labeled_item(")
+    lua_program = "\n".join(
+        [
+            _resolve_persisted_reference_lua_mock("{}"),
+            script[:helpers_end],
+            "resolve_persisted_reference('{GONE}')",
+        ]
+    )
+    result = subprocess.run([LUA, "-", "song.RPP"], input=lua_program, text=True, capture_output=True)
+    assert result.returncode != 0
+    assert "no longer exists" in result.stderr
+    assert "reference_track_guid" in result.stderr
+
+
+def test_resolve_persisted_reference_stops_when_the_track_is_now_vgt_managed() -> None:
+    script = APPLY_SCRIPT.read_text()
+    helpers_end = script.index("local function add_labeled_item(")
+    lua_program = "\n".join(
+        [
+            _resolve_persisted_reference_lua_mock(
+                "{{name = '[vgt] Beats', guid = '{A}', items = {}}}"
+            ),
+            script[:helpers_end],
+            "resolve_persisted_reference('{A}')",
+        ]
+    )
+    result = subprocess.run([LUA, "-", "song.RPP"], input=lua_program, text=True, capture_output=True)
+    assert result.returncode != 0
+    assert "[vgt]-managed" in result.stderr
+
+
+def test_resolve_persisted_reference_stops_when_the_track_lost_its_file_backed_media() -> None:
+    script = APPLY_SCRIPT.read_text()
+    helpers_end = script.index("local function add_labeled_item(")
+    lua_program = "\n".join(
+        [
+            _resolve_persisted_reference_lua_mock(
+                "{{name = 'Song A', guid = '{A}', items = {}}}"
+            ),
+            script[:helpers_end],
+            "resolve_persisted_reference('{A}')",
+        ]
+    )
+    result = subprocess.run([LUA, "-", "song.RPP"], input=lua_program, text=True, capture_output=True)
+    assert result.returncode != 0
+    assert "no longer has any file-backed media" in result.stderr
+
+
+def test_resolve_persisted_reference_stops_on_an_ambiguous_multi_item_track() -> None:
+    """Reject a track with more than one file-backed item rather than silently
+    picking the first (issue #136)."""
+    script = APPLY_SCRIPT.read_text()
+    helpers_end = script.index("local function add_labeled_item(")
+    lua_program = "\n".join(
+        [
+            _resolve_persisted_reference_lua_mock(
+                "{{name = 'Song A', guid = '{A}', items = {{take = {source = 'a1.mp3'}}, {take = {source = 'a2.mp3'}}}}}"
+            ),
+            script[:helpers_end],
+            "resolve_persisted_reference('{A}')",
+        ]
+    )
+    result = subprocess.run([LUA, "-", "song.RPP"], input=lua_program, text=True, capture_output=True)
+    assert result.returncode != 0
+    assert "ambiguous" in result.stderr
+    assert "exactly one file-backed mix item" in result.stderr
+
+
+def test_reference_start_and_end_derives_from_the_single_file_backed_item_only() -> None:
+    """A reference track's placements must span only its one file-backed item,
+    never every item on the track (issue #136)."""
+    script = APPLY_SCRIPT.read_text()
+    helpers_end = script.index("local function parse_time_signature(")
+    lua_program = "\n".join(
+        [
+            "reaper = {}",
+            "local reference = {items = {"
+            "{position = 100, length = 1, take = {source = ''}},"  # non-file-backed decoy far outside the real span
+            "{position = 10, length = 4, take = {source = 'song.mp3'}},"
+            "}}",
+            "function reaper.CountTrackMediaItems(t) return #t.items end",
+            "function reaper.GetTrackMediaItem(t, index) return t.items[index + 1] end",
+            "function reaper.GetActiveTake(item) return item.take end",
+            "function reaper.GetMediaItemTake_Source(take) return take.source end",
+            "function reaper.GetMediaSourceFileName(source, buf) return source end",
+            "function reaper.GetMediaItemInfo_Value(item, key) if key == 'D_POSITION' then return item.position else return item.length end end",
+            script[:helpers_end],
+            "local start_time, end_time = reference_start_and_end(reference)",
+            "io.write(start_time, ':', end_time)",
+        ]
+    )
+    result = subprocess.run([LUA, "-", "song.RPP"], input=lua_program, text=True, capture_output=True, check=True)
+    assert result.stdout == "10:14"
 
 
 def test_apply_declares_and_persists_guitar_type_with_an_automation_override() -> None:
