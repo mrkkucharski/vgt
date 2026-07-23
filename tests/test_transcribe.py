@@ -29,6 +29,7 @@ from vgt.transcribe import (
     _clamp_sustain,
     _drop_harmonic_ghosts,
     _drop_isolated_notes,
+    _force_monophony,
     _merge_fragments,
     default_spec_for_target,
     midi_artifact_name,
@@ -117,6 +118,14 @@ def test_default_spec_mode_override_is_target_local() -> None:
 
     assert (bass.minimum_frequency_hz, bass.maximum_frequency_hz) == (30.0, 400.0)
     assert bass.cleanup == ()
+
+
+def test_bass_monophonic_profile_is_explicit_and_leaves_bass_default_unchanged() -> None:
+    default = default_spec_for_target("bass")
+    monophonic = default_spec_for_target("bass", modes={"bass": "bass-monophonic"})
+
+    assert default.cleanup == ()
+    assert _cleanup_names(monophonic) == ["force_monophony"]
 
 
 def test_default_spec_ignores_a_stored_profile_for_another_target() -> None:
@@ -703,6 +712,59 @@ def test_cap_simultaneous_voices_retires_forward_not_only_at_the_new_notes_onset
 
     quiet_result = next(note for note in capped if note.pitch_midi == 40)
     assert quiet_result.end_s <= 1.0  # retired at the first filler's onset, not later
+
+
+def test_force_monophony_resolves_exact_onset_ties_by_velocity_then_pitch() -> None:
+    quieter = _note(0.0, 2.0, 48, velocity=90)
+    lower_pitch = _note(0.0, 2.0, 52, velocity=100)
+    higher_pitch = _note(0.0, 2.0, 60, velocity=100)
+
+    cleaned = _force_monophony([quieter, higher_pitch, lower_pitch])
+
+    assert cleaned == [lower_pitch]
+    assert _max_polyphony(cleaned) <= 1
+
+
+def test_force_monophony_truncates_a_note_that_contains_the_winner() -> None:
+    held = _note(0.0, 4.0, 40, velocity=70)
+    contained = _note(1.0, 2.0, 52, velocity=100)
+
+    cleaned = _force_monophony([held, contained])
+
+    assert cleaned == [_note(0.0, 1.0, 40, velocity=70), contained]
+    assert _max_polyphony(cleaned) <= 1
+
+
+def test_force_monophony_prefers_an_earlier_onset_when_velocity_ties() -> None:
+    first = _note(0.0, 3.0, 60, velocity=100)
+    later = _note(1.0, 2.0, 48, velocity=100)
+
+    cleaned = _force_monophony([first, later])
+
+    assert cleaned == [first]
+    assert _max_polyphony(cleaned) <= 1
+
+
+def test_force_monophony_resolves_a_chain_of_overlaps_by_velocity_then_onset() -> None:
+    first = _note(0.0, 4.0, 40, velocity=80)
+    second = _note(1.0, 4.0, 45, velocity=90)
+    third = _note(2.0, 4.0, 50, velocity=100)
+
+    cleaned = _force_monophony([first, second, third])
+
+    assert cleaned == [
+        _note(0.0, 1.0, 40, velocity=80),
+        _note(1.0, 2.0, 45, velocity=90),
+        third,
+    ]
+    assert _max_polyphony(cleaned) == 1
+
+
+def test_force_monophony_leaves_empty_input_empty() -> None:
+    cleaned = _force_monophony([])
+
+    assert cleaned == []
+    assert _max_polyphony(cleaned) <= 1
 
 
 def _max_polyphony(notes: list[ParsedNote]) -> int:

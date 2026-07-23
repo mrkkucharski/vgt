@@ -152,10 +152,15 @@ vgt analyze --transcribe bass --transcribe drums "Song.RPP"
   persisted set.
 - `--mode <target>=<profile>` persists a transcription profile for one target;
   repeat it to select several. Current profiles are `default`, `guitar`,
-  `bass`, `vocals`, and `guitar-acoustic`. For example,
+  `bass`, `bass-monophonic`, `vocals`, and `guitar-acoustic`. For example,
   `vgt analyze --mode guitar=guitar-acoustic "Song.RPP"`. A stale mode from
   an older sidecar safely falls back to the target default, but a profile named
   explicitly on the command line must be valid.
+- `--mode bass=bass-monophonic` opts into a cleanup that allows only one
+  sounding bass note at a time. It is not the default because a separated bass
+  stem can contain bleed; use it only when that trade-off is right for the
+  stem. No equivalent vocals profile exists: LALAL vocals stems can contain
+  stacked backing vocals and harmonies.
 
 The guitar declaration (`--guitar electric|acoustic`) remains a stem-separation
 choice for LALAL. Existing acoustic declarations automatically retain the
