@@ -27,6 +27,17 @@ analyzes it, optionally creates practice stems, and adds a clearly owned
 See [the user manual](USER-MANUAL.md) for commands, REAPER object states,
 correction workflow, cost controls, and the current regression contract.
 
+## Executable acceptance test
+
+`tests/test_goal_contract.py` is the offline executable acceptance test for
+this goal. It copies the real RPP fixture and drives initialization, fake
+LALAL separation, fake transcription, ReaScript apply and sync, and a second
+reconciliation pass. It proves the non-destructive/idempotent object contract,
+correction and detected-baseline behavior, non-invasive tempo fallback, and
+operation/transcription cache reuse. It is part of the automatic `Tests`
+workflow and deliberately requires no credentials, network access, model
+downloads, or live REAPER.
+
 ## Permanent invariants
 
 - **Non-destructive:** vgt changes only objects it created and recorded as
