@@ -281,8 +281,11 @@ end
 -- object to the sidecar. This action is the sole writer of the sidecar's
 -- other fields, so it must round-trip that object verbatim on re-apply
 -- rather than silently dropping any analysis a user has already run.
-local function read_analysis_block()
-  local body = read_sidecar_body()
+-- `body`, when given, is a snapshot the caller already read (see write_settings,
+-- which must derive the analysis block and the generation counter it is
+-- racing against from the exact same read rather than two separate ones).
+local function read_analysis_block(body)
+  body = body or read_sidecar_body()
   if not body then return nil end
   local key_start = body:find('"analysis"%s*:%s*{')
   if not key_start then return nil end
@@ -407,10 +410,19 @@ local function decode_json(text)
   return result
 end
 
-local function read_analysis()
-  local block = read_analysis_block()
+local function read_analysis(body)
+  local block = read_analysis_block(body)
   return block and decode_json(block) or nil
 end
+
+-- Shared sidecar commit protocol (#138): the conflict signal every writer --
+-- Python and both ReaScript actions -- bumps on every commit. See
+-- sidecar.py's module docstring, schema 12.
+local function read_generation(body)
+  return tonumber((body or ""):match('"generation"%s*:%s*(%d+)')) or 0
+end
+
+local GENERATION_RETRY_LIMIT = 5
 
 local function remove_previous_managed_tracks()
   local managed = read_managed_guids()
@@ -834,44 +846,63 @@ local function add_sections(sections, reference_start)
 end
 
 local function write_settings(managed_tracks, managed_region_ids, reference, tempo_map_applied, tempo_map_fingerprint, tempo_data_fp, guitar_type)
-  -- Preserve any analysis the Python CLI already wrote (schema v4); a fresh
-  -- sidecar with no prior analysis stays schema v1, matching Phase 0's
-  -- long-standing on-disk format.
-  local analysis = read_analysis_block()
-  local prior_body = read_sidecar_body() or ""
-  local prior_schema = tonumber(prior_body:match('"schema_version"%s*:%s*(%d+)')) or 3
-  local schema_version = analysis and math.max(prior_schema, 4) or 1
-  local analysis_field = analysis and ('\n  "analysis": ' .. analysis .. ",") or ""
-
-  -- Write a complete replacement beside the sidecar, then rename it into
-  -- place.  Python uses the same replace discipline for paid-operation
-  -- checkpoints; a crash can therefore leave either complete version, never
-  -- a truncated JSON document.
-  local temporary_path = sidecar_path() .. ".tmp"
-  local file, error_message = io.open(temporary_path, "w")
-  if not file then error(error_message) end
   local guids = {}
   for _, track in ipairs(managed_tracks) do guids[#guids + 1] = '"' .. reaper.GetTrackGUID(track) .. '"' end
   local region_ids = {}
   for _, region_id in ipairs(managed_region_ids) do region_ids[#region_ids + 1] = tostring(region_id) end
-  file:write(string.format([[{
+
+  -- Shared sidecar commit protocol (#138): Python holds its own `fcntl` lock
+  -- across a read-merge-write, but this ReaScript action cannot take that
+  -- lock. Instead it re-reads the sidecar as late as possible on every
+  -- attempt -- so a `vgt analyze` commit that lands mid-apply is what gets
+  -- merged rather than silently rolled back -- and re-checks `generation`
+  -- one last time right before the atomic rename. A mismatch there means
+  -- Python committed in the gap; retry the merge against that newer state
+  -- instead of renaming a stale one over it.
+  for attempt = 1, GENERATION_RETRY_LIMIT do
+    -- Preserve any analysis the Python CLI already wrote (schema v4); a fresh
+    -- sidecar with no prior analysis stays schema v1, matching Phase 0's
+    -- long-standing on-disk format.
+    local prior_body = read_sidecar_body() or ""
+    local analysis = read_analysis_block(prior_body)
+    local prior_schema = tonumber(prior_body:match('"schema_version"%s*:%s*(%d+)')) or 3
+    local schema_version = analysis and math.max(prior_schema, 4) or 1
+    local analysis_field = analysis and ('\n  "analysis": ' .. analysis .. ",") or ""
+    local generation = read_generation(prior_body)
+
+    -- Write a complete replacement beside the sidecar, then rename it into
+    -- place.  Python uses the same replace discipline for paid-operation
+    -- checkpoints; a crash can therefore leave either complete version, never
+    -- a truncated JSON document.
+    local temporary_path = sidecar_path() .. ".tmp"
+    local file, error_message = io.open(temporary_path, "w")
+    if not file then error(error_message) end
+    file:write(string.format([[{
   "schema_version": %d,%s
+  "generation": %d,
   "managed_track_guids": [%s],
   "managed_region_ids": [%s],
   "config": {"reference_track_name": "%s", "reference_track_guid": "%s", "folder_name": "%s", "tempo_map_applied": %s, "tempo_map_fingerprint": "%s", "tempo_data_fingerprint": "%s", "guitar_type": "%s"}
 }
 ]],
-    schema_version, analysis_field,
-    table.concat(guids, ", "), table.concat(region_ids, ", "),
-    escaped(track_name(reference)), reaper.GetTrackGUID(reference),
-    escaped(PREFIX .. " " .. track_name(reference)), tempo_map_applied and "true" or "false",
-    escaped(tempo_map_fingerprint or ""), escaped(tempo_data_fp or ""), escaped(guitar_type)))
-  file:close()
-  local renamed, rename_error = os.rename(temporary_path, sidecar_path())
-  if not renamed then
+      schema_version, analysis_field, generation + 1,
+      table.concat(guids, ", "), table.concat(region_ids, ", "),
+      escaped(track_name(reference)), reaper.GetTrackGUID(reference),
+      escaped(PREFIX .. " " .. track_name(reference)), tempo_map_applied and "true" or "false",
+      escaped(tempo_map_fingerprint or ""), escaped(tempo_data_fp or ""), escaped(guitar_type)))
+    file:close()
+
+    if read_generation(read_sidecar_body() or "") == generation then
+      local renamed, rename_error = os.rename(temporary_path, sidecar_path())
+      if not renamed then
+        os.remove(temporary_path)
+        error(rename_error)
+      end
+      return
+    end
     os.remove(temporary_path)
-    error(rename_error)
   end
+  error("vgt: the sidecar changed concurrently " .. GENERATION_RETRY_LIMIT .. " time(s) while applying; run vgt_initialize.lua again.")
 end
 
 local function apply()

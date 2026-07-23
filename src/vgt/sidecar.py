@@ -99,6 +99,18 @@ Schema versions:
       grid has no known bar phase (the librosa fallback), so its first beat
       must not anchor a REAPER tempo map. Existing librosa values migrate to
       false; other legacy values retain their previous downbeat behavior.
+ 12 -- A top-level `generation` counter is bumped by every writer on every
+      commit (Python and both ReaScript actions). It is the shared sidecar
+      commit protocol's conflict signal (#138): neither ReaScript action can
+      take Python's `fcntl` lock, so each instead re-reads the sidecar as late
+      as possible -- immediately before its final write -- merges its own
+      change onto whatever is currently on disk, and re-checks `generation`
+      one last time right before the atomic rename. A mismatch there means
+      another writer committed in the gap; the ReaScript action discards its
+      temp file and retries the whole read-merge-write against the new
+      latest state, up to a bounded number of attempts, rather than ever
+      renaming a stale merge over a newer commit. Older sidecars migrate with
+      `generation: 0`.
 
 Every stage entry has the same shape:
   {
@@ -144,7 +156,7 @@ import shutil
 import tempfile
 import uuid
 
-SCHEMA_VERSION = 11
+SCHEMA_VERSION = 12
 STEMS_LEASE_TIMEOUT = timedelta(minutes=30)
 
 ANALYSIS_STAGES = ("tempo", "key", "sections", "chords", "transcription")
@@ -291,6 +303,8 @@ def upgrade(data: dict[str, Any]) -> dict[str, Any]:
     """Return `data` with all older fields intact and a current-schema `analysis` block present."""
     upgraded = dict(data)
     upgraded["schema_version"] = SCHEMA_VERSION
+    generation = upgraded.get("generation")
+    upgraded["generation"] = generation if isinstance(generation, int) else 0
     # Region names are presentation, not ownership. Do not infer ownership
     # from a `[vgt]` prefix while migrating an older sidecar.
     managed_region_ids = upgraded.get("managed_region_ids")
@@ -376,6 +390,11 @@ def atomic_update_sidecar(project_path: str | Path, update: Callable[[dict[str, 
     before writing.  This keeps a local-analysis update from replacing a
     separator checkpoint written by another Python process.  The ReaScript
     lease prevents its separate writer from entering this critical period.
+
+    Every commit bumps the top-level ``generation`` counter -- the same
+    conflict signal the ReaScript actions check before their own commit (see
+    the module docstring, schema 12) -- so a concurrent ReaScript writer can
+    tell its merge went stale even though it cannot take this lock itself.
     """
     path = sidecar_path(project_path)
     lock_path = path.with_name(f".{path.name}.lock")
@@ -384,6 +403,7 @@ def atomic_update_sidecar(project_path: str | Path, update: Callable[[dict[str, 
         try:
             data = _read_sidecar_unlocked(project_path)
             update(data)
+            data["generation"] = int(data.get("generation") or 0) + 1
             write_sidecar(project_path, data)
             return data
         finally:

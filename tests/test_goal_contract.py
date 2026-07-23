@@ -393,6 +393,65 @@ sync()
     ) == before
 
 
+def test_goal_contract_sync_survives_a_concurrent_analyze_commit(tmp_path: Path, deterministic_detectors: None) -> None:
+    """Extends the goal contract for the shared sidecar commit protocol
+    (#138): a `vgt analyze` commit that lands in the narrow window between
+    vgt_sync.lua's fresh read and its pre-rename generation check must not be
+    silently discarded, and the human chord/section corrections vgt_sync.lua
+    is committing in that same call must not be lost either -- both writers'
+    changes must be present together in the final sidecar."""
+    project = _copy_project(tmp_path)
+    state = _lua_state(project)
+
+    state, _ = _run_apply(project, state)
+    analyze(project, stages=("tempo", "key", "sections", "chords"))
+    # A second apply is what actually builds the `[vgt] Chords` track from
+    # the analysis just committed -- the first apply ran before it existed.
+    state, _ = _run_apply(project, state)
+    before_bpm = read_sidecar(project)["analysis"]["tempo"]["value"]["bpm"]
+
+    sync_module = SYNC_SCRIPT.read_text(encoding="utf-8").split("local ok, error_message = xpcall", 1)[0]
+    program = """
+for _, track in ipairs(tracks) do
+  if track.name == '[vgt] Chords' then track.items = {{position=10.25,length=0.75,take={name='Dm'}}} end
+end
+
+local sidecar_file = sidecar_path()
+local real_open = io.open
+local read_count = 0
+io.open = function(path, mode)
+  if path == sidecar_file and mode == "r" then
+    read_count = read_count + 1
+    if read_count == 2 then
+      -- Simulates a concurrent `vgt analyze` commit landing in the gap
+      -- between write_sync's fresh read and its pre-rename check: it bumps
+      -- `generation` and refreshes tempo, a stage sync() never itself reads.
+      local body = real_open(sidecar_file, "r"):read("*a")
+      local data = decode_json(body)
+      data.generation = (data.generation or 0) + 1
+      data.analysis.tempo.value.bpm = 141.0
+      local f = real_open(sidecar_file, "w")
+      f:write(encode_json(data))
+      f:close()
+    end
+  end
+  return real_open(path, mode)
+end
+
+sync()
+"""
+    state, _ = _run(project, state, sync_module, program)
+
+    synced = read_sidecar(project)
+    # vgt_sync.lua's own change: the human chord correction.
+    assert synced["analysis"]["chords"]["value"]["segments"][0]["chord"] == "Dm"
+    assert synced["analysis"]["chords"]["human_verified"] is True
+    # The concurrently-committed analyze() change, never itself read by sync().
+    assert synced["analysis"]["tempo"]["value"]["bpm"] == 141.0
+    assert synced["analysis"]["tempo"]["value"]["bpm"] != before_bpm
+    assert synced["generation"] >= 3
+
+
 def test_apply_recovers_managed_regions_after_an_interrupted_sidecar_commit(tmp_path: Path, deterministic_detectors: None) -> None:
     """Simulates a crash between building the `[vgt]` section regions and the
     final sidecar write: apply is interrupted right as write_settings tries to
