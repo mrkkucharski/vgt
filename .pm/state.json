@@ -1,10 +1,10 @@
 {
   "current_issue": 131,
-  "session_id": "40078169-ecba-4489-8d17-ed25790d6863",
-  "pid": 36009,
-  "process_started_at": "Thu Jul 23 13:06:28 2026",
+  "session_id": "a8587745-c3a2-44c1-a16a-d7309a7c1532",
+  "pid": 36522,
+  "process_started_at": "Thu Jul 23 13:09:05 2026",
   "agent": "codex",
-  "started_at": "2026-07-23T11:06:26.936166+00:00",
+  "started_at": "2026-07-23T11:09:03.921415+00:00",
   "scheduler_stalls": {},
   "budget": {
     "window_start": "2026-07-23T07:20:24.839872+00:00",
@@ -18,7 +18,7 @@
   "verification_followups": {
     "f0d8bfc9d2dc6da7a31609184e25c4d66d3986fd2340b33a83e98204fb86691e": "created"
   },
-  "role": "fix",
+  "role": "review",
   "branch": "issue-131-make-the-goal-contract-exercise-persiste",
   "worktree_path": "/Users/marekkucharski/projects/.pm-worktrees/vgt/issue-131",
   "pr_number": 133,
@@ -60,11 +60,11 @@
   "pending_transition": {
     "issue": 131,
     "target": "working",
-    "event": "agent.fix_started",
+    "event": "agent.review_started",
     "detail": {
       "issue": 131,
       "agent": "codex",
-      "fix_count": 2
+      "pr": 133
     },
     "cleanup": {}
   }
