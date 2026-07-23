@@ -1,10 +1,10 @@
 {
-  "current_issue": 124,
-  "session_id": "6ccf2116-7e57-42e7-b734-e6d32e430947",
-  "pid": 29606,
-  "process_started_at": "Thu Jul 23 12:22:26 2026",
-  "agent": "claude",
-  "started_at": "2026-07-23T10:22:24.677751+00:00",
+  "current_issue": 125,
+  "session_id": "7648e79a-97c0-4117-8ddf-4b5f0ebb448a",
+  "pid": 29862,
+  "process_started_at": "Thu Jul 23 12:23:49 2026",
+  "agent": "codex",
+  "started_at": "2026-07-23T10:23:47.619037+00:00",
   "scheduler_stalls": {},
   "budget": {
     "window_start": "2026-07-23T07:20:24.839872+00:00",
@@ -18,10 +18,10 @@
   "verification_followups": {
     "f0d8bfc9d2dc6da7a31609184e25c4d66d3986fd2340b33a83e98204fb86691e": "created"
   },
-  "role": "review",
-  "branch": "issue-124-add-an-offline-end-to-end-goal-contract",
-  "worktree_path": "/Users/marekkucharski/projects/.pm-worktrees/vgt/issue-124",
-  "pr_number": 127,
+  "role": "implement",
+  "branch": "issue-125-represent-unknown-downbeats-safely-in-th",
+  "worktree_path": "/Users/marekkucharski/projects/.pm-worktrees/vgt/issue-125",
+  "pr_number": null,
   "followup_generation": {
     "fingerprint": "6021d4a15089e46af3e588574c07ffb9079cdd9b2f7f9f7110bba839557cc338",
     "items": {
@@ -61,13 +61,13 @@
     "112": 2
   },
   "pending_transition": {
-    "issue": 124,
+    "issue": 125,
     "target": "working",
-    "event": "agent.review_started",
+    "event": "agent.started",
     "detail": {
-      "issue": 124,
-      "agent": "claude",
-      "pr": 127
+      "issue": 125,
+      "agent": "codex",
+      "branch": "issue-125-represent-unknown-downbeats-safely-in-th"
     },
     "cleanup": {}
   }
