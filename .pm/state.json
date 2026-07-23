@@ -1,25 +1,32 @@
 {
-  "current_issue": 108,
-  "session_id": "a9a84f46-c931-4cf8-8837-40be1c225cce",
-  "pid": 93354,
-  "process_started_at": "Wed Jul 22 09:38:29 2026",
-  "agent": "codex",
-  "started_at": "2026-07-22T07:38:27.923703+00:00",
-  "scheduler_stalls": {},
-  "budget": {
-    "window_start": "2026-07-22T03:41:37.433532+00:00",
-    "seconds_used": 935.583783,
-    "dollars_used": 2.6574272000000008,
-    "seconds_used_by_agent": {
-      "claude": 935.583783
+  "current_issue": 110,
+  "session_id": "3cfd87e5-65dd-4213-a573-b4a35c340ef5",
+  "pid": 9299,
+  "process_started_at": "Thu Jul 23 09:20:30 2026",
+  "agent": "claude",
+  "started_at": "2026-07-23T07:20:29.434390+00:00",
+  "scheduler_stalls": {
+    "blocked_issues": {
+      "108": {
+        "first_seen_at": "2026-07-22T07:41:03.331494+00:00",
+        "last_seen_at": "2026-07-22T07:47:23.879618+00:00",
+        "consecutive_passes": 6,
+        "title": "Practice C: integrate active-session handoff with initialization and document the workflow"
+      }
     }
+  },
+  "budget": {
+    "window_start": "2026-07-23T07:20:24.839872+00:00",
+    "seconds_used": 0.0,
+    "dollars_used": 0.0,
+    "seconds_used_by_agent": {}
   },
   "verification_followups": {
     "f0d8bfc9d2dc6da7a31609184e25c4d66d3986fd2340b33a83e98204fb86691e": "created"
   },
   "role": "implement",
-  "branch": "issue-108-practice-c-integrate-active-session-hand",
-  "worktree_path": "/Users/marekkucharski/projects/.pm-worktrees/vgt/issue-108",
+  "branch": "issue-110-transcription-profiles-express-per-instr",
+  "worktree_path": "/Users/marekkucharski/projects/.pm-worktrees/vgt/issue-110",
   "pr_number": null,
   "followup_generation": {
     "fingerprint": "6973a30453e2580633930a6b109df201d6cfd1b53fba5d773cbc376bb9c8311e",
@@ -49,13 +56,13 @@
     "97": 2
   },
   "pending_transition": {
-    "issue": 108,
+    "issue": 110,
     "target": "working",
     "event": "agent.started",
     "detail": {
-      "issue": 108,
-      "agent": "codex",
-      "branch": "issue-108-practice-c-integrate-active-session-hand"
+      "issue": 110,
+      "agent": "claude",
+      "branch": "issue-110-transcription-profiles-express-per-instr"
     },
     "cleanup": {}
   }
