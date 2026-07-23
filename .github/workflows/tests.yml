@@ -36,3 +36,45 @@ jobs:
         run: sudo apt-get update && sudo apt-get install --yes lua5.4
       - run: uv sync --frozen
       - run: uv run pytest -q tests
+
+  installed-distribution-smoke:
+    # macOS is the supported user platform.  Exercise the wheel through the
+    # documented `uv tool install` path, separate from the checkout's env.
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - uses: astral-sh/setup-uv@v5
+      - name: Build wheel
+        run: uv build --wheel --out-dir dist
+      - name: Smoke test installed distribution
+        shell: bash
+        run: |
+          set -euo pipefail
+          smoke_dir="$(mktemp -d "${RUNNER_TEMP}/vgt-installed-smoke.XXXXXX")"
+          trap 'rm -rf "$smoke_dir"' EXIT
+          export UV_TOOL_DIR="$smoke_dir/tools"
+          export UV_TOOL_BIN_DIR="$smoke_dir/bin"
+
+          uv tool install --python 3.11 dist/*.whl
+          vgt="$UV_TOOL_BIN_DIR/vgt"
+
+          "$vgt" --help
+          "$vgt" inspect "test/Reaper Project/Reaper Project.RPP"
+
+          destination="$smoke_dir/ReaScripts"
+          "$vgt" install-reascripts --destination "$destination"
+          cmp reascript/vgt_initialize.lua "$destination/vgt_initialize.lua"
+          cmp reascript/vgt_sync.lua "$destination/vgt_sync.lua"
+
+          # A matching reinstall must leave the installed actions untouched.
+          initialize_mtime="$(stat -f %m "$destination/vgt_initialize.lua")"
+          sync_mtime="$(stat -f %m "$destination/vgt_sync.lua")"
+          sleep 1
+          "$vgt" install-reascripts --destination "$destination"
+          test "$initialize_mtime" = "$(stat -f %m "$destination/vgt_initialize.lua")"
+          test "$sync_mtime" = "$(stat -f %m "$destination/vgt_sync.lua")"
+          cmp reascript/vgt_initialize.lua "$destination/vgt_initialize.lua"
+          cmp reascript/vgt_sync.lua "$destination/vgt_sync.lua"
