@@ -48,4 +48,6 @@ ReaScript fixture behavior, package contents, and transcription routing/output
 validation. LALAL uses `httpx.MockTransport`; Basic Pitch and DrumScript
 subprocesses are fixture writers. It never supplies credentials, sends network
 requests, downloads model environments, starts REAPER, or requires human
-verification.
+verification. `tests/test_analysis.py` mocks the expensive real-MP3 detector
+calls while testing orchestration and sidecar behavior; the focused
+tempo/key/section/chord detector tests retain their small local audio fixtures.

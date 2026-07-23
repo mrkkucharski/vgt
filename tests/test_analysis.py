@@ -71,6 +71,52 @@ def _write_v1_sidecar(project: Path) -> Path:
     return sidecar
 
 
+@pytest.fixture(autouse=True)
+def _offline_analysis_detectors(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Keep orchestration tests independent of DSP library/runtime variance.
+
+    Detector algorithms have focused tests of their own.  These tests exercise
+    sidecar caching, corrections, and CLI routing, so use small deterministic
+    artifacts instead of decoding the full MP3 fixture through platform-native
+    numeric backends on every call.
+    """
+    def tempo(project: Path, _source: Path, _settings: dict[str, object], _analysis: dict[str, object], namespace: str, **_kwargs: object) -> dict[str, object]:
+        artifact = artifact_namespace_dir(project, namespace) / "tempo-click.wav"
+        artifact.parent.mkdir(parents=True, exist_ok=True)
+        artifact.write_bytes(b"RIFFfixture")
+        return {"bpm": 120.0, "time_signature": "4/4", "mode": "constant", "backend": "fixture", "beat_times": [0.0, 1.0, 2.0], "click_artifact_path": artifact.name}
+
+    def key(_project: Path, _source: Path, _settings: dict[str, object], _analysis: dict[str, object], _namespace: str, **_kwargs: object) -> dict[str, object]:
+        return {"root": "C", "scale": "major", "confidence": 1.0, "backend": "fixture"}
+
+    def sections(project: Path, _source: Path, _settings: dict[str, object], _analysis: dict[str, object], namespace: str, **_kwargs: object) -> list[dict[str, object]]:
+        value = [
+            {"index": 0, "label": "A", "start_seconds": 0.0, "end_seconds": 1.0},
+            {"index": 1, "label": "B", "start_seconds": 1.0, "end_seconds": 2.0},
+        ]
+        timeline = artifact_namespace_dir(project, namespace) / "sections.txt"
+        timeline.parent.mkdir(parents=True, exist_ok=True)
+        timeline.write_text("0.000\t1.000\tA\n1.000\t2.000\tB\n", encoding="utf-8")
+        return value
+
+    def chords(_source: Path, beat_times: list[float], _settings: dict[str, object], **_kwargs: object) -> dict[str, object]:
+        return {
+            "segments": [
+                {"start_seconds": beat_times[0], "end_seconds": beat_times[1], "chord": "C:maj"},
+                {"start_seconds": beat_times[1], "end_seconds": beat_times[2], "chord": "G:maj"},
+            ],
+            "vocabulary": "maj_min",
+            "backend": "fixture",
+            "beat_times": beat_times,
+        }
+
+    monkeypatch.setitem(analysis_module._DETECTORS, "tempo", tempo)
+    monkeypatch.setitem(analysis_module._DETECTORS, "key", key)
+    monkeypatch.setitem(analysis_module._DETECTORS, "sections", sections)
+    monkeypatch.setattr(analysis_module, "_detect_chords", chords)
+    monkeypatch.setattr(analysis_module, "_tempo_beat_times", lambda *_args: [0.0, 1.0, 2.0])
+
+
 def test_upgrade_keeps_v1_fields_and_adds_v2_analysis_skeleton() -> None:
     v1 = {
         "schema_version": 1,
@@ -343,7 +389,7 @@ def test_analyze_writes_v2_sidecar_with_skeleton_and_provenance(tmp_path: Path) 
     assert tempo["bpm"] == pytest.approx(120.0, abs=1.0)
     assert tempo["time_signature"] == "4/4"
     assert tempo["mode"] in {"constant", "piecewise"}
-    assert tempo["backend"] in {"madmom", "librosa"}
+    assert tempo["backend"] == "fixture"
     assert len(tempo["beat_times"]) > 1
     namespace = result["analysis"]["stems"]["artifact_namespace"]
     assert namespace
