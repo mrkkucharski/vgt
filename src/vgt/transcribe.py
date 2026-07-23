@@ -323,6 +323,21 @@ def events_artifact_name(target: str) -> str:
     return f"transcription/{validate_target(target)}.json"
 
 
+# The five guitar-only fields `BasicPitchSpec` carried before the `cleanup`
+# tuple replaced them, always at these defaults for every target without a
+# cleanup pipeline. `BasicPitchSpec.to_dict` re-inserts this exact shape
+# whenever `cleanup` is empty, so removing these fields from the dataclass
+# does not move `settings_hash` for bass/vocals/generic-guitar/etc. -- only
+# guitar-acoustic's hash is meant to move (see that field's docstring).
+_LEGACY_EMPTY_CLEANUP_FIELDS: dict[str, Any] = {
+    "max_simultaneous_voices": None,
+    "sustain_clamp_s": None,
+    "drop_harmonic_ghosts": False,
+    "merge_gap_s": None,
+    "drop_isolated_notes": False,
+}
+
+
 @dataclass(frozen=True)
 class BasicPitchSpec:
     """Everything that changes one target's transcribed output. One spec per
@@ -347,7 +362,20 @@ class BasicPitchSpec:
     cleanup: tuple[CleanupStage, ...] = ()
 
     def to_dict(self) -> dict[str, Any]:
-        return asdict(self)
+        """Serialize for `spec_hash`.
+
+        When `cleanup` is empty, this reproduces the pre-refactor spec's exact
+        five-field shape (`_LEGACY_EMPTY_CLEANUP_FIELDS`) instead of the new
+        `cleanup` key, so `settings_hash` is byte-identical to before for
+        every target except guitar-acoustic -- the one target whose non-empty
+        `cleanup` is this refactor's single deliberate hash change (see the
+        module's guitar-acoustic profile docstring).
+        """
+        data = asdict(self)
+        if not data["cleanup"]:
+            del data["cleanup"]
+            data.update(_LEGACY_EMPTY_CLEANUP_FIELDS)
+        return data
 
 
 @dataclass(frozen=True)

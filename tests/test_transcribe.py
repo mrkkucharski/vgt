@@ -1,5 +1,7 @@
 from pathlib import Path
 import collections
+import hashlib
+import json
 import struct
 
 import pytest
@@ -159,6 +161,41 @@ def test_spec_hash_changes_when_a_target_setting_changes() -> None:
     retuned = replace(spec, onset_threshold=0.7)
 
     assert spec_hash(spec) != spec_hash(retuned)
+
+
+def test_spec_hash_is_unchanged_for_every_target_without_a_cleanup_pipeline() -> None:
+    """The `cleanup` tuple replaced five always-present boolean/float fields
+    on `BasicPitchSpec` (`max_simultaneous_voices`, `sustain_clamp_s`,
+    `drop_harmonic_ghosts`, `merge_gap_s`, `drop_isolated_notes`). Swapping a
+    dataclass field for a new one changes every instance's serialized shape,
+    which would silently move `settings_hash` for every basic-pitch target,
+    not just guitar-acoustic. `BasicPitchSpec.to_dict` reproduces the old
+    five-field shape whenever `cleanup` is empty specifically to prevent
+    that -- this pins the resulting hash against a hand-built pre-refactor
+    dict so a regression here (e.g. someone dropping the shim) is caught."""
+    for target in ("guitar", "bass", "vocals", "piano", "strings", "instrumental", "backing", "original"):
+        spec = default_spec_for_target(target)
+        assert spec.cleanup == ()
+        pre_refactor_dict = {
+            "backend": spec.backend,
+            "package_pin": spec.package_pin,
+            "serialization": spec.serialization,
+            "onset_threshold": spec.onset_threshold,
+            "frame_threshold": spec.frame_threshold,
+            "minimum_note_length_ms": spec.minimum_note_length_ms,
+            "minimum_frequency_hz": spec.minimum_frequency_hz,
+            "maximum_frequency_hz": spec.maximum_frequency_hz,
+            "multiple_pitch_bends": spec.multiple_pitch_bends,
+            "melodia_trick": spec.melodia_trick,
+            "midi_tempo": spec.midi_tempo,
+            "max_simultaneous_voices": None,
+            "sustain_clamp_s": None,
+            "drop_harmonic_ghosts": False,
+            "merge_gap_s": None,
+            "drop_isolated_notes": False,
+        }
+        pre_refactor_hash = hashlib.sha256(json.dumps(pre_refactor_dict, sort_keys=True).encode("utf-8")).hexdigest()
+        assert spec_hash(spec) == pre_refactor_hash, target
 
 
 def test_spec_hash_changes_when_a_cleanup_stage_parameter_changes() -> None:
