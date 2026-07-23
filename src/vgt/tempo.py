@@ -2,8 +2,9 @@
 the primary backend (docs/GOAL.md); librosa's `beat_track` is the fallback
 when madmom isn't installed (it ships behind the `madmom` extra -- see
 pyproject.toml) or fails to import (its last release predates modern
-Python/NumPy). librosa gives beat times but no downbeats, so bar position is
-reported as unknown (`1` for every beat) in that case.
+Python/NumPy). librosa gives beat times but no downbeats, so its bar phase is
+persisted explicitly as unknown rather than treating its first beat as a
+downbeat.
 
 This module isolates both backends behind `detect_beats`/`build_tempo_grid`:
 `analysis.py` and the CLI never import madmom or librosa directly.
@@ -133,8 +134,13 @@ def _piecewise_spans(beat_times: list[float]) -> tuple[list[dict[str, Any]], flo
     return spans, residual_overall
 
 
+def _downbeat_detected(beat_positions: list[int]) -> bool:
+    """Whether positions actually establish a bar phase."""
+    return bool(set(beat_positions) - {1})
+
+
 def _time_signature(beat_positions: list[int], hint: str | None) -> str | None:
-    if not set(beat_positions) - {1}:
+    if not _downbeat_detected(beat_positions):
         return hint  # every beat at position 1: downbeats unknown (librosa fallback)
     return f"{max(beat_positions)}/4"
 
@@ -152,12 +158,13 @@ def build_tempo_grid(
     constant_bpm, constant_residual = _fit_constant(beat_times)
     relative_residual = (constant_residual / mean_interval) if mean_interval else 0.0
 
+    downbeat_detected = _downbeat_detected(beat_positions)
     downbeat_times = [t for t, pos in zip(beat_times, beat_positions) if pos == 1]
-    downbeat_offset_seconds = downbeat_times[0] if downbeat_times else beat_times[0]
     time_signature = _time_signature(beat_positions, settings.get("time_signature_hint")) or "4/4"
 
     grid: dict[str, Any] = {
-        "downbeat_offset_seconds": round(downbeat_offset_seconds, 6),
+        "downbeat_detected": downbeat_detected,
+        "downbeat_offset_seconds": round(downbeat_times[0], 6) if downbeat_detected and downbeat_times else None,
         "time_signature": time_signature,
         "backend": backend,
         "beat_count": len(beat_times),

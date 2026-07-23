@@ -35,7 +35,7 @@ def test_duration_prior_rejects_a_single_beat_flip_but_allows_a_sustained_change
 def test_bar_aggregation_is_downbeat_aligned_and_averages_scores() -> None:
     import numpy as np
 
-    tempo = {"backend": "madmom", "time_signature": "4/4", "downbeat_offset_seconds": 1.0}
+    tempo = {"backend": "madmom", "downbeat_detected": True, "time_signature": "4/4", "downbeat_offset_seconds": 1.0}
     bounds = [(float(beat), float(beat + 1)) for beat in range(9)]
     groups = _bar_groups(bounds, list(range(9)), tempo, bar_beats=4)
 
@@ -48,10 +48,10 @@ def test_bar_aggregation_is_downbeat_aligned_and_averages_scores() -> None:
 
 def test_bar_aggregation_is_disabled_without_a_trustworthy_4_4_downbeat() -> None:
     assert _bar_aggregation_beats(
-        {}, {"backend": "librosa", "time_signature": "4/4", "downbeat_offset_seconds": 0.0}
+        {}, {"backend": "librosa", "downbeat_detected": False, "time_signature": "4/4", "downbeat_offset_seconds": None}
     ) is None
     assert _bar_aggregation_beats(
-        {}, {"backend": "madmom", "time_signature": "3/4", "downbeat_offset_seconds": 0.0}
+        {}, {"backend": "madmom", "downbeat_detected": True, "time_signature": "3/4", "downbeat_offset_seconds": 0.0}
     ) is None
 
 

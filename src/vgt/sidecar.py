@@ -91,10 +91,14 @@ Schema versions:
          }
        Older sidecars migrate to `requested_targets: ["guitar"]` and an empty
        `targets` index -- no data migration, since there is nothing to migrate.
- 10 -- `analysis.transcription.modes` stores target -> named transcription
+  10 -- `analysis.transcription.modes` stores target -> named transcription
       profile selections. A v9 `stems.guitar_type: acoustic` migrates to
       `{"guitar": "guitar-acoustic"}` so its transcription settings identity
       remains unchanged. `stems.guitar_type` still controls LALAL separation.
+ 11 -- Tempo values gain `downbeat_detected`: false means the detected beat
+      grid has no known bar phase (the librosa fallback), so its first beat
+      must not anchor a REAPER tempo map. Existing librosa values migrate to
+      false; other legacy values retain their previous downbeat behavior.
 
 Every stage entry has the same shape:
   {
@@ -140,7 +144,7 @@ import shutil
 import tempfile
 import uuid
 
-SCHEMA_VERSION = 10
+SCHEMA_VERSION = 11
 STEMS_LEASE_TIMEOUT = timedelta(minutes=30)
 
 ANALYSIS_STAGES = ("tempo", "key", "sections", "chords", "transcription")
@@ -308,6 +312,12 @@ def upgrade(data: dict[str, Any]) -> dict[str, Any]:
             analysis[stage] = merged
         else:
             analysis[stage] = {**_empty_stage(), **(analysis.get(stage) or {})}
+    tempo_value = analysis["tempo"].get("value")
+    if isinstance(tempo_value, dict) and "downbeat_detected" not in tempo_value:
+        # Historical librosa payloads used their first beat as a fabricated
+        # offset. Other legacy backends did not persist enough information to
+        # safely distinguish their prior downbeat semantics, so retain them.
+        tempo_value["downbeat_detected"] = tempo_value.get("backend") != "librosa"
     analysis.setdefault("provenance", {"tool": "vgt", "version": None, "settings": {}})
     stems = {**_empty_stems_block(), **(analysis.get("stems") or {})}
     stems["operations"] = dict(stems.get("operations") or {})

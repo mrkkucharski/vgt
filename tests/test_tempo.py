@@ -24,6 +24,7 @@ def test_build_tempo_grid_reports_constant_mode_for_steady_beats() -> None:
     assert grid["spans"] is None
     assert grid["bpm"] == 120.0
     assert grid["time_signature"] == "4/4"
+    assert grid["downbeat_detected"] is True
     assert grid["downbeat_offset_seconds"] == beat_times[0]
     assert grid["residual_seconds"] < 1e-6
 
@@ -44,6 +45,8 @@ def test_build_tempo_grid_reports_piecewise_mode_for_a_tempo_change() -> None:
     # librosa fallback never sees downbeats, so time signature falls back to
     # the caller's hint (or 4/4 if none given).
     assert grid["time_signature"] == "4/4"
+    assert grid["downbeat_detected"] is False
+    assert grid["downbeat_offset_seconds"] is None
 
 
 def test_build_tempo_grid_uses_time_signature_hint_when_downbeats_unknown() -> None:
@@ -53,6 +56,7 @@ def test_build_tempo_grid_uses_time_signature_hint_when_downbeats_unknown() -> N
     grid = build_tempo_grid(beat_times, beat_positions, backend="librosa", settings={"time_signature_hint": "3/4"})
 
     assert grid["time_signature"] == "3/4"
+    assert grid["downbeat_detected"] is False
 
 
 def test_build_tempo_grid_reads_downbeats_when_available() -> None:
@@ -62,6 +66,7 @@ def test_build_tempo_grid_reads_downbeats_when_available() -> None:
     grid = build_tempo_grid(beat_times, beat_positions, backend="madmom")
 
     assert grid["time_signature"] == "3/4"
+    assert grid["downbeat_detected"] is True
     assert grid["downbeat_offset_seconds"] == beat_times[0]
 
 

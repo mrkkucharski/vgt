@@ -217,3 +217,40 @@ def test_goal_contract_is_offline_non_destructive_and_idempotent(tmp_path: Path,
     names, user_items, region_count, vgt_count, tempo_writes = second_apply.split("#")
     assert user_items == "2" and region_count == "2" and tempo_writes == "0"
     assert int(vgt_count) == 11 and names.split("|").count("[vgt] Guitar") == 1
+
+
+def test_reascript_uses_beats_not_a_tempo_map_when_bar_phase_is_unknown(tmp_path: Path) -> None:
+    project = _copy_project(tmp_path)
+    project.with_suffix(".vgt").write_text(json.dumps({
+        "config": {"reference_track_guid": REFERENCE_GUID},
+        "analysis": {"tempo": {"value": {
+            "backend": "librosa", "bpm": 120.0, "time_signature": "4/4",
+            "downbeat_detected": False, "downbeat_offset_seconds": None,
+            "beat_times": [0.25, 0.78, 1.29],
+        }}},
+    }))
+    # A default map would otherwise be eligible for vgt ownership.
+    state = _lua_state(project).replace("time=0,bpm=100,num=4,den=4", "time=0,bpm=120,num=4,den=4")
+    names, _user_items, _regions, _vgt, tempo_writes = _run_apply(project, state).split("#")
+
+    assert "[vgt] Beats" in names
+    assert tempo_writes == "0"
+    assert read_sidecar(project)["config"]["tempo_map_applied"] is False
+
+
+def test_reascript_keeps_tempo_map_behavior_for_detected_downbeats(tmp_path: Path) -> None:
+    project = _copy_project(tmp_path)
+    project.with_suffix(".vgt").write_text(json.dumps({
+        "config": {"reference_track_guid": REFERENCE_GUID},
+        "analysis": {"tempo": {"value": {
+            "backend": "madmom", "bpm": 120.0, "time_signature": "4/4",
+            "downbeat_detected": True, "downbeat_offset_seconds": 0.25,
+            "beat_times": [0.25, 0.75, 1.25],
+        }}},
+    }))
+    state = _lua_state(project).replace("time=0,bpm=100,num=4,den=4", "time=0,bpm=120,num=4,den=4")
+    names, _user_items, _regions, _vgt, tempo_writes = _run_apply(project, state).split("#")
+
+    assert "[vgt] Beats" not in names
+    assert int(tempo_writes) >= 2
+    assert read_sidecar(project)["config"]["tempo_map_applied"] is True

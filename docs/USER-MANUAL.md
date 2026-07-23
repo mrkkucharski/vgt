@@ -51,7 +51,7 @@ vgt creates a `[vgt] <reference name>` container and may add:
 | --- | --- | --- |
 | `[vgt] <reference name>` | Initialization | Folder when it has children; otherwise a plain track. |
 | `[vgt] Chords` | Chord analysis | Unmuted but silent text-item track; chord items are unlocked for editing. |
-| `[vgt] Beats` | Existing/human-edited tempo map | Unmuted, silent text-item track; beat items are locked. |
+| `[vgt] Beats` | Existing/human-edited tempo map, or detected beats with unknown bar phase | Unmuted, silent text-item track; beat items are locked. |
 | `[vgt] Click` | Tempo-click artifact exists | Muted audio track; unmute temporarily to check the beat grid. |
 | Vocals, Instrumental, Bass, Drums, Guitar, Backing | Standard separation | Unmuted, time-based audio tracks. |
 | Strings, Keys / Piano | Explicitly requested | Unmuted, time-based optional stem tracks. |
@@ -80,9 +80,12 @@ Artifacts live under `vgt/<stable-id>/` beside the project:
   labels and onset times) for the `drums` target.
 
 vgt writes a tempo map only when the project still has REAPER's default 120
-BPM, 4/4 map. It never overwrites another map or a human-edited vgt map; it
-uses `[vgt] Beats` instead. It refreshes a vgt map only when it can prove that
-the map is still untouched.
+BPM, 4/4 map and analysis detected a downbeat. Beat-only fallback analysis
+(for example, librosa when madmom is unavailable) retains the detected BPM and
+beat grid but records its bar phase as unknown; it always uses `[vgt] Beats`
+instead of anchoring a tempo map to an arbitrary beat. It never overwrites
+another map or a human-edited vgt map, and refreshes a vgt map only when it can
+prove that the map is still untouched.
 
 To correct chords, edit `[vgt] Chords` items: rename the take, move/resize,
 split, delete, or add items with a take name. Rename or move only vgt-created

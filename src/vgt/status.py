@@ -25,7 +25,8 @@ def _stage_summary(stage_name: str, stage: dict[str, Any]) -> str | None:
     if stage_name == "tempo" and isinstance(value, dict):
         bpm, signature = value.get("bpm"), value.get("time_signature")
         if bpm is not None and signature:
-            return f"{float(bpm):.1f} BPM, {signature}"
+            phase = "downbeat detected" if value.get("downbeat_detected") is True else "bar phase unknown"
+            return f"{float(bpm):.1f} BPM, {signature}, {phase}"
     if stage_name == "key" and isinstance(value, dict):
         root, scale = value.get("root"), value.get("scale")
         if root and scale:
@@ -180,6 +181,11 @@ def build_status(project_path: Path) -> dict[str, Any]:
             "summary": summary,
             "analyzed_at": stage.get("analyzed_at") if isinstance(stage.get("analyzed_at"), str) else None,
             "verified_at": stage.get("verified_at") if isinstance(stage.get("verified_at"), str) else None,
+            "downbeat_detected": (
+                stage.get("value", {}).get("downbeat_detected") is True
+                if name == "tempo" and isinstance(stage.get("value"), dict)
+                else None
+            ),
         }
 
     artifacts = _artifact_paths(project_path, analysis)

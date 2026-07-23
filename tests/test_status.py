@@ -35,7 +35,7 @@ def test_status_reports_analysis_corrections_artifacts_and_json(tmp_path: Path, 
             "tempo_map_applied": True,
         },
         "analysis": {
-            "tempo": {"value": {"bpm": 120, "time_signature": "4/4", "click_artifact_path": "tempo-click.wav"}, "analyzed_at": "2026-07-19T10:00:00Z"},
+            "tempo": {"value": {"bpm": 120, "time_signature": "4/4", "downbeat_detected": False, "click_artifact_path": "tempo-click.wav"}, "analyzed_at": "2026-07-19T10:00:00Z"},
             "key": {"value": {"root": "A#", "scale": "minor"}, "analyzed_at": "2026-07-19T10:00:00Z"},
             "sections": {"value": [{}, {}], "analyzed_at": "2026-07-19T10:00:00Z"},
             "chords": {"value": {"segments": [{}, {}], "chord_sheet_path": "chords.txt"}, "detected": {"segments": [{}, {}, {}]}, "human_verified": True, "analyzed_at": "2026-07-19T10:00:00Z", "verified_at": "2026-07-19T11:00:00Z"},
@@ -63,7 +63,7 @@ def test_status_reports_analysis_corrections_artifacts_and_json(tmp_path: Path, 
 
     assert main(["status", str(project)]) == 0
     text = capsys.readouterr().out
-    assert "120.0 BPM, 4/4, detected" in text
+    assert "120.0 BPM, 4/4, bar phase unknown, detected" in text
     assert "A# minor, detected" in text
     assert "2 sections, detected" in text
     assert "2 segments, human-corrected, detected baseline present" in text
@@ -78,6 +78,7 @@ def test_status_reports_analysis_corrections_artifacts_and_json(tmp_path: Path, 
     status = json.loads(capsys.readouterr().out)
     assert status["reference_track"]["source_exists"] is True
     assert status["stages"]["chords"]["detected_present"] is True
+    assert status["stages"]["tempo"]["downbeat_detected"] is False
     assert status["artifacts"]["section_timeline"]["exists"] is True
     assert set(status["stems"]["operations"]) == {
         "vocals-original", "bass-original", "drums-original", "guitar-original", "guitar-instrumental"

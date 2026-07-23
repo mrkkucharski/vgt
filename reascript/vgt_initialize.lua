@@ -204,7 +204,7 @@ end
 -- reference items) an already-current map".
 local function tempo_data_fingerprint(tempo)
   local parts = {
-    string.format("%.6f:%s:%.6f", tonumber(tempo.bpm) or 0, tostring(tempo.time_signature or ""), tonumber(tempo.downbeat_offset_seconds) or 0),
+    string.format("%.6f:%s:%s:%.6f", tonumber(tempo.bpm) or 0, tostring(tempo.time_signature or ""), tostring(tempo.downbeat_detected == true), tonumber(tempo.downbeat_offset_seconds) or 0),
   }
   if type(tempo.spans) == "table" then
     for _, span in ipairs(tempo.spans) do
@@ -466,6 +466,17 @@ local function current_tempo_fingerprint()
 end
 
 local function add_beat_markers(track, tempo, reference_start, reference_end)
+  if type(tempo.beat_times) == "table" then
+    for beat, offset in ipairs(tempo.beat_times) do
+      local time = reference_start + (tonumber(offset) or -1)
+      local next_offset = tonumber(tempo.beat_times[beat + 1])
+      local finish = next_offset and reference_start + next_offset or reference_end
+      if time >= reference_start and time < reference_end then
+        add_labeled_item(track, time, math.min(math.max(finish, time), reference_end), "Beat " .. beat)
+      end
+    end
+    return
+  end
   local bpm = tonumber(tempo.bpm)
   if not bpm or bpm <= 0 or reference_end <= reference_start then return end
   local interval = 60 / bpm
@@ -793,7 +804,14 @@ local function apply()
     tempo_data_fp = tempo_data_fingerprint(tempo)
     local prior_map_fingerprint = prior_tempo_map_fingerprint()
     local map_untouched = tempo_map_applied and prior_map_fingerprint ~= "" and current_tempo_fingerprint() == prior_map_fingerprint
-    if map_untouched and tempo_data_fp == prior_tempo_data_fingerprint() then
+    if tempo.downbeat_detected ~= true then
+      -- A beat-only result has no trustworthy bar phase. Keep the detected
+      -- grid visible, but never create or refresh a bar-aligned REAPER map.
+      tempo_map_applied = false
+      tempo_map_fingerprint = ""
+      tempo_data_fp = ""
+      offer_beats_track(insert_at + 1, tempo, reference_start, reference_end, managed_tracks)
+    elseif map_untouched and tempo_data_fp == prior_tempo_data_fingerprint() then
       -- Live map still matches what vgt wrote, and the tempo data hasn't
       -- changed either -- nothing to do. Rewriting an unchanged map would
       -- needlessly re-shift any beat-attached reference items.
