@@ -10,6 +10,7 @@ import sys
 from .analysis import AnalysisError, add_transcription_targets, analyze, forget_transcription_targets, set_transcription_modes
 from .lalal import LalalError, LalalSeparator
 from .project import ProjectError, locate_project, read_project
+from .reascripts import ReaScriptInstallError, confirm_overwrite, default_destination, install_reascripts
 from .separation import GUITAR_TYPES, OPTIONAL_STEMS, SeparationError, declared_guitar_type, separate, separation_preview
 from .sidecar import read_sidecar, write_sidecar
 from .status import StatusError, build_status, format_status
@@ -93,6 +94,14 @@ def _parser() -> argparse.ArgumentParser:
     status_parser = subparsers.add_parser("status", help="Summarize the read-only vgt sidecar state for a project.")
     status_parser.add_argument("project", nargs="?", help="Path to a .RPP project (defaults to cwd's only .RPP).")
     status_parser.add_argument("--json", action="store_true", help="Print the summary as JSON.")
+    install_parser = subparsers.add_parser(
+        "install-reascripts", help="Install bundled ReaScript actions into REAPER's Scripts directory."
+    )
+    install_parser.add_argument(
+        "--destination", type=Path, help="Directory to install the actions into (defaults to REAPER's Scripts/vgt directory)."
+    )
+    install_parser.add_argument("--dry-run", action="store_true", help="Show target paths without creating or changing files.")
+    install_parser.add_argument("--force", action="store_true", help="Replace differing destination files without prompting.")
     return parser
 
 
@@ -124,10 +133,22 @@ def main(argv: list[str] | None = None) -> int:
     # Phase 0's primary invocation is `vgt [project.rpp]`; retain explicit
     # subcommands for scripts that want to state their intent.
     arguments = list(sys.argv[1:] if argv is None else argv)
-    if not arguments or arguments[0] not in {"inspect", "apply", "sync", "analyze", "status", "-h", "--help"}:
+    if not arguments or arguments[0] not in {"inspect", "apply", "sync", "analyze", "status", "install-reascripts", "-h", "--help"}:
         arguments.insert(0, "inspect")
     args = _parser().parse_args(arguments)
     try:
+        if args.command == "install-reascripts":
+            destination = args.destination or default_destination()
+            installed = install_reascripts(
+                destination, dry_run=args.dry_run, force=args.force, confirm=confirm_overwrite
+            )
+            action = "Would install" if args.dry_run else "Installed"
+            for path in installed:
+                print(f"{action}: {path}")
+            if args.dry_run:
+                print("Dry run: no files were changed.")
+            print("In REAPER, open the Action List, then use ReaScript: Load to register both files once.")
+            return 0
         project = locate_project(args.project)
         if args.command == "inspect":
             print(json.dumps(read_project(project).to_dict(), indent=2))
@@ -293,7 +314,7 @@ def main(argv: list[str] | None = None) -> int:
             file=sys.stderr,
         )
         return 2
-    except (ProjectError, AnalysisError, StatusError, SeparationError) as exc:
+    except (ProjectError, AnalysisError, StatusError, SeparationError, ReaScriptInstallError) as exc:
         print(f"vgt: {exc}", file=sys.stderr)
         return 2
 

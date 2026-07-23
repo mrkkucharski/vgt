@@ -8,18 +8,34 @@ checklist.
 
 ## Quick workflow
 
-1. Save the target `.RPP` in REAPER 7.x.
-2. In REAPER's Action List, load and run `reascript/vgt_initialize.lua`.
+1. Install the CLI and bundled REAPER actions:
+
+   ```sh
+   uv tool install git+https://github.com/mrkkucharski/vgt.git
+   vgt install-reascripts
+   ```
+
+   The actions are installed to
+   `~/Library/Application Support/REAPER/Scripts/vgt`. In REAPER's Action
+   List, use `ReaScript: Load` to register both installed Lua files once.
+   This step does not require retaining a source checkout. `--dry-run` previews
+   paths without changing them and `--destination DIR` is useful for a custom
+   REAPER resource location or automated test. The installer leaves identical
+   files alone and asks before replacing a different file; use `--force` only
+   when you intend to replace it.
+2. Save the target `.RPP` in REAPER 7.x.
+3. Run `vgt_initialize.lua` from REAPER's Action List.
    On first use choose a file-backed reference track and declare whether its
    guitar is electric or acoustic. This writes an adjacent `Song.vgt` sidecar.
-3. Run `vgt analyze "Song.RPP"` in a terminal. After any available separation,
+4. Run `vgt analyze "Song.RPP"` in a terminal. After any available separation,
    it also transcribes the requested stems locally: DrumScript transcribes
    `drums`, and Basic Pitch transcribes every other target. This is free and
    needs no confirmation; guitar is requested by default.
-4. Run `vgt_initialize.lua` again to apply analysis and import available stems
+5. Run `vgt_initialize.lua` again to apply analysis and import available stems
    and reference MIDI tracks.
-5. Correct chords and sections in REAPER, then run `reascript/vgt_sync.lua`.
-6. Inspect persisted state with `vgt status "Song.RPP"` or `--json`.
+6. Correct chords and sections in REAPER, then run `vgt_sync.lua` from the
+   Action List.
+7. Inspect persisted state with `vgt status "Song.RPP"` or `--json`.
 
 `vgt [project.rpp]` and `vgt inspect [project.rpp]` are read-only. Without a
 path, vgt uses the only `.RPP` in the current directory and refuses to guess
@@ -70,7 +86,7 @@ the map is still untouched.
 
 To correct chords, edit `[vgt] Chords` items: rename the take, move/resize,
 split, delete, or add items with a take name. Rename or move only vgt-created
-section regions. Then run `reascript/vgt_sync.lua`. Sync preserves the
+section regions. Then run `vgt_sync.lua` from REAPER's Action List. Sync preserves the
 machine-detected chord/section baselines while saving the effective edited
 values as human-verified. Re-applying before sync discards unsynchronized edits
 to vgt-managed objects.
