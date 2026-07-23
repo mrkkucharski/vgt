@@ -157,6 +157,41 @@ def test_beats_and_chords_tracks_are_both_unmuted() -> None:
     assert "add_locked_track(reaper.CountTracks(0), CHORDS_NAME, false)" in script
 
 
+def test_key_display_uses_the_effective_value_as_a_locked_unmuted_label() -> None:
+    script = APPLY_SCRIPT.read_text()
+    helpers_end = script.index("local function remove_previous_managed_regions()")
+    lua_program = "\n".join(
+        [
+            _click_track_lua_mock(Path("song.RPP")),
+            script[:helpers_end],
+            "local managed_tracks = {}",
+            "add_key_track(0, {root = 'E', scale = 'minor'}, 10, 14, managed_tracks)",
+            "local track, item = __tracks[1], __items[1]",
+            "io.write(track.name, ':', track.mute, ':', item.notes, ':', item.values.C_LOCK, ':', item.values.D_POSITION, ':', item.values.D_LENGTH, ':', #managed_tracks)",
+        ]
+    )
+    result = subprocess.run([LUA, "-", "song.RPP"], input=lua_program, text=True, capture_output=True)
+    assert result.returncode == 0, result.stderr
+    assert result.stdout == "[vgt] Key:0:E minor:1:10:4:1"
+
+
+def test_key_display_requires_a_complete_key_value() -> None:
+    script = APPLY_SCRIPT.read_text()
+    helpers_end = script.index("local function remove_previous_managed_regions()")
+    lua_program = "\n".join(
+        [
+            _click_track_lua_mock(Path("song.RPP")),
+            script[:helpers_end],
+            "local managed_tracks = {}",
+            "add_key_track(0, {root = 'E'}, 10, 14, managed_tracks)",
+            "add_key_track(0, {scale = 'minor'}, 10, 14, managed_tracks)",
+            "io.write(#__tracks, ':', #__items, ':', #managed_tracks)",
+        ]
+    )
+    result = subprocess.run([LUA, "-", "song.RPP"], input=lua_program, text=True, capture_output=True, check=True)
+    assert result.stdout == "0:0:0"
+
+
 def test_chord_items_are_added_unlocked_so_they_stay_editable() -> None:
     script = APPLY_SCRIPT.read_text()
     # Chord items are the editing surface (issue #17): unlike beats (locked,
@@ -187,7 +222,9 @@ def _click_track_lua_mock(rpp_path: Path) -> str:
             "local items = {}",
             "function reaper.AddMediaItemToTrack(track) local item = {track = track, values = {}}; items[#items + 1] = item; return item end",
             "function reaper.SetMediaItemInfo_Value(item, key, value) item.values[key] = value end",
+            "function reaper.GetSetMediaItemInfo_String(item, key, value) if key == 'P_NOTES' then item.notes = value end end",
             "function reaper.AddTakeToMediaItem(item) local take = {}; item.take = take; return take end",
+            "function reaper.GetSetMediaItemTakeInfo_String(take, key, value) if key == 'P_NAME' then take.name = value end end",
             "function reaper.SetMediaItemTake_Source(take, source) take.source = source end",
             "_G.__items = items",
             "_G.__tracks = tracks",

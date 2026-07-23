@@ -51,6 +51,7 @@ vgt creates a `[vgt] <reference name>` container and may add:
 | --- | --- | --- |
 | `[vgt] <reference name>` | Initialization | Folder when it has children; otherwise a plain track. |
 | `[vgt] Chords` | Chord analysis | Unmuted but silent text-item track; chord items are unlocked for editing. |
+| `[vgt] Key` | Valid key analysis | Unmuted but silent text-item track with one locked item showing the effective root and scale, including a deliberate sidecar override. It is display-only. |
 | `[vgt] Beats` | Existing/human-edited tempo map, or detected beats with unknown bar phase | Unmuted, silent text-item track; beat items are locked. |
 | `[vgt] Click` | Tempo-click artifact exists | Muted audio track; unmute temporarily to check the beat grid. |
 | Vocals, Instrumental, Bass, Drums, Guitar, Backing | Standard separation | Unmuted, time-based audio tracks. |
