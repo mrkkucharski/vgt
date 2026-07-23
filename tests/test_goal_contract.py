@@ -165,6 +165,26 @@ def _run_apply(project: Path, state: str) -> str:
     return result.stdout
 
 
+def _run_apply_key_snapshot(project: Path, state: str) -> str:
+    """Read the managed Key display from the same offline REAPER fixture."""
+    module = APPLY_SCRIPT.read_text(encoding="utf-8").split("local ok, error_message = xpcall", 1)[0]
+    program = """
+apply()
+local count, detail = 0, ''
+for _, track in ipairs(tracks) do
+  if track.name == '[vgt] Key' then
+    count = count + 1
+    local item = track.items[1]
+    detail = tostring(track.B_MUTE) .. ':' .. tostring(item.notes) .. ':' .. tostring(item.C_LOCK)
+  end
+end
+io.write(count .. '#' .. detail)
+"""
+    result = subprocess.run([LUA, "-", str(project)], input="\n".join([state, module, program]), text=True, capture_output=True)
+    assert result.returncode == 0, result.stderr
+    return result.stdout
+
+
 def _run_sync(project: Path, state: str) -> None:
     module = SYNC_SCRIPT.read_text(encoding="utf-8").split("local ok, error_message = xpcall", 1)[0]
     result = subprocess.run([LUA, "-", str(project)], input="\n".join([state, module, "sync()"]), text=True, capture_output=True)
@@ -188,8 +208,8 @@ def test_goal_contract_is_offline_non_destructive_and_idempotent(tmp_path: Path,
     first_apply = _run_apply(project, _lua_state(project))
     names, user_items, region_count, vgt_count, tempo_writes = first_apply.split("#")
     assert user_items == "2" and region_count == "3" and tempo_writes == "0"
-    assert "[vgt] Beats" in names and "[vgt] Guitar Ref (MIDI)" in names
-    assert int(vgt_count) == 11  # folder, beats/click/chords, six stems, MIDI
+    assert "[vgt] Beats" in names and "[vgt] Key" in names and "[vgt] Guitar Ref (MIDI)" in names
+    assert int(vgt_count) == 12  # folder, beats/click/key/chords, six stems, MIDI
 
     sidecar = read_sidecar(project)
     managed = [(guid, "[vgt] Chords" if index == 3 else "[vgt] stale") for index, guid in enumerate(sidecar["managed_track_guids"])]
@@ -212,11 +232,17 @@ def test_goal_contract_is_offline_non_destructive_and_idempotent(tmp_path: Path,
     assert reconciled["analysis"]["sections"]["detected"] == detected_sections
     assert (separator.calls, transcriber.calls) == (5, 1)
 
+    # The display is rebuilt from effective `key.value`, so a deliberate
+    # sidecar override replaces the old label without adding another track.
+    reconciled["analysis"]["key"]["value"] = {"root": "E", "scale": "minor", "backend": "human"}
+    reconciled["analysis"]["key"]["human_verified"] = True
+    project.with_suffix(".vgt").write_text(json.dumps(reconciled), encoding="utf-8")
     managed = [(guid, "[vgt] stale") for guid in reconciled["managed_track_guids"]]
     second_apply = _run_apply(project, _lua_state(project, managed))
     names, user_items, region_count, vgt_count, tempo_writes = second_apply.split("#")
     assert user_items == "2" and region_count == "2" and tempo_writes == "0"
-    assert int(vgt_count) == 11 and names.split("|").count("[vgt] Guitar") == 1
+    assert int(vgt_count) == 12 and names.split("|").count("[vgt] Guitar") == 1
+    assert _run_apply_key_snapshot(project, _lua_state(project, managed)) == "1#0:E minor:1"
 
 
 def test_reascript_uses_beats_not_a_tempo_map_when_bar_phase_is_unknown(tmp_path: Path) -> None:

@@ -6,6 +6,7 @@ local PREFIX = "[vgt]"
 local CHORDS_NAME = PREFIX .. " Chords"
 local BEATS_NAME = PREFIX .. " Beats"
 local CLICK_NAME = PREFIX .. " Click"
+local KEY_NAME = PREFIX .. " Key"
 local STEM_TRACKS = {
   {artifact = "vocals", filename = "stems/vocals.wav", name = PREFIX .. " Vocals"},
   {artifact = "instrumental", filename = "stems/instrumental.wav", name = PREFIX .. " Instrumental"},
@@ -498,6 +499,19 @@ local function offer_beats_track(index, tempo, reference_start, reference_end, m
   managed_tracks[#managed_tracks + 1] = beats
 end
 
+-- Key is an analysis display, not a REAPER key-correction surface.  Like
+-- Beats it is a silent, unmuted label track, but its one item is locked so a
+-- deliberate sidecar override remains the sole correction path.
+local function add_key_track(index, key, reference_start, reference_end, managed_tracks)
+  if type(key) ~= "table" then return end
+  local root, scale = key.root, key.scale
+  if type(root) ~= "string" or root == "" or type(scale) ~= "string" or scale == "" then return end
+  if reference_end <= reference_start then return end
+  local key_track = add_locked_track(index, KEY_NAME, false)
+  add_labeled_item(key_track, reference_start, reference_end, root .. " " .. scale)
+  managed_tracks[#managed_tracks + 1] = key_track
+end
+
 -- Imports the rendered click WAV (analysis.tempo.value.click_artifact_path,
 -- a filename under the project's vgt/<namespace>/ folder) as a muted audio track, so
 -- it never surprises the user with playback -- unlike Beats/Chords, which
@@ -853,6 +867,10 @@ local function apply()
   if type(tempo) == "table" then
     add_click_track(reaper.CountTracks(0), tempo, reference_start, managed_tracks, artifact_namespace)
   end
+
+  -- `value`, rather than `detected`, intentionally displays the effective
+  -- analysis result, including a deliberate human sidecar override.
+  add_key_track(reaper.CountTracks(0), analysis and analysis.key and analysis.key.value, reference_start, reference_end, managed_tracks)
 
   local chords = analysis and analysis.chords and analysis.chords.value
   local segments = type(chords) == "table" and (chords.segments or chords) or nil
