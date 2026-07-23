@@ -212,13 +212,6 @@ _GUITAR_PROFILE = replace(
     name="guitar",
     minimum_frequency_hz=70.0,
     maximum_frequency_hz=1400.0,
-    probe_expectations=ProbeExpectations(
-        expected_voice_count=GUITAR_MAX_SIMULTANEOUS_VOICES,
-        harmonic_ghost_intervals=GUITAR_HARMONIC_GHOST_INTERVALS,
-        # The published guitar probe used this fixed cap.  It is an evaluation
-        # bound, deliberately separate from the tempo-relative cleanup clamp.
-        sustain_cap_s=4.0,
-    ),
 )  # below drop/Eb-tuned E2 (82.4 Hz), above 24th-fret E6 (1318.5 Hz)
 _BASS_PROFILE = replace(
     _DEFAULT_PROFILE, name="bass", minimum_frequency_hz=30.0, maximum_frequency_hz=400.0

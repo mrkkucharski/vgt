@@ -26,13 +26,16 @@ def _probe_module():
 
 
 def test_guitar_profiles_keep_the_published_probe_expectations() -> None:
-    """The old module constants were six voices, these partials, and four seconds."""
-    for name in ("guitar", "guitar-acoustic"):
-        expectations = instrument_profile(name).probe_expectations
-        assert expectations is not None
-        assert expectations.expected_voice_count == 6
-        assert expectations.harmonic_ghost_intervals == (12, 19, 24, 28, 31, 36)
-        assert expectations.sustain_cap_s == 4.0
+    """The published measurements belong only to the acoustic profile."""
+    expectations = instrument_profile("guitar-acoustic").probe_expectations
+    assert expectations is not None
+    assert expectations.expected_voice_count == 6
+    assert expectations.harmonic_ghost_intervals == (12, 19, 24, 28, 31, 36)
+    assert expectations.sustain_cap_s == 4.0
+
+    # Generic guitar covers unset/electric guitar types, which have not had
+    # the acoustic findings' measurements.  Do not quietly reuse them.
+    assert instrument_profile("guitar").probe_expectations is None
 
 
 def test_selected_profile_with_different_voice_count_changes_only_crowding(
@@ -72,19 +75,20 @@ def test_selected_profile_with_different_voice_count_changes_only_crowding(
     assert guitar_columns[8:] == one_voice_columns[8:]
 
 
+@pytest.mark.parametrize("profile_name", ["bass", "guitar"])
 def test_profile_without_expectations_names_usable_profiles(
-    tmp_path: Path, capsys, monkeypatch: pytest.MonkeyPatch
+    profile_name: str, tmp_path: Path, capsys, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     probe = _probe_module()
     notes_csv = tmp_path / "notes.csv"
     notes_csv.write_text("start_time_s,end_time_s,pitch_midi,amplitude\n")
-    monkeypatch.setattr(sys, "argv", ["probe", str(notes_csv), "--profile", "bass"])
+    monkeypatch.setattr(sys, "argv", ["probe", str(notes_csv), "--profile", profile_name])
 
     with pytest.raises(SystemExit):
         probe.main()
 
     error = capsys.readouterr().err
-    assert "profile 'bass' has no measured probe expectations" in error
+    assert f"profile {profile_name!r} has no measured probe expectations" in error
     assert "guitar-acoustic" in error
 
 
