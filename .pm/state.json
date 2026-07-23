@@ -1,24 +1,24 @@
 {
   "current_issue": 111,
-  "session_id": "1ca7913b-90dd-4ae2-bddb-2856de56ca01",
-  "pid": 16074,
-  "process_started_at": "Thu Jul 23 10:24:17 2026",
+  "session_id": "c114e42b-bb22-46d0-9681-12cd88b09b84",
+  "pid": 16468,
+  "process_started_at": "Thu Jul 23 10:26:53 2026",
   "agent": "codex",
-  "started_at": "2026-07-23T08:24:15.926205+00:00",
+  "started_at": "2026-07-23T08:26:52.318245+00:00",
   "scheduler_stalls": {},
   "budget": {
     "window_start": "2026-07-23T07:20:24.839872+00:00",
-    "seconds_used": 838.282749,
+    "seconds_used": 992.372155,
     "dollars_used": 0.5550714,
     "seconds_used_by_agent": {
-      "codex": 459.39771499999995,
+      "codex": 613.4871209999999,
       "claude": 378.885034
     }
   },
   "verification_followups": {
     "f0d8bfc9d2dc6da7a31609184e25c4d66d3986fd2340b33a83e98204fb86691e": "created"
   },
-  "role": "review",
+  "role": "fix",
   "branch": "issue-111-select-a-transcription-profile-per-targe",
   "worktree_path": "/Users/marekkucharski/projects/.pm-worktrees/vgt/issue-111",
   "pr_number": 115,
@@ -48,16 +48,17 @@
     "79": 2,
     "95": 2,
     "97": 2,
-    "110": 2
+    "110": 2,
+    "111": 1
   },
   "pending_transition": {
     "issue": 111,
     "target": "working",
-    "event": "agent.review_started",
+    "event": "agent.fix_started",
     "detail": {
       "issue": 111,
       "agent": "codex",
-      "pr": 115
+      "fix_count": 1
     },
     "cleanup": {}
   }
