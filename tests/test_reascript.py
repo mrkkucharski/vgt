@@ -1549,3 +1549,55 @@ def test_write_sync_interrupted_write_leaves_the_previous_valid_sidecar_intact(t
     # partially overwritten -- and no leftover temp file remains.
     assert sidecar.read_text() == original
     assert not (tmp_path / "song.vgt.tmp").exists()
+
+
+def test_write_sync_gives_up_after_the_retry_limit_leaving_the_prior_sidecar_intact(tmp_path: Path) -> None:
+    """Symmetric with write_settings' retry-exhaustion case: a sidecar that
+    keeps changing out from under vgt_sync.lua must fail cleanly rather than
+    silently discard another writer's update, leaving the last valid sidecar
+    on disk untouched."""
+    sidecar = tmp_path / "song.vgt"
+    original = json.dumps({
+        "schema_version": 5, "generation": 1,
+        "managed_track_guids": [], "managed_region_ids": [], "config": {},
+        "analysis": {
+            "tempo": {"value": {"bpm": 120}},
+            "chords": {"value": {"segments": []}, "human_verified": False},
+            "sections": {"value": [], "human_verified": False},
+        },
+    })
+    sidecar.write_text(original)
+
+    script = SYNC_SCRIPT.read_text()
+    helpers_end = script.index("local function sync()")
+    lua_program = "\n".join(
+        [
+            "reaper = {}",
+            "function reaper.EnumProjects() return true, arg[1] end",
+            script[:helpers_end],
+            "local sidecar_file = sidecar_path()",
+            "local real_open = io.open",
+            "io.open = function(path, mode)",
+            "  if path == sidecar_file and mode == 'r' then",
+            # Every read observes a fresh generation bump: a pathologically
+            # unlucky concurrent writer wins every single time.
+            "    local body = real_open(sidecar_file, 'r'):read('*a')",
+            "    local generation = tonumber(body:match('\"generation\"%s*:%s*(%d+)')) or 1",
+            "    local bumped = real_open(sidecar_file, 'w')",
+            "    bumped:write((body:gsub('\"generation\"%s*:%s*%d+', '\"generation\": ' .. (generation + 1))))",
+            "    bumped:close()",
+            "  end",
+            "  return real_open(path, mode)",
+            "end",
+            'local segments = {{start_seconds = 0, end_seconds = 1, chord = "Am"}}',
+            'local sections = {{start_seconds = 0, end_seconds = 1, label = "Verse"}}',
+            "local ok, err = pcall(write_sync, segments, sections)",
+            "io.write(tostring(ok), ':', tostring(err):find('concurrently') ~= nil and 'retryable' or tostring(err))",
+        ]
+    )
+    result = subprocess.run([LUA, "-", str(tmp_path / "song.RPP")], input=lua_program, text=True, capture_output=True)
+    assert result.returncode == 0, result.stderr
+    assert result.stdout == "false:retryable"
+
+    assert not (tmp_path / "song.vgt.tmp").exists()
+    assert json.loads(sidecar.read_text())["analysis"]["chords"]["human_verified"] is False
