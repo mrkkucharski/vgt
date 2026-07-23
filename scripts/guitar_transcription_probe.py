@@ -1,7 +1,7 @@
 """Measure the quality of a Basic Pitch transcription against a named profile.
 
 Evaluation-only. Reads a Basic Pitch note-events CSV and reports the metrics
-that distinguish a usable guitar reference from an unplayable one: note count,
+that distinguish a usable instrument reference from an unplayable one: note count,
 sustain runaway, simultaneous voices, fragmentation, harmonic ghosts, and
 agreement with vgt's own detected chords. It neither runs a model nor writes
 into a vgt project.
