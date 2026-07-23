@@ -61,6 +61,25 @@ local function starts_with_vgt(track)
   return track_name(track):sub(1, #PREFIX) == PREFIX
 end
 
+-- Ownership must survive a stale or missing sidecar: `managed_track_guids` is
+-- regenerated wholesale on every apply and written last, so any error, crash,
+-- restored backup, or copied project folder between building the [vgt] block
+-- and reaching write_settings leaves it recording nothing about a block that
+-- fully exists. A per-track extended-state mark (REAPER's own "P_EXT:" key,
+-- persisted in the RPP itself) travels with the track regardless of what the
+-- sidecar says, so remove_previous_managed_tracks below never mistakes a
+-- stale record for "nothing to replace" and appends a second folder.
+local EXT_STATE_KEY = "P_EXT:vgt_managed"
+
+local function mark_track_managed(track)
+  reaper.GetSetMediaTrackInfo_String(track, EXT_STATE_KEY, "1", true)
+end
+
+local function track_is_marked_managed(track)
+  local _, value = reaper.GetSetMediaTrackInfo_String(track, EXT_STATE_KEY, "", false)
+  return value == "1"
+end
+
 -- A reference must be real audio vgt can later resolve a source path for
 -- (see project.track_source_path): at least one item whose active take
 -- has a file-backed source. This is deliberately false for tracks with no
@@ -352,10 +371,14 @@ end
 
 local function remove_previous_managed_tracks()
   local managed = read_managed_guids()
-  -- A GUID in the sidecar alone is not enough: preserve any track whose current name is not vgt-owned.
+  -- Either the sidecar GUID or the durable per-track mark is evidence of
+  -- ownership -- the mark is what keeps this correct when the sidecar record
+  -- is stale (see mark_track_managed above). Neither is enough on its own:
+  -- preserve any track whose current name is not vgt-owned, since the user
+  -- may have renamed a stale-marked track to make it their own.
   for index = reaper.CountTracks(0) - 1, 0, -1 do
     local track = reaper.GetTrack(0, index)
-    if managed[reaper.GetTrackGUID(track)] and starts_with_vgt(track) then
+    if (managed[reaper.GetTrackGUID(track)] or track_is_marked_managed(track)) and starts_with_vgt(track) then
       reaper.DeleteTrack(track)
     end
   end
@@ -390,6 +413,7 @@ local function add_locked_track(index, name, muted)
   local track = reaper.GetTrack(0, index)
   reaper.GetSetMediaTrackInfo_String(track, "P_NAME", name, true)
   reaper.SetMediaTrackInfo_Value(track, "B_MUTE", muted and 1 or 0)
+  mark_track_managed(track)
   return track
 end
 
@@ -802,6 +826,7 @@ local function apply()
   reaper.InsertTrackAtIndex(insert_at, true)
   local folder = reaper.GetTrack(0, insert_at)
   reaper.GetSetMediaTrackInfo_String(folder, "P_NAME", folder_name, true)
+  mark_track_managed(folder)
   -- Tentatively open a folder; if nothing ends up nested under it (no tempo,
   -- click, stems, chords, or sections to add), it is flattened back to a
   -- plain track below rather than left as a folder with no children.
