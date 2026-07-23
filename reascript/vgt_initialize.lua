@@ -80,21 +80,30 @@ local function track_is_marked_managed(track)
   return value == "1"
 end
 
--- A reference must be real audio vgt can later resolve a source path for
--- (see project.track_source_path): at least one item whose active take
--- has a file-backed source. This is deliberately false for tracks with no
--- items, MIDI-only tracks, and REAPER-native generators such as a count-in
--- click track (<SOURCE CLICK>, which has no file at all).
-local function has_file_backed_media(track)
+-- How many of a track's items have an active take with a file-backed source.
+-- Zero is a track with no real audio (no items, MIDI-only, or a REAPER-native
+-- generator such as a count-in click track's <SOURCE CLICK>, which has no
+-- file at all); more than one is ambiguous -- see has_file_backed_media.
+local function file_backed_item_count(track)
+  local count = 0
   for item_index = 0, reaper.CountTrackMediaItems(track) - 1 do
     local item = reaper.GetTrackMediaItem(track, item_index)
     local take = reaper.GetActiveTake(item)
     if take then
       local filename = reaper.GetMediaSourceFileName(reaper.GetMediaItemTake_Source(take), "")
-      if filename ~= "" then return true end
+      if filename ~= "" then count = count + 1 end
     end
   end
-  return false
+  return count
+end
+
+-- An unambiguous supported reference is exactly one file-backed mix item
+-- (see project.track_source_path, which resolves the source path from that
+-- same single item). A track with more than one file-backed item is rejected
+-- rather than silently analyzing the first RPP FILE while positioning
+-- objects over the span of every item on the track.
+local function has_file_backed_media(track)
+  return file_backed_item_count(track) == 1
 end
 
 -- Candidate reference tracks are the project's own (non-vgt) tracks that
@@ -175,6 +184,14 @@ local function choose_guitar_type()
   if choice == 1 then return "electric" end
   if choice == 2 then return "acoustic" end
   return nil
+end
+
+-- The persisted reference is authoritative once recorded: after first
+-- initialization, apply must reuse this track rather than re-prompting or
+-- silently substituting another candidate (see apply()'s resolve_reference).
+local function persisted_reference_guid()
+  local body = read_sidecar_body() or ""
+  return body:match('"reference_track_guid"%s*:%s*"([^"]*)"') or ""
 end
 
 local function read_managed_guids()
@@ -392,6 +409,35 @@ local function find_track_by_guid(guid)
   return nil
 end
 
+-- Once a reference has been persisted, it is authoritative: reuse it without
+-- prompting on every later apply, and never silently fall back to a
+-- candidate menu while old analysis/stems/tempo data still refers to it.
+-- Any problem with the persisted track stops before any mutation with a
+-- message the user can act on, rather than guessing at a replacement.
+local function resolve_persisted_reference(guid)
+  local reference = find_track_by_guid(guid)
+  if not reference then
+    error(
+      "the persisted reference track (" .. guid .. ") no longer exists in this project. "
+      .. "Restore it, or remove config.reference_track_guid from the .vgt sidecar to choose a new reference."
+    )
+  end
+  if starts_with_vgt(reference) then
+    error("the persisted reference track (" .. guid .. ") is now a [vgt]-managed track, not a valid user reference.")
+  end
+  local count = file_backed_item_count(reference)
+  if count == 0 then
+    error("the persisted reference track \"" .. track_name(reference) .. "\" no longer has any file-backed media.")
+  end
+  if count > 1 then
+    error(
+      "the persisted reference track \"" .. track_name(reference) .. "\" now has " .. count
+      .. " file-backed items, which is ambiguous. A reference must be exactly one file-backed mix item."
+    )
+  end
+  return reference
+end
+
 local function add_labeled_item(track, start_time, end_time, label, locked)
   if end_time <= start_time then return end
   local item = reaper.AddMediaItemToTrack(track)
@@ -417,16 +463,24 @@ local function add_locked_track(index, name, muted)
   return track
 end
 
+-- Derived from the reference's one file-backed item (see has_file_backed_media),
+-- never from the span of every item on the track: a reference track that also
+-- carries other, non-file-backed items must not have its placements stretched
+-- to cover them.
 local function reference_start_and_end(reference)
-  local start_time, end_time = nil, nil
   for index = 0, reaper.CountTrackMediaItems(reference) - 1 do
     local item = reaper.GetTrackMediaItem(reference, index)
-    local start = reaper.GetMediaItemInfo_Value(item, "D_POSITION")
-    local finish = start + reaper.GetMediaItemInfo_Value(item, "D_LENGTH")
-    start_time = start_time and math.min(start_time, start) or start
-    end_time = end_time and math.max(end_time, finish) or finish
+    local take = reaper.GetActiveTake(item)
+    if take then
+      local filename = reaper.GetMediaSourceFileName(reaper.GetMediaItemTake_Source(take), "")
+      if filename ~= "" then
+        local start = reaper.GetMediaItemInfo_Value(item, "D_POSITION")
+        local finish = start + reaper.GetMediaItemInfo_Value(item, "D_LENGTH")
+        return start, finish
+      end
+    end
   end
-  return start_time or 0, end_time or 0
+  return 0, 0
 end
 
 local function parse_time_signature(value)
@@ -794,9 +848,18 @@ local function apply()
   local guitar_type = choose_guitar_type()
   if not guitar_type then return end
 
-  -- Choose the reference before mutating anything, so cancelling leaves the project untouched.
-  local reference = choose_reference(candidate_tracks())
-  if not reference then return end
+  -- Resolve the reference before mutating anything, so cancelling or a stale
+  -- persisted reference leaves the project untouched. A previously persisted
+  -- GUID is authoritative and reused without prompting; only a project with
+  -- no persisted reference yet goes through the interactive/automation pick.
+  local persisted_guid = persisted_reference_guid()
+  local reference
+  if persisted_guid ~= "" then
+    reference = resolve_persisted_reference(persisted_guid)
+  else
+    reference = choose_reference(candidate_tracks())
+    if not reference then return end
+  end
   local reference_guid = reaper.GetTrackGUID(reference)
   local folder_name = PREFIX .. " " .. track_name(reference)
 

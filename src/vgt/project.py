@@ -103,18 +103,23 @@ def read_project(path: str | Path) -> ProjectInfo:
 
 
 def track_source_path(project: str | Path, track_guid: str) -> Path:
-    """Resolve the on-disk media file backing a track's first item, by GUID.
+    """Resolve the on-disk media file backing a track's one file-backed item, by GUID.
 
     Used to hand the reference track's audio to the analysis stage, which reads
-    the file directly rather than going through REAPER.
+    the file directly rather than going through REAPER. A track with more than
+    one file-backed item is ambiguous -- see vgt_initialize.lua's
+    file_backed_item_count, which rejects it as a reference before this is
+    ever called -- so this raises rather than silently using the first FILE.
     """
     project_path = locate_project(project)
     text = project_path.read_text(encoding="utf-8", errors="replace")
     for guid, block in _track_blocks(text):
         if guid != track_guid:
             continue
-        file_match = _FILE.search(block)
-        if file_match is None:
+        paths = _FILE.findall(block)
+        if not paths:
             raise ProjectError(f"Track {track_guid} has no file-backed media source.")
-        return (project_path.parent / file_match.group("path")).resolve()
+        if len(paths) > 1:
+            raise ProjectError(f"Track {track_guid} has {len(paths)} file-backed items, which is ambiguous; a reference must be exactly one file-backed mix item.")
+        return (project_path.parent / paths[0]).resolve()
     raise ProjectError(f"No track with GUID {track_guid} found in {project_path}.")

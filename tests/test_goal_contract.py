@@ -376,6 +376,9 @@ sync()
     names, user_items, region_count, vgt_count, tempo_writes = second_apply.split("#")
     assert user_items == "2" and region_count == "3" and tempo_writes == "0"
     assert int(vgt_count) == 12 and names.split("|").count("[vgt] Guitar") == 1
+    # The second apply must have reused the original persisted reference
+    # rather than re-prompting or drifting onto another candidate (issue #136).
+    assert read_sidecar(project)["config"]["reference_track_guid"] == REFERENCE_GUID
     state, key_snapshot = _run_apply_key_snapshot(project, state)
     assert key_snapshot == "1#0:E minor:1"
     _assert_managed_contract(project, state)
@@ -386,6 +389,27 @@ sync()
         managed_tracks=final_sidecar["managed_track_guids"],
         managed_regions=final_sidecar["managed_region_ids"],
     ) == before
+
+
+def test_second_apply_reuses_the_persisted_reference_without_prompting_in_a_multi_track_project(tmp_path: Path) -> None:
+    """The fixture has two non-[vgt] file-backed tracks (The Seven Rivers and
+    Paris Metro Punk), so a fresh selection would have to ask. Once the GUID
+    is persisted by a first apply, a later apply must reuse it without ever
+    touching the automation override or the gfx menu -- neither is defined in
+    this stripped-down state, so any attempt to consult them fails loudly."""
+    project = _copy_project(tmp_path)
+    state = _lua_state(project)
+    state, _ = _run_apply(project, state)
+    assert read_sidecar(project)["config"]["reference_track_guid"] == REFERENCE_GUID
+
+    state_without_picker = state.replace(
+        "function reaper.GetExtState(_,key) return key == 'reference_index' and '0' or 'electric' end",
+        "function reaper.GetExtState(_,key) return key == 'guitar_type' and 'electric' or '' end",
+    )
+    state, second_apply = _run_apply(project, state_without_picker)
+    _names, user_items, _region_count, _vgt_count, _tempo_writes = second_apply.split("#")
+    assert user_items == "2"
+    assert read_sidecar(project)["config"]["reference_track_guid"] == REFERENCE_GUID
 
 
 def test_reascript_uses_beats_not_a_tempo_map_when_bar_phase_is_unknown(tmp_path: Path) -> None:
