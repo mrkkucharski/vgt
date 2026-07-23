@@ -1,10 +1,10 @@
 {
-  "current_issue": 118,
-  "session_id": "dfb0d017-fa5d-4944-b6d5-af885836e733",
-  "pid": 24753,
-  "process_started_at": "Thu Jul 23 11:41:05 2026",
-  "agent": "claude",
-  "started_at": "2026-07-23T09:41:04.079803+00:00",
+  "current_issue": 119,
+  "session_id": "f119cfa0-7416-4d78-b6ce-5c9d563bd68f",
+  "pid": 25287,
+  "process_started_at": "Thu Jul 23 11:46:13 2026",
+  "agent": "codex",
+  "started_at": "2026-07-23T09:46:11.460889+00:00",
   "scheduler_stalls": {},
   "budget": {
     "window_start": "2026-07-23T07:20:24.839872+00:00",
@@ -18,10 +18,10 @@
   "verification_followups": {
     "f0d8bfc9d2dc6da7a31609184e25c4d66d3986fd2340b33a83e98204fb86691e": "created"
   },
-  "role": "review",
-  "branch": "issue-118-package-and-install-the-required-reascri",
-  "worktree_path": "/Users/marekkucharski/projects/.pm-worktrees/vgt/issue-118",
-  "pr_number": 121,
+  "role": "implement",
+  "branch": "issue-119-stabilize-and-restore-automatic-offline",
+  "worktree_path": "/Users/marekkucharski/projects/.pm-worktrees/vgt/issue-119",
+  "pr_number": null,
   "followup_generation": {
     "fingerprint": "8a8114dbbcfa5412ed926d47bdb9dd93f2747f8c177e02504fa0800109811ad2",
     "items": {
@@ -61,13 +61,13 @@
     "112": 2
   },
   "pending_transition": {
-    "issue": 118,
+    "issue": 119,
     "target": "working",
-    "event": "agent.review_started",
+    "event": "agent.started",
     "detail": {
-      "issue": 118,
-      "agent": "claude",
-      "pr": 121
+      "issue": 119,
+      "agent": "codex",
+      "branch": "issue-119-stabilize-and-restore-automatic-offline"
     },
     "cleanup": {}
   }
