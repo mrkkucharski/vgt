@@ -1,10 +1,10 @@
 {
   "current_issue": 110,
-  "session_id": "ca9c4551-e27e-4078-aedc-4791e95667f0",
-  "pid": 13071,
-  "process_started_at": "Thu Jul 23 09:56:05 2026",
-  "agent": "codex",
-  "started_at": "2026-07-23T07:56:04.274575+00:00",
+  "session_id": "b6e43899-ad27-4b74-8961-77cd8f5225b5",
+  "pid": 13710,
+  "process_started_at": "Thu Jul 23 10:01:15 2026",
+  "agent": "claude",
+  "started_at": "2026-07-23T08:01:13.220096+00:00",
   "scheduler_stalls": {},
   "budget": {
     "window_start": "2026-07-23T07:20:24.839872+00:00",
@@ -17,7 +17,7 @@
   "verification_followups": {
     "f0d8bfc9d2dc6da7a31609184e25c4d66d3986fd2340b33a83e98204fb86691e": "created"
   },
-  "role": "fix",
+  "role": "review",
   "branch": "issue-110-transcription-profiles-express-per-instr",
   "worktree_path": "/Users/marekkucharski/projects/.pm-worktrees/vgt/issue-110",
   "pr_number": 114,
@@ -52,11 +52,11 @@
   "pending_transition": {
     "issue": 110,
     "target": "working",
-    "event": "agent.fix_started",
+    "event": "agent.review_started",
     "detail": {
       "issue": 110,
-      "agent": "codex",
-      "fix_count": 2
+      "agent": "claude",
+      "pr": 114
     },
     "cleanup": {}
   }
