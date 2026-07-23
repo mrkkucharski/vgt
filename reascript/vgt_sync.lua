@@ -285,6 +285,29 @@ local function encode_json(value)
   error("cannot encode value of type " .. value_type)
 end
 
+-- Shared sidecar commit protocol (#138): the conflict signal every writer --
+-- Python and both ReaScript actions -- bumps on every commit. See
+-- sidecar.py's module docstring, schema 12, and vgt_initialize.lua's
+-- write_settings, which checks the same counter the same way.
+local function read_generation(body)
+  return tonumber((body or ""):match('"generation"%s*:%s*(%d+)')) or 0
+end
+
+-- `body` already has `analysis` re-encoded; only `generation` still needs
+-- bumping. A regex splice (rather than a full decode/re-encode of the whole
+-- sidecar) keeps every other top-level byte -- and its formatting -- untouched.
+local function set_generation(body, generation)
+  local replaced, count = body:gsub('("generation"%s*:%s*)%d+', '%1' .. tostring(generation), 1)
+  if count > 0 then return replaced end
+  -- Pre-#138 sidecars have no `generation` field yet; seed one right after
+  -- `schema_version` rather than requiring every sidecar to be re-applied first.
+  local seeded, seeded_count = body:gsub('("schema_version"%s*:%s*%d+,)', '%1\n  "generation": ' .. tostring(generation) .. ",", 1)
+  if seeded_count > 0 then return seeded end
+  return body
+end
+
+local GENERATION_RETRY_LIMIT = 5
+
 local function round6(value)
   return math.floor(value * 1e6 + 0.5) / 1e6
 end
@@ -357,42 +380,70 @@ end
 -- untouched. Both stages are located before either is rewritten, then
 -- spliced back in from the last span to the first, so rewriting one stage's
 -- (possibly different-length) text never invalidates the other's offsets.
+--
+-- Shared sidecar commit protocol (#138): this action cannot take Python's
+-- `fcntl` lock, so it re-reads the sidecar fresh on every attempt -- merging
+-- the human correction onto whatever `vgt analyze` most recently committed,
+-- rather than an earlier snapshot -- writes through a sibling temp file, and
+-- re-checks `generation` right before the atomic rename. A mismatch there
+-- means Python committed in the gap; discard the temp file and retry the
+-- merge against that newer state instead of renaming a stale one over it.
 local function write_sync(segments, sections)
-  local body = read_sidecar_body()
-  if not body then error("No .vgt sidecar found; run vgt_initialize.lua first.") end
+  for attempt = 1, GENERATION_RETRY_LIMIT do
+    local body = read_sidecar_body()
+    if not body then error("No .vgt sidecar found; run vgt_initialize.lua first.") end
 
-  local analysis_start, analysis_end = find_object_span(body, "analysis")
-  if not analysis_start then error("sidecar has no analysis block; run `vgt analyze` first.") end
-  local analysis_text = body:sub(analysis_start, analysis_end)
+    local analysis_start, analysis_end = find_object_span(body, "analysis")
+    if not analysis_start then error("sidecar has no analysis block; run `vgt analyze` first.") end
+    local analysis_text = body:sub(analysis_start, analysis_end)
 
-  local timestamp = os.date("!%Y-%m-%dT%H:%M:%SZ")
+    local timestamp = os.date("!%Y-%m-%dT%H:%M:%SZ")
 
-  local chords_start, chords_end, chords_decoded = decode_stage(analysis_text, "chords")
-  chords_decoded.value = type(chords_decoded.value) == "table" and chords_decoded.value or {}
-  chords_decoded.value.segments = segments
-  chords_decoded.human_verified = true
-  chords_decoded.verified_at = timestamp
+    local chords_start, chords_end, chords_decoded = decode_stage(analysis_text, "chords")
+    chords_decoded.value = type(chords_decoded.value) == "table" and chords_decoded.value or {}
+    chords_decoded.value.segments = segments
+    chords_decoded.human_verified = true
+    chords_decoded.verified_at = timestamp
 
-  local sections_start, sections_end, sections_decoded = decode_stage(analysis_text, "sections")
-  sections_decoded.value = sections
-  sections_decoded.human_verified = true
-  sections_decoded.verified_at = timestamp
+    local sections_start, sections_end, sections_decoded = decode_stage(analysis_text, "sections")
+    sections_decoded.value = sections
+    sections_decoded.human_verified = true
+    sections_decoded.verified_at = timestamp
 
-  local edits = {
-    {start = chords_start, finish = chords_end, text = encode_json(chords_decoded)},
-    {start = sections_start, finish = sections_end, text = encode_json(sections_decoded)},
-  }
-  table.sort(edits, function(a, b) return a.start > b.start end)
-  for _, edit in ipairs(edits) do
-    analysis_text = analysis_text:sub(1, edit.start - 1) .. edit.text .. analysis_text:sub(edit.finish + 1)
+    local edits = {
+      {start = chords_start, finish = chords_end, text = encode_json(chords_decoded)},
+      {start = sections_start, finish = sections_end, text = encode_json(sections_decoded)},
+    }
+    table.sort(edits, function(a, b) return a.start > b.start end)
+    for _, edit in ipairs(edits) do
+      analysis_text = analysis_text:sub(1, edit.start - 1) .. edit.text .. analysis_text:sub(edit.finish + 1)
+    end
+
+    local new_body = body:sub(1, analysis_start - 1) .. analysis_text .. body:sub(analysis_end + 1)
+    local generation = read_generation(body)
+    new_body = set_generation(new_body, generation + 1)
+
+    -- Write a complete replacement beside the sidecar, then rename it into
+    -- place -- matching vgt_initialize.lua's write_settings, so an
+    -- interruption here (crash, killed process) always leaves either the
+    -- complete prior sidecar or the complete new one, never a truncated file.
+    local temporary_path = sidecar_path() .. ".tmp"
+    local file, error_message = io.open(temporary_path, "w")
+    if not file then error(error_message) end
+    file:write(new_body)
+    file:close()
+
+    if read_generation(read_sidecar_body() or "") == generation then
+      local renamed, rename_error = os.rename(temporary_path, sidecar_path())
+      if not renamed then
+        os.remove(temporary_path)
+        error(rename_error)
+      end
+      return
+    end
+    os.remove(temporary_path)
   end
-
-  local new_body = body:sub(1, analysis_start - 1) .. analysis_text .. body:sub(analysis_end + 1)
-
-  local file, error_message = io.open(sidecar_path(), "w")
-  if not file then error(error_message) end
-  file:write(new_body)
-  file:close()
+  error("vgt: the sidecar changed concurrently " .. GENERATION_RETRY_LIMIT .. " time(s) while syncing; run vgt_sync.lua again.")
 end
 
 local function sync()
