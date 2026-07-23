@@ -110,7 +110,16 @@ function reaper.GetMediaItemInfo_Value(i, key) return key == 'D_POSITION' and i.
 function reaper.GetTakeName(t) return t.name end
 function reaper.InsertTrackAtIndex(i) table.insert(tracks, i + 1, {{guid=string.format('{{00000000-0000-0000-0000-%012d}}', next_guid),name='',items={{}}}}); next_guid=next_guid+1 end
 function reaper.DeleteTrack(t) for i,v in ipairs(tracks) do if v == t then table.remove(tracks,i); return end end end
-function reaper.GetSetMediaTrackInfo_String(t, _, value) t.name=value end
+function reaper.GetSetMediaTrackInfo_String(t, key, value, set)
+  if set then
+    if key == 'P_NAME' then t.name = value end
+    t.ext = t.ext or {{}}
+    t.ext[key] = value
+    return
+  end
+  if key == 'P_NAME' then return true, t.name end
+  return true, (t.ext and t.ext[key]) or ''
+end
 function reaper.SetMediaTrackInfo_Value(t, key, value) t[key]=value end
 function reaper.AddMediaItemToTrack(t) local i={{position=0,length=0}}; table.insert(t.items,i); return i end
 function reaper.SetMediaItemInfo_Value(i,key,value) if key == 'D_POSITION' then i.position=value elseif key == 'D_LENGTH' then i.length=value else i[key]=value end end

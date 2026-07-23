@@ -19,7 +19,7 @@ def test_apply_uses_reaper_api_and_never_edits_rpp_text() -> None:
     assert "reaper.InsertTrackAtIndex" in script
     assert "reaper.DeleteTrack" in script
     assert "reaper.AddMediaItemToTrack" in script
-    assert "managed[reaper.GetTrackGUID(track)] and starts_with_vgt(track)" in script
+    assert "(managed[reaper.GetTrackGUID(track)] or track_is_marked_managed(track)) and starts_with_vgt(track)" in script
     assert "GetSetProjectInfo_String" not in script
 
 
@@ -215,7 +215,16 @@ def _click_track_lua_mock(rpp_path: Path) -> str:
             "local tracks = {}",
             "function reaper.InsertTrackAtIndex(index, defaults) tracks[index + 1] = {index = index, name = nil, mute = 0} end",
             "function reaper.GetTrack(proj, index) return tracks[index + 1] end",
-            "function reaper.GetSetMediaTrackInfo_String(track, key, value, set) if key == 'P_NAME' and set then track.name = value end end",
+            "function reaper.GetSetMediaTrackInfo_String(track, key, value, set)",
+            "  if set then",
+            "    if key == 'P_NAME' then track.name = value end",
+            "    track.ext = track.ext or {}",
+            "    track.ext[key] = value",
+            "    return",
+            "  end",
+            "  if key == 'P_NAME' then return true, track.name end",
+            "  return true, (track.ext and track.ext[key]) or ''",
+            "end",
             "function reaper.SetMediaTrackInfo_Value(track, key, value) if key == 'B_MUTE' then track.mute = value end end",
             "function reaper.PCM_Source_CreateFromFile(path) return {path = path} end",
             "function reaper.GetMediaSourceLength(source) return 2.5, false end",
@@ -459,6 +468,7 @@ def test_removal_touches_only_the_recorded_vgt_drum_reference(tmp_path: Path) ->
         "function reaper.GetTrack(_, index) return tracks[index + 1] end",
         "function reaper.GetTrackGUID(track) return track.guid end",
         "function reaper.GetTrackName(track) return true, track.name end",
+        "function reaper.GetSetMediaTrackInfo_String(track, key, buf, set) if key == 'P_EXT:vgt_managed' and not set then return true, '' end end",
         "function reaper.DeleteTrack(track) for i, candidate in ipairs(tracks) do if candidate == track then table.remove(tracks, i); return end end end",
         script[:helpers_end],
         "remove_previous_managed_tracks()",
@@ -467,6 +477,117 @@ def test_removal_touches_only_the_recorded_vgt_drum_reference(tmp_path: Path) ->
     result = subprocess.run([LUA, "-", str(rpp)], input=lua_program, text=True, capture_output=True, check=True)
 
     assert result.stdout == "[vgt] Drums Ref (MIDI):{B00B-0002};User Drums:{C0DE-0003};"
+
+
+def _mark_lua_mock() -> str:
+    return "\n".join(
+        [
+            "function reaper.GetSetMediaTrackInfo_String(track, key, buf, set)",
+            "  if key == 'P_EXT:vgt_managed' and not set then return true, track.managed and '1' or '' end",
+            "end",
+        ]
+    )
+
+
+def test_removal_falls_back_to_the_durable_per_track_mark_when_the_sidecar_guid_list_is_stale(tmp_path: Path) -> None:
+    """A GUID list that never reached disk (crash between building the [vgt]
+    block and write_settings, a restored Backups/ copy, or a copied project
+    folder) must not cause a second [vgt] folder to be appended on re-apply:
+    the durable per-track mark set at creation time (see mark_track_managed)
+    is independent evidence of ownership, honored even when
+    managed_track_guids is empty."""
+    rpp = tmp_path / "song.RPP"
+    sidecar = tmp_path / "song.vgt"
+    sidecar.write_text(json.dumps({"managed_track_guids": []}), encoding="utf-8")
+    script = APPLY_SCRIPT.read_text()
+    helpers_end = script.index("local function remove_previous_managed_regions()")
+    lua_program = "\n".join(
+        [
+            "local tracks = {"
+            "{name = '[vgt] The Song', guid = '{A11CE-0001}', managed = true},"
+            "{name = '[vgt] Vocals', guid = '{A11CE-0002}', managed = true},"
+            "{name = 'User Song', guid = '{C0DE-0003}', managed = false},"
+            "}",
+            "reaper = {}",
+            "function reaper.EnumProjects() return true, arg[1] end",
+            "function reaper.CountTracks() return #tracks end",
+            "function reaper.GetTrack(_, index) return tracks[index + 1] end",
+            "function reaper.GetTrackGUID(track) return track.guid end",
+            "function reaper.GetTrackName(track) return true, track.name end",
+            _mark_lua_mock(),
+            "function reaper.DeleteTrack(track) for i, candidate in ipairs(tracks) do if candidate == track then table.remove(tracks, i); return end end end",
+            script[:helpers_end],
+            "remove_previous_managed_tracks()",
+            "for _, track in ipairs(tracks) do io.write(track.name, ':', track.guid, ';') end",
+        ]
+    )
+    result = subprocess.run([LUA, "-", str(rpp)], input=lua_program, text=True, capture_output=True, check=True)
+
+    assert result.stdout == "User Song:{C0DE-0003};"
+
+
+def test_removal_preserves_a_marked_track_the_user_renamed_away_from_the_vgt_prefix(tmp_path: Path) -> None:
+    """The durable mark alone is still not enough: a track the user has since
+    renamed away from the [vgt] prefix is theirs now and must survive, exactly
+    like the existing GUID-based guard (see remove_previous_managed_tracks)."""
+    rpp = tmp_path / "song.RPP"
+    sidecar = tmp_path / "song.vgt"
+    sidecar.write_text(json.dumps({"managed_track_guids": []}), encoding="utf-8")
+    script = APPLY_SCRIPT.read_text()
+    helpers_end = script.index("local function remove_previous_managed_regions()")
+    lua_program = "\n".join(
+        [
+            "local tracks = {"
+            "{name = 'My Reclaimed Track', guid = '{A11CE-0001}', managed = true},"
+            "{name = '[vgt] Vocals', guid = '{A11CE-0002}', managed = true},"
+            "}",
+            "reaper = {}",
+            "function reaper.EnumProjects() return true, arg[1] end",
+            "function reaper.CountTracks() return #tracks end",
+            "function reaper.GetTrack(_, index) return tracks[index + 1] end",
+            "function reaper.GetTrackGUID(track) return track.guid end",
+            "function reaper.GetTrackName(track) return true, track.name end",
+            _mark_lua_mock(),
+            "function reaper.DeleteTrack(track) for i, candidate in ipairs(tracks) do if candidate == track then table.remove(tracks, i); return end end end",
+            script[:helpers_end],
+            "remove_previous_managed_tracks()",
+            "for _, track in ipairs(tracks) do io.write(track.name, ':', track.guid, ';') end",
+        ]
+    )
+    result = subprocess.run([LUA, "-", str(rpp)], input=lua_program, text=True, capture_output=True, check=True)
+
+    assert result.stdout == "My Reclaimed Track:{A11CE-0001};"
+
+
+def test_add_locked_track_marks_the_track_with_a_durable_ext_state() -> None:
+    """`mark_track_managed` must be the thing add_locked_track (and thus every
+    [vgt]-owned track it builds) actually calls, so ownership survives even if
+    the sidecar write that normally records it never happens."""
+    script = APPLY_SCRIPT.read_text()
+    helpers_end = script.index("local function reference_start_and_end")
+    lua_program = "\n".join(
+        [
+            _click_track_lua_mock(Path("song.RPP")),
+            script[:helpers_end],
+            "add_locked_track(0, '[vgt] Test', false)",
+            "local track = __tracks[1]",
+            "io.write(tostring(track.ext['P_EXT:vgt_managed']))",
+        ]
+    )
+    result = subprocess.run([LUA, "-", "song.RPP"], input=lua_program, text=True, capture_output=True, check=True)
+    assert result.stdout == "1"
+
+
+def test_apply_marks_the_top_level_folder_track_as_managed_before_write_settings() -> None:
+    """The one managed track add_locked_track does not build -- the top-level
+    [vgt] folder -- must be marked directly in apply(), or a folder-only
+    re-apply (nothing nested under it) would still lose its durable mark."""
+    script = APPLY_SCRIPT.read_text()
+    apply_start = script.index("local function apply()")
+    write_settings_call = script.index("write_settings(managed_tracks", apply_start)
+    folder_section = script[apply_start:write_settings_call]
+    assert "mark_track_managed(folder)" in folder_section
+    assert folder_section.index("mark_track_managed(folder)") > folder_section.index('reaper.GetSetMediaTrackInfo_String(folder, "P_NAME"')
 
 
 def test_transcription_skips_expected_states_and_appends_orphans_in_target_order(tmp_path: Path) -> None:

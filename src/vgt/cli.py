@@ -6,13 +6,14 @@ import argparse
 import json
 from pathlib import Path
 import sys
+from typing import Any
 
 from .analysis import AnalysisError, add_transcription_targets, analyze, forget_transcription_targets, set_transcription_modes
 from .lalal import LalalError, LalalSeparator
 from .project import ProjectError, locate_project, read_project
 from .reascripts import ReaScriptInstallError, confirm_overwrite, default_destination, install_reascripts
 from .separation import GUITAR_TYPES, OPTIONAL_STEMS, SeparationError, declared_guitar_type, separate, separation_preview
-from .sidecar import read_sidecar, write_sidecar
+from .sidecar import atomic_update_sidecar
 from .status import StatusError, build_status, format_status
 from .transcribe import VALID_PROFILE_NAMES, VALID_TARGETS, TranscriptionError, validate_profile_for_target, validate_target
 
@@ -189,13 +190,21 @@ def main(argv: list[str] | None = None) -> int:
 
             # Keep the ReaScript first-run setting and the stem cache setting
             # aligned.  The CLI override is deliberately persistent.
-            if resolved_guitar_type and (
-                local_result["analysis"]["stems"].get("guitar_type") != resolved_guitar_type
-                or local_result.get("config", {}).get("guitar_type") != resolved_guitar_type
-            ):
-                local_result["analysis"]["stems"]["guitar_type"] = resolved_guitar_type
-                local_result.setdefault("config", {})["guitar_type"] = resolved_guitar_type
-                write_sidecar(project, local_result)
+            #
+            # This must go through the same locked read-mutate-write cycle
+            # every other Python writer uses (atomic_update_sidecar), rather
+            # than writing the `local_result` snapshot taken at the top of
+            # this run directly: that snapshot can already be stale by the
+            # time separation runs (which can take minutes), so writing it
+            # verbatim would silently roll back top-level fields -- including
+            # `managed_track_guids` -- that a concurrent ReaScript apply
+            # committed in between.
+            if resolved_guitar_type:
+                def persist_guitar_type(current: dict[str, Any]) -> None:
+                    current["analysis"]["stems"]["guitar_type"] = resolved_guitar_type
+                    current.setdefault("config", {})["guitar_type"] = resolved_guitar_type
+
+                atomic_update_sidecar(project, persist_guitar_type)
 
             if resolved_guitar_type:
                 try:
