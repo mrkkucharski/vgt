@@ -370,6 +370,16 @@ def _profile_for_target(target: str, modes: Mapping[str, str] | None) -> Instrum
     return _INSTRUMENT_PROFILES.get(target, _DEFAULT_PROFILE)
 
 
+def effective_profile_name_for_target(target: str, modes: Mapping[str, str] | None) -> str:
+    """Return the profile execution will use for ``target``.
+
+    This deliberately shares the missing/stale-mode fallback path with
+    :func:`default_spec_for_target`, so read-only callers can describe the
+    effective configuration without reimplementing profile selection.
+    """
+    return _profile_for_target(target, modes).name
+
+
 def _instantiate_cleanup(
     template: tuple[CleanupStage, ...], *, sustain_clamp_s: float | None
 ) -> tuple[CleanupStage, ...]:

@@ -181,7 +181,7 @@ def test_drum_status_groups_hats_and_keeps_zero_events_visible() -> None:
         "timestamps": {"last_analysis_at": None, "last_human_correction_at": None}, "artifacts": {},
         "stems": {"guitar_type": None, "human_verified": False, "operations": {}, "artifacts": {}},
     }
-    assert "0 events (kick 0, snare 0, hats 5, other 0), drumscript 0.1.6" in format_status(status)
+    assert "0 events (kick 0, snare 0, hats 5, other 0), profile default, drumscript 0.1.6" in format_status(status)
 
 
 def test_rejects_duplicate_or_missing_outputs(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

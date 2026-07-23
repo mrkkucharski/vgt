@@ -11,6 +11,7 @@ import wave
 from .project import ProjectError, track_source_path
 from .separation import ARTIFACT_FILENAMES, OPTIONAL_STEMS, OPERATION_ORDER, artifact_path, hash_audio_content
 from .sidecar import ANALYSIS_STAGES, DETECTED_SPLIT_STAGES, artifact_namespace_dir, sidecar_path
+from .transcribe import effective_profile_name_for_target
 
 
 class StatusError(ValueError):
@@ -90,6 +91,14 @@ def _transcription_status(analysis: dict[str, Any]) -> dict[str, Any]:
     transcription = analysis.get("transcription") if isinstance(analysis.get("transcription"), dict) else {}
     requested = transcription.get("requested_targets") if isinstance(transcription.get("requested_targets"), list) else []
     targets = transcription.get("targets") if isinstance(transcription.get("targets"), dict) else {}
+    modes = transcription.get("modes") if isinstance(transcription.get("modes"), dict) else {}
+    # Match sidecar.upgrade's schema-v9 compatibility bridge without writing
+    # anything: an old acoustic stem declaration is the persisted request for
+    # the acoustic-guitar transcription profile unless a newer explicit mode
+    # supersedes it.
+    stems = analysis.get("stems") if isinstance(analysis.get("stems"), dict) else {}
+    if stems.get("guitar_type") == "acoustic" and "guitar" not in modes:
+        modes = {**modes, "guitar": "guitar-acoustic"}
 
     backend: str | None = None
     package_pin: str | None = None
@@ -100,6 +109,8 @@ def _transcription_status(analysis: dict[str, Any]) -> dict[str, Any]:
             backend = entry.get("backend")
             package_pin = entry.get("package_pin")
         entries[target] = {
+            "requested_mode": modes.get(target),
+            "effective_profile": effective_profile_name_for_target(target, modes),
             "backend": entry.get("backend"),
             "package_pin": entry.get("package_pin"),
             "status": entry.get("status"),
@@ -289,25 +300,27 @@ def format_status(status: dict[str, Any]) -> str:
     for target in transcription["requested_targets"]:
         entry = transcription["targets"].get(target, {})
         status_value = entry.get("status")
+        profile = entry.get("effective_profile") or "default"
+        profile_text = f"profile {profile}"
         if status_value == "transcribed" and entry.get("event_count") is not None:
             count_text = _format_drum_instruments(entry.get("instrument_counts"))
             package = entry.get("package_pin")
             backend = entry.get("backend")
             backend_text = package.replace("==", " ") if isinstance(package, str) else backend or "drumscript"
             lines.append(
-                f"  {target:<8} {entry.get('event_count')} events ({count_text}), "
+                f"  {target:<8} {entry.get('event_count')} events ({count_text}), {profile_text}, "
                 f"{backend_text}, transcribed {entry.get('transcribed_at')}"
             )
         elif status_value == "transcribed":
             pitch = entry.get("pitch_range_midi")
             pitch_text = f"MIDI {pitch[0]}-{pitch[1]}" if pitch else "MIDI ?"
-            lines.append(f"  {target:<8} {entry.get('note_count')} notes, {pitch_text}, transcribed {entry.get('transcribed_at')}")
+            lines.append(f"  {target:<8} {entry.get('note_count')} notes, {pitch_text}, {profile_text}, transcribed {entry.get('transcribed_at')}")
         elif status_value == "skipped-missing-source":
-            lines.append(f"  {target:<8} skipped - no {target} stem available")
+            lines.append(f"  {target:<8} skipped - no {target} stem available, {profile_text}")
         elif status_value == "error":
-            lines.append(f"  {target:<8} error - {entry.get('error')}")
+            lines.append(f"  {target:<8} error - {entry.get('error')}, {profile_text}")
         else:
-            lines.append(f"  {target:<8} not yet run")
+            lines.append(f"  {target:<8} not yet run, {profile_text}")
     timestamps = status["timestamps"]
     lines += [
         f"Last analysis: {timestamps['last_analysis_at'] or 'unknown'}",
