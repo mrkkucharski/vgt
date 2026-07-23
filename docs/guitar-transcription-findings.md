@@ -421,12 +421,17 @@ vgt project:
 ```sh
 uv run python scripts/guitar_transcription_probe.py \
   /path/to/project/vgt/<namespace>/transcription/guitar.csv \
+  --profile guitar-acoustic \
   --chords /path/to/project/vgt/<namespace>/chords.txt
 ```
 
 Passing several CSVs compares parameter variants side by side; when they share
 a filename the containing directory is used as the label, so a sweep laid out
 as `sweep/<variant>/guitar_basic_pitch.csv` reads directly.
+
+`guitar-acoustic` is the default profile, retained so older profile-less
+commands reproduce these findings. Select a different profile only when that
+instrument has measured probe expectations.
 
 Column guide: `frag` counts adjacent same-pitch pairs no more than 30 ms apart
 (should be 0 once the merge pass has run); `%ct-on` and `%ct-t` are the

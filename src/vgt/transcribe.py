@@ -155,6 +155,21 @@ class CleanupStage:
 
 
 @dataclass(frozen=True)
+class ProbeExpectations:
+    """Measured bounds used to evaluate one instrument's note-event CSV.
+
+    These do not affect transcription.  They let the standalone probe score
+    an output against the same instrument identity that selected its
+    transcription settings, without silently carrying guitar assumptions to a
+    new instrument.
+    """
+
+    expected_voice_count: int
+    harmonic_ghost_intervals: tuple[int, ...]
+    sustain_cap_s: float
+
+
+@dataclass(frozen=True)
 class InstrumentProfile:
     """One instrument's complete transcription identity: Basic Pitch model
     parameters plus its ordered post-processing pipeline.
@@ -174,6 +189,7 @@ class InstrumentProfile:
     multiple_pitch_bends: bool
     melodia_trick: bool
     cleanup: tuple[CleanupStage, ...] = ()
+    probe_expectations: ProbeExpectations | None = None
 
 
 _DEFAULT_PROFILE = InstrumentProfile(
@@ -192,7 +208,17 @@ _DEFAULT_PROFILE = InstrumentProfile(
 # (polyphonic/unpredictable sources) fall back to `_DEFAULT_PROFILE`'s
 # unbounded range.
 _GUITAR_PROFILE = replace(
-    _DEFAULT_PROFILE, name="guitar", minimum_frequency_hz=70.0, maximum_frequency_hz=1400.0
+    _DEFAULT_PROFILE,
+    name="guitar",
+    minimum_frequency_hz=70.0,
+    maximum_frequency_hz=1400.0,
+    probe_expectations=ProbeExpectations(
+        expected_voice_count=GUITAR_MAX_SIMULTANEOUS_VOICES,
+        harmonic_ghost_intervals=GUITAR_HARMONIC_GHOST_INTERVALS,
+        # The published guitar probe used this fixed cap.  It is an evaluation
+        # bound, deliberately separate from the tempo-relative cleanup clamp.
+        sustain_cap_s=4.0,
+    ),
 )  # below drop/Eb-tuned E2 (82.4 Hz), above 24th-fret E6 (1318.5 Hz)
 _BASS_PROFILE = replace(
     _DEFAULT_PROFILE, name="bass", minimum_frequency_hz=30.0, maximum_frequency_hz=400.0
@@ -261,6 +287,11 @@ _GUITAR_ACOUSTIC_PROFILE = InstrumentProfile(
             },
         ),
     ),
+    probe_expectations=ProbeExpectations(
+        expected_voice_count=GUITAR_MAX_SIMULTANEOUS_VOICES,
+        harmonic_ghost_intervals=GUITAR_HARMONIC_GHOST_INTERVALS,
+        sustain_cap_s=4.0,
+    ),
 )
 
 _INSTRUMENT_PROFILES: dict[str, InstrumentProfile] = {
@@ -271,6 +302,17 @@ _INSTRUMENT_PROFILES: dict[str, InstrumentProfile] = {
     "guitar-acoustic": _GUITAR_ACOUSTIC_PROFILE,
 }
 VALID_PROFILE_NAMES: tuple[str, ...] = tuple(_INSTRUMENT_PROFILES)
+
+
+def instrument_profile(name: str) -> InstrumentProfile:
+    """Return a named registry profile, rejecting unknown names clearly.
+
+    This read-only accessor is intentionally usable by evaluation tools as
+    well as transcription orchestration; resolving it never invokes a model
+    or a backend.
+    """
+    validate_profile_name(name)
+    return _INSTRUMENT_PROFILES[name]
 
 # A profile is an instrument-specific transcription identity.  ``default``
 # deliberately remains available for every target: selecting it explicitly is
