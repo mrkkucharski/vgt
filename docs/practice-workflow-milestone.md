@@ -1,4 +1,16 @@
-# First practice-workflow milestone
+# First practice-workflow milestone (retired)
+
+**Status: retired, not part of the current goal.** This design was ratified
+twice (issues #89 and #105) and both times its implementation sub-issues
+(#90–92, then #106–108) closed without landing code on `main`. It is kept
+here only as a historical record. `docs/GOAL.md` does not authorize any
+work from this document — do not create implementation issues from it
+without an explicit new human decision to build the feature.
+
+The rest of this document is the original design of record, preserved
+as-is below.
+
+---
 
 This is the design of record for the first practice workflow.  It deliberately
 turns the delivered analysis, stems, and reference MIDI into one useful session

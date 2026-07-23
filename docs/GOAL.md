@@ -43,25 +43,15 @@ correction workflow, cost controls, and the current regression contract.
 - **Cost safe:** LALAL credentials are environment-only; paid work is cached,
   checkpointed, and explicitly confirmed when forced or optional.
 
-## Phase 2 — first practice workflow
+## Practice workflow (not planned)
 
-The first practice session is intentionally narrow: with an analysed section
-and a guitar-less `Backing` stem available, the user manually mutes their
-original reference mix, starts a vgt-owned section loop, and practises against
-the backing stem. A new REAPER action persists the `guitar-backing` preference,
-temporarily mutes only vgt-owned audio stems, applies a selected effective
-section as the time-selection loop, and can restore exactly the previous loop
-and vgt stem-mute state. It never modifies a user track, routing, tempo map,
-playback speed, recording setup, or transport state.
-
-The detailed ownership, reconciliation, timing, testing, and human-owned
-verification contract is [the first practice-workflow milestone design](practice-workflow-milestone.md).
-
-Stem soloing, arbitrary time-selection looping, vgt-controlled playback speed
-or tempo, and recording preparation are explicitly deferred from Phase 2.
-Offline separation, tablature/string-fret assignment, performance scoring,
-MIDI correction read-back, and unrelated DrumScript improvements remain outside
-this milestone.
+A guided practice session (looping a section against a backing stem, muting
+the reference mix, etc.) was designed twice (issues #89 and #105) and both
+times spawned implementation sub-issues that closed without landing code on
+`main`. It is intentionally **not** part of the current goal. See
+[the retired milestone design](practice-workflow-milestone.md) for the
+abandoned design-of-record; do not resurrect it into new issues without a
+human decision to actually build it.
 
 Subjective listening evaluation of real stems remains a user-owned activity: it
 requires human ears and the user's audio, and is not an autonomous-agent task.
