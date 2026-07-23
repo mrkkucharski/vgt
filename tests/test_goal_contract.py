@@ -583,3 +583,140 @@ def test_reascript_keeps_tempo_map_behavior_for_detected_downbeats(tmp_path: Pat
     assert "[vgt] Beats" not in names
     assert int(tempo_writes) >= 2
     assert read_sidecar(project)["config"]["tempo_map_applied"] is True
+
+
+TEMPO_MAP_SIDECAR = {
+    "config": {"reference_track_guid": REFERENCE_GUID},
+    "analysis": {"tempo": {"value": {
+        "backend": "madmom", "bpm": 120.0, "time_signature": "4/4",
+        "downbeat_detected": True, "downbeat_offset_seconds": 0.25,
+        "beat_times": [0.25, 0.75, 1.25],
+    }}},
+}
+
+
+def _faithful_tempo_marker_state(project: Path) -> str:
+    """`_lua_state`'s SetTempoTimeSigMarker collapses every call into a
+    single-marker table (fine for the goal contract's coarse `tempo_writes`
+    counter elsewhere in this file), which is too lossy to prove an
+    interrupted tempo map is recovered without duplicate markers. Patch in an
+    index-aware implementation -- mirroring REAPER's own ptidx=0 update /
+    ptidx=-1 insert-by-time semantics -- for the interruption-recovery tests
+    below."""
+    state = _lua_state(project).replace("time=0,bpm=100,num=4,den=4", "time=0,bpm=120,num=4,den=4")
+    patched = state.replace(
+        "function reaper.SetTempoTimeSigMarker(_,_,time,_,_,bpm,num,den) tempo_writes=tempo_writes+1; markers={{time=time,bpm=bpm,num=num,den=den}} end",
+        """function reaper.SetTempoTimeSigMarker(_, index, time, _, _, bpm, num, den)
+  tempo_writes = tempo_writes + 1
+  if index == 0 then
+    markers[1] = {time = 0, bpm = bpm, num = num, den = den}
+    return true
+  end
+  local marker = {time = time, bpm = bpm, num = num, den = den}
+  local insert_at = #markers + 1
+  for i = 2, #markers do
+    if markers[i].time > time then insert_at = i break end
+  end
+  table.insert(markers, insert_at, marker)
+  return true
+end""",
+    )
+    assert patched != state, "SetTempoTimeSigMarker patch did not match the fixture source"
+    return patched
+
+
+def _interrupt_before_sidecar_commit(project: Path, state: str) -> tuple[str, str]:
+    """Runs apply() with write_settings's temp-file write failing (the same
+    disk-failure injection `test_apply_recovers_managed_regions_after_an_interrupted_sidecar_commit`
+    uses for regions), after the tempo mutation itself has already completed
+    against the live (fake) REAPER project. Returns the report plus the live
+    marker count."""
+    module = APPLY_SCRIPT.read_text(encoding="utf-8").split("local ok, error_message = xpcall", 1)[0]
+    program = """
+local real_open = io.open
+io.open = function(path, mode)
+  if mode == "w" and path:sub(-4) == ".tmp" then return nil, "simulated disk failure" end
+  return real_open(path, mode)
+end
+local ok, err = pcall(apply)
+assert(not ok, "apply should have failed")
+assert(tostring(err):find("simulated disk failure"), tostring(err))
+io.open = real_open
+report()
+io.write('#' .. #markers)
+"""
+    return _run(project, state, module, program)
+
+
+def test_apply_recovers_a_completed_tempo_map_after_an_interrupted_sidecar_commit(tmp_path: Path) -> None:
+    """Simulates a crash between a tempo mutation finishing and write_settings
+    committing it (issue #139): apply_tempo_map has already written every
+    marker in the live (fake) REAPER project when the disk failure hits, but
+    the sidecar is left exactly as stale as before this attempt -- the bug
+    described in #139, where the next run would see a non-default map with
+    no ownership proof, leave it orphaned, and add `[vgt] Beats` on top
+    regardless. The transaction recorded in ProjExtState before the mutation
+    began proves the live map -- already correct -- belongs to this vgt
+    transaction, so a retry mirrors it into the sidecar without touching
+    REAPER's tempo markers again, and without ever offering Beats."""
+    project = _copy_project(tmp_path)
+    project.with_suffix(".vgt").write_text(json.dumps(TEMPO_MAP_SIDECAR))
+    state = _faithful_tempo_marker_state(project)
+
+    state, interrupted = _interrupt_before_sidecar_commit(project, state)
+    _names, _user_items, _region_count, _vgt_count, tempo_writes, marker_count = interrupted.split("#")
+    # index 0 updated in place, plus one inserted downbeat marker -- no spans.
+    assert int(tempo_writes) >= 2
+    assert marker_count == "2"
+
+    stale_sidecar = read_sidecar(project)
+    assert stale_sidecar["config"].get("tempo_map_applied") is not True
+
+    module = APPLY_SCRIPT.read_text(encoding="utf-8").split("local ok, error_message = xpcall", 1)[0]
+    state, recovered = _run(project, state, module, "apply(); report(); io.write('#' .. #markers)")
+    names, _user_items, _region_count, _vgt_count, tempo_writes_after, marker_count_after = recovered.split("#")
+
+    assert "[vgt] Beats" not in names
+    # Recovery only mirrors the already-correct live map into the sidecar; it
+    # must not mutate REAPER's tempo markers a second time.
+    assert tempo_writes_after == tempo_writes
+    assert marker_count_after == "2"
+
+    final_sidecar = read_sidecar(project)
+    assert final_sidecar["config"]["tempo_map_applied"] is True
+    assert final_sidecar["config"]["tempo_map_fingerprint"] == "0.000000:120.000:4:4;10.250000:120.000:4:4"
+    assert final_sidecar["config"]["tempo_data_fingerprint"] != ""
+
+
+def test_apply_never_overwrites_a_user_tempo_edit_made_after_an_interrupted_commit(tmp_path: Path) -> None:
+    """Same interruption as above, but the user edits the (already-complete,
+    vgt-written) live tempo map in REAPER before the next apply runs. Even
+    though a vgt transaction for that exact map was left pending, its
+    recorded fingerprints no longer match what is live, so ownership cannot
+    be proven -- the map must be preserved untouched and `[vgt] Beats`
+    offered instead, never silently reverted to what vgt originally wrote."""
+    project = _copy_project(tmp_path)
+    project.with_suffix(".vgt").write_text(json.dumps(TEMPO_MAP_SIDECAR))
+    state = _faithful_tempo_marker_state(project)
+
+    state, interrupted = _interrupt_before_sidecar_commit(project, state)
+    _names, _user_items, _region_count, _vgt_count, tempo_writes, _marker_count = interrupted.split("#")
+
+    # The user retunes the downbeat marker by hand in REAPER -- no vgt code
+    # runs here, so `tempo_writes` (vgt's own write counter) is untouched.
+    state, _ = _run(project, state, "", "markers[2].bpm = 130.5")
+
+    module = APPLY_SCRIPT.read_text(encoding="utf-8").split("local ok, error_message = xpcall", 1)[0]
+    state, recovered = _run(project, state, module, "apply(); report(); io.write('#' .. markers[2].bpm)")
+    names, _user_items, _region_count, _vgt_count, tempo_writes_after, edited_bpm = recovered.split("#")
+
+    assert "[vgt] Beats" in names
+    # Neither the interrupted recovery attempt nor the fallback path touched
+    # REAPER's tempo markers -- the write count is exactly what the
+    # interrupted run itself already produced.
+    assert tempo_writes_after == tempo_writes
+    assert edited_bpm == "130.5"
+
+    final_sidecar = read_sidecar(project)
+    assert final_sidecar["config"]["tempo_map_applied"] is False
+    assert final_sidecar["config"]["tempo_map_fingerprint"] == ""
