@@ -56,7 +56,7 @@ from .transcribe import (
     spec_hash,
     target_input_hash,
     transcribed_entry,
-    validate_profile_name,
+    validate_profile_for_target,
     validate_target,
 )
 
@@ -575,8 +575,7 @@ def add_transcription_targets(project: str | Path | None, targets: tuple[str, ..
 def set_transcription_modes(project: str | Path | None, modes: dict[str, str]) -> dict[str, Any]:
     """Persist validated target-to-profile selections in the sidecar."""
     for target, profile in modes.items():
-        validate_target(target)
-        validate_profile_name(profile)
+        validate_profile_for_target(target, profile)
     project_path = locate_project(project)
 
     def update(current: dict[str, Any]) -> None:

@@ -1114,6 +1114,11 @@ def test_cli_transcribe_persists_a_target_across_later_runs(tmp_path: Path, monk
 
     assert main(["analyze", "--transcribe", "bass", str(project)]) == 0
     assert read_sidecar(project)["analysis"]["transcription"]["requested_targets"] == ["guitar", "bass"]
+    assert calls[-1] == (("chords", "transcription"), None)
+
+    # A later run needs no flag: the persisted set already includes it.
+    assert main(["analyze", str(project)]) == 0
+    assert read_sidecar(project)["analysis"]["transcription"]["requested_targets"] == ["guitar", "bass"]
 
 
 def test_cli_mode_persists_a_valid_target_profile_pair(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -1132,13 +1137,19 @@ def test_cli_mode_rejects_an_invalid_profile_with_the_valid_choices(tmp_path: Pa
     assert main(["analyze", "--mode", "guitar=banjo", str(project)]) == 2
 
     error = capsys.readouterr().err
-    assert "profile must be one of" in error
+    assert "profile for 'guitar' must be one of" in error
     assert "guitar-acoustic" in error
-    assert calls[-1] == (("chords", "transcription"), None)
 
-    # A later run needs no flag: the persisted set already includes it.
-    assert main(["analyze", str(project)]) == 0
-    assert read_sidecar(project)["analysis"]["transcription"]["requested_targets"] == ["guitar", "bass"]
+
+def test_cli_mode_rejects_a_profile_registered_for_another_target(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    project = _project_copy(tmp_path)
+    _write_v1_sidecar(project)
+
+    assert main(["analyze", "--mode", "bass=guitar-acoustic", str(project)]) == 2
+
+    error = capsys.readouterr().err
+    assert "profile for 'bass' must be one of" in error
+    assert "('default', 'bass')" in error
 
 
 def test_forget_transcription_targets_before_any_analysis_is_a_harmless_no_op(tmp_path: Path) -> None:

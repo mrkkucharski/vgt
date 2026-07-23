@@ -119,6 +119,14 @@ def test_default_spec_mode_override_is_target_local() -> None:
     assert bass.cleanup == ()
 
 
+def test_default_spec_ignores_a_stored_profile_for_another_target() -> None:
+    """A stale or malformed sidecar mode must retain the target default."""
+    bass = default_spec_for_target("bass", modes={"bass": "guitar-acoustic"})
+
+    assert (bass.minimum_frequency_hz, bass.maximum_frequency_hz) == (30.0, 400.0)
+    assert bass.cleanup == ()
+
+
 def test_default_spec_acoustic_sustain_clamp_scales_with_time_signature() -> None:
     spec = default_spec_for_target("guitar", modes={"guitar": "guitar-acoustic"}, midi_tempo=120.0, time_signature="3/4")
 

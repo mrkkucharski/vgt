@@ -13,7 +13,7 @@ from .project import ProjectError, locate_project, read_project
 from .separation import GUITAR_TYPES, OPTIONAL_STEMS, SeparationError, declared_guitar_type, separate, separation_preview
 from .sidecar import read_sidecar, write_sidecar
 from .status import StatusError, build_status, format_status
-from .transcribe import VALID_PROFILE_NAMES, VALID_TARGETS, TranscriptionError, validate_profile_name, validate_target
+from .transcribe import VALID_PROFILE_NAMES, VALID_TARGETS, TranscriptionError, validate_profile_for_target, validate_target
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -113,7 +113,7 @@ def _parse_modes(values: list[str] | None) -> dict[str, str]:
             raise AnalysisError("--mode must be TARGET=PROFILE")
         try:
             validate_target(target)
-            validate_profile_name(profile)
+            validate_profile_for_target(target, profile)
         except TranscriptionError as exc:
             raise AnalysisError(str(exc)) from exc
         modes[target] = profile

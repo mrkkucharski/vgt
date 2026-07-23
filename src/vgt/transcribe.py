@@ -272,10 +272,37 @@ _INSTRUMENT_PROFILES: dict[str, InstrumentProfile] = {
 }
 VALID_PROFILE_NAMES: tuple[str, ...] = tuple(_INSTRUMENT_PROFILES)
 
+# A profile is an instrument-specific transcription identity.  ``default``
+# deliberately remains available for every target: selecting it explicitly is
+# useful when a user wants to opt out of that target's tuned default.  Stored
+# sidecars may name profiles that were later removed or moved to another
+# target, so lookup still falls back safely below.
+_PROFILE_NAMES_BY_TARGET: dict[str, tuple[str, ...]] = {
+    target: ("default", target) if target in _INSTRUMENT_PROFILES else ("default",)
+    for target in VALID_TARGETS
+}
+_PROFILE_NAMES_BY_TARGET["guitar"] = ("default", "guitar", "guitar-acoustic")
+
 
 def validate_profile_name(profile: str) -> str:
     if profile not in _INSTRUMENT_PROFILES:
         raise TranscriptionError(f"profile must be one of {VALID_PROFILE_NAMES}, got {profile!r}")
+    return profile
+
+
+def valid_profile_names_for_target(target: str) -> tuple[str, ...]:
+    """Return the registry profiles an explicit mode may select for target."""
+    validate_target(target)
+    return _PROFILE_NAMES_BY_TARGET[target]
+
+
+def validate_profile_for_target(target: str, profile: str) -> str:
+    """Validate an explicit ``TARGET=PROFILE`` selection from the CLI/API."""
+    valid_profiles = valid_profile_names_for_target(target)
+    if profile not in valid_profiles:
+        raise TranscriptionError(
+            f"profile for {target!r} must be one of {valid_profiles}, got {profile!r}"
+        )
     return profile
 
 
@@ -284,10 +311,10 @@ def _profile_for_target(target: str, modes: Mapping[str, str] | None) -> Instrum
 
     A sidecar can outlive the profile registry that wrote it.  Missing or
     unrecognised stored selections therefore safely use the target's default;
-    only explicit CLI input is validated by :func:`validate_profile_name`.
+    only explicit CLI input is validated by :func:`validate_profile_for_target`.
     """
     profile_name = modes.get(target) if isinstance(modes, Mapping) else None
-    if profile_name in _INSTRUMENT_PROFILES:
+    if profile_name in valid_profile_names_for_target(target):
         return _INSTRUMENT_PROFILES[profile_name]
     return _INSTRUMENT_PROFILES.get(target, _DEFAULT_PROFILE)
 
