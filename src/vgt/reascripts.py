@@ -8,7 +8,7 @@ from pathlib import Path
 import sys
 
 
-SCRIPT_NAMES = ("vgt_initialize.lua", "vgt_sync.lua")
+SCRIPT_NAMES = ("vgt_initialize.lua", "vgt_sync.lua", "vgt_working_copy.lua")
 
 
 class ReaScriptInstallError(RuntimeError):

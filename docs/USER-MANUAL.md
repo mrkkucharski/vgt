@@ -255,9 +255,39 @@ executable; it replaces vgt's normal isolated `uvx` invocation. vgt parses the
 override with `shlex.split` and never runs it through a shell.
 
 `[vgt] <Target> Ref (MIDI)` is recreated on every apply, like every other
-vgt-owned object, for both backends. Edits to it do not survive: copy the MIDI
-item to your own track before editing. There is no `vgt sync` read-back for
-MIDI.
+vgt-owned object, for both backends. Edits to it do not survive: make a working
+copy before editing (see [Working copies](#working-copies-vgt_working_copylua)).
+There is no `vgt sync` read-back for MIDI.
+
+## Working copies (`vgt_working_copy.lua`)
+
+Because every `[vgt]` object is regenerated on each apply, the reference MIDI is
+a draft to read, not an editing surface. `vgt_working_copy.lua` makes a
+**user-owned** copy you can edit freely, side by side with the vgt references,
+that no later apply or sync will ever touch.
+
+Install it with `vgt install-reascripts` (it ships alongside the other two
+actions) and run it from REAPER's Action List. It offers two choices:
+
+- **Create working copy from selected tracks** — select the track(s) you want
+  to work with (typically `[vgt] <Target> Ref (MIDI)`, plus its stem and
+  `[vgt] Chords` for context), then run this. Each selected track is duplicated
+  into a `[work]` folder track — created if missing, reused if present. The
+  copies are unmuted, unlocked, and immediately editable.
+- **Discard all [work] copies** — deletes every track still named `[work] …`,
+  clearing the scratch area in one step.
+
+The copies are deliberately outside vgt's ownership: they are named `[work]`
+(never `[vgt]`) and carry no vgt-managed mark, so `vgt_initialize.lua` leaves
+them alone forever — it only ever deletes tracks that are both vgt-owned and
+still `[vgt]`-named. To **keep** an edited copy past a discard (or promote it as
+your finished part), drag it where you want and rename it so it no longer starts
+with `[work]`; it is yours from then on, exactly like a `[vgt]` track you
+reclaimed by renaming. The vgt reference it came from stays as the muted machine
+baseline, regenerated on the next apply.
+
+The action edits the live project only: it never reads or writes the `.vgt`
+sidecar and never touches a `[vgt]` or user track.
 
 ### Human-owned verification checklist
 

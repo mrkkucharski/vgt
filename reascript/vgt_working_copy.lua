@@ -1,0 +1,230 @@
+-- vgt working-copy action for REAPER 7.x.
+-- Install this file in REAPER's Action List and run it while the target RPP is open.
+--
+-- Purpose: vgt recreates every `[vgt]`-managed object on each apply, so edits to
+-- a `[vgt] <Target> Ref (MIDI)` (or any other vgt track) never survive the next
+-- `vgt_initialize.lua` run. This action makes a *user-owned* copy of the selected
+-- track(s) so they can be edited safely side by side with the vgt references.
+--
+-- The single design invariant that keeps this non-destructive: a working copy is
+-- named `[work] ...` (never `[vgt] ...`) and carries no vgt-ownership mark, so
+-- vgt_initialize.lua's remove_previous_managed_tracks leaves it untouched forever
+-- -- it deletes only tracks that are *both* vgt-owned *and* still `[vgt]`-named.
+-- This action likewise only ever adds `[work]` tracks and, on discard, deletes
+-- only `[work]` tracks: it never creates, deletes, or mutates a `[vgt]` or user
+-- track. Finishing an edit is a manual drag of the `[work]` track wherever you
+-- want it; rename it away from the `[work]` prefix to keep it past a discard.
+
+local VGT_PREFIX = "[vgt]"
+local WORK_PREFIX = "[work]"
+local WORK_FOLDER_NAME = WORK_PREFIX
+-- The same durable ownership mark vgt_initialize.lua sets on its tracks. A copy
+-- must never carry it, or a future apply could treat the copy as a stale vgt
+-- track to reconcile (the name guard already protects it, but clearing the mark
+-- makes the copy correct by both of vgt's ownership tests, not just one).
+local EXT_STATE_KEY = "P_EXT:vgt_managed"
+
+local function track_name(track)
+  local _, name = reaper.GetTrackName(track, "")
+  return name
+end
+
+local function starts_with(name, prefix)
+  return name:sub(1, #prefix) == prefix
+end
+
+-- The user-owned name for a working copy. A leading `[vgt]` or `[work]` prefix
+-- is stripped first so a copy -- or a copy of a copy -- never re-enters the
+-- `[vgt]` ownership namespace and never grows a `[work] [work] ...` pile-up.
+local function working_name(source_name)
+  local rest = source_name
+  rest = rest:gsub("^%[vgt%]%s*", "")
+  rest = rest:gsub("^%[work%]%s*", "")
+  if rest == "" then rest = "Track" end
+  return WORK_PREFIX .. " " .. rest
+end
+
+-- A track-state chunk carries the source's own TRACKID. Stamp a fresh GUID into
+-- the copy's chunk before applying it, since REAPER track GUIDs must be unique
+-- and vgt tracks ownership by GUID -- two tracks sharing one GUID would make
+-- both the copy and its source look like the same managed object.
+local function replace_track_guid(chunk, new_guid)
+  return (chunk:gsub("TRACKID {[^}]*}", "TRACKID " .. new_guid, 1))
+end
+
+-- The index of the last track nested inside the folder that opens at
+-- folder_index, found by walking REAPER's folder-depth accumulation: the region
+-- ends on the child whose I_FOLDERDEPTH brings the running depth back to zero.
+local function folder_last_child_index(folder_index)
+  local count = reaper.CountTracks(0)
+  local depth = reaper.GetMediaTrackInfo_Value(reaper.GetTrack(0, folder_index), "I_FOLDERDEPTH")
+  local last = folder_index
+  local index = folder_index + 1
+  while index < count and depth > 0 do
+    depth = depth + reaper.GetMediaTrackInfo_Value(reaper.GetTrack(0, index), "I_FOLDERDEPTH")
+    last = index
+    index = index + 1
+  end
+  return last
+end
+
+-- The reused `[work]` folder, if one already exists: a top-level folder track
+-- named exactly `[work]`. Returns the track and its index, or nil.
+local function find_work_folder()
+  for index = 0, reaper.CountTracks(0) - 1 do
+    local track = reaper.GetTrack(0, index)
+    if track_name(track) == WORK_FOLDER_NAME and reaper.GetMediaTrackInfo_Value(track, "I_FOLDERDEPTH") >= 1 then
+      return track, index
+    end
+  end
+  return nil
+end
+
+local function selected_source_tracks()
+  local sources = {}
+  for index = 0, reaper.CountSelectedTracks(0) - 1 do
+    sources[#sources + 1] = reaper.GetSelectedTrack(0, index)
+  end
+  return sources
+end
+
+-- Insert a user-owned copy of source_chunk at insert_index and re-stamp
+-- everything that must differ for an editable, non-vgt copy. Returns the track.
+local function build_working_copy(insert_index, source_chunk, source_name, folder_depth)
+  reaper.InsertTrackAtIndex(insert_index, false)
+  local track = reaper.GetTrack(0, insert_index)
+  reaper.SetTrackStateChunk(track, replace_track_guid(source_chunk, reaper.genGuid("")), false)
+  -- The chunk restored the source's name, mute, ownership mark, folder nesting,
+  -- and per-item locks. Override each so the copy is user-owned and editable.
+  reaper.GetSetMediaTrackInfo_String(track, "P_NAME", working_name(source_name), true)
+  reaper.SetMediaTrackInfo_Value(track, "B_MUTE", 0)
+  reaper.SetMediaTrackInfo_Value(track, "I_FOLDERDEPTH", folder_depth)
+  reaper.GetSetMediaTrackInfo_String(track, EXT_STATE_KEY, "", true)
+  reaper.SetTrackSelected(track, true)
+  -- A vgt reference item is left unlocked already, but a copied label/beat item
+  -- can be locked; unlock every item so the whole copy is immediately editable.
+  for item_index = 0, reaper.CountTrackMediaItems(track) - 1 do
+    reaper.SetMediaItemInfo_Value(reaper.GetTrackMediaItem(track, item_index), "C_LOCK", 0)
+  end
+  return track
+end
+
+local function create()
+  local sources = selected_source_tracks()
+  if #sources == 0 then
+    reaper.ShowMessageBox(
+      "Select the track(s) you want a working copy of, then run this action again.",
+      "vgt working copy", 0
+    )
+    return
+  end
+
+  -- Read every source chunk up front, before any insertion shifts track indices.
+  local jobs = {}
+  for _, source in ipairs(sources) do
+    local ok, chunk = reaper.GetTrackStateChunk(source, "", false)
+    if ok then jobs[#jobs + 1] = {chunk = chunk, name = track_name(source)} end
+  end
+  if #jobs == 0 then
+    reaper.ShowMessageBox("Could not read the selected track(s).", "vgt working copy", 0)
+    return
+  end
+
+  reaper.Undo_BeginBlock()
+  reaper.PreventUIRefresh(1)
+
+  -- Clear the selection so only the new copies end up selected.
+  for _, source in ipairs(sources) do reaper.SetTrackSelected(source, false) end
+
+  local _, folder_index = find_work_folder()
+  local insert_index
+  if folder_index then
+    -- Extend the existing folder: its current last child closes it (depth -1),
+    -- so demote it to a plain child and let the last new copy become the closer.
+    local last_child = folder_last_child_index(folder_index)
+    reaper.SetMediaTrackInfo_Value(reaper.GetTrack(0, last_child), "I_FOLDERDEPTH", 0)
+    insert_index = last_child + 1
+  else
+    -- Create the `[work]` folder at the end. It is deliberately user-owned:
+    -- no vgt mark, a non-`[vgt]` name -- so vgt never touches it.
+    insert_index = reaper.CountTracks(0)
+    reaper.InsertTrackAtIndex(insert_index, false)
+    local created = reaper.GetTrack(0, insert_index)
+    reaper.GetSetMediaTrackInfo_String(created, "P_NAME", WORK_FOLDER_NAME, true)
+    reaper.SetMediaTrackInfo_Value(created, "B_MUTE", 0)
+    reaper.SetMediaTrackInfo_Value(created, "I_FOLDERDEPTH", 1)
+    insert_index = insert_index + 1
+  end
+
+  for position, job in ipairs(jobs) do
+    -- The last copy closes the folder (-1); every earlier one stays flat (0).
+    local folder_depth = position == #jobs and -1 or 0
+    build_working_copy(insert_index, job.chunk, job.name, folder_depth)
+    insert_index = insert_index + 1
+  end
+
+  reaper.MarkProjectDirty(0)
+  reaper.PreventUIRefresh(-1)
+  reaper.TrackList_AdjustWindows(false)
+  reaper.UpdateArrange()
+  reaper.Undo_EndBlock("vgt: create working copy", -1)
+end
+
+local function discard()
+  reaper.Undo_BeginBlock()
+  reaper.PreventUIRefresh(1)
+  local removed = 0
+  -- Delete only tracks still named `[work] ...`: a copy the user renamed away
+  -- from the prefix is theirs to keep, mirroring how vgt treats a `[vgt]` track
+  -- the user reclaimed by renaming.
+  for index = reaper.CountTracks(0) - 1, 0, -1 do
+    local track = reaper.GetTrack(0, index)
+    if starts_with(track_name(track), WORK_PREFIX) then
+      reaper.DeleteTrack(track)
+      removed = removed + 1
+    end
+  end
+  reaper.PreventUIRefresh(-1)
+  reaper.TrackList_AdjustWindows(false)
+  reaper.UpdateArrange()
+  reaper.Undo_EndBlock("vgt: discard working copies", -1)
+  if removed > 0 then
+    reaper.MarkProjectDirty(0)
+  else
+    reaper.ShowMessageBox(
+      "No [work] tracks to discard. Rename a copy so it no longer starts with [work] to keep it.",
+      "vgt working copy", 0
+    )
+  end
+end
+
+-- Automation (and the headless tests) can preselect the branch through the
+-- "vgt"/"working_copy_action" ExtState; interactive users get a popup menu.
+local function choose_action()
+  local forced = reaper.GetExtState("vgt", "working_copy_action")
+  if forced ~= "" then return forced end
+  gfx.init("vgt working copy", 0, 0)
+  gfx.x, gfx.y = gfx.mouse_x, gfx.mouse_y
+  local choice = gfx.showmenu("Create working copy from selected tracks|Discard all [work] copies")
+  gfx.quit()
+  if choice == 1 then return "create" end
+  if choice == 2 then return "discard" end
+  return nil
+end
+
+local function main()
+  local path = select(2, reaper.EnumProjects(-1, ""))
+  if path == "" then error("Save the REAPER project before creating a working copy.") end
+  local action = choose_action()
+  if action == "create" then
+    create()
+  elseif action == "discard" then
+    discard()
+  end
+end
+
+local ok, error_message = xpcall(main, debug.traceback)
+if not ok then
+  reaper.PreventUIRefresh(-1)
+  reaper.ShowMessageBox("vgt working copy failed:\n" .. error_message, "vgt", 0)
+end

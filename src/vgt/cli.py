@@ -148,7 +148,7 @@ def main(argv: list[str] | None = None) -> int:
                 print(f"{action}: {path}")
             if args.dry_run:
                 print("Dry run: no files were changed.")
-            print("In REAPER, open the Action List, then use ReaScript: Load to register both files once.")
+            print("In REAPER, open the Action List, then use ReaScript: Load to register these files once.")
             return 0
         project = locate_project(args.project)
         if args.command == "inspect":
