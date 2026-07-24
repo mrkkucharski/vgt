@@ -186,6 +186,47 @@ The guitar declaration (`--guitar electric|acoustic`) remains a stem-separation
 choice for LALAL. Existing acoustic declarations automatically retain the
 equivalent `guitar-acoustic` transcription profile when their sidecar upgrades.
 
+### Retaining several variants per target
+
+`--transcribe`/`--mode` keep working exactly as above; a target still has one
+persisted profile selection through this path. To retain and compare several
+independently configured candidates for the same target (for example a
+detail-preserving pass alongside a clean, chord-oriented one), use the
+`vgt transcription` command group instead:
+
+```sh
+# List, inspect, or validate built-in and project-local (<project>.vgt-profiles.toml) profiles.
+vgt transcription profile list "Song.RPP"
+vgt transcription profile show guitar-acoustic-clean "Song.RPP"
+vgt transcription profile validate "Song.RPP"
+
+# Create a retained candidate and reconcile it immediately.
+vgt transcription variant add guitar --name detail --profile guitar-acoustic-detail "Song.RPP"
+vgt transcription variant add guitar --name clean --profile guitar-acoustic-clean "Song.RPP"
+
+# Rename or select without ever rerunning transcription.
+vgt transcription variant rename guitar clean --name "clean chords" "Song.RPP"
+vgt transcription variant select guitar "clean chords" "Song.RPP"
+vgt transcription variant unselect guitar "Song.RPP"
+
+# Discard a rejected candidate (its own generated artifacts and any
+# now-unreferenced raw detection cache are removed); if it was selected, pass
+# --select <replacement> or --clear-selected.
+vgt transcription variant discard guitar detail --select "clean chords" "Song.RPP"
+
+# Clear the compact discarded-variant recipe/metrics history as a separate step.
+vgt transcription variant purge-discarded guitar "Song.RPP"
+```
+
+A variant reference (`clean`, `"clean chords"`, ...) may be its label whenever
+that label is unambiguous for the target, or its immutable id always. Two
+variants that only differ in cleanup (like `guitar-acoustic-detail` and
+`guitar-acoustic-clean`) share one Basic Pitch detection pass; only a variant
+whose detection settings actually changed reruns it. `vgt status` reports
+every target's retained variants in persisted order, which one is selected,
+and each one's requested/effective profile, cache identity, metrics, and
+errors.
+
 If a backend's execution or output validation fails, `drums` (or any other
 target) is recorded with `status: error` and analysis continues for every
 other requested target. There is no automatic fallback between backends: a

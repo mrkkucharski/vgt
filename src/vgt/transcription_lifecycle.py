@@ -192,7 +192,16 @@ def add_variant(
         spec = spec_from_resolved_profile(resolved, midi_tempo=midi_tempo, time_signature=time_signature)
 
     namespace = ensure_artifact_namespace(sidecar, project_path)
-    update_analysis(project_path, lambda current: current["stems"].setdefault("artifact_namespace", namespace))
+
+    def persist_namespace(current: dict[str, Any]) -> None:
+        # Mirrors `analysis.py`'s identical `persist_namespace`: `stems`
+        # always carries an explicit `artifact_namespace: None` key (see
+        # `sidecar._empty_stems_block`), so `setdefault` would never
+        # overwrite it -- an `is None` check is required.
+        if current["stems"].get("artifact_namespace") is None:
+            current["stems"]["artifact_namespace"] = namespace
+
+    update_analysis(project_path, persist_namespace)
     namespace_dir = artifact_namespace_dir(project_path, namespace)
 
     resolved_source = resolve_target_source(project_path, target, analysis, reference_source=reference_source_path(project_path, sidecar))
