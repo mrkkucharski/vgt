@@ -1,19 +1,22 @@
 # Guitar transcription findings
 
-Status: **implemented 2026-07-22** for `guitar_type: acoustic`, in two rounds.
-`src/vgt/transcribe.py` now applies the acoustic threshold overrides plus a
-five-stage cleanup pipeline (merge → deblip → clamp → ghost → cap) whenever
-`guitar_type == "acoustic"`; `electric` and unset are deliberately left at the
-original shared defaults, since only the acoustic case was measured. Each
-round changes `guitar`'s `settings_hash` for acoustic-declared projects, so
-existing acoustic transcriptions correctly invalidate and re-transcribe on the
-next run — no migration needed. Neither round changes any other target's hash
-or output.
+Status: **implemented 2026-07-22 through 2026-07-24** for `guitar_type:
+acoustic`, in three rounds. `src/vgt/transcribe.py` now applies the acoustic
+threshold overrides plus a five-stage cleanup pipeline (merge → deblip →
+clamp → ghost → cap) whenever `guitar_type == "acoustic"`; `electric` and
+unset are deliberately left at the original shared defaults, since only the
+acoustic case was measured. Each round changes `guitar`'s `settings_hash` for
+acoustic-declared projects, so existing acoustic transcriptions correctly
+invalidate and re-transcribe on the next run — no migration needed. No round
+changes any other target's hash or output.
 
 Read in order: "The complaint" through "Changes applied" is round one (the
 threshold retune and the first three cleanup stages); "Round two" covers
 fragmentation and isolated blips, and also **corrects a measurement bias in
-the round-one sweep table** — see "The chord metric was misleading".
+the round-one sweep table** — see "The chord metric was misleading". "Round
+three" adds a librosa-based spectral confirmation gate to the ghost drop, so
+that decision is backed by the actual spectrum rather than heuristics alone —
+see its "Known limitation" for what remains unmeasured against a real stem.
 
 Investigated 2026-07-22 after a user report that a real project's guitar MIDI
 was unusable, then extended after the user inspected the result in REAPER's
@@ -380,6 +383,89 @@ pass after the voice cap would catch both, but at the cost of deleting the
 cap's deliberately-retained onset stubs — the cap truncates rather than
 deletes precisely so a retired note's onset still appears on the reference
 track.
+
+## Round three: spectral confirmation for the ghost drop (#144)
+
+`_drop_harmonic_ghosts` (round one) decides "ghost vs. real note" purely from
+note-level heuristics — the harmonic interval, near-simultaneous onset,
+overlap fraction, and velocity slack. It never looked at the audio, so it
+fundamentally could not distinguish an intentionally played octave/12th from a
+ringing partial; the docstring conceded a real note at a harmonic interval
+only "usually" survives.
+
+### The gate
+
+`_ghost_has_independent_energy` (`src/vgt/transcribe.py`) implements the
+*collapsing harmonics* technique (harmonic masking / matching pursuit): for a
+note the heuristic has already flagged, it fits a log-linear decay curve to
+the lower parent note's *other* visible harmonics (excluding the one the
+ghost's pitch coincides with) over their shared overlap window, then compares
+the measured amplitude at the ghost's own fundamental against that curve's
+prediction. Amplitude well above the prediction (by
+`GUITAR_GHOST_SPECTRAL_INDEPENDENT_ENERGY_RATIO`, `1.5`×) means something
+independent is sounding there, so the note survives; amplitude at or below the
+prediction means the parent's own harmonic series already explains it, so the
+heuristic's drop is confirmed.
+
+This is a **gate, not a new detector**: a flagged note is dropped only when
+the heuristic *and* the spectral check agree. Whenever the audio can't settle
+the question (no true overlap window, or fewer than two of the parent's other
+harmonics are visible to fit a curve), the gate returns "keep" conservatively
+— absence of evidence never adds a drop, it only ever withholds one the
+heuristic already decided. This means the gate can only ever *retain* notes
+the old heuristic-only pipeline would have dropped; it cannot cause a note the
+heuristic already kept to be dropped, and it cannot catch a ghost the interval
+templates miss (out of scope, per the issue).
+
+### Plumbing
+
+The stem audio is the same `source` path `BasicPitchTranscriber.transcribe`
+already passes to Basic Pitch — no new path is threaded through. `_apply_cleanup_stages`
+loads it and computes one STFT, lazily and at most once, the first time it
+reaches a `drop_harmonic_ghosts` stage; a target whose cleanup pipeline never
+includes that stage (every target except `guitar-acoustic`) never imports
+librosa or touches the audio. The three new thresholds
+(`spectral_max_harmonic_order`, `spectral_freq_tolerance_semitones`,
+`spectral_independent_energy_ratio`) live in that stage's `CleanupStage.params`
+alongside the existing four, so they flow into `settings_hash` the same way —
+adding them moved `guitar-acoustic`'s hash once, an expected one-time
+invalidation of only that target's cached transcription (verified in
+`tests/test_analysis.py`'s v9-migration hash test, updated alongside this
+change).
+
+### Test coverage
+
+`tests/test_transcribe.py` synthesizes short WAV fixtures with `soundfile`
+(already a hard dependency) — a fundamental plus a clean, several-harmonic
+geometric decay series — and covers three cases directly against
+`_drop_harmonic_ghosts`: a real octave whose fundamental carries strong energy
+far above what the decay curve predicts (kept), a pure partial whose energy
+sits exactly on the decay curve (dropped, i.e. the pre-existing heuristic
+behaviour is preserved), and a non-concurrent pair the heuristic itself never
+flags, confirming the gate cannot widen a drop regardless of what the
+spectrum shows. A fourth test confirms a pipeline with no ghost-drop stage
+never calls the audio loader. All four run offline, on numpy-generated tones
+— no model, network, or real stem required.
+
+### Known limitation: not yet re-measured against the real `7Rivers` stem
+
+The "Real-world verification" section above (round one) and the round-two
+results were measured against an actual LALAL-separated acoustic guitar stem
+that lives in the reporting user's own project, not in this repository —
+consistent with vgt's own rule that it never commits stem audio or other
+per-project artifacts into the codebase. This implementation environment has
+no access to that file (or any equivalent real acoustic guitar recording), so
+the before/after ghost-drop counts and "real octaves preserved" measurement
+the issue asks for could not be produced here.
+
+What *is* verified here: the gate's logic against synthetic audio (above),
+that it changes nothing for every non-`guitar-acoustic` target, and that it
+can only narrow — never widen — round one's ghost-drop behaviour. Re-running
+`vgt analyze --forget-transcription guitar --transcribe guitar` against the
+real `7Rivers` project (same command as round one's verification) and
+diffing `guitar_transcription_probe.py`'s `%ghost` column before/after would
+close this out; the `settings_hash` change already guarantees that run will
+re-transcribe rather than reuse the stale cache.
 
 ## Ruled out: converting the stem to mono
 
