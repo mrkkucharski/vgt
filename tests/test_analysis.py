@@ -267,8 +267,11 @@ def test_upgrade_migrates_v9_acoustic_guitar_to_its_equivalent_profile_hash() ->
     assert modes == {"guitar": "guitar-acoustic"}
     # #110 selected this exact acoustic profile from stems.guitar_type. The
     # migration must preserve its settings identity, not invalidate its cache.
+    # This hash moved once more in #144 (the spectral ghost-confirmation gate
+    # added new `drop_harmonic_ghosts` params), an expected one-time
+    # invalidation of only the guitar-acoustic target's cache.
     assert spec_hash(default_spec_for_target("guitar", modes=modes, midi_tempo=120.0)) == (
-        "5e5521244ba806c51930879306fd1339b24e563368c8ce36f16370646a31a3e7"
+        "25f9eb0867829cb2727a68775355e21022af3130cecacbcd69e5ca1af08917e6"
     )
 
 

@@ -33,7 +33,9 @@ from vgt.transcribe import (
     _drop_harmonic_ghosts,
     _drop_isolated_notes,
     _force_monophony,
+    _load_spectral_analysis,
     _merge_fragments,
+    _midi_to_hz,
     default_spec_for_target,
     midi_artifact_name,
     missing_source_entry,
@@ -668,6 +670,162 @@ def test_drop_harmonic_ghosts_keeps_a_louder_note_even_at_a_harmonic_interval() 
     )
 
     assert kept == [lower_quiet, upper_loud]
+
+
+def _write_geometric_harmonic_series_wav(
+    path: Path,
+    *,
+    fundamental_hz: float,
+    window_s: tuple[float, float],
+    duration_s: float,
+    decay_ratio: float = 0.6,
+    max_order: int = 5,
+    independent_order: int | None = None,
+    independent_amplitude: float = 0.0,
+    sample_rate: int = 22050,
+) -> None:
+    """Synthesize `max_order` harmonics of `fundamental_hz` at a clean
+    geometric decay (`amplitude(order) = decay_ratio ** order`), sounding only
+    during `window_s`, and write it to `path` as a float WAV.
+
+    A perfectly geometric decay makes the spectral gate's log-linear fit
+    reproduce the design amplitudes almost exactly, so the two synthetic
+    cases below are unambiguous: one harmonic order can be swapped out for
+    `independent_amplitude`, energy the parent's own series does not predict,
+    to simulate a real note sounding at that harmonic interval instead of a
+    ringing partial.
+    """
+    import numpy as np
+    import soundfile as sf
+
+    samples = np.zeros(int(duration_s * sample_rate), dtype=np.float64)
+    start_sample = int(window_s[0] * sample_rate)
+    end_sample = int(window_s[1] * sample_rate)
+    t = np.arange(end_sample - start_sample) / sample_rate
+
+    tone = np.zeros_like(t)
+    for order in range(1, max_order + 1):
+        amplitude = independent_amplitude if order == independent_order else decay_ratio**order
+        tone += amplitude * np.sin(2 * np.pi * fundamental_hz * order * t)
+
+    samples[start_sample:end_sample] = tone
+    sf.write(str(path), samples.astype(np.float32), sample_rate, subtype="FLOAT")
+
+
+def test_spectral_gate_keeps_a_real_octave_with_independent_energy_at_its_fundamental(tmp_path: Path) -> None:
+    """A real octave played alongside the fundamental has its own strong
+    energy at the octave frequency, far beyond what the fundamental's own
+    (otherwise clean, decaying) harmonic series predicts there -- the
+    heuristic's drop must be overridden and the octave kept."""
+    parent = _note(0.5, 1.5, 48, velocity=90)
+    ghost = _note(0.52, 1.45, 60, velocity=80)  # +12 semitones -> harmonic order 2
+
+    source = tmp_path / "octave.wav"
+    _write_geometric_harmonic_series_wav(
+        source,
+        fundamental_hz=_midi_to_hz(parent.pitch_midi),
+        window_s=(parent.start_s, parent.end_s),
+        duration_s=2.0,
+        independent_order=2,
+        independent_amplitude=2.0,  # far above the ~0.36 the decay curve predicts
+    )
+    spectral = _load_spectral_analysis(source)
+
+    kept = _drop_harmonic_ghosts(
+        [parent, ghost],
+        intervals=GUITAR_HARMONIC_GHOST_INTERVALS,
+        onset_tolerance_s=GUITAR_GHOST_ONSET_TOLERANCE_S,
+        overlap_fraction=GUITAR_GHOST_OVERLAP_FRACTION,
+        velocity_slack=GUITAR_GHOST_VELOCITY_SLACK,
+        spectral_max_harmonic_order=GUITAR_GHOST_SPECTRAL_MAX_HARMONIC_ORDER,
+        spectral_freq_tolerance_semitones=GUITAR_GHOST_SPECTRAL_FREQ_TOLERANCE_SEMITONES,
+        spectral_independent_energy_ratio=GUITAR_GHOST_SPECTRAL_INDEPENDENT_ENERGY_RATIO,
+        spectral=spectral,
+    )
+
+    assert kept == [parent, ghost]
+
+
+def test_spectral_gate_drops_a_pure_harmonic_partial_with_no_independent_energy(tmp_path: Path) -> None:
+    """A ringing octave partial's amplitude sits exactly on the fundamental's
+    own decay curve -- nothing at that frequency is unexplained, so the
+    heuristic's drop must be confirmed, not overridden."""
+    parent = _note(0.5, 1.5, 48, velocity=90)
+    ghost = _note(0.52, 1.45, 60, velocity=80)  # +12 semitones -> harmonic order 2
+
+    source = tmp_path / "partial.wav"
+    _write_geometric_harmonic_series_wav(
+        source,
+        fundamental_hz=_midi_to_hz(parent.pitch_midi),
+        window_s=(parent.start_s, parent.end_s),
+        duration_s=2.0,
+        # no independent_order override -- every harmonic, including order 2,
+        # follows the same clean decay curve.
+    )
+    spectral = _load_spectral_analysis(source)
+
+    kept = _drop_harmonic_ghosts(
+        [parent, ghost],
+        intervals=GUITAR_HARMONIC_GHOST_INTERVALS,
+        onset_tolerance_s=GUITAR_GHOST_ONSET_TOLERANCE_S,
+        overlap_fraction=GUITAR_GHOST_OVERLAP_FRACTION,
+        velocity_slack=GUITAR_GHOST_VELOCITY_SLACK,
+        spectral_max_harmonic_order=GUITAR_GHOST_SPECTRAL_MAX_HARMONIC_ORDER,
+        spectral_freq_tolerance_semitones=GUITAR_GHOST_SPECTRAL_FREQ_TOLERANCE_SEMITONES,
+        spectral_independent_energy_ratio=GUITAR_GHOST_SPECTRAL_INDEPENDENT_ENERGY_RATIO,
+        spectral=spectral,
+    )
+
+    assert kept == [parent]
+
+
+def test_spectral_gate_never_widens_a_drop_the_heuristic_did_not_already_flag(tmp_path: Path) -> None:
+    """The gate only ever retains a flagged note -- it must never cause a note
+    the heuristic itself would have kept (not concurrent enough here) to be
+    dropped, regardless of what the spectrum shows."""
+    first = _note(0.0, 1.0, 48)
+    second = _note(5.0, 6.0, 60)  # same interval, but not concurrent -- never flagged
+
+    source = tmp_path / "unrelated.wav"
+    _write_geometric_harmonic_series_wav(
+        source,
+        fundamental_hz=_midi_to_hz(first.pitch_midi),
+        window_s=(first.start_s, first.end_s),
+        duration_s=6.0,
+    )
+    spectral = _load_spectral_analysis(source)
+
+    kept = _drop_harmonic_ghosts(
+        [first, second],
+        intervals=GUITAR_HARMONIC_GHOST_INTERVALS,
+        onset_tolerance_s=GUITAR_GHOST_ONSET_TOLERANCE_S,
+        overlap_fraction=GUITAR_GHOST_OVERLAP_FRACTION,
+        velocity_slack=GUITAR_GHOST_VELOCITY_SLACK,
+        spectral=spectral,
+    )
+
+    assert kept == [first, second]
+
+
+def test_apply_cleanup_stages_loads_audio_lazily_only_when_a_ghost_stage_is_present(
+    tmp_path: Path, monkeypatch: "pytest.MonkeyPatch"
+) -> None:
+    """A target's cleanup pipeline that never includes `drop_harmonic_ghosts`
+    (e.g. `bass-monophonic`) must never attempt to load or analyze audio,
+    even when a `source` path is supplied."""
+    from vgt import transcribe as transcribe_module
+
+    def fail(*_args, **_kwargs):
+        raise AssertionError("must not load audio for a cleanup pipeline with no ghost-drop stage")
+
+    monkeypatch.setattr(transcribe_module, "_load_spectral_analysis", fail)
+
+    spec = default_spec_for_target("bass", modes={"bass": "bass-monophonic"})
+    notes = [_note(0.0, 1.0, 40), _note(0.5, 1.5, 41)]
+
+    cleaned = _apply_cleanup_stages(notes, spec, source=tmp_path / "does-not-exist.wav")
+
+    assert cleaned  # ran without touching the (non-existent) audio file
 
 
 def test_cap_simultaneous_voices_truncates_the_quietest_active_voice_when_a_new_note_arrives() -> None:
