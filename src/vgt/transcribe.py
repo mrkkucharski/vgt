@@ -121,6 +121,18 @@ GUITAR_GHOST_OVERLAP_FRACTION = 0.6
 GUITAR_GHOST_VELOCITY_SLACK = 4
 GUITAR_MIN_NOTE_DURATION_AFTER_CAP_S = 0.04
 
+# Spectral confirmation gate for `_drop_harmonic_ghosts` (see that function's
+# docstring and docs/guitar-transcription-findings.md's "Spectral confirmation"
+# section). This never widens a drop the interval/onset/overlap/velocity
+# heuristic didn't already flag -- it only retains a flagged note when the
+# spectrum shows energy at its fundamental beyond what the parent note's own
+# harmonic series (fit from its *other* visible harmonics) predicts there.
+GUITAR_GHOST_SPECTRAL_N_FFT = 4096
+GUITAR_GHOST_SPECTRAL_HOP_LENGTH = 512
+GUITAR_GHOST_SPECTRAL_MAX_HARMONIC_ORDER = 8  # highest parent harmonic order used to fit the decay curve
+GUITAR_GHOST_SPECTRAL_FREQ_TOLERANCE_SEMITONES = 0.5  # bin-search half-width around each harmonic's exact frequency
+GUITAR_GHOST_SPECTRAL_INDEPENDENT_ENERGY_RATIO = 1.5  # measured/predicted amplitude ratio that counts as "independent"
+
 # Raising `frame_threshold` to stop the drones has a side effect: a held note
 # whose activation dips below the threshold mid-way is emitted as two notes
 # split in place.  Measured on the 7Rivers output, 390 of 435 same-pitch gaps
@@ -284,6 +296,9 @@ _GUITAR_ACOUSTIC_PROFILE = InstrumentProfile(
                 "onset_tolerance_s": GUITAR_GHOST_ONSET_TOLERANCE_S,
                 "overlap_fraction": GUITAR_GHOST_OVERLAP_FRACTION,
                 "velocity_slack": GUITAR_GHOST_VELOCITY_SLACK,
+                "spectral_max_harmonic_order": GUITAR_GHOST_SPECTRAL_MAX_HARMONIC_ORDER,
+                "spectral_freq_tolerance_semitones": GUITAR_GHOST_SPECTRAL_FREQ_TOLERANCE_SEMITONES,
+                "spectral_independent_energy_ratio": GUITAR_GHOST_SPECTRAL_INDEPENDENT_ENERGY_RATIO,
             },
         ),
         CleanupStage(
@@ -1231,25 +1246,172 @@ def _clamp_sustain(notes: list[ParsedNote], max_duration_s: float) -> list[Parse
     ]
 
 
+class _SpectralAnalysis:
+    """One stem's magnitude spectrogram, computed once per `transcribe()` call
+    and reused for every candidate ghost/parent pair `_drop_harmonic_ghosts`
+    checks (see that function's docstring and
+    docs/guitar-transcription-findings.md's spectral-confirmation section).
+
+    Deliberately not a `@dataclass(frozen=True)`: the arrays it wraps are not
+    hashable/comparable in the way the rest of this module's frozen value
+    types are, and nothing here needs equality or immutability -- only
+    `_load_spectral_analysis` constructs one, and it is discarded at the end
+    of `_apply_cleanup_stages`.
+    """
+
+    def __init__(self, magnitude: Any, freqs: Any, times: Any) -> None:
+        self.magnitude = magnitude  # (n_freq_bins, n_frames)
+        self.freqs = freqs  # Hz, one per magnitude row
+        self.times = times  # seconds, one per magnitude column
+
+
+def _load_spectral_analysis(
+    source: Path, *, n_fft: int = GUITAR_GHOST_SPECTRAL_N_FFT, hop_length: int = GUITAR_GHOST_SPECTRAL_HOP_LENGTH
+) -> _SpectralAnalysis:
+    """Load `source` and compute its STFT magnitude once, lazily importing
+    librosa exactly as `sections.py`'s `_librosa_sections` does -- vgt never
+    depends on librosa at import time, only when a stage actually needs it."""
+    import librosa
+    import numpy as np
+
+    try:
+        y, sr = librosa.load(str(source), sr=None, mono=True)
+    except Exception as exc:  # librosa raises varied backend-specific errors
+        raise TranscriptionError(f"could not load {source} for spectral ghost confirmation: {exc}") from exc
+    stft = librosa.stft(y, n_fft=n_fft, hop_length=hop_length)
+    magnitude = np.abs(stft)
+    freqs = librosa.fft_frequencies(sr=sr, n_fft=n_fft)
+    times = librosa.frames_to_time(np.arange(magnitude.shape[1]), sr=sr, hop_length=hop_length)
+    return _SpectralAnalysis(magnitude=magnitude, freqs=freqs, times=times)
+
+
+def _midi_to_hz(pitch_midi: int) -> float:
+    return 440.0 * 2.0 ** ((pitch_midi - 69) / 12.0)
+
+
+def _harmonic_order(interval_semitones: int) -> int:
+    """The parent-harmonic order a `interval_semitones` gap above the parent's
+    fundamental coincides with (12 semitones -> 2nd harmonic/octave, 19 ->
+    3rd/12th, 24 -> 4th/2 octaves, ...) -- an equal-tempered interval only
+    approximates a harmonic's true just ratio, so this rounds to the nearest
+    integer harmonic rather than requiring an exact match."""
+    return max(1, round(2.0 ** (interval_semitones / 12.0)))
+
+
+def _spectral_band_amplitude(
+    spectral: _SpectralAnalysis, freq_hz: float, start_s: float, end_s: float, freq_tolerance_semitones: float
+) -> float:
+    """Peak magnitude within `freq_tolerance_semitones` of `freq_hz`, over the
+    `[start_s, end_s)` time window. Peak (not mean) picking tolerates the STFT
+    bin grid not landing exactly on `freq_hz`."""
+    import numpy as np
+
+    lo = freq_hz * 2.0 ** (-freq_tolerance_semitones / 12.0)
+    hi = freq_hz * 2.0 ** (freq_tolerance_semitones / 12.0)
+    freq_mask = (spectral.freqs >= lo) & (spectral.freqs <= hi)
+    if not freq_mask.any():
+        freq_mask = np.zeros_like(spectral.freqs, dtype=bool)
+        freq_mask[int(np.argmin(np.abs(spectral.freqs - freq_hz)))] = True
+
+    frame_lo = int(np.searchsorted(spectral.times, start_s, side="left"))
+    frame_hi = int(np.searchsorted(spectral.times, end_s, side="right"))
+    frame_hi = min(max(frame_hi, frame_lo + 1), spectral.magnitude.shape[1])
+    frame_lo = min(frame_lo, frame_hi - 1)
+    if frame_lo < 0 or frame_hi <= frame_lo:
+        return 0.0
+
+    window = spectral.magnitude[np.ix_(freq_mask, np.arange(frame_lo, frame_hi))]
+    return float(window.max()) if window.size else 0.0
+
+
+def _ghost_has_independent_energy(
+    spectral: _SpectralAnalysis,
+    ghost: ParsedNote,
+    parent: ParsedNote,
+    *,
+    max_harmonic_order: int,
+    freq_tolerance_semitones: float,
+    independent_energy_ratio: float,
+) -> bool:
+    """The "collapsing harmonics" spectral check: does `ghost`'s fundamental
+    carry energy beyond what `parent`'s own harmonic series already predicts
+    there?
+
+    Fits a log-linear decay curve to `parent`'s *other* visible harmonics
+    (excluding the one `ghost`'s pitch coincides with) over their shared
+    overlap window, then compares the measured amplitude at `ghost`'s
+    fundamental against that curve's prediction at its harmonic order.
+    Amplitude well above the prediction means something independent is
+    sounding there -- `ghost` is a real note, not a partial. Whenever the
+    audio can't settle the question (no overlap window, or too few of
+    `parent`'s other harmonics are visible to fit a curve), this returns
+    `True` conservatively: absence of evidence here must never *add* a drop,
+    only withhold one the heuristic already decided.
+    """
+    import numpy as np
+
+    start_s = max(ghost.start_s, parent.start_s)
+    end_s = min(ghost.end_s, parent.end_s)
+    if end_s <= start_s:
+        return True
+
+    ghost_order = _harmonic_order(ghost.pitch_midi - parent.pitch_midi)
+    parent_fundamental_hz = _midi_to_hz(parent.pitch_midi)
+
+    orders, amplitudes = [], []
+    for order in range(1, max_harmonic_order + 1):
+        if order == ghost_order:
+            continue
+        amplitude = _spectral_band_amplitude(
+            spectral, parent_fundamental_hz * order, start_s, end_s, freq_tolerance_semitones
+        )
+        if amplitude > 0.0:
+            orders.append(order)
+            amplitudes.append(amplitude)
+    if len(orders) < 2:
+        return True
+
+    slope, intercept = np.polyfit(orders, np.log(amplitudes), 1)
+    predicted_amplitude = float(np.exp(slope * ghost_order + intercept))
+    measured_amplitude = _spectral_band_amplitude(
+        spectral, parent_fundamental_hz * ghost_order, start_s, end_s, freq_tolerance_semitones
+    )
+    return measured_amplitude > predicted_amplitude * independent_energy_ratio
+
+
 def _drop_harmonic_ghosts(
     notes: list[ParsedNote],
     intervals: tuple[int, ...],
     onset_tolerance_s: float,
     overlap_fraction: float,
     velocity_slack: float,
+    spectral_max_harmonic_order: int = GUITAR_GHOST_SPECTRAL_MAX_HARMONIC_ORDER,
+    spectral_freq_tolerance_semitones: float = GUITAR_GHOST_SPECTRAL_FREQ_TOLERANCE_SEMITONES,
+    spectral_independent_energy_ratio: float = GUITAR_GHOST_SPECTRAL_INDEPENDENT_ENERGY_RATIO,
+    spectral: _SpectralAnalysis | None = None,
 ) -> list[ParsedNote]:
     """Drop a note that is almost certainly the acoustic partial of a louder,
     lower note already sounding underneath it.
 
-    A note is dropped only when another note sits a harmonic interval
+    A note is *flagged* when another note sits a harmonic interval
     (`intervals`) below it, started at essentially the same instant, covers
     most of its duration, and isn't quieter -- a real independent note at a
     harmonic interval (e.g. an intentional octave) will usually fail at least
     one of these and survive.
+
+    When `spectral` is given (the stem's audio was loaded, see
+    `_apply_cleanup_stages`), a flagged note is only actually dropped once the
+    spectral confirmation gate (`_ghost_has_independent_energy`) also agrees
+    there's no independent energy at its fundamental -- this can only *retain*
+    a note the heuristic alone would have wrongly dropped, never drop one the
+    heuristic would have kept. Without `spectral` (no source stem available,
+    e.g. `FakeTranscriber` or a non-guitar target), behaviour is unchanged
+    from the heuristic alone.
     """
     kept: list[ParsedNote] = []
     for note in notes:
         is_ghost = False
+        ghost_parent: ParsedNote | None = None
         for other in notes:
             if other is note or other.pitch_midi >= note.pitch_midi:
                 continue
@@ -1260,7 +1422,18 @@ def _drop_harmonic_ghosts(
             overlap = min(note.end_s, other.end_s) - max(note.start_s, other.start_s)
             if overlap > overlap_fraction * (note.end_s - note.start_s) and other.velocity >= note.velocity - velocity_slack:
                 is_ghost = True
+                ghost_parent = other
                 break
+        if is_ghost and spectral is not None and ghost_parent is not None:
+            if _ghost_has_independent_energy(
+                spectral,
+                note,
+                ghost_parent,
+                max_harmonic_order=spectral_max_harmonic_order,
+                freq_tolerance_semitones=spectral_freq_tolerance_semitones,
+                independent_energy_ratio=spectral_independent_energy_ratio,
+            ):
+                is_ghost = False
         if not is_ghost:
             kept.append(note)
     return kept
@@ -1350,16 +1523,30 @@ _CLEANUP_STAGE_FUNCTIONS: dict[str, Callable[..., list[ParsedNote]]] = {
 }
 
 
-def _apply_cleanup_stages(notes: list[ParsedNote], spec: BasicPitchSpec) -> list[ParsedNote]:
+def _apply_cleanup_stages(notes: list[ParsedNote], spec: BasicPitchSpec, source: Path | None = None) -> list[ParsedNote]:
     """Run `spec.cleanup`'s ordered stages, dispatching each by its tag name.
 
     Stage order and each stage's parameters are a property of the profile
     that built `spec.cleanup` (see `_GUITAR_ACOUSTIC_PROFILE`'s docstring for
     why the guitar pipeline's order is load-bearing) -- this executor only
     walks the list `default_spec_for_target` already resolved.
+
+    `source` is the stem audio `transcribe()` already has in hand (the same
+    file just fed to Basic Pitch); it is only ever read here, lazily and at
+    most once, the first time a `drop_harmonic_ghosts` stage is reached, so a
+    target whose cleanup never includes that stage never imports librosa or
+    touches the audio a second time. Every other stage's signature is
+    untouched by this -- only `drop_harmonic_ghosts` accepts a `spectral`
+    keyword.
     """
+    spectral: _SpectralAnalysis | None = None
     for stage in spec.cleanup:
-        notes = _CLEANUP_STAGE_FUNCTIONS[stage.name](notes, **stage.params)
+        kwargs = dict(stage.params)
+        if stage.name == "drop_harmonic_ghosts" and source is not None:
+            if spectral is None:
+                spectral = _load_spectral_analysis(source)
+            kwargs["spectral"] = spectral
+        notes = _CLEANUP_STAGE_FUNCTIONS[stage.name](notes, **kwargs)
     return notes
 
 
@@ -1429,7 +1616,7 @@ class BasicPitchTranscriber:
         notes = parse_notes_csv(notes_path)
 
         if spec.cleanup:
-            cleaned = _apply_cleanup_stages(notes, spec)
+            cleaned = _apply_cleanup_stages(notes, spec, source=source)
             if cleaned != notes:
                 _write_parsed_notes_csv(notes_path, cleaned)
                 midi_notes = [(note.start_s, note.end_s, note.pitch_midi, note.velocity) for note in cleaned]

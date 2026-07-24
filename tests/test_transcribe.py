@@ -14,6 +14,9 @@ from vgt.transcribe import (
     DrumScriptTranscriber,
     GUITAR_GHOST_ONSET_TOLERANCE_S,
     GUITAR_GHOST_OVERLAP_FRACTION,
+    GUITAR_GHOST_SPECTRAL_FREQ_TOLERANCE_SEMITONES,
+    GUITAR_GHOST_SPECTRAL_INDEPENDENT_ENERGY_RATIO,
+    GUITAR_GHOST_SPECTRAL_MAX_HARMONIC_ORDER,
     GUITAR_GHOST_VELOCITY_SLACK,
     GUITAR_MAX_SIMULTANEOUS_VOICES,
     GUITAR_HARMONIC_GHOST_INTERVALS,
@@ -108,6 +111,9 @@ def test_default_spec_narrows_acoustic_guitar_and_enables_cleanup() -> None:
         "onset_tolerance_s": GUITAR_GHOST_ONSET_TOLERANCE_S,
         "overlap_fraction": GUITAR_GHOST_OVERLAP_FRACTION,
         "velocity_slack": GUITAR_GHOST_VELOCITY_SLACK,
+        "spectral_max_harmonic_order": GUITAR_GHOST_SPECTRAL_MAX_HARMONIC_ORDER,
+        "spectral_freq_tolerance_semitones": GUITAR_GHOST_SPECTRAL_FREQ_TOLERANCE_SEMITONES,
+        "spectral_independent_energy_ratio": GUITAR_GHOST_SPECTRAL_INDEPENDENT_ENERGY_RATIO,
     }
     # Two bars at 120 BPM 4/4: 2 * 4 beats * 60/120 = 4.0s.
     assert _cleanup_params(spec, "clamp_sustain")["max_duration_s"] == pytest.approx(4.0)
@@ -826,13 +832,26 @@ def test_transcribe_applies_guitar_cleanup_and_rewrites_both_artifacts(
     contains a runaway drone must come out of `transcribe()` clamped, with
     both the CSV and MIDI reflecting the cleaned notes."""
     import subprocess
+    import wave
     from types import SimpleNamespace
 
     source = tmp_path / "guitar.wav"
-    source.write_bytes(b"fake-audio")
+    with wave.open(str(source), "wb") as handle:
+        handle.setnchannels(1)
+        handle.setsampwidth(2)
+        handle.setframerate(8000)
+        handle.writeframes(b"\x00\x00" * 8000)  # 1s of silence -- real audio the spectral gate can load
     destination = tmp_path / "out"
+    real_run = subprocess.run
 
     def fake_run(argv, **kwargs):
+        # The spectral gate's lazy `import librosa` pulls in scipy/numpy
+        # machinery that itself shells out (e.g. numpy.testing probing `lscpu`
+        # for SVE support) with a bare string argv -- only intercept our own
+        # basic-pitch invocation and pass anything else through to the real
+        # `subprocess.run`.
+        if not isinstance(argv, list) or str(destination) not in argv:
+            return real_run(argv, **kwargs)
         outdir = Path(argv[argv.index(str(destination))])
         outdir.mkdir(parents=True, exist_ok=True)
         (outdir / "guitar_basic_pitch.mid").write_bytes(
