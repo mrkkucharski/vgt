@@ -290,6 +290,45 @@ def test_upgrade_migrates_v9_acoustic_guitar_to_its_equivalent_profile_hash() ->
     )
 
 
+def test_upgrade_migrates_an_existing_acoustic_guitar_target_to_a_guitar_acoustic_variant() -> None:
+    """An existing v9-v12 acoustic-guitar sidecar has both a legacy
+    `stems.guitar_type: acoustic` declaration and an already-transcribed
+    `targets["guitar"]` record. #148's migration must derive the variant's
+    `requested_profile` from that declaration (migration step 6), not from
+    the target's own settings, since the flat record predates `modes`."""
+    v9 = {
+        "schema_version": 9,
+        "analysis": {
+            "stems": {"guitar_type": "acoustic"},
+            "transcription": {
+                "requested_targets": ["guitar"],
+                "targets": {
+                    "guitar": {
+                        "status": "transcribed",
+                        "settings_hash": "abc123",
+                        "midi_file": "transcription/guitar.mid",
+                        "notes_file": "transcription/guitar.csv",
+                    }
+                },
+            },
+        },
+    }
+
+    upgraded = upgrade(v9)
+
+    guitar = upgraded["analysis"]["transcription"]["targets"]["guitar"]
+    # Legacy artifact paths are untouched -- no file is moved during migration.
+    assert guitar["midi_file"] == "transcription/guitar.mid"
+    variant_id = guitar["selected_variant_id"]
+    variant = guitar["variants"][variant_id]
+    assert variant["requested_profile"] == "guitar-acoustic"
+    assert variant["effective_profile"] == "guitar-acoustic"
+    assert variant["midi_file"] == "transcription/guitar.mid"
+    assert variant["resolved_settings"]["detection"]
+    assert variant["detection_hash"] is not None
+    assert variant["cleanup_hash"] is not None
+
+
 def test_upgrade_keeps_an_explicit_transcription_mode_over_the_legacy_declaration() -> None:
     upgraded = upgrade(
         {"schema_version": 9, "analysis": {"stems": {"guitar_type": "acoustic"}, "transcription": {"modes": {"guitar": "guitar"}}}}
