@@ -1,10 +1,10 @@
 {
-  "current_issue": 144,
-  "session_id": "32f0090a-bef8-4eac-9df4-339a1e127fad",
-  "pid": 26041,
-  "process_started_at": "Fri Jul 24 18:47:49 2026",
+  "current_issue": 147,
+  "session_id": "886f507f-f4c2-410a-af92-418ec712245c",
+  "pid": 27837,
+  "process_started_at": "Fri Jul 24 19:31:02 2026",
   "agent": "claude",
-  "started_at": "2026-07-24T16:47:47.969273+00:00",
+  "started_at": "2026-07-24T17:31:00.939075+00:00",
   "scheduler_stalls": {},
   "budget": {
     "window_start": "2026-07-24T16:33:46.562248+00:00",
@@ -15,10 +15,10 @@
   "verification_followups": {
     "f0d8bfc9d2dc6da7a31609184e25c4d66d3986fd2340b33a83e98204fb86691e": "created"
   },
-  "role": "review",
-  "branch": "issue-144-confirm-guitar-harmonic-ghost-drops-agai",
-  "worktree_path": "/Users/marekkucharski/projects/.pm-worktrees/vgt/issue-144",
-  "pr_number": 145,
+  "role": "implement",
+  "branch": "issue-147-implement-multiple-transcription-variant",
+  "worktree_path": "/Users/marekkucharski/projects/.pm-worktrees/vgt/issue-147",
+  "pr_number": null,
   "followup_generation": {
     "fingerprint": "d982f8926d0e86fe89dd3034f7dcb5ecbd29ae33e0d5db1334bdc33e99111ddf",
     "items": {
@@ -63,13 +63,13 @@
     "131": 2
   },
   "pending_transition": {
-    "issue": 144,
+    "issue": 147,
     "target": "working",
-    "event": "agent.review_started",
+    "event": "agent.started",
     "detail": {
-      "issue": 144,
+      "issue": 147,
       "agent": "claude",
-      "pr": 145
+      "branch": "issue-147-implement-multiple-transcription-variant"
     },
     "cleanup": {}
   }
