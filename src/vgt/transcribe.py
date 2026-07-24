@@ -888,6 +888,22 @@ class TranscriptionResult:
     confidence: float | None = None
 
 
+@dataclass
+class RawDetectionResult:
+    """One backend's raw, pre-cleanup Basic Pitch output: what
+    `BasicPitchTranscriber.detect_raw`/`FakeTranscriber.detect_raw` produce
+    before any cleanup stage runs (see docs/transcription-variants-plan.md's
+    "Layer 1: raw detection"). Shareable across every variant whose profile
+    requests the same `detection_hash` -- exactly what lets detail and clean
+    derive from one Basic Pitch inference. DrumScript has no raw/derived
+    split (see the plan's "Layer 1" note) and does not produce one of these."""
+
+    notes: list[ParsedNote]
+    raw_midi_path: Path
+    raw_notes_path: Path
+    midi_tempo: float | None
+
+
 class Transcriber(Protocol):
     """Thin backend seam. The orchestrator (a later issue) owns target
     resolution, caching, and artifact naming; a backend only transcribes one
@@ -1119,6 +1135,39 @@ class FakeTranscriber:
             last_note_s=max(end for _start, end, _pitch, _velocity in notes) if notes else None,
             midi_path=midi_path,
             notes_path=notes_path,
+        )
+
+    def detect_raw(
+        self,
+        source: Path,
+        destination_dir: Path,
+        spec: TranscriptionSpec,
+        progress: Callable[[str], None] | None = None,
+    ) -> RawDetectionResult:
+        """Fake counterpart to `BasicPitchTranscriber.detect_raw`: fabricates
+        the same deterministic notes `transcribe()` would, but returns them
+        pre-cleanup so a caller can derive several cleanup variants from one
+        fake "inference" (see transcription_variants.py). DrumScript has no
+        raw/derived split (see `RawDetectionResult`'s docstring)."""
+        if isinstance(spec, DrumScriptSpec):
+            raise TranscriptionError("FakeTranscriber.detect_raw does not support DrumScriptSpec; drums have no raw/derived split")
+        emit = progress or (lambda _message: None)
+        emit(f"transcribing (fake): {source.name}")
+        destination_dir.mkdir(parents=True, exist_ok=True)
+
+        raw_notes = _fake_notes(source, spec)
+        midi_path = destination_dir / "transcription.mid"
+        notes_path = destination_dir / "transcription.csv"
+        tempo_bpm = spec.midi_tempo or 120.0
+        _write_midi(midi_path, raw_notes, tempo_bpm)
+        _write_notes_csv(notes_path, raw_notes, source, spec)
+        # Re-parse from the file just written, rather than re-deriving
+        # `ParsedNote`s from the in-memory tuples, so the returned notes
+        # (including each one's fabricated pitch-bend series) exactly match
+        # what a later reader of the raw CSV would see -- the same contract
+        # `BasicPitchTranscriber.detect_raw` gives a real backend's output.
+        return RawDetectionResult(
+            notes=parse_notes_csv(notes_path), raw_midi_path=midi_path, raw_notes_path=notes_path, midi_tempo=spec.midi_tempo
         )
 
 
@@ -1652,7 +1701,12 @@ _CLEANUP_STAGE_FUNCTIONS: dict[str, Callable[..., list[ParsedNote]]] = {
 }
 
 
-def _apply_cleanup_stages(notes: list[ParsedNote], spec: BasicPitchSpec, source: Path | None = None) -> list[ParsedNote]:
+def _apply_cleanup_stages(
+    notes: list[ParsedNote],
+    spec: BasicPitchSpec,
+    source: Path | None = None,
+    spectral_cache: dict[tuple[int, int], _SpectralAnalysis] | None = None,
+) -> list[ParsedNote]:
     """Run `spec.cleanup`'s ordered stages, dispatching each by its tag name.
 
     Stage order and each stage's parameters are a property of the profile
@@ -1662,26 +1716,75 @@ def _apply_cleanup_stages(notes: list[ParsedNote], spec: BasicPitchSpec, source:
 
     `source` is the stem audio `transcribe()` already has in hand (the same
     file just fed to Basic Pitch); it is only ever read here, lazily and at
-    most once, the first time a `drop_harmonic_ghosts` stage is reached, so a
-    target whose cleanup never includes that stage never imports librosa or
-    touches the audio a second time. Every other stage's signature is
-    untouched by this -- only `drop_harmonic_ghosts` accepts a `spectral`
-    keyword.
+    most once per `(n_fft, hop_length)` key, the first time a
+    `drop_harmonic_ghosts` stage needs it, so a target whose cleanup never
+    includes that stage never imports librosa or touches the audio a second
+    time. Every other stage's signature is untouched by this -- only
+    `drop_harmonic_ghosts` accepts a `spectral` keyword.
+
+    `spectral_cache`, when given, is a caller-owned dict this function reads
+    and writes in place: a caller deriving several variants from the same
+    source in one reconciliation run (see transcription_variants.py) passes
+    the same dict across every call so the STFT is computed at most once per
+    `(n_fft, hop_length)` configuration for the whole run, not once per
+    variant. Defaults to a fresh, call-local dict, preserving the old
+    once-per-call behaviour for every other caller.
     """
-    spectral: _SpectralAnalysis | None = None
-    spectral_key: tuple[int, int] | None = None
+    cache = spectral_cache if spectral_cache is not None else {}
     for stage in spec.cleanup:
         kwargs = dict(stage.params)
         if stage.name == "drop_harmonic_ghosts" and source is not None:
             n_fft = kwargs.get("spectral_n_fft", GUITAR_GHOST_SPECTRAL_N_FFT)
             hop_length = kwargs.get("spectral_hop_length", GUITAR_GHOST_SPECTRAL_HOP_LENGTH)
             key = (n_fft, hop_length)
-            if spectral is None or spectral_key != key:
-                spectral = _load_spectral_analysis(source, n_fft=n_fft, hop_length=hop_length)
-                spectral_key = key
-            kwargs["spectral"] = spectral
+            if key not in cache:
+                cache[key] = _load_spectral_analysis(source, n_fft=n_fft, hop_length=hop_length)
+            kwargs["spectral"] = cache[key]
         notes = _CLEANUP_STAGE_FUNCTIONS[stage.name](notes, **kwargs)
     return notes
+
+
+def raw_notes_content_hash(path: Path) -> str:
+    """Content hash of one raw Basic Pitch note-events CSV -- the "raw
+    note-event content hash" half of a derived variant's identity (see
+    docs/transcription-variants-plan.md's "Layer 2: derived variant"
+    section). Hashing the authoritative CSV bytes, not a re-derived notes
+    list, means the hash matches exactly what a later cleanup derivation
+    actually reads."""
+    return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def derive_variant_artifacts(
+    raw_notes: list[ParsedNote],
+    spec: BasicPitchSpec,
+    *,
+    midi_path: Path,
+    notes_path: Path,
+    source: Path | None = None,
+    spectral_cache: dict[tuple[int, int], _SpectralAnalysis] | None = None,
+) -> TranscriptionResult:
+    """Derive one cleanup variant's final MIDI/CSV from `raw_notes` -- already
+    parsed once by a raw detection run shared across every variant in its
+    detection group -- at a variant-scoped destination, without invoking a
+    backend (see docs/transcription-variants-plan.md's two-level cache).
+    Always writes both files at `midi_path`/`notes_path`, unlike
+    `BasicPitchTranscriber.transcribe`'s in-place conditional rewrite: each
+    derived variant owns its own destination, so there is no "unchanged raw
+    file" case to skip."""
+    notes = _apply_cleanup_stages(raw_notes, spec, source=source, spectral_cache=spectral_cache) if spec.cleanup else list(raw_notes)
+    midi_path.parent.mkdir(parents=True, exist_ok=True)
+    _write_parsed_notes_csv(notes_path, notes)
+    midi_notes = [(note.start_s, note.end_s, note.pitch_midi, note.velocity) for note in notes]
+    _write_midi(midi_path, midi_notes, spec.midi_tempo or 120.0)
+    note_count, pitch_range_midi, first_note_s, last_note_s = _summarize_notes(notes)
+    return TranscriptionResult(
+        note_count=note_count,
+        pitch_range_midi=pitch_range_midi,
+        first_note_s=first_note_s,
+        last_note_s=last_note_s,
+        midi_path=midi_path,
+        notes_path=notes_path,
+    )
 
 
 def _write_parsed_notes_csv(path: Path, notes: list[ParsedNote]) -> None:
@@ -1705,13 +1808,19 @@ class BasicPitchTranscriber:
 
     name = "basic-pitch"
 
-    def transcribe(
+    def detect_raw(
         self,
         source: Path,
         destination_dir: Path,
         spec: TranscriptionSpec,
         progress: Callable[[str], None] | None = None,
-    ) -> TranscriptionResult:
+    ) -> RawDetectionResult:
+        """Run Basic Pitch and return its raw, pre-cleanup note events --
+        the split half of `transcribe()` a detection-group cache can share
+        across every variant that needs the same inference (see
+        transcription_variants.py). Never applies `spec.cleanup`; a caller
+        wanting a fully derived result calls `derive_variant_artifacts` on
+        the returned notes, exactly as `transcribe()` does below."""
         emit = progress or (lambda _message: None)
         if not isinstance(spec, BasicPitchSpec):
             raise TranscriptionError("BasicPitchTranscriber requires a BasicPitchSpec")
@@ -1748,16 +1857,30 @@ class BasicPitchTranscriber:
         midi_path, notes_path = _collect_and_rename_outputs(destination_dir)
         _validate_basic_pitch_midi(midi_path)
         notes = parse_notes_csv(notes_path)
+        return RawDetectionResult(notes=notes, raw_midi_path=midi_path, raw_notes_path=notes_path, midi_tempo=spec.midi_tempo)
+
+    def transcribe(
+        self,
+        source: Path,
+        destination_dir: Path,
+        spec: TranscriptionSpec,
+        progress: Callable[[str], None] | None = None,
+    ) -> TranscriptionResult:
+        if not isinstance(spec, BasicPitchSpec):
+            raise TranscriptionError("BasicPitchTranscriber requires a BasicPitchSpec")
+        raw = self.detect_raw(source, destination_dir, spec, progress)
+        notes = raw.notes
 
         if spec.cleanup:
             cleaned = _apply_cleanup_stages(notes, spec, source=source)
             if cleaned != notes:
-                _write_parsed_notes_csv(notes_path, cleaned)
+                _write_parsed_notes_csv(raw.raw_notes_path, cleaned)
                 midi_notes = [(note.start_s, note.end_s, note.pitch_midi, note.velocity) for note in cleaned]
-                _write_midi(midi_path, midi_notes, spec.midi_tempo or 120.0)
+                _write_midi(raw.raw_midi_path, midi_notes, spec.midi_tempo or 120.0)
                 notes = cleaned
 
         note_count, pitch_range_midi, first_note_s, last_note_s = _summarize_notes(notes)
+        emit = progress or (lambda _message: None)
         emit(f"transcribed (basic-pitch): {note_count} notes")
 
         return TranscriptionResult(
@@ -1765,8 +1888,8 @@ class BasicPitchTranscriber:
             pitch_range_midi=pitch_range_midi,
             first_note_s=first_note_s,
             last_note_s=last_note_s,
-            midi_path=midi_path,
-            notes_path=notes_path,
+            midi_path=raw.raw_midi_path,
+            notes_path=raw.raw_notes_path,
         )
 
 
