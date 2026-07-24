@@ -111,6 +111,49 @@ Schema versions:
       latest state, up to a bounded number of attempts, rather than ever
       renaming a stale merge over a newer commit. Older sidecars migrate with
       `generation: 0`.
+ 13 -- Foundation for multiple transcription variants per target (#148, see
+      docs/transcription-variants-plan.md). Each `analysis.transcription.
+      targets[target]` entry gains `variants` (an index of retained
+      candidates keyed by an opaque id), `variant_order` (presentation
+      order; never rely on dict/JSON ordering), `selected_variant_id`, and
+      `discarded_variants` (a compact audit list, empty until a later issue
+      implements discard). `analysis.transcription` also gains
+      `detection_cache`, the raw-Basic-Pitch-detection cache index keyed by
+      `detection_hash` (empty until a later issue's two-level cache writes
+      into it).
+
+      This migration is additive, not a replacement: the pre-v13 flat
+      per-target fields (`status`, `midi_file`, `settings_hash`, ...) are
+      left exactly as they were, because `analysis.py`'s single-variant
+      write/read path (`_refresh_target`) is unchanged by this issue --
+      only schema/profile plumbing is in scope, not the multi-variant
+      execution/selection flow (a later issue). `upgrade()` derives one
+      `variants` entry per target from those flat fields on every read, so
+      the migration is naturally idempotent: rerunning it over unchanged
+      flat fields always regenerates the same id/content, and a legitimate
+      re-transcription (which replaces the flat fields) simply produces a
+      different derived variant on the next read, matching the flat state
+      it was derived from. No artifact is moved or renamed by this
+      migration -- the flat fields' existing `transcription/<target>.mid`
+      style paths are preserved verbatim as the migrated variant's own
+      paths (see the plan's "Preserve existing artifact paths ... as legacy
+      paths until that variant is next recomputed").
+
+      A legacy variant's id is `sha256(f"legacy:{target}:{settings_hash}")`
+      truncated to 8 hex characters, so it stays stable across repeated
+      upgrades of the same underlying record. `variant_order` is always
+      `[id]`; `selected_variant_id` is `id` only when the flat record's
+      `status == "transcribed"` (an error or skipped-missing-source record
+      has nothing usable to select), matching the plan's migration step 3.
+      The migrated variant's `requested_profile`/`effective_profile` come
+      from mapping the legacy `analysis.transcription.modes[target]`
+      selection through `vgt.transcribe.effective_profile_name_for_target`
+      (migration step 6); for a Basic Pitch target this is also resolved
+      through `vgt.transcription_profiles` to populate `resolved_settings`
+      and the detection/cleanup hashes a genuinely profile-driven variant
+      would carry. `profile_definition_hash` and `raw_notes_hash` are
+      `None`: a legacy record was never resolved against a project profile
+      file and has no raw-detection cache entry.
 
 Every stage entry has the same shape:
   {
@@ -150,13 +193,17 @@ from typing import Any, Callable
 import copy
 from datetime import UTC, datetime, timedelta
 import fcntl
+import hashlib
 import json
 import os
 import shutil
 import tempfile
 import uuid
 
-SCHEMA_VERSION = 12
+from . import transcription_profiles
+from .transcribe import effective_profile_name_for_target
+
+SCHEMA_VERSION = 13
 STEMS_LEASE_TIMEOUT = timedelta(minutes=30)
 
 ANALYSIS_STAGES = ("tempo", "key", "sections", "chords", "transcription")
@@ -287,7 +334,87 @@ def _empty_stems_block() -> dict[str, Any]:
 
 
 def _empty_transcription_block() -> dict[str, Any]:
-    return {"requested_targets": list(DEFAULT_TRANSCRIPTION_TARGETS), "modes": {}, "targets": {}}
+    return {"requested_targets": list(DEFAULT_TRANSCRIPTION_TARGETS), "modes": {}, "targets": {}, "detection_cache": {}}
+
+
+def _legacy_variant_id(target: str, settings_hash: str | None) -> str:
+    """A stable id for the single variant a pre-v13 flat target record
+    implies. Deterministic in `target` + `settings_hash` so repeated
+    upgrades of the same underlying record -- or of an unchanged record
+    across separate reads -- always derive the same id (see schema v13's
+    module-docstring note)."""
+    return hashlib.sha256(f"legacy:{target}:{settings_hash}".encode("utf-8")).hexdigest()[:8]
+
+
+def _legacy_variant_resolved_settings(profile_name: str) -> tuple[dict[str, Any], str | None, str | None]:
+    """Best-effort `resolved_settings`/detection+cleanup hashes for a legacy
+    record's effective profile. Only meaningful for a Basic Pitch profile;
+    DrumScript and any unrecognised legacy profile name resolve to an empty
+    snapshot rather than failing the whole sidecar upgrade."""
+    try:
+        resolved = transcription_profiles.resolve_profile(profile_name)
+    except transcription_profiles.ProfileDefinitionError:
+        return {"detection": {}, "cleanup": []}, None, None
+    if resolved.backend != "basic-pitch":
+        return {"detection": {}, "cleanup": []}, None, None
+    return (
+        transcription_profiles.resolved_settings_snapshot(resolved),
+        transcription_profiles.resolved_detection_hash(resolved),
+        transcription_profiles.resolved_cleanup_hash(resolved),
+    )
+
+
+# The pre-v13 flat per-target fields `analysis.py`'s `_refresh_target`
+# (via `transcribe.missing_source_entry`/`transcribed_entry`/`error_entry`)
+# still writes today. Carried verbatim onto the derived legacy variant so no
+# field is lost in the migration.
+_LEGACY_TARGET_VARIANT_FIELDS: tuple[str, ...] = (
+    "backend", "package_pin", "serialization", "source_role", "input_hash", "settings_hash",
+    "status", "midi_file", "notes_file", "events_file", "note_count", "event_count",
+    "instrument_counts", "pitch_range_midi", "first_note_s", "last_note_s", "first_event_s",
+    "last_event_s", "backend_tempo", "midi_tempo", "confidence", "settings",
+    "transcribed_at", "error",
+)
+
+
+def _migrate_transcription_target(target: str, record: dict[str, Any], modes: dict[str, str]) -> dict[str, Any]:
+    """Augment one flat pre-v13 `targets[target]` record with the schema
+    v13 `variants` view, leaving the flat fields themselves untouched (see
+    schema v13's module-docstring note for why this is additive, not a
+    replacement).
+
+    A record that has no top-level `status` is not a legacy flat record --
+    either a future full multi-variant writer already produced the
+    plan's variants-only shape, or the record is otherwise malformed -- so
+    it is passed through unchanged rather than guessed at.
+    """
+    if "status" not in record:
+        return record
+
+    migrated = dict(record)
+    settings_hash = migrated.get("settings_hash")
+    variant_id = _legacy_variant_id(target, settings_hash)
+    effective_profile = effective_profile_name_for_target(target, modes)
+    resolved_settings, detection_hash, cleanup_hash = _legacy_variant_resolved_settings(effective_profile)
+
+    variant: dict[str, Any] = {
+        "label": "default",
+        "requested_profile": effective_profile,
+        "profile_definition_hash": None,
+        "effective_profile": effective_profile,
+        "raw_notes_hash": None,
+        "detection_hash": detection_hash,
+        "cleanup_hash": cleanup_hash,
+        "resolved_settings": resolved_settings,
+    }
+    for key in _LEGACY_TARGET_VARIANT_FIELDS:
+        variant[key] = migrated.get(key)
+
+    migrated["variants"] = {variant_id: variant}
+    migrated["variant_order"] = [variant_id]
+    migrated["selected_variant_id"] = variant_id if migrated.get("status") == "transcribed" else None
+    migrated["discarded_variants"] = list(migrated.get("discarded_variants") or [])
+    return migrated
 
 
 def read_sidecar(project_path: str | Path) -> dict[str, Any]:
@@ -354,6 +481,13 @@ def upgrade(data: dict[str, Any]) -> dict[str, Any]:
     # declaration continues to choose LALAL's split target in separation.py.
     if stems.get("guitar_type") == "acoustic" and "guitar" not in transcription["modes"]:
         transcription["modes"]["guitar"] = "guitar-acoustic"
+    detection_cache = transcription.get("detection_cache")
+    transcription["detection_cache"] = dict(detection_cache) if isinstance(detection_cache, dict) else {}
+    transcription["targets"] = {
+        target: _migrate_transcription_target(target, record, transcription["modes"])
+        for target, record in transcription["targets"].items()
+        if isinstance(record, dict)
+    }
     analysis["transcription"] = transcription
 
     upgraded["analysis"] = analysis

@@ -133,6 +133,15 @@ GUITAR_GHOST_SPECTRAL_MAX_HARMONIC_ORDER = 8  # highest parent harmonic order us
 GUITAR_GHOST_SPECTRAL_FREQ_TOLERANCE_SEMITONES = 0.5  # bin-search half-width around each harmonic's exact frequency
 GUITAR_GHOST_SPECTRAL_INDEPENDENT_ENERGY_RATIO = 1.5  # measured/predicted amplitude ratio that counts as "independent"
 
+# Acoustic-guitar `strict-chords` profile: higher Basic Pitch thresholds than
+# `guitar-acoustic-*` produce a deliberately sparse, chord-oriented reference
+# (see docs/transcription-variants-plan.md). This is a second, independent
+# Basic Pitch inference -- unlike detail/clean, it does not share a detection
+# hash with the acoustic profiles.
+GUITAR_ACOUSTIC_STRICT_ONSET_THRESHOLD = 0.70
+GUITAR_ACOUSTIC_STRICT_FRAME_THRESHOLD = 0.70
+GUITAR_ACOUSTIC_STRICT_MINIMUM_NOTE_LENGTH_MS = 125.0
+
 # Raising `frame_threshold` to stop the drones has a side effect: a held note
 # whose activation dips below the threshold mid-way is emitted as two notes
 # split in place.  Measured on the 7Rivers output, 390 of 435 same-pitch gaps
@@ -269,8 +278,52 @@ _VOCALS_PROFILE = replace(
 # `max_duration_s` from the detected tempo (see `_instantiate_cleanup`), and
 # drops the stage entirely when no tempo is known yet, mirroring the old
 # `sustain_clamp_s: float | None` field's behaviour.
-_GUITAR_ACOUSTIC_PROFILE = InstrumentProfile(
-    name="guitar-acoustic",
+_GUITAR_ACOUSTIC_FULL_CLEANUP: tuple[CleanupStage, ...] = (
+    CleanupStage("merge_fragments", {"max_gap_s": GUITAR_FRAGMENT_MERGE_GAP_S}),
+    CleanupStage(
+        "drop_isolated_notes",
+        {
+            "max_duration_s": GUITAR_ISOLATED_MAX_DURATION_S,
+            "neighbour_window_s": GUITAR_ISOLATED_NEIGHBOUR_WINDOW_S,
+        },
+    ),
+    CleanupStage("clamp_sustain", {}),
+    CleanupStage(
+        "drop_harmonic_ghosts",
+        {
+            "intervals": GUITAR_HARMONIC_GHOST_INTERVALS,
+            "onset_tolerance_s": GUITAR_GHOST_ONSET_TOLERANCE_S,
+            "overlap_fraction": GUITAR_GHOST_OVERLAP_FRACTION,
+            "velocity_slack": GUITAR_GHOST_VELOCITY_SLACK,
+            "spectral_n_fft": GUITAR_GHOST_SPECTRAL_N_FFT,
+            "spectral_hop_length": GUITAR_GHOST_SPECTRAL_HOP_LENGTH,
+            "spectral_max_harmonic_order": GUITAR_GHOST_SPECTRAL_MAX_HARMONIC_ORDER,
+            "spectral_freq_tolerance_semitones": GUITAR_GHOST_SPECTRAL_FREQ_TOLERANCE_SEMITONES,
+            "spectral_independent_energy_ratio": GUITAR_GHOST_SPECTRAL_INDEPENDENT_ENERGY_RATIO,
+        },
+    ),
+    CleanupStage(
+        "cap_simultaneous_voices",
+        {
+            "max_voices": GUITAR_MAX_SIMULTANEOUS_VOICES,
+            "min_duration_after_cap_s": GUITAR_MIN_NOTE_DURATION_AFTER_CAP_S,
+        },
+    ),
+)
+
+# Detail deliberately keeps only the two cleanup stages that never drop a
+# note (`merge_fragments` rejoins split notes; `clamp_sustain` only shortens a
+# runaway ring-out) -- see docs/transcription-variants-plan.md's "why detail
+# and clean share detection" section. Sharing this ordered prefix with
+# `_GUITAR_ACOUSTIC_FULL_CLEANUP` (rather than redeclaring it) keeps a
+# retuned merge gap or sustain clamp from silently drifting between the two
+# profiles.
+_GUITAR_ACOUSTIC_DETAIL_CLEANUP: tuple[CleanupStage, ...] = tuple(
+    stage for stage in _GUITAR_ACOUSTIC_FULL_CLEANUP if stage.name in ("merge_fragments", "clamp_sustain")
+)
+
+_GUITAR_ACOUSTIC_CLEAN_PROFILE = InstrumentProfile(
+    name="guitar-acoustic-clean",
     backend="basic-pitch",
     onset_threshold=GUITAR_ACOUSTIC_ONSET_THRESHOLD,
     frame_threshold=GUITAR_ACOUSTIC_FRAME_THRESHOLD,
@@ -279,41 +332,41 @@ _GUITAR_ACOUSTIC_PROFILE = InstrumentProfile(
     maximum_frequency_hz=GUITAR_ACOUSTIC_FREQUENCY_HZ[1],
     multiple_pitch_bends=DEFAULT_MULTIPLE_PITCH_BENDS,
     melodia_trick=GUITAR_ACOUSTIC_MELODIA_TRICK,
-    cleanup=(
-        CleanupStage("merge_fragments", {"max_gap_s": GUITAR_FRAGMENT_MERGE_GAP_S}),
-        CleanupStage(
-            "drop_isolated_notes",
-            {
-                "max_duration_s": GUITAR_ISOLATED_MAX_DURATION_S,
-                "neighbour_window_s": GUITAR_ISOLATED_NEIGHBOUR_WINDOW_S,
-            },
-        ),
-        CleanupStage("clamp_sustain", {}),
-        CleanupStage(
-            "drop_harmonic_ghosts",
-            {
-                "intervals": GUITAR_HARMONIC_GHOST_INTERVALS,
-                "onset_tolerance_s": GUITAR_GHOST_ONSET_TOLERANCE_S,
-                "overlap_fraction": GUITAR_GHOST_OVERLAP_FRACTION,
-                "velocity_slack": GUITAR_GHOST_VELOCITY_SLACK,
-                "spectral_max_harmonic_order": GUITAR_GHOST_SPECTRAL_MAX_HARMONIC_ORDER,
-                "spectral_freq_tolerance_semitones": GUITAR_GHOST_SPECTRAL_FREQ_TOLERANCE_SEMITONES,
-                "spectral_independent_energy_ratio": GUITAR_GHOST_SPECTRAL_INDEPENDENT_ENERGY_RATIO,
-            },
-        ),
-        CleanupStage(
-            "cap_simultaneous_voices",
-            {
-                "max_voices": GUITAR_MAX_SIMULTANEOUS_VOICES,
-                "min_duration_after_cap_s": GUITAR_MIN_NOTE_DURATION_AFTER_CAP_S,
-            },
-        ),
-    ),
+    cleanup=_GUITAR_ACOUSTIC_FULL_CLEANUP,
     probe_expectations=ProbeExpectations(
         expected_voice_count=GUITAR_MAX_SIMULTANEOUS_VOICES,
         harmonic_ghost_intervals=GUITAR_HARMONIC_GHOST_INTERVALS,
         sustain_cap_s=4.0,
     ),
+)
+
+# `guitar-acoustic` is `guitar-acoustic-clean`'s pre-existing name, kept as a
+# compatibility alias: every field but `name` (which never enters
+# `settings_hash`, see `BasicPitchSpec.to_dict`) is identical, so existing
+# sidecars naming `guitar-acoustic` keep exactly the same resolved behavior
+# and cache identity.
+_GUITAR_ACOUSTIC_PROFILE = replace(_GUITAR_ACOUSTIC_CLEAN_PROFILE, name="guitar-acoustic")
+
+# Detail: same Basic Pitch detection settings as clean (so both can share one
+# raw inference), lighter cleanup -- preserves questionable/quiet notes for
+# listening and manual review instead of dropping them.
+_GUITAR_ACOUSTIC_DETAIL_PROFILE = replace(
+    _GUITAR_ACOUSTIC_CLEAN_PROFILE,
+    name="guitar-acoustic-detail",
+    cleanup=_GUITAR_ACOUSTIC_DETAIL_CLEANUP,
+    probe_expectations=None,  # the probe's expected voice/ghost/sustain bounds assume the full cleanup pipeline
+)
+
+# Strict-chords: higher onset/frame/minimum-note thresholds than clean, so it
+# requires its own Basic Pitch inference (a different detection identity) --
+# see docs/transcription-variants-plan.md. Its cleanup is the same full
+# pipeline as clean.
+_GUITAR_ACOUSTIC_STRICT_CHORDS_PROFILE = replace(
+    _GUITAR_ACOUSTIC_CLEAN_PROFILE,
+    name="guitar-acoustic-strict-chords",
+    onset_threshold=GUITAR_ACOUSTIC_STRICT_ONSET_THRESHOLD,
+    frame_threshold=GUITAR_ACOUSTIC_STRICT_FRAME_THRESHOLD,
+    minimum_note_length_ms=GUITAR_ACOUSTIC_STRICT_MINIMUM_NOTE_LENGTH_MS,
 )
 
 _INSTRUMENT_PROFILES: dict[str, InstrumentProfile] = {
@@ -323,8 +376,70 @@ _INSTRUMENT_PROFILES: dict[str, InstrumentProfile] = {
     "bass-monophonic": _BASS_MONOPHONIC_PROFILE,
     "vocals": _VOCALS_PROFILE,
     "guitar-acoustic": _GUITAR_ACOUSTIC_PROFILE,
+    "guitar-acoustic-detail": _GUITAR_ACOUSTIC_DETAIL_PROFILE,
+    "guitar-acoustic-clean": _GUITAR_ACOUSTIC_CLEAN_PROFILE,
+    "guitar-acoustic-strict-chords": _GUITAR_ACOUSTIC_STRICT_CHORDS_PROFILE,
 }
 VALID_PROFILE_NAMES: tuple[str, ...] = tuple(_INSTRUMENT_PROFILES)
+
+# The canonical, load-bearing cleanup stage order (see
+# `_GUITAR_ACOUSTIC_FULL_CLEANUP`'s docstring above and
+# docs/transcription-variants-plan.md's "cleanup order" section). A project
+# profile may enable, disable, or reconfigure these stages but may never
+# reorder them; `force_monophony` (bass-only) is a single-stage pipeline with
+# no ordering constraint and is deliberately not part of this contract.
+CANONICAL_CLEANUP_STAGE_ORDER: tuple[str, ...] = (
+    "merge_fragments",
+    "drop_isolated_notes",
+    "clamp_sustain",
+    "drop_harmonic_ghosts",
+    "cap_simultaneous_voices",
+)
+
+
+def _detection_identity(profile: InstrumentProfile) -> dict[str, Any]:
+    """The subset of `profile` that determines one Basic Pitch inference.
+
+    Two profiles with equal `_detection_identity` can share one raw
+    detection run (see docs/transcription-variants-plan.md's two-level
+    cache); this is exactly why `guitar-acoustic-detail` and
+    `guitar-acoustic-clean` are declared with identical detector fields
+    above and differ only in `cleanup`.
+    """
+    return {
+        "backend": profile.backend,
+        "onset_threshold": profile.onset_threshold,
+        "frame_threshold": profile.frame_threshold,
+        "minimum_note_length_ms": profile.minimum_note_length_ms,
+        "minimum_frequency_hz": profile.minimum_frequency_hz,
+        "maximum_frequency_hz": profile.maximum_frequency_hz,
+        "multiple_pitch_bends": profile.multiple_pitch_bends,
+        "melodia_trick": profile.melodia_trick,
+    }
+
+
+def _cleanup_identity(profile: InstrumentProfile) -> list[dict[str, Any]]:
+    return [{"name": stage.name, "params": stage.params} for stage in profile.cleanup]
+
+
+def profile_detection_hash(profile: InstrumentProfile) -> str:
+    """Identity of the Basic Pitch inference `profile` requests.
+
+    Equal for `guitar-acoustic-detail`/`guitar-acoustic-clean`/
+    `guitar-acoustic` (identical detector settings); different for
+    `guitar-acoustic-strict-chords` (different thresholds, so it needs its
+    own inference run).
+    """
+    return hashlib.sha256(json.dumps(_detection_identity(profile), sort_keys=True).encode("utf-8")).hexdigest()
+
+
+def profile_cleanup_hash(profile: InstrumentProfile) -> str:
+    """Identity of `profile`'s full derived-variant recipe: its detection
+    identity plus its ordered, parameterized cleanup pipeline. Differs
+    between `guitar-acoustic-detail` and `guitar-acoustic-clean` even though
+    they share a detection hash, because their `cleanup` differs."""
+    payload = {"detection_hash": profile_detection_hash(profile), "cleanup": _cleanup_identity(profile)}
+    return hashlib.sha256(json.dumps(payload, sort_keys=True).encode("utf-8")).hexdigest()
 
 
 def instrument_profile(name: str) -> InstrumentProfile:
@@ -346,7 +461,14 @@ _PROFILE_NAMES_BY_TARGET: dict[str, tuple[str, ...]] = {
     target: ("default", target) if target in _INSTRUMENT_PROFILES else ("default",)
     for target in VALID_TARGETS
 }
-_PROFILE_NAMES_BY_TARGET["guitar"] = ("default", "guitar", "guitar-acoustic")
+_PROFILE_NAMES_BY_TARGET["guitar"] = (
+    "default",
+    "guitar",
+    "guitar-acoustic",
+    "guitar-acoustic-detail",
+    "guitar-acoustic-clean",
+    "guitar-acoustic-strict-chords",
+)
 _PROFILE_NAMES_BY_TARGET["bass"] = ("default", "bass", "bass-monophonic")
 
 
@@ -1388,6 +1510,13 @@ def _drop_harmonic_ghosts(
     spectral_max_harmonic_order: int = GUITAR_GHOST_SPECTRAL_MAX_HARMONIC_ORDER,
     spectral_freq_tolerance_semitones: float = GUITAR_GHOST_SPECTRAL_FREQ_TOLERANCE_SEMITONES,
     spectral_independent_energy_ratio: float = GUITAR_GHOST_SPECTRAL_INDEPENDENT_ENERGY_RATIO,
+    # Accepted (not read here) purely so the STFT size/hop length that
+    # `_apply_cleanup_stages` already consumed to build `spectral` remain
+    # part of this stage's `params` -- and therefore part of `settings_hash`
+    # (see docs/transcription-variants-plan.md's settings-identity section).
+    # `spectral`'s own resolution already reflects whichever values were used.
+    spectral_n_fft: int = GUITAR_GHOST_SPECTRAL_N_FFT,
+    spectral_hop_length: int = GUITAR_GHOST_SPECTRAL_HOP_LENGTH,
     spectral: _SpectralAnalysis | None = None,
 ) -> list[ParsedNote]:
     """Drop a note that is almost certainly the acoustic partial of a louder,
@@ -1540,11 +1669,16 @@ def _apply_cleanup_stages(notes: list[ParsedNote], spec: BasicPitchSpec, source:
     keyword.
     """
     spectral: _SpectralAnalysis | None = None
+    spectral_key: tuple[int, int] | None = None
     for stage in spec.cleanup:
         kwargs = dict(stage.params)
         if stage.name == "drop_harmonic_ghosts" and source is not None:
-            if spectral is None:
-                spectral = _load_spectral_analysis(source)
+            n_fft = kwargs.get("spectral_n_fft", GUITAR_GHOST_SPECTRAL_N_FFT)
+            hop_length = kwargs.get("spectral_hop_length", GUITAR_GHOST_SPECTRAL_HOP_LENGTH)
+            key = (n_fft, hop_length)
+            if spectral is None or spectral_key != key:
+                spectral = _load_spectral_analysis(source, n_fft=n_fft, hop_length=hop_length)
+                spectral_key = key
             kwargs["spectral"] = spectral
         notes = _CLEANUP_STAGE_FUNCTIONS[stage.name](notes, **kwargs)
     return notes

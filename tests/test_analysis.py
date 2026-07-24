@@ -126,7 +126,7 @@ def test_upgrade_keeps_v1_fields_and_adds_v2_analysis_skeleton() -> None:
 
     upgraded = upgrade(v1)
 
-    assert upgraded["schema_version"] == 12
+    assert upgraded["schema_version"] == 13
     assert upgraded["managed_region_ids"] == []
     assert upgraded["managed_track_guids"] == ["{AAAA}", "{BBBB}"]
     assert upgraded["config"] == {"reference_track_guid": REFERENCE_GUID}
@@ -146,7 +146,7 @@ def test_upgrade_keeps_v1_fields_and_adds_v2_analysis_skeleton() -> None:
             expected["detected_input_hash"] = None
             expected["detected_settings_hash"] = None
         assert upgraded["analysis"][stage] == expected
-    assert upgraded["analysis"]["transcription"] == {"requested_targets": ["guitar"], "modes": {}, "targets": {}}
+    assert upgraded["analysis"]["transcription"] == {"requested_targets": ["guitar"], "modes": {}, "targets": {}, "detection_cache": {}}
     assert upgraded["analysis"]["provenance"]["tool"] == "vgt"
 
 
@@ -179,7 +179,7 @@ def test_upgrade_marks_legacy_librosa_tempo_as_unknown_bar_phase() -> None:
         "backend": "librosa", "bpm": 120.0, "downbeat_offset_seconds": 0.25,
     }}}})
 
-    assert upgraded["schema_version"] == 12
+    assert upgraded["schema_version"] == 13
     assert upgraded["analysis"]["tempo"]["value"]["downbeat_detected"] is False
 
 
@@ -218,8 +218,8 @@ def test_upgrade_adds_v10_transcription_block_to_a_v8_sidecar() -> None:
 
     upgraded = upgrade(v8)
 
-    assert upgraded["schema_version"] == 12
-    assert upgraded["analysis"]["transcription"] == {"requested_targets": ["guitar"], "modes": {}, "targets": {}}
+    assert upgraded["schema_version"] == 13
+    assert upgraded["analysis"]["transcription"] == {"requested_targets": ["guitar"], "modes": {}, "targets": {}, "detection_cache": {}}
     # Unrelated v8 fields survive the upgrade untouched.
     assert upgraded["analysis"]["stems"]["artifact_namespace"] == "abc12345"
     assert upgraded["analysis"]["stems"]["optional_stems"] == ["piano"]
@@ -238,11 +238,24 @@ def test_upgrade_preserves_an_existing_transcription_block() -> None:
 
     upgraded = upgrade(v9)
 
-    assert upgraded["analysis"]["transcription"] == {
-        "requested_targets": ["guitar", "bass"],
-        "modes": {},
-        "targets": {"guitar": {"status": "transcribed", "note_count": 872}},
-    }
+    transcription = upgraded["analysis"]["transcription"]
+    assert transcription["requested_targets"] == ["guitar", "bass"]
+    assert transcription["modes"] == {}
+    assert transcription["detection_cache"] == {}
+    guitar = transcription["targets"]["guitar"]
+    # The pre-v13 flat fields survive verbatim -- this migration is additive.
+    assert guitar["status"] == "transcribed"
+    assert guitar["note_count"] == 872
+    # A schema v13 `variants` view is derived from those flat fields too.
+    assert guitar["variant_order"] == [guitar["selected_variant_id"]]
+    variant_id = guitar["selected_variant_id"]
+    assert guitar["variants"][variant_id]["label"] == "default"
+    assert guitar["variants"][variant_id]["status"] == "transcribed"
+    assert guitar["variants"][variant_id]["note_count"] == 872
+    assert guitar["discarded_variants"] == []
+    # Deterministic and idempotent: re-upgrading an already-migrated record
+    # (e.g. a second `read_sidecar` call) derives the same variant id.
+    assert upgrade(upgraded)["analysis"]["transcription"]["targets"]["guitar"]["selected_variant_id"] == variant_id
 
 
 def test_upgrade_preserves_an_intentionally_empty_transcription_target_set() -> None:
@@ -252,7 +265,7 @@ def test_upgrade_preserves_an_intentionally_empty_transcription_target_set() -> 
 
     upgraded = upgrade(v9)
 
-    assert upgraded["analysis"]["transcription"] == {"requested_targets": [], "modes": {}, "targets": {}}
+    assert upgraded["analysis"]["transcription"] == {"requested_targets": [], "modes": {}, "targets": {}, "detection_cache": {}}
 
 
 def test_upgrade_migrates_v9_acoustic_guitar_to_its_equivalent_profile_hash() -> None:
@@ -268,11 +281,52 @@ def test_upgrade_migrates_v9_acoustic_guitar_to_its_equivalent_profile_hash() ->
     # #110 selected this exact acoustic profile from stems.guitar_type. The
     # migration must preserve its settings identity, not invalidate its cache.
     # This hash moved once more in #144 (the spectral ghost-confirmation gate
-    # added new `drop_harmonic_ghosts` params), an expected one-time
-    # invalidation of only the guitar-acoustic target's cache.
+    # added new `drop_harmonic_ghosts` params), and again in #148 (the
+    # spectral STFT size/hop length became hash-visible params instead of
+    # silent module constants) -- both expected one-time invalidations of
+    # only the guitar-acoustic target's cache.
     assert spec_hash(default_spec_for_target("guitar", modes=modes, midi_tempo=120.0)) == (
-        "25f9eb0867829cb2727a68775355e21022af3130cecacbcd69e5ca1af08917e6"
+        "da13a57eec4940239d2bad7f30b19ff74f326ee666dadc749ca21621ceb2c769"
     )
+
+
+def test_upgrade_migrates_an_existing_acoustic_guitar_target_to_a_guitar_acoustic_variant() -> None:
+    """An existing v9-v12 acoustic-guitar sidecar has both a legacy
+    `stems.guitar_type: acoustic` declaration and an already-transcribed
+    `targets["guitar"]` record. #148's migration must derive the variant's
+    `requested_profile` from that declaration (migration step 6), not from
+    the target's own settings, since the flat record predates `modes`."""
+    v9 = {
+        "schema_version": 9,
+        "analysis": {
+            "stems": {"guitar_type": "acoustic"},
+            "transcription": {
+                "requested_targets": ["guitar"],
+                "targets": {
+                    "guitar": {
+                        "status": "transcribed",
+                        "settings_hash": "abc123",
+                        "midi_file": "transcription/guitar.mid",
+                        "notes_file": "transcription/guitar.csv",
+                    }
+                },
+            },
+        },
+    }
+
+    upgraded = upgrade(v9)
+
+    guitar = upgraded["analysis"]["transcription"]["targets"]["guitar"]
+    # Legacy artifact paths are untouched -- no file is moved during migration.
+    assert guitar["midi_file"] == "transcription/guitar.mid"
+    variant_id = guitar["selected_variant_id"]
+    variant = guitar["variants"][variant_id]
+    assert variant["requested_profile"] == "guitar-acoustic"
+    assert variant["effective_profile"] == "guitar-acoustic"
+    assert variant["midi_file"] == "transcription/guitar.mid"
+    assert variant["resolved_settings"]["detection"]
+    assert variant["detection_hash"] is not None
+    assert variant["cleanup_hash"] is not None
 
 
 def test_upgrade_keeps_an_explicit_transcription_mode_over_the_legacy_declaration() -> None:
@@ -379,7 +433,7 @@ def test_analyze_writes_v2_sidecar_with_skeleton_and_provenance(tmp_path: Path) 
 
     result = analyze(project)
 
-    assert result["schema_version"] == 12
+    assert result["schema_version"] == 13
     assert result["managed_track_guids"] == ["{AAAA}", "{BBBB}"]  # phase 0 fields intact
     for stage in ANALYSIS_STAGES:
         if stage == "transcription":
@@ -839,7 +893,7 @@ def test_cli_analyze_preserves_local_results_when_lalal_is_unavailable(
     captured = capsys.readouterr()
     assert captured.out == ""
     sidecar = read_sidecar(project)
-    assert sidecar["schema_version"] == 12
+    assert sidecar["schema_version"] == 13
     assert sidecar["analysis"]["tempo"]["value"] is not None
     assert "stem separation unavailable; continuing with available sources" in captured.err
 
