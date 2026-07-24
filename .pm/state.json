@@ -1,10 +1,10 @@
 {
-  "current_issue": 149,
-  "session_id": "400889ba-5da2-4d9b-8117-fcc3b6d9dec7",
-  "pid": 40168,
-  "process_started_at": "Fri Jul 24 23:36:00 2026",
+  "current_issue": 150,
+  "session_id": "c93e831b-f814-4b1e-b231-73b8018f1e31",
+  "pid": 40526,
+  "process_started_at": "Fri Jul 24 23:38:24 2026",
   "agent": "claude",
-  "started_at": "2026-07-24T21:35:59.484261+00:00",
+  "started_at": "2026-07-24T21:38:23.500447+00:00",
   "scheduler_stalls": {},
   "budget": {
     "window_start": "2026-07-24T21:35:54.775497+00:00",
@@ -15,10 +15,10 @@
   "verification_followups": {
     "f0d8bfc9d2dc6da7a31609184e25c4d66d3986fd2340b33a83e98204fb86691e": "created"
   },
-  "role": "review",
-  "branch": "issue-149-transcription-variants-b-shared-raw-dete",
-  "worktree_path": "/Users/marekkucharski/projects/.pm-worktrees/vgt/issue-149",
-  "pr_number": 154,
+  "role": "implement",
+  "branch": "issue-150-transcription-variants-c-lifecycle-cli-a",
+  "worktree_path": "/Users/marekkucharski/projects/.pm-worktrees/vgt/issue-150",
+  "pr_number": null,
   "followup_generation": {
     "fingerprint": "d982f8926d0e86fe89dd3034f7dcb5ecbd29ae33e0d5db1334bdc33e99111ddf",
     "items": {
@@ -63,13 +63,13 @@
     "131": 2
   },
   "pending_transition": {
-    "issue": 149,
+    "issue": 150,
     "target": "working",
-    "event": "agent.review_started",
+    "event": "agent.started",
     "detail": {
-      "issue": 149,
+      "issue": 150,
       "agent": "claude",
-      "pr": 154
+      "branch": "issue-150-transcription-variants-c-lifecycle-cli-a"
     },
     "cleanup": {}
   }
