@@ -59,6 +59,12 @@ from .transcribe import (
     validate_profile_for_target,
     validate_target,
 )
+from .transcription_variants import (
+    garbage_collect_raw_cache,
+    variant_events_name,
+    variant_midi_name,
+    variant_notes_name,
+)
 
 FUSION_STEM_NAMES = ("instrumental", "guitar", "backing")
 _LOG = logging.getLogger(__name__)
@@ -591,7 +597,16 @@ def forget_transcription_targets(project: str | Path | None, targets: tuple[str,
     """Remove `targets` from the persisted requested set, drop their
     `targets` index entries, and delete their MIDI/notes artifacts -- the
     only way a kept transcription goes away (see docs/transcription-plan.md
-    section 4). A target never requested/computed is silently a no-op."""
+    section 4). A target never requested/computed is silently a no-op.
+
+    A target that has retained multi-variant records (schema v13, see
+    `vgt.transcription_lifecycle`) discards every one of its variants' own
+    generated artifacts too -- "explicitly discards every generated variant
+    for that target", per docs/transcription-variants-plan.md's CLI
+    compatibility section -- and any raw detection cache entry left
+    unreferenced afterward is garbage-collected, same as a single `variant
+    discard` would.
+    """
     for target in targets:
         validate_target(target)
     project_path = locate_project(project)
@@ -608,11 +623,28 @@ def forget_transcription_targets(project: str | Path | None, targets: tuple[str,
                 path = namespace_dir / name
                 if path.is_file():
                     path.unlink()
+            variant_ids = (sidecar["analysis"]["transcription"]["targets"].get(target) or {}).get("variants") or {}
+            for variant_id in variant_ids:
+                for name in (
+                    variant_midi_name(target, variant_id),
+                    variant_notes_name(target, variant_id),
+                    variant_events_name(target, variant_id),
+                ):
+                    path = namespace_dir / name
+                    if path.is_file():
+                        path.unlink()
 
     def update(current: dict[str, Any]) -> None:
         transcription = current["transcription"]
         transcription["requested_targets"] = [t for t in transcription["requested_targets"] if t not in targets]
         for target in targets:
             transcription["targets"].pop(target, None)
+        if namespace:
+            kept_cache, _removed = garbage_collect_raw_cache(
+                namespace_dir=artifact_namespace_dir(project_path, namespace),
+                detection_cache=transcription.get("detection_cache") or {},
+                targets=transcription["targets"],
+            )
+            transcription["detection_cache"] = kept_cache
 
     return update_analysis(project_path, update)

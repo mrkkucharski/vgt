@@ -16,6 +16,21 @@ from .separation import GUITAR_TYPES, OPTIONAL_STEMS, SeparationError, declared_
 from .sidecar import atomic_update_sidecar
 from .status import StatusError, build_status, format_status
 from .transcribe import VALID_PROFILE_NAMES, VALID_TARGETS, TranscriptionError, validate_profile_for_target, validate_target
+from .transcription_lifecycle import (
+    add_variant,
+    discard_variant,
+    purge_discarded,
+    rename_variant,
+    select_variant,
+)
+from .transcription_profiles import (
+    ProfileDefinitionError,
+    load_project_profiles,
+    resolve_profile,
+    resolved_cleanup_identity,
+    resolved_detection_identity,
+    validate_project_profiles,
+)
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -103,6 +118,67 @@ def _parser() -> argparse.ArgumentParser:
     )
     install_parser.add_argument("--dry-run", action="store_true", help="Show target paths without creating or changing files.")
     install_parser.add_argument("--force", action="store_true", help="Replace differing destination files without prompting.")
+
+    transcription_parser = subparsers.add_parser(
+        "transcription", help="Manage transcription profiles and retained per-target variants."
+    )
+    transcription_sub = transcription_parser.add_subparsers(dest="transcription_command", required=True)
+
+    profile_parser = transcription_sub.add_parser("profile", help="Inspect built-in and project-local transcription profiles.")
+    profile_sub = profile_parser.add_subparsers(dest="profile_command", required=True)
+    profile_list = profile_sub.add_parser("list", help="List every built-in and project-local profile.")
+    profile_list.add_argument("project", nargs="?", help="Path to a .RPP project (defaults to cwd's only .RPP).")
+    profile_show = profile_sub.add_parser("show", help="Show one profile's fully resolved settings.")
+    profile_show.add_argument("name", help="A built-in or project-local profile name.")
+    profile_show.add_argument("project", nargs="?", help="Path to a .RPP project (defaults to cwd's only .RPP).")
+    profile_validate = profile_sub.add_parser(
+        "validate", help="Resolve every project-local profile, failing before any backend would run if one is invalid."
+    )
+    profile_validate.add_argument("project", nargs="?", help="Path to a .RPP project (defaults to cwd's only .RPP).")
+
+    variant_parser = transcription_sub.add_parser("variant", help="Add, rename, select, discard, or purge retained variants.")
+    variant_sub = variant_parser.add_subparsers(dest="variant_command", required=True)
+
+    variant_add = variant_sub.add_parser("add", help="Create and reconcile a new named variant for one target.")
+    variant_add.add_argument("target", choices=VALID_TARGETS)
+    variant_add.add_argument("--name", required=True, dest="label", help="A unique label for this target's new variant.")
+    variant_add.add_argument("--profile", required=True, help="A built-in or project-local profile name.")
+    variant_add.add_argument("--force", action="store_true", help="Recompute even if an identical variant is already cached.")
+    variant_add.add_argument("project", nargs="?", help="Path to a .RPP project (defaults to cwd's only .RPP).")
+
+    variant_rename = variant_sub.add_parser("rename", help="Rename a retained variant without rerunning transcription.")
+    variant_rename.add_argument("target", choices=VALID_TARGETS)
+    variant_rename.add_argument("ref", metavar="VARIANT", help="The variant's immutable id or its current unambiguous label.")
+    variant_rename.add_argument("--name", required=True, dest="new_label", help="The variant's new label.")
+    variant_rename.add_argument("project", nargs="?", help="Path to a .RPP project (defaults to cwd's only .RPP).")
+
+    variant_select = variant_sub.add_parser("select", help="Set (or clear) one target's selected variant.")
+    variant_select.add_argument("target", choices=VALID_TARGETS)
+    variant_select.add_argument("ref", metavar="VARIANT", nargs="?", help="The variant's immutable id or unambiguous label.")
+    variant_select.add_argument("--clear", action="store_true", help="Explicitly clear the selection instead of naming a variant.")
+    variant_select.add_argument("project", nargs="?", help="Path to a .RPP project (defaults to cwd's only .RPP).")
+
+    variant_discard = variant_sub.add_parser(
+        "discard", help="Delete one variant's generated artifacts and archive a compact recipe/metrics record."
+    )
+    variant_discard.add_argument("target", choices=VALID_TARGETS)
+    variant_discard.add_argument("ref", metavar="VARIANT", help="The variant's immutable id or unambiguous label.")
+    variant_discard.add_argument(
+        "--select", metavar="VARIANT",
+        help="Select this replacement variant if the one being discarded is currently selected.",
+    )
+    variant_discard.add_argument(
+        "--clear-selected", action="store_true",
+        help="Explicitly clear the selection if the one being discarded is currently selected.",
+    )
+    variant_discard.add_argument("project", nargs="?", help="Path to a .RPP project (defaults to cwd's only .RPP).")
+
+    variant_purge = variant_sub.add_parser(
+        "purge-discarded", help="Clear one target's archived discarded-variant recipe/metrics records."
+    )
+    variant_purge.add_argument("target", choices=VALID_TARGETS)
+    variant_purge.add_argument("project", nargs="?", help="Path to a .RPP project (defaults to cwd's only .RPP).")
+
     return parser
 
 
@@ -130,11 +206,78 @@ def _parse_modes(values: list[str] | None) -> dict[str, str]:
     return modes
 
 
+def _resolved_profile_dict(resolved: Any) -> dict[str, Any]:
+    return {
+        "name": resolved.name,
+        "target": resolved.target,
+        "backend": resolved.backend,
+        "is_builtin": resolved.is_builtin,
+        "profile_definition_hash": resolved.profile_definition_hash,
+        "detection": resolved_detection_identity(resolved),
+        "cleanup": resolved_cleanup_identity(resolved),
+    }
+
+
+def _dispatch_transcription(args: argparse.Namespace, project: Path) -> int:
+    if args.transcription_command == "profile":
+        project_profiles = load_project_profiles(project)
+        if args.profile_command == "list":
+            for name in VALID_PROFILE_NAMES:
+                print(f"{name} (builtin)")
+            for name in project_profiles:
+                print(f"{name} (project)")
+            return 0
+        if args.profile_command == "show":
+            try:
+                resolved = resolve_profile(args.name, project_profiles)
+            except ProfileDefinitionError as exc:
+                print(f"vgt: {exc}", file=sys.stderr)
+                return 2
+            print(json.dumps(_resolved_profile_dict(resolved), indent=2))
+            return 0
+        if args.profile_command == "validate":
+            try:
+                resolved = validate_project_profiles(project)
+            except ProfileDefinitionError as exc:
+                print(f"vgt: {exc}", file=sys.stderr)
+                return 2
+            print(f"{len(resolved)} project profile(s) valid.")
+            return 0
+    if args.variant_command == "add":
+        def report(message: str) -> None:
+            print(f"vgt: {message}", file=sys.stderr, flush=True)
+
+        variant = add_variant(project, args.target, label=args.label, profile=args.profile, force=args.force, progress=report)
+        print(json.dumps(variant, indent=2))
+        return 0
+    if args.variant_command == "rename":
+        variant_record = rename_variant(project, args.target, args.ref, new_label=args.new_label)
+        print(json.dumps(variant_record, indent=2))
+        return 0
+    if args.variant_command == "select":
+        variant_record = select_variant(project, args.target, args.ref, clear=args.clear)
+        print(json.dumps(variant_record, indent=2))
+        return 0
+    if args.variant_command == "discard":
+        variant_record = discard_variant(
+            project, args.target, args.ref, select=args.select, clear_selected=args.clear_selected
+        )
+        print(json.dumps(variant_record, indent=2))
+        return 0
+    if args.variant_command == "purge-discarded":
+        variant_record = purge_discarded(project, args.target)
+        print(json.dumps(variant_record, indent=2))
+        return 0
+    raise AnalysisError(f"unknown transcription subcommand: {args.transcription_command}")
+
+
 def main(argv: list[str] | None = None) -> int:
     # Phase 0's primary invocation is `vgt [project.rpp]`; retain explicit
     # subcommands for scripts that want to state their intent.
     arguments = list(sys.argv[1:] if argv is None else argv)
-    if not arguments or arguments[0] not in {"inspect", "apply", "sync", "analyze", "status", "install-reascripts", "-h", "--help"}:
+    if not arguments or arguments[0] not in {
+        "inspect", "apply", "sync", "analyze", "status", "install-reascripts", "transcription", "-h", "--help",
+    }:
         arguments.insert(0, "inspect")
     args = _parser().parse_args(arguments)
     try:
@@ -304,6 +447,8 @@ def main(argv: list[str] | None = None) -> int:
             status = build_status(project)
             print(json.dumps(status, indent=2) if args.json else format_status(status))
             return 0
+        if args.command == "transcription":
+            return _dispatch_transcription(args, project)
         # Deliberately no RPP/sidecar text-edit fallback for these commands:
         # only the ReaScript actions mutate REAPER projects or read live
         # REAPER item state back into the sidecar.
@@ -323,7 +468,7 @@ def main(argv: list[str] | None = None) -> int:
             file=sys.stderr,
         )
         return 2
-    except (ProjectError, AnalysisError, StatusError, SeparationError, ReaScriptInstallError) as exc:
+    except (ProjectError, AnalysisError, StatusError, SeparationError, ReaScriptInstallError, TranscriptionError) as exc:
         print(f"vgt: {exc}", file=sys.stderr)
         return 2
 

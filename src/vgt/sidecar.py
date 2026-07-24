@@ -377,16 +377,23 @@ _LEGACY_TARGET_VARIANT_FIELDS: tuple[str, ...] = (
 )
 
 
-def _migrate_transcription_target(target: str, record: dict[str, Any], modes: dict[str, str]) -> dict[str, Any]:
+def migrate_transcription_target(target: str, record: dict[str, Any], modes: dict[str, str]) -> dict[str, Any]:
     """Augment one flat pre-v13 `targets[target]` record with the schema
     v13 `variants` view, leaving the flat fields themselves untouched (see
     schema v13's module-docstring note for why this is additive, not a
     replacement).
 
     A record that has no top-level `status` is not a legacy flat record --
-    either a future full multi-variant writer already produced the
-    plan's variants-only shape, or the record is otherwise malformed -- so
-    it is passed through unchanged rather than guessed at.
+    either a full multi-variant writer (see `vgt.transcription_lifecycle`,
+    issue #150) already produced the plan's variants-only shape, or the
+    record is otherwise malformed -- so it is passed through unchanged
+    rather than guessed at.
+
+    Public (not `upgrade()`-only) because `vgt.transcription_lifecycle`'s
+    variant operations must materialize this same view once, eagerly, before
+    mutating a target that a pre-v13 `--transcribe`/`--mode` run last wrote,
+    so a `variant add` onto an old flat record starts from its migrated
+    variant rather than clobbering it.
     """
     if "status" not in record:
         return record
@@ -484,7 +491,7 @@ def upgrade(data: dict[str, Any]) -> dict[str, Any]:
     detection_cache = transcription.get("detection_cache")
     transcription["detection_cache"] = dict(detection_cache) if isinstance(detection_cache, dict) else {}
     transcription["targets"] = {
-        target: _migrate_transcription_target(target, record, transcription["modes"])
+        target: migrate_transcription_target(target, record, transcription["modes"])
         for target, record in transcription["targets"].items()
         if isinstance(record, dict)
     }

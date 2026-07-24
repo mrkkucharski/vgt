@@ -29,6 +29,8 @@ import json
 import tomllib
 
 from .transcribe import (
+    BASIC_PITCH_PACKAGE_PIN,
+    BASIC_PITCH_SERIALIZATION,
     CANONICAL_CLEANUP_STAGE_ORDER,
     GUITAR_FRAGMENT_MERGE_GAP_S,
     GUITAR_GHOST_ONSET_TOLERANCE_S,
@@ -45,10 +47,12 @@ from .transcribe import (
     GUITAR_MAX_SIMULTANEOUS_VOICES,
     GUITAR_MIN_NOTE_DURATION_AFTER_CAP_S,
     GUITAR_SUSTAIN_CLAMP_BARS,
+    BasicPitchSpec,
     CleanupStage,
     InstrumentProfile,
     TranscriptionError,
     VALID_TARGETS,
+    _bar_duration_seconds,  # noqa: SLF001 -- reuses the same bars->seconds conversion `default_spec_for_target` applies
     _INSTRUMENT_PROFILES,  # noqa: SLF001 -- this module is transcribe.py's one intended reader of the builtin registry
 )
 
@@ -485,3 +489,61 @@ def resolved_settings_snapshot(resolved: ResolvedProfile) -> dict[str, Any]:
     """The sidecar-ready `resolved_settings` shape (schema v13's
     `targets[target].variants[id].resolved_settings`, see sidecar.py)."""
     return {"detection": dict(resolved.detection), "cleanup": resolved_cleanup_identity(resolved)}
+
+
+def _instantiate_resolved_cleanup(
+    cleanup: tuple[CleanupStage, ...], *, midi_tempo: float | None, time_signature: str | None
+) -> tuple[CleanupStage, ...]:
+    """Fill in `clamp_sustain`'s tempo-dependent bound, mirroring
+    `transcribe._instantiate_cleanup`. Unlike a builtin `InstrumentProfile`
+    (whose template always carries an empty `clamp_sustain` params dict,
+    filled in only from the fixed `GUITAR_SUSTAIN_CLAMP_BARS` constant), a
+    resolved profile's `clamp_sustain` stage already carries its own
+    `max_bars` (the project-overridable unit `transcription_profiles`
+    validates, see `_STAGE_VALIDATORS`) -- so this reads that value back
+    instead of assuming the global default."""
+    stages: list[CleanupStage] = []
+    for stage in cleanup:
+        if stage.name == "clamp_sustain":
+            bar_seconds = _bar_duration_seconds(midi_tempo, time_signature)
+            if bar_seconds is None:
+                continue
+            max_bars = stage.params.get("max_bars", GUITAR_SUSTAIN_CLAMP_BARS)
+            stage = CleanupStage("clamp_sustain", {"max_duration_s": bar_seconds * max_bars})
+        stages.append(stage)
+    return tuple(stages)
+
+
+def spec_from_resolved_profile(
+    resolved: ResolvedProfile,
+    *,
+    package_pin: str = BASIC_PITCH_PACKAGE_PIN,
+    serialization: str = BASIC_PITCH_SERIALIZATION,
+    midi_tempo: float | None = None,
+    time_signature: str | None = None,
+) -> BasicPitchSpec:
+    """Build the `BasicPitchSpec` a resolved profile (builtin or
+    project-local) describes -- the bridge `transcription_profiles.py`'s
+    module docstring calls out as later-issue work: turning a
+    `ResolvedProfile` into the same spec shape `default_spec_for_target`
+    produces for a builtin-only selection, so `vgt.transcription_lifecycle`'s
+    `variant add` can run any resolved profile through
+    `vgt.transcription_variants.reconcile_variants` unchanged."""
+    if resolved.backend != "basic-pitch":
+        raise ProfileDefinitionError(f"profile {resolved.name!r} is not a Basic Pitch profile and has no spec bridge")
+    detection = resolved.detection
+    cleanup = _instantiate_resolved_cleanup(resolved.cleanup, midi_tempo=midi_tempo, time_signature=time_signature)
+    return BasicPitchSpec(
+        backend="basic-pitch",
+        package_pin=package_pin,
+        serialization=serialization,
+        onset_threshold=detection["onset_threshold"],
+        frame_threshold=detection["frame_threshold"],
+        minimum_note_length_ms=detection["minimum_note_length_ms"],
+        minimum_frequency_hz=detection.get("minimum_frequency_hz"),
+        maximum_frequency_hz=detection.get("maximum_frequency_hz"),
+        multiple_pitch_bends=detection["multiple_pitch_bends"],
+        melodia_trick=detection["melodia_trick"],
+        midi_tempo=midi_tempo,
+        cleanup=cleanup,
+    )
