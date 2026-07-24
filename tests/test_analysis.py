@@ -126,7 +126,7 @@ def test_upgrade_keeps_v1_fields_and_adds_v2_analysis_skeleton() -> None:
 
     upgraded = upgrade(v1)
 
-    assert upgraded["schema_version"] == 12
+    assert upgraded["schema_version"] == 13
     assert upgraded["managed_region_ids"] == []
     assert upgraded["managed_track_guids"] == ["{AAAA}", "{BBBB}"]
     assert upgraded["config"] == {"reference_track_guid": REFERENCE_GUID}
@@ -146,7 +146,7 @@ def test_upgrade_keeps_v1_fields_and_adds_v2_analysis_skeleton() -> None:
             expected["detected_input_hash"] = None
             expected["detected_settings_hash"] = None
         assert upgraded["analysis"][stage] == expected
-    assert upgraded["analysis"]["transcription"] == {"requested_targets": ["guitar"], "modes": {}, "targets": {}}
+    assert upgraded["analysis"]["transcription"] == {"requested_targets": ["guitar"], "modes": {}, "targets": {}, "detection_cache": {}}
     assert upgraded["analysis"]["provenance"]["tool"] == "vgt"
 
 
@@ -179,7 +179,7 @@ def test_upgrade_marks_legacy_librosa_tempo_as_unknown_bar_phase() -> None:
         "backend": "librosa", "bpm": 120.0, "downbeat_offset_seconds": 0.25,
     }}}})
 
-    assert upgraded["schema_version"] == 12
+    assert upgraded["schema_version"] == 13
     assert upgraded["analysis"]["tempo"]["value"]["downbeat_detected"] is False
 
 
@@ -218,8 +218,8 @@ def test_upgrade_adds_v10_transcription_block_to_a_v8_sidecar() -> None:
 
     upgraded = upgrade(v8)
 
-    assert upgraded["schema_version"] == 12
-    assert upgraded["analysis"]["transcription"] == {"requested_targets": ["guitar"], "modes": {}, "targets": {}}
+    assert upgraded["schema_version"] == 13
+    assert upgraded["analysis"]["transcription"] == {"requested_targets": ["guitar"], "modes": {}, "targets": {}, "detection_cache": {}}
     # Unrelated v8 fields survive the upgrade untouched.
     assert upgraded["analysis"]["stems"]["artifact_namespace"] == "abc12345"
     assert upgraded["analysis"]["stems"]["optional_stems"] == ["piano"]
@@ -238,11 +238,24 @@ def test_upgrade_preserves_an_existing_transcription_block() -> None:
 
     upgraded = upgrade(v9)
 
-    assert upgraded["analysis"]["transcription"] == {
-        "requested_targets": ["guitar", "bass"],
-        "modes": {},
-        "targets": {"guitar": {"status": "transcribed", "note_count": 872}},
-    }
+    transcription = upgraded["analysis"]["transcription"]
+    assert transcription["requested_targets"] == ["guitar", "bass"]
+    assert transcription["modes"] == {}
+    assert transcription["detection_cache"] == {}
+    guitar = transcription["targets"]["guitar"]
+    # The pre-v13 flat fields survive verbatim -- this migration is additive.
+    assert guitar["status"] == "transcribed"
+    assert guitar["note_count"] == 872
+    # A schema v13 `variants` view is derived from those flat fields too.
+    assert guitar["variant_order"] == [guitar["selected_variant_id"]]
+    variant_id = guitar["selected_variant_id"]
+    assert guitar["variants"][variant_id]["label"] == "default"
+    assert guitar["variants"][variant_id]["status"] == "transcribed"
+    assert guitar["variants"][variant_id]["note_count"] == 872
+    assert guitar["discarded_variants"] == []
+    # Deterministic and idempotent: re-upgrading an already-migrated record
+    # (e.g. a second `read_sidecar` call) derives the same variant id.
+    assert upgrade(upgraded)["analysis"]["transcription"]["targets"]["guitar"]["selected_variant_id"] == variant_id
 
 
 def test_upgrade_preserves_an_intentionally_empty_transcription_target_set() -> None:
@@ -252,7 +265,7 @@ def test_upgrade_preserves_an_intentionally_empty_transcription_target_set() -> 
 
     upgraded = upgrade(v9)
 
-    assert upgraded["analysis"]["transcription"] == {"requested_targets": [], "modes": {}, "targets": {}}
+    assert upgraded["analysis"]["transcription"] == {"requested_targets": [], "modes": {}, "targets": {}, "detection_cache": {}}
 
 
 def test_upgrade_migrates_v9_acoustic_guitar_to_its_equivalent_profile_hash() -> None:
@@ -381,7 +394,7 @@ def test_analyze_writes_v2_sidecar_with_skeleton_and_provenance(tmp_path: Path) 
 
     result = analyze(project)
 
-    assert result["schema_version"] == 12
+    assert result["schema_version"] == 13
     assert result["managed_track_guids"] == ["{AAAA}", "{BBBB}"]  # phase 0 fields intact
     for stage in ANALYSIS_STAGES:
         if stage == "transcription":
@@ -841,7 +854,7 @@ def test_cli_analyze_preserves_local_results_when_lalal_is_unavailable(
     captured = capsys.readouterr()
     assert captured.out == ""
     sidecar = read_sidecar(project)
-    assert sidecar["schema_version"] == 12
+    assert sidecar["schema_version"] == 13
     assert sidecar["analysis"]["tempo"]["value"] is not None
     assert "stem separation unavailable; continuing with available sources" in captured.err
 
