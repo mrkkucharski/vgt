@@ -1,10 +1,10 @@
 {
-  "current_issue": 147,
-  "session_id": "eff88ecd-2e0a-4ec4-bf85-f60ec8ccc846",
-  "pid": 27982,
-  "process_started_at": "Fri Jul 24 19:32:16 2026",
+  "current_issue": 148,
+  "session_id": "80a5f435-7c9d-43c8-a5a2-319189899cd5",
+  "pid": 28127,
+  "process_started_at": "Fri Jul 24 19:33:28 2026",
   "agent": "claude",
-  "started_at": "2026-07-24T17:32:14.998309+00:00",
+  "started_at": "2026-07-24T17:33:27.260547+00:00",
   "scheduler_stalls": {},
   "budget": {
     "window_start": "2026-07-24T16:33:46.562248+00:00",
@@ -18,8 +18,8 @@
     "f0d8bfc9d2dc6da7a31609184e25c4d66d3986fd2340b33a83e98204fb86691e": "created"
   },
   "role": "implement",
-  "branch": "issue-147-implement-multiple-transcription-variant",
-  "worktree_path": "/Users/marekkucharski/projects/.pm-worktrees/vgt/issue-147",
+  "branch": "issue-148-transcription-variants-a-profile-definit",
+  "worktree_path": "/Users/marekkucharski/projects/.pm-worktrees/vgt/issue-148",
   "pr_number": null,
   "followup_generation": {
     "fingerprint": "d982f8926d0e86fe89dd3034f7dcb5ecbd29ae33e0d5db1334bdc33e99111ddf",
@@ -65,13 +65,13 @@
     "131": 2
   },
   "pending_transition": {
-    "issue": 147,
+    "issue": 148,
     "target": "working",
     "event": "agent.started",
     "detail": {
-      "issue": 147,
+      "issue": 148,
       "agent": "claude",
-      "branch": "issue-147-implement-multiple-transcription-variant"
+      "branch": "issue-148-transcription-variants-a-profile-definit"
     },
     "cleanup": {}
   }
