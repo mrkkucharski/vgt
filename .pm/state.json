@@ -1,17 +1,25 @@
 {
   "current_issue": 148,
-  "session_id": "80a5f435-7c9d-43c8-a5a2-319189899cd5",
-  "pid": 28127,
-  "process_started_at": "Fri Jul 24 19:33:28 2026",
+  "session_id": "6698ce2a-4c1f-4300-8164-3a28dd7ffd5a",
+  "pid": 37510,
+  "process_started_at": "Fri Jul 24 23:10:29 2026",
   "agent": "claude",
-  "started_at": "2026-07-24T17:33:27.260547+00:00",
-  "scheduler_stalls": {},
+  "started_at": "2026-07-24T21:10:28.529357+00:00",
+  "scheduler_stalls": {
+    "deferred_passes": {
+      "budget": {
+        "first_seen_at": "2026-07-24T17:43:48.652333+00:00",
+        "last_seen_at": "2026-07-24T21:09:19.075129+00:00",
+        "consecutive_passes": 180
+      }
+    }
+  },
   "budget": {
     "window_start": "2026-07-24T16:33:46.562248+00:00",
-    "seconds_used": 72.410106,
-    "dollars_used": 0.3452522,
+    "seconds_used": 692.359368,
+    "dollars_used": 4.7530925,
     "seconds_used_by_agent": {
-      "claude": 72.410106
+      "claude": 692.359368
     }
   },
   "verification_followups": {
