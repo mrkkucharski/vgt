@@ -18,7 +18,8 @@ from vgt import analysis as analysis_module
 from vgt.analysis import analyze
 from vgt.separation import FakeSeparator, separate
 from vgt.sidecar import artifact_namespace_dir, read_sidecar
-from vgt.transcribe import FakeTranscriber
+from vgt.transcribe import FakeTranscriber, TargetTranscriberRouter
+from vgt.transcription_lifecycle import add_variant, discard_variant, select_variant
 
 
 ROOT = Path(__file__).parents[1]
@@ -49,6 +50,11 @@ class CountingTranscriber(FakeTranscriber):
     def transcribe(self, *args: object, **kwargs: object):  # type: ignore[no-untyped-def]
         self.calls += 1
         return super().transcribe(*args, **kwargs)
+
+    def detect_raw(self, *args: object, **kwargs: object):  # type: ignore[no-untyped-def]
+        """Expose raw Basic Pitch work separately from legacy transcribe()."""
+        self.raw_calls = getattr(self, "raw_calls", 0) + 1
+        return super().detect_raw(*args, **kwargs)
 
 
 def _copy_project(tmp_path: Path) -> Path:
@@ -392,6 +398,115 @@ sync()
         managed_tracks=final_sidecar["managed_track_guids"],
         managed_regions=final_sidecar["managed_region_ids"],
     ) == before
+
+
+def test_goal_contract_reconciles_two_guitar_variants_without_touching_working_copies(
+    tmp_path: Path, deterministic_detectors: None,
+) -> None:
+    """Exercise the complete multi-variant ownership contract offline.
+
+    This intentionally uses the public lifecycle operations rather than
+    constructing variant dictionaries: it is the integration proof that the
+    sidecar model, raw-cache sharing, ReaScript apply reconciliation, explicit
+    selection/discard semantics, and user-owned working copies agree.
+    """
+    project = _copy_project(tmp_path)
+    state = _lua_state(project)
+    original_user_state = _user_snapshot(project, state)
+
+    # First apply initializes the real project's sidecar.  The fakes then
+    # produce valid stem WAVs and MIDI entirely locally; no model, network, or
+    # REAPER process is involved.
+    state, _ = _run_apply(project, state)
+    analyze(project, stages=("tempo", "key", "sections"))
+    separator = CountingSeparator()
+    separate(project, separator, guitar_type="acoustic")
+    transcriber = CountingTranscriber()
+    router = TargetTranscriberRouter(basic_pitch=transcriber, drumscript=transcriber, drumscript_targets=("drums",))
+
+    detail = add_variant(
+        project, "guitar", label="detail", profile="guitar-acoustic-detail", router=router,
+    )
+    clean = add_variant(
+        project, "guitar", label="clean", profile="guitar-acoustic-clean", router=router,
+    )
+    sidecar = read_sidecar(project)
+    guitar = sidecar["analysis"]["transcription"]["targets"]["guitar"]
+    detail_id = next(variant_id for variant_id, variant in guitar["variants"].items() if variant["label"] == "detail")
+    clean_id = next(variant_id for variant_id, variant in guitar["variants"].items() if variant["label"] == "clean")
+    assert detail["detection_hash"] == clean["detection_hash"]
+    assert transcriber.raw_calls == 1
+    assert len(sidecar["analysis"]["transcription"]["detection_cache"]) == 1
+
+    # Apply twice.  The selected candidate persists, each generated track is
+    # rebuilt exactly once, and a simulated working copy is outside vgt's
+    # durable ownership inventory.
+    state, first_apply = _run_apply(project, state)
+    first_names = first_apply.split("#", 1)[0].split("|")
+    assert first_names.count("[vgt] Guitar Ref — detail (MIDI)") == 1
+    assert first_names.count("[vgt] Guitar Ref — clean (MIDI)") == 1
+    state, _ = _run(
+        project,
+        state,
+        "",
+        "table.insert(tracks, {guid='{WORK-0001}', name='[work] Guitar Ref — clean (MIDI)', B_MUTE=0, items={{position=10,length=1,C_LOCK=0,take={name='edited by user',source=''}}}})",
+    )
+    applied_sidecar = read_sidecar(project)
+    work_snapshot = _user_snapshot(
+        project,
+        state,
+        managed_tracks=applied_sidecar["managed_track_guids"],
+        managed_regions=applied_sidecar["managed_region_ids"],
+    )
+    select_variant(project, "guitar", clean_id)
+    state, second_apply = _run_apply(project, state)
+    second_names = second_apply.split("#", 1)[0].split("|")
+    assert second_names.count("[vgt] Guitar Ref — detail (MIDI)") == 1
+    assert second_names.count("[vgt] Guitar Ref — clean (MIDI)") == 1
+    assert second_names.count("[work] Guitar Ref — clean (MIDI)") == 1
+    selected = read_sidecar(project)["analysis"]["transcription"]["targets"]["guitar"]["selected_variant_id"]
+    assert selected == clean_id
+
+    namespace_dir = artifact_namespace_dir(project, read_sidecar(project)["analysis"]["stems"]["artifact_namespace"])
+    detail_midi = namespace_dir / detail["midi_file"]
+    clean_midi = namespace_dir / clean["midi_file"]
+    assert detail_midi.is_file() and clean_midi.is_file()
+
+    # Rejecting the unselected candidate removes exactly its derived files but
+    # keeps the shared raw cache for the selected clean candidate.  Reapply
+    # must remove only that generated track and preserve the editable copy.
+    discard_variant(project, "guitar", detail_id)
+    assert not detail_midi.exists() and clean_midi.is_file()
+    assert len(read_sidecar(project)["analysis"]["transcription"]["detection_cache"]) == 1
+    state, after_detail_discard = _run_apply(project, state)
+    names_after_detail_discard = after_detail_discard.split("#", 1)[0].split("|")
+    assert "[vgt] Guitar Ref — detail (MIDI)" not in names_after_detail_discard
+    assert names_after_detail_discard.count("[vgt] Guitar Ref — clean (MIDI)") == 1
+    assert names_after_detail_discard.count("[work] Guitar Ref — clean (MIDI)") == 1
+
+    # Discarding the final selected candidate is explicit.  It clears the
+    # selection and removes the now-unreferenced raw cache, while leaving both
+    # original user tracks and the user's working copy byte-for-byte intact.
+    discard_variant(project, "guitar", clean_id, clear_selected=True)
+    final_sidecar = read_sidecar(project)
+    assert not clean_midi.exists()
+    assert final_sidecar["analysis"]["transcription"]["detection_cache"] == {}
+    assert final_sidecar["analysis"]["transcription"]["targets"]["guitar"]["selected_variant_id"] is None
+    state, final_apply = _run_apply(project, state)
+    final_names = final_apply.split("#", 1)[0].split("|")
+    assert "[vgt] Guitar Ref — detail (MIDI)" not in final_names
+    assert "[vgt] Guitar Ref — clean (MIDI)" not in final_names
+    assert final_names.count("[work] Guitar Ref — clean (MIDI)") == 1
+    final_sidecar = read_sidecar(project)
+    assert _user_snapshot(
+        project,
+        state,
+        managed_tracks=final_sidecar["managed_track_guids"],
+        managed_regions=final_sidecar["managed_region_ids"],
+    ) == work_snapshot
+    # The working-copy snapshot augments, rather than changes, the original
+    # user state captured before vgt initialized the project.
+    assert "The Seven Rivers (Full March - 3_00)" in original_user_state
 
 
 def test_goal_contract_sync_survives_a_concurrent_analyze_commit(tmp_path: Path, deterministic_detectors: None) -> None:
