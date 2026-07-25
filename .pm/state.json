@@ -1,21 +1,21 @@
 {
   "current_issue": 150,
-  "session_id": "7d6f7f89-3ad4-4ddf-a9b0-7d976234b5e8",
-  "pid": 52946,
-  "process_started_at": "Sat Jul 25 04:10:55 2026",
-  "agent": "claude",
-  "started_at": "2026-07-25T02:10:53.635764+00:00",
+  "session_id": "baaa261f-2245-40f9-b88c-34a8e22e4095",
+  "pid": 95408,
+  "process_started_at": "Sat Jul 25 21:18:18 2026",
+  "agent": "codex",
+  "started_at": "2026-07-25T19:18:16.349179+00:00",
   "scheduler_stalls": {
     "deferred_passes": {
       "budget": {
-        "first_seen_at": "2026-07-24T22:02:24.448197+00:00",
-        "last_seen_at": "2026-07-25T02:09:42.009848+00:00",
-        "consecutive_passes": 216
+        "first_seen_at": "2026-07-25T02:14:24.109782+00:00",
+        "last_seen_at": "2026-07-25T19:17:06.594694+00:00",
+        "consecutive_passes": 890
       }
     }
   },
   "budget": {
-    "window_start": "2026-07-24T21:35:54.775497+00:00",
+    "window_start": "2026-07-25T17:37:12.524700+00:00",
     "seconds_used": 0.0,
     "dollars_used": 0.0,
     "seconds_used_by_agent": {}
@@ -23,7 +23,7 @@
   "verification_followups": {
     "f0d8bfc9d2dc6da7a31609184e25c4d66d3986fd2340b33a83e98204fb86691e": "created"
   },
-  "role": "review",
+  "role": "fix",
   "branch": "issue-150-transcription-variants-c-lifecycle-cli-a",
   "worktree_path": "/Users/marekkucharski/projects/.pm-worktrees/vgt/issue-150",
   "pr_number": 155,
@@ -68,16 +68,17 @@
     "110": 2,
     "111": 1,
     "112": 2,
-    "131": 2
+    "131": 2,
+    "150": 1
   },
   "pending_transition": {
     "issue": 150,
     "target": "working",
-    "event": "agent.review_started",
+    "event": "agent.fix_started",
     "detail": {
       "issue": 150,
-      "agent": "claude",
-      "pr": 155
+      "agent": "codex",
+      "fix_count": 1
     },
     "cleanup": {}
   }
