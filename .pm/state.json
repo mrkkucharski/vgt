@@ -1,10 +1,10 @@
 {
   "current_issue": 151,
-  "session_id": "8f6c0a4d-f639-4b34-8a45-2957fc2db1a0",
-  "pid": 3305,
-  "process_started_at": "Sat Jul 25 22:03:52 2026",
+  "session_id": "82ca8d74-b27b-4ac6-bd3c-0dbb58e5acea",
+  "pid": 4037,
+  "process_started_at": "Sat Jul 25 22:07:23 2026",
   "agent": "codex",
-  "started_at": "2026-07-25T20:03:51.373347+00:00",
+  "started_at": "2026-07-25T20:07:22.274678+00:00",
   "scheduler_stalls": {},
   "budget": {
     "window_start": "2026-07-25T17:37:12.524700+00:00",
@@ -17,7 +17,7 @@
   "verification_followups": {
     "f0d8bfc9d2dc6da7a31609184e25c4d66d3986fd2340b33a83e98204fb86691e": "created"
   },
-  "role": "fix",
+  "role": "review",
   "branch": "issue-151-transcription-variants-d-reaper-multi-va",
   "worktree_path": "/Users/marekkucharski/projects/.pm-worktrees/vgt/issue-151",
   "pr_number": 156,
@@ -69,11 +69,11 @@
   "pending_transition": {
     "issue": 151,
     "target": "working",
-    "event": "agent.fix_started",
+    "event": "agent.review_started",
     "detail": {
       "issue": 151,
       "agent": "codex",
-      "fix_count": 1
+      "pr": 156
     },
     "cleanup": {}
   }
