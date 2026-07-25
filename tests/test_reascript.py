@@ -429,6 +429,7 @@ def _click_track_lua_mock(rpp_path: Path) -> str:
             "  return true, (track.ext and track.ext[key]) or ''",
             "end",
             "function reaper.SetMediaTrackInfo_Value(track, key, value) track.values[key] = value; if key == 'B_MUTE' then track.mute = value end end",
+            "function reaper.ColorToNative(red, green, blue) _G.__color_request = {red, green, blue}; return 0x3A9BD8 end",
             "function reaper.PCM_Source_CreateFromFile(path) return {path = path} end",
             "function reaper.GetMediaSourceLength(source) return 2.5, false end",
             "local items = {}",
@@ -900,12 +901,12 @@ def test_variant_transcriptions_import_in_order_after_their_source_and_mark_sele
     lua_program = "\n".join([
         _click_track_lua_mock(rpp), script[:helpers_end], "local managed_tracks = {}",
         "add_stem_tracks(0, {artifact_namespace = 'song-abc123', artifacts = {guitar = {file = 'vgt/song-abc123/stems/guitar.wav', size_bytes = 12, duration_seconds = 1}}}, {targets = {guitar = {selected_variant_id = 'clean', variant_order = {'detail', 'clean'}, variants = {detail = {label = 'Detail', status = 'transcribed', midi_file = 'transcription/guitar/detail.mid'}, clean = {label = 'Clean', status = 'transcribed', midi_file = 'transcription/guitar/clean.mid'}}}}}, 2, managed_tracks)",
-        "for _, track in ipairs(__tracks) do io.write(track.name, ':', track.mute, ':', tostring(track.values.I_CUSTOMCOLOR), ';') end",
+        "for _, track in ipairs(__tracks) do io.write(track.name, ':', track.mute, ':', tostring(track.values.I_CUSTOMCOLOR), ';') end io.write('rgb=', table.concat(__color_request, ','))",
     ])
     result = subprocess.run([LUA, "-", str(rpp)], input=lua_program, text=True, capture_output=True, check=True)
     assert result.stdout == (
         "[vgt] Guitar:0:nil;[vgt] Guitar Ref — Detail (MIDI):0:nil;"
-        "[vgt] Guitar Ref — Clean (MIDI):0:20618200;"
+        "[vgt] Guitar Ref — Clean (MIDI):0:20618200;rgb=216,155,58"
     )
 
 

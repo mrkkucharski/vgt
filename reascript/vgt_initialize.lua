@@ -33,10 +33,13 @@ local TRANSCRIPTION_TARGETS = {
 }
 local STEM_LEASE_TIMEOUT_SECONDS = 30 * 60
 -- Selected transcription variants use this warm gold REAPER custom colour.
--- Colour is presentation only: the durable P_EXT mark remains the sole track
--- ownership signal, so users may recolour generated tracks without affecting
--- reconciliation. I_CUSTOMCOLOR's high flag enables the supplied BGR value.
-local SELECTED_VARIANT_COLOR = 0x1000000 + 0x3A9BD8
+-- Colour is presentation only: ownership is still determined by the durable
+-- P_EXT mark plus the [vgt] name guard, so users may recolour generated tracks
+-- without affecting reconciliation. Ask REAPER to translate RGB into its
+-- platform-native value rather than assuming Windows' BGR representation.
+local function selected_variant_color()
+  return 0x1000000 + reaper.ColorToNative(216, 155, 58)
+end
 
 local function project_path()
   local _, path = reaper.EnumProjects(-1, "")
@@ -824,7 +827,7 @@ local function add_reference_midi_variant(index, target, variant_id, variant, se
   local name = PREFIX .. " " .. definition.label .. " Ref — " .. label .. " (MIDI)"
   if legacy_track_name then name = PREFIX .. " " .. definition.label .. " Ref (MIDI)" end
   local midi_track = add_locked_track(index, name, false)
-  if selected then reaper.SetMediaTrackInfo_Value(midi_track, "I_CUSTOMCOLOR", SELECTED_VARIANT_COLOR) end
+  if selected then reaper.SetMediaTrackInfo_Value(midi_track, "I_CUSTOMCOLOR", selected_variant_color()) end
   local item = reaper.AddMediaItemToTrack(midi_track)
   reaper.SetMediaItemInfo_Value(item, "D_POSITION", reference_start)
   reaper.SetMediaItemInfo_Value(item, "D_LENGTH", reaper.GetMediaSourceLength(source))
