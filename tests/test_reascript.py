@@ -762,6 +762,40 @@ def test_removal_preserves_a_marked_track_the_user_renamed_away_from_the_vgt_pre
     assert result.stdout == "My Reclaimed Track:{A11CE-0001};"
 
 
+def test_variant_reconciliation_removes_generated_tracks_but_preserves_a_working_copy(tmp_path: Path) -> None:
+    """Discard is represented by omitting its variant on the next apply. The
+    reconciliation removal phase may clear old generated variants, but it must
+    leave a `[work]` copy of the selected candidate alone before retained
+    variants are rebuilt in their stable order."""
+    rpp = tmp_path / "song.RPP"
+    sidecar = tmp_path / "song.vgt"
+    sidecar.write_text(json.dumps({"managed_track_guids": []}), encoding="utf-8")
+    script = APPLY_SCRIPT.read_text()
+    helpers_end = script.index("local function remove_previous_managed_regions()")
+    lua_program = "\n".join(
+        [
+            "local tracks = {"
+            "{name = '[vgt] Guitar Ref — Discarded (MIDI)', guid = '{A11CE-0001}', managed = true},"
+            "{name = '[work] Guitar Ref — Clean (MIDI)', guid = '{C0DE-0002}', managed = false},"
+            "{name = '[vgt] Guitar Ref — Clean (MIDI)', guid = '{A11CE-0003}', managed = true},"
+            "}",
+            "reaper = {}",
+            "function reaper.EnumProjects() return true, arg[1] end",
+            "function reaper.CountTracks() return #tracks end",
+            "function reaper.GetTrack(_, index) return tracks[index + 1] end",
+            "function reaper.GetTrackGUID(track) return track.guid end",
+            "function reaper.GetTrackName(track) return true, track.name end",
+            _mark_lua_mock(),
+            "function reaper.DeleteTrack(track) for i, candidate in ipairs(tracks) do if candidate == track then table.remove(tracks, i); return end end end",
+            script[:helpers_end],
+            "remove_previous_managed_tracks()",
+            "for _, track in ipairs(tracks) do io.write(track.name, ';') end",
+        ]
+    )
+    result = subprocess.run([LUA, "-", str(rpp)], input=lua_program, text=True, capture_output=True, check=True)
+    assert result.stdout == "[work] Guitar Ref — Clean (MIDI);"
+
+
 def test_add_locked_track_marks_the_track_with_a_durable_ext_state() -> None:
     """`mark_track_managed` must be the thing add_locked_track (and thus every
     [vgt]-owned track it builds) actually calls, so ownership survives even if
