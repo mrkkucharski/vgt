@@ -50,9 +50,6 @@ from .transcription_variants import (
     VariantRequest,
     garbage_collect_raw_cache,
     reconcile_variants,
-    variant_events_name,
-    variant_midi_name,
-    variant_notes_name,
 )
 
 
@@ -252,6 +249,13 @@ def add_variant(
     def commit(current: dict[str, Any]) -> None:
         current_transcription = current["transcription"]
         current_transcription.setdefault("targets", {})
+        # `variant add` is a persistent request just like the established
+        # `--transcribe TARGET` flag.  Without this, adding a variant for a
+        # target that was not already requested would leave it invisible to
+        # status and untouched by later `vgt analyze` runs.
+        requested = current_transcription.setdefault("requested_targets", [])
+        if target not in requested:
+            requested.append(target)
         current_record = target_record(current_transcription, target)
         current_record["variants"][variant_id] = new_variant
         current_record["variant_order"] = [*current_record["variant_order"], variant_id]
@@ -314,13 +318,25 @@ def select_variant(project: str | Path | None, target: str, ref: str | None, *, 
     return update_analysis(project_path, update)["analysis"]["transcription"]["targets"][target]
 
 
-def _delete_variant_artifacts(namespace_dir: Path, target: str, variant_id: str) -> None:
-    """Delete only the exact generated files this variant's own recorded
-    paths name -- never a directory glob -- matching
-    `garbage_collect_raw_cache`'s same exact-path discipline (see the plan's
-    "Discarding one variant" step 3)."""
-    for name in (variant_midi_name(target, variant_id), variant_notes_name(target, variant_id), variant_events_name(target, variant_id)):
-        path = namespace_dir / name
+def _delete_variant_artifacts(namespace_dir: Path, variant: dict[str, Any]) -> None:
+    """Delete only artifacts explicitly recorded by ``variant``.
+
+    A variant id determines the normal output names, but is not itself an
+    authorization to delete them: legacy variants can retain old paths and a
+    malformed sidecar must never turn discard into a broad or out-of-tree
+    deletion.  Resolve every recorded path and accept it only when it remains
+    inside this project's artifact namespace.
+    """
+    namespace_root = namespace_dir.resolve()
+    for key in ("midi_file", "notes_file", "events_file"):
+        relative = variant.get(key)
+        if not isinstance(relative, str):
+            continue
+        path = (namespace_dir / relative).resolve()
+        try:
+            path.relative_to(namespace_root)
+        except ValueError:
+            continue
         if path.is_file():
             path.unlink()
 
@@ -367,7 +383,9 @@ def discard_variant(
 
     namespace = analysis["stems"].get("artifact_namespace")
     if namespace:
-        _delete_variant_artifacts(artifact_namespace_dir(project_path, namespace), target, variant_id)
+        _delete_variant_artifacts(
+            artifact_namespace_dir(project_path, namespace), record["variants"][variant_id]
+        )
 
     def update(current: dict[str, Any]) -> None:
         transcription = current["transcription"]

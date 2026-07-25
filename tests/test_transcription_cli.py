@@ -174,6 +174,23 @@ def test_add_two_variants_share_detection_and_full_lifecycle(tmp_path: Path, cap
     assert purged["discarded_variants"] == []
 
 
+def test_add_persists_a_new_target_in_requested_status_set(tmp_path: Path, capsys) -> None:
+    project = _init_project(tmp_path)
+
+    assert main([
+        "transcription", "variant", "add", "original",
+        "--name", "mix", "--profile", "default", str(project),
+    ]) == 0
+    capsys.readouterr()
+
+    transcription = read_sidecar(project)["analysis"]["transcription"]
+    assert transcription["requested_targets"] == ["guitar", "original"]
+    assert "original" in transcription["targets"]
+
+    assert main(["status", "--json", str(project)]) == 0
+    assert "original" in json.loads(capsys.readouterr().out)["transcription"]["targets"]
+
+
 def test_ambiguous_label_requires_immutable_id(tmp_path: Path, capsys) -> None:
     project = _init_project(tmp_path)
     assert main([
@@ -198,6 +215,34 @@ def test_ambiguous_label_requires_immutable_id(tmp_path: Path, capsys) -> None:
     assert "ambiguous" in capsys.readouterr().err
 
     assert main(["transcription", "variant", "select", "guitar", first_id, str(project)]) == 0
+
+
+def test_discard_uses_recorded_artifact_paths_and_never_escapes_namespace(tmp_path: Path, capsys) -> None:
+    project = _init_project(tmp_path)
+    assert main([
+        "transcription", "variant", "add", "guitar",
+        "--name", "detail", "--profile", "guitar-acoustic-detail", str(project),
+    ]) == 0
+    capsys.readouterr()
+
+    sidecar = read_sidecar(project)
+    target = sidecar["analysis"]["transcription"]["targets"]["guitar"]
+    variant_id = target["variant_order"][0]
+    namespace_dir = project.parent / "vgt" / sidecar["analysis"]["stems"]["artifact_namespace"]
+    generated_midi = namespace_dir / target["variants"][variant_id]["midi_file"]
+    outside = project.parent / "must-not-delete.mid"
+    outside.write_bytes(b"keep")
+    target["variants"][variant_id]["midi_file"] = "../../must-not-delete.mid"
+    write_sidecar(project, sidecar)
+
+    assert main([
+        "transcription", "variant", "discard", "guitar", variant_id,
+        "--clear-selected", str(project),
+    ]) == 0
+    assert outside.exists()
+    # The normal path was not recorded by this malformed candidate, so it is
+    # deliberately left alone instead of being inferred from the immutable id.
+    assert generated_midi.exists()
 
 
 def test_select_clear_and_reselect(tmp_path: Path, capsys) -> None:
