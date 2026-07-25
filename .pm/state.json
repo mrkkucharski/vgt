@@ -1,10 +1,10 @@
 {
-  "current_issue": 152,
-  "session_id": "d755dfc1-3a6c-4b67-aab0-0bca93e5fbf3",
-  "pid": 5787,
-  "process_started_at": "Sat Jul 25 22:17:50 2026",
+  "current_issue": 147,
+  "session_id": "a458bdad-d10a-42ca-a504-d30d9396da84",
+  "pid": 6293,
+  "process_started_at": "Sat Jul 25 22:20:13 2026",
   "agent": "codex",
-  "started_at": "2026-07-25T20:17:48.720342+00:00",
+  "started_at": "2026-07-25T20:20:12.398521+00:00",
   "scheduler_stalls": {},
   "budget": {
     "window_start": "2026-07-25T17:37:12.524700+00:00",
@@ -17,10 +17,10 @@
   "verification_followups": {
     "f0d8bfc9d2dc6da7a31609184e25c4d66d3986fd2340b33a83e98204fb86691e": "created"
   },
-  "role": "review",
-  "branch": "issue-152-transcription-variants-e-integration-mig",
-  "worktree_path": "/Users/marekkucharski/projects/.pm-worktrees/vgt/issue-152",
-  "pr_number": 157,
+  "role": "implement",
+  "branch": "issue-147-implement-multiple-transcription-variant",
+  "worktree_path": "/Users/marekkucharski/projects/.pm-worktrees/vgt/issue-147",
+  "pr_number": null,
   "followup_generation": {
     "fingerprint": "d982f8926d0e86fe89dd3034f7dcb5ecbd29ae33e0d5db1334bdc33e99111ddf",
     "items": {
@@ -67,13 +67,13 @@
     "151": 1
   },
   "pending_transition": {
-    "issue": 152,
+    "issue": 147,
     "target": "working",
-    "event": "agent.review_started",
+    "event": "agent.started",
     "detail": {
-      "issue": 152,
+      "issue": 147,
       "agent": "codex",
-      "pr": 157
+      "branch": "issue-147-implement-multiple-transcription-variant"
     },
     "cleanup": {}
   }
