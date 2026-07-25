@@ -1,10 +1,10 @@
 {
-  "current_issue": 151,
-  "session_id": "82ca8d74-b27b-4ac6-bd3c-0dbb58e5acea",
-  "pid": 4037,
-  "process_started_at": "Sat Jul 25 22:07:23 2026",
+  "current_issue": 152,
+  "session_id": "218ffaee-5fd9-47ff-9c2c-63e82a98749e",
+  "pid": 4702,
+  "process_started_at": "Sat Jul 25 22:10:55 2026",
   "agent": "codex",
-  "started_at": "2026-07-25T20:07:22.274678+00:00",
+  "started_at": "2026-07-25T20:10:54.296649+00:00",
   "scheduler_stalls": {},
   "budget": {
     "window_start": "2026-07-25T17:37:12.524700+00:00",
@@ -17,10 +17,10 @@
   "verification_followups": {
     "f0d8bfc9d2dc6da7a31609184e25c4d66d3986fd2340b33a83e98204fb86691e": "created"
   },
-  "role": "review",
-  "branch": "issue-151-transcription-variants-d-reaper-multi-va",
-  "worktree_path": "/Users/marekkucharski/projects/.pm-worktrees/vgt/issue-151",
-  "pr_number": 156,
+  "role": "implement",
+  "branch": "issue-152-transcription-variants-e-integration-mig",
+  "worktree_path": "/Users/marekkucharski/projects/.pm-worktrees/vgt/issue-152",
+  "pr_number": null,
   "followup_generation": {
     "fingerprint": "d982f8926d0e86fe89dd3034f7dcb5ecbd29ae33e0d5db1334bdc33e99111ddf",
     "items": {
@@ -67,13 +67,13 @@
     "151": 1
   },
   "pending_transition": {
-    "issue": 151,
+    "issue": 152,
     "target": "working",
-    "event": "agent.review_started",
+    "event": "agent.started",
     "detail": {
-      "issue": 151,
+      "issue": 152,
       "agent": "codex",
-      "pr": 156
+      "branch": "issue-152-transcription-variants-e-integration-mig"
     },
     "cleanup": {}
   }
