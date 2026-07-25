@@ -151,12 +151,16 @@ def _transcription_status(analysis: dict[str, Any]) -> dict[str, Any]:
         # A legacy pre-v13 record carries its own flat fields directly; a
         # genuine multi-variant record has none at top level, so its summary
         # is drawn from the selected (or first retained) variant instead.
-        if "status" in record:
-            summary_source = record
-        else:
+        # A migrated compatibility record may retain its former flat fields
+        # beside the v13 index.  Once variants exist, selection is the source
+        # of truth; otherwise a later `variant select` would leave status
+        # reporting the old, previously selected flat summary.
+        if variants_index:
             summary_source = variants_index.get(selected_variant_id) or (
                 variants_index.get(variant_order[0]) if variant_order else {}
             )
+        else:
+            summary_source = record
         if not isinstance(summary_source, dict):
             summary_source = {}
 

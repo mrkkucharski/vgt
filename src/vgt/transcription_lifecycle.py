@@ -72,6 +72,13 @@ _DISCARDED_RECORD_FIELDS: tuple[str, ...] = (
     "transcribed_at", "error",
 )
 
+_LEGACY_FLAT_FIELDS: tuple[str, ...] = (
+    "backend", "package_pin", "serialization", "source_role", "input_hash", "settings_hash",
+    "status", "midi_file", "notes_file", "events_file", "note_count", "event_count",
+    "instrument_counts", "pitch_range_midi", "first_note_s", "last_note_s", "first_event_s",
+    "last_event_s", "backend_tempo", "midi_tempo", "confidence", "settings", "transcribed_at", "error",
+)
+
 
 def _empty_target_record() -> dict[str, Any]:
     return {"variants": {}, "variant_order": [], "selected_variant_id": None, "discarded_variants": []}
@@ -91,6 +98,12 @@ def target_record(transcription: dict[str, Any], target: str) -> dict[str, Any]:
     migrated.setdefault("variant_order", [])
     migrated.setdefault("selected_variant_id", None)
     migrated.setdefault("discarded_variants", [])
+    # A lifecycle mutation promotes a flat compatibility record to the
+    # variants-only shape.  Leaving its old top-level `status` in place would
+    # make later analyze runs mistake it for a legacy target and overwrite
+    # the retained alternatives through the one-result path.
+    for field in _LEGACY_FLAT_FIELDS:
+        migrated.pop(field, None)
     return migrated
 
 
