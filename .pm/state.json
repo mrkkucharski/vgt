@@ -1,23 +1,23 @@
 {
   "current_issue": 150,
-  "session_id": "4b95d5df-8d69-4ec0-9b3d-87771b25d8fd",
-  "pid": 98590,
-  "process_started_at": "Sat Jul 25 21:39:12 2026",
+  "session_id": "923eb116-b972-464a-96a3-ce30a89647b4",
+  "pid": 98995,
+  "process_started_at": "Sat Jul 25 21:41:35 2026",
   "agent": "codex",
-  "started_at": "2026-07-25T19:39:11.048145+00:00",
+  "started_at": "2026-07-25T19:41:33.631450+00:00",
   "scheduler_stalls": {},
   "budget": {
     "window_start": "2026-07-25T17:37:12.524700+00:00",
-    "seconds_used": 140.140521,
+    "seconds_used": 280.38416900000004,
     "dollars_used": 0.0,
     "seconds_used_by_agent": {
-      "codex": 140.140521
+      "codex": 280.38416900000004
     }
   },
   "verification_followups": {
     "f0d8bfc9d2dc6da7a31609184e25c4d66d3986fd2340b33a83e98204fb86691e": "created"
   },
-  "role": "review",
+  "role": "fix",
   "branch": "issue-150-transcription-variants-c-lifecycle-cli-a",
   "worktree_path": "/Users/marekkucharski/projects/.pm-worktrees/vgt/issue-150",
   "pr_number": 155,
@@ -63,16 +63,16 @@
     "111": 1,
     "112": 2,
     "131": 2,
-    "150": 2
+    "150": 3
   },
   "pending_transition": {
     "issue": 150,
     "target": "working",
-    "event": "agent.review_started",
+    "event": "agent.fix_started",
     "detail": {
       "issue": 150,
       "agent": "codex",
-      "pr": 155
+      "fix_count": 3
     },
     "cleanup": {}
   }
