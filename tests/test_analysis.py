@@ -1045,6 +1045,40 @@ def test_refresh_target_per_target_cache_independence(tmp_path: Path) -> None:
     assert second["analysis"]["transcription"]["targets"]["bass"] == bass_first
 
 
+def test_variant_compatibility_refresh_preserves_unselected_candidates(tmp_path: Path) -> None:
+    """The CLI's historical analyze flags refresh one selected/default
+    variant, never collapse a target back to the old flat one-result record."""
+    project = _project_copy(tmp_path)
+    _write_v1_sidecar(project)
+    sidecar = read_sidecar(project)
+    _add_fake_stem(project, sidecar, "guitar", b"guitar-audio")
+    write_sidecar(project, sidecar)
+
+    first = analyze(
+        project, stages=("transcription",), transcription_targets=("guitar",),
+        transcriber=FakeTranscriber(), variant_compatibility=True,
+    )
+    target = first["analysis"]["transcription"]["targets"]["guitar"]
+    default_id = target["selected_variant_id"]
+    assert default_id is not None
+
+    sidecar = read_sidecar(project)
+    target = sidecar["analysis"]["transcription"]["targets"]["guitar"]
+    alternative_id = "alternative"
+    target["variants"][alternative_id] = {**target["variants"][default_id], "label": "alternative"}
+    target["variant_order"].append(alternative_id)
+    write_sidecar(project, sidecar)
+
+    refreshed = analyze(
+        project, stages=("transcription",), transcription_targets=("guitar",),
+        transcriber=FakeTranscriber(), variant_compatibility=True,
+    )
+    target = refreshed["analysis"]["transcription"]["targets"]["guitar"]
+    assert target["variant_order"] == [default_id, alternative_id]
+    assert set(target["variants"]) == {default_id, alternative_id}
+    assert target["selected_variant_id"] == default_id
+
+
 def test_selecting_one_mode_changes_only_its_target_settings_hash(tmp_path: Path) -> None:
     project = _project_copy(tmp_path)
     _write_v1_sidecar(project)

@@ -10,7 +10,7 @@ import wave
 
 from .project import ProjectError, track_source_path
 from .separation import ARTIFACT_FILENAMES, OPTIONAL_STEMS, OPERATION_ORDER, artifact_path, hash_audio_content
-from .sidecar import ANALYSIS_STAGES, DETECTED_SPLIT_STAGES, artifact_namespace_dir, sidecar_path
+from .sidecar import ANALYSIS_STAGES, DETECTED_SPLIT_STAGES, artifact_namespace_dir, sidecar_path, upgrade
 from .transcribe import effective_profile_name_for_target
 
 
@@ -83,16 +83,59 @@ def _artifact_paths(project_path: Path, analysis: dict[str, Any]) -> dict[str, P
             names[f"transcription_{target}_notes"] = entry["notes_file"]
         if isinstance(entry.get("events_file"), str):
             names[f"transcription_{target}_events"] = entry["events_file"]
+        variants = entry.get("variants") if isinstance(entry.get("variants"), dict) else {}
+        for variant_id, variant in variants.items():
+            if not isinstance(variant, dict):
+                continue
+            if isinstance(variant.get("midi_file"), str):
+                names[f"transcription_{target}_{variant_id}_midi"] = variant["midi_file"]
+            if isinstance(variant.get("notes_file"), str):
+                names[f"transcription_{target}_{variant_id}_notes"] = variant["notes_file"]
+            if isinstance(variant.get("events_file"), str):
+                names[f"transcription_{target}_{variant_id}_events"] = variant["events_file"]
     return {name: namespace_dir / filename if isinstance(filename, str) else None for name, filename in names.items()}
+
+
+_VARIANT_FIELDS: tuple[str, ...] = (
+    "label", "requested_profile", "effective_profile", "profile_definition_hash",
+    # Keep the complete persisted identity visible here.  A variant can share
+    # a detection cache entry with another variant while differing in cleanup,
+    # and a source change invalidates both identities; omitting either the
+    # source/input identity or the resolved recipe makes JSON status an
+    # incomplete comparison/debugging view.
+    "backend", "package_pin", "serialization", "source_role", "input_hash",
+    "settings_hash", "detection_hash",
+    "raw_notes_hash", "cleanup_hash", "status", "note_count", "event_count",
+    "instrument_counts", "pitch_range_midi", "first_note_s", "last_note_s",
+    "max_note_duration_s", "max_simultaneous_voices",
+    "first_event_s", "last_event_s", "backend_tempo", "midi_tempo", "confidence",
+    "resolved_settings", "transcribed_at", "error",
+    "midi_file", "notes_file", "events_file",
+)
+
+
+def _variant_summary(variant_id: str, variant: dict[str, Any], *, selected: bool) -> dict[str, Any]:
+    return {"id": variant_id, "selected": selected, **{key: variant.get(key) for key in _VARIANT_FIELDS}}
 
 
 def _transcription_status(analysis: dict[str, Any]) -> dict[str, Any]:
     """Summarize the multi-target `transcription` stage: one entry per
-    requested target, reported in `requested_targets` order."""
+    requested target, reported in `requested_targets` order.
+
+    Each target's flat summary fields (`status`/`note_count`/... -- kept for
+    compatibility with callers that predate schema v13's `variants` index)
+    are drawn from its selected variant when one exists, falling back to its
+    first retained variant, or its own pre-v13 flat fields for a legacy
+    record `sidecar.upgrade` hasn't (yet) rewritten. `variant_order` is
+    reported exactly as stored -- this function never reorders or infers a
+    selection, matching the plan's "Status remains read-only and stable in
+    `variant_order`" requirement.
+    """
     transcription = analysis.get("transcription") if isinstance(analysis.get("transcription"), dict) else {}
     requested = transcription.get("requested_targets") if isinstance(transcription.get("requested_targets"), list) else []
     targets = transcription.get("targets") if isinstance(transcription.get("targets"), dict) else {}
     modes = transcription.get("modes") if isinstance(transcription.get("modes"), dict) else {}
+    detection_cache = transcription.get("detection_cache") if isinstance(transcription.get("detection_cache"), dict) else {}
     # Match sidecar.upgrade's schema-v9 compatibility bridge without writing
     # anything: an old acoustic stem declaration is the persisted request for
     # the acoustic-guitar transcription profile unless a newer explicit mode
@@ -104,37 +147,74 @@ def _transcription_status(analysis: dict[str, Any]) -> dict[str, Any]:
     backend: str | None = None
     package_pin: str | None = None
     entries: dict[str, Any] = {}
+    retained_variant_count = 0
     for target in requested:
-        entry = targets.get(target) if isinstance(targets.get(target), dict) else {}
-        if backend is None and isinstance(entry.get("backend"), str):
-            backend = entry.get("backend")
-            package_pin = entry.get("package_pin")
+        record = targets.get(target) if isinstance(targets.get(target), dict) else {}
+        variant_order = record.get("variant_order") if isinstance(record.get("variant_order"), list) else []
+        variants_index = record.get("variants") if isinstance(record.get("variants"), dict) else {}
+        selected_variant_id = record.get("selected_variant_id")
+        discarded_variants = record.get("discarded_variants") if isinstance(record.get("discarded_variants"), list) else []
+        retained_variant_count += len(variant_order)
+
+        # A legacy pre-v13 record carries its own flat fields directly; a
+        # genuine multi-variant record has none at top level, so its summary
+        # is drawn from the selected (or first retained) variant instead.
+        # A migrated compatibility record may retain its former flat fields
+        # beside the v13 index.  Once variants exist, selection is the source
+        # of truth; otherwise a later `variant select` would leave status
+        # reporting the old, previously selected flat summary.
+        if variants_index:
+            summary_source = variants_index.get(selected_variant_id) or (
+                variants_index.get(variant_order[0]) if variant_order else {}
+            )
+        else:
+            summary_source = record
+        if not isinstance(summary_source, dict):
+            summary_source = {}
+
+        if backend is None and isinstance(summary_source.get("backend"), str):
+            backend = summary_source.get("backend")
+            package_pin = summary_source.get("package_pin")
+
+        variants_list = [
+            _variant_summary(variant_id, variants_index[variant_id], selected=variant_id == selected_variant_id)
+            for variant_id in variant_order
+            if isinstance(variants_index.get(variant_id), dict)
+        ]
+
         entries[target] = {
             "requested_mode": modes.get(target),
             "effective_profile": effective_profile_name_for_target(target, modes),
-            "backend": entry.get("backend"),
-            "package_pin": entry.get("package_pin"),
-            "status": entry.get("status"),
-            "note_count": entry.get("note_count"),
-            "event_count": entry.get("event_count"),
-            "instrument_counts": entry.get("instrument_counts"),
-            "pitch_range_midi": entry.get("pitch_range_midi"),
-            "transcribed_at": entry.get("transcribed_at"),
-            "error": entry.get("error"),
-            "midi_file": entry.get("midi_file"),
-            "notes_file": entry.get("notes_file"),
-            "events_file": entry.get("events_file"),
-            "first_event_s": entry.get("first_event_s"),
-            "last_event_s": entry.get("last_event_s"),
-            "backend_tempo": entry.get("backend_tempo"),
-            "midi_tempo": entry.get("midi_tempo"),
-            "confidence": entry.get("confidence"),
+            "backend": summary_source.get("backend"),
+            "package_pin": summary_source.get("package_pin"),
+            "status": summary_source.get("status"),
+            "note_count": summary_source.get("note_count"),
+            "event_count": summary_source.get("event_count"),
+            "instrument_counts": summary_source.get("instrument_counts"),
+            "pitch_range_midi": summary_source.get("pitch_range_midi"),
+            "transcribed_at": summary_source.get("transcribed_at"),
+            "error": summary_source.get("error"),
+            "midi_file": summary_source.get("midi_file"),
+            "notes_file": summary_source.get("notes_file"),
+            "events_file": summary_source.get("events_file"),
+            "first_event_s": summary_source.get("first_event_s"),
+            "last_event_s": summary_source.get("last_event_s"),
+            "backend_tempo": summary_source.get("backend_tempo"),
+            "midi_tempo": summary_source.get("midi_tempo"),
+            "confidence": summary_source.get("confidence"),
+            "variant_order": list(variant_order),
+            "selected_variant_id": selected_variant_id,
+            "variants": variants_list,
+            "discarded_variant_count": len(discarded_variants),
+            "discarded_variants": list(discarded_variants),
         }
     return {
         "backend": backend,
         "package_pin": package_pin,
         "requested_targets": list(requested),
         "targets": entries,
+        "retained_variant_count": retained_variant_count,
+        "detection_cache_entry_count": len(detection_cache),
     }
 
 
@@ -149,6 +229,12 @@ def build_status(project_path: Path) -> dict[str, Any]:
         raise StatusError(f"Cannot read .vgt sidecar at {path}: {exc}") from exc
     if not isinstance(raw, dict):
         raise StatusError(f"Cannot read .vgt sidecar at {path}: expected a JSON object.")
+    # `upgrade` is a pure, non-writing function: applying it here (rather
+    # than only inside `read_sidecar`) is what lets a read-only `vgt status`
+    # see a pre-v13 flat transcription record's migrated `variants`/
+    # `variant_order`/`selected_variant_id` view too, without ever writing it
+    # back -- see `_transcription_status`.
+    raw = upgrade(raw)
 
     config = raw.get("config") if isinstance(raw.get("config"), dict) else {}
     analysis = raw.get("analysis") if isinstance(raw.get("analysis"), dict) else {}
@@ -302,7 +388,10 @@ def format_status(status: dict[str, Any]) -> str:
         lines.append(f"  {name}: {detail}")
     transcription = status["transcription"]
     label = transcription["package_pin"] or transcription["backend"] or "not yet run"
-    lines.append(f"transcription ({label}): {len(transcription['requested_targets'])} requested")
+    lines.append(
+        f"transcription ({label}): {len(transcription['requested_targets'])} requested, "
+        f"{transcription.get('retained_variant_count', 0)} retained variant(s)"
+    )
     for target in transcription["requested_targets"]:
         entry = transcription["targets"].get(target, {})
         status_value = entry.get("status")
@@ -327,6 +416,13 @@ def format_status(status: dict[str, Any]) -> str:
             lines.append(f"  {target:<8} error - {entry.get('error')}, {profile_text}")
         else:
             lines.append(f"  {target:<8} not yet run, {profile_text}")
+        variants = entry.get("variants") or []
+        for variant in variants:
+            marker = "*" if variant.get("selected") else " "
+            lines.append(f"    {marker} {_format_variant_line(variant)}")
+        discarded_count = entry.get("discarded_variant_count") or 0
+        if discarded_count:
+            lines.append(f"    ({discarded_count} discarded)")
     timestamps = status["timestamps"]
     lines += [
         f"Last analysis: {timestamps['last_analysis_at'] or 'unknown'}",
@@ -355,6 +451,34 @@ def format_status(status: dict[str, Any]) -> str:
     lines.append("  Stem artifacts:")
     lines.extend(f"    {name}: {artifact['state']} ({artifact['path'] or 'unknown'})" for name, artifact in stems["artifacts"].items())
     return "\n".join(lines)
+
+
+def _format_variant_line(variant: dict[str, Any]) -> str:
+    """One `label id status metrics profile [error]` line for a retained
+    variant, used beneath each target's existing single-line summary (see
+    `format_status`) -- the plan's "ordered variants, selected marker,
+    requested/effective profiles, ... metrics, errors, and paths" status
+    extension."""
+    label = variant.get("label") or variant["id"]
+    profile = variant.get("effective_profile") or variant.get("requested_profile") or "default"
+    status_value = variant.get("status")
+    if status_value == "transcribed" and variant.get("event_count") is not None:
+        detail = f"{variant.get('event_count')} events ({_format_drum_instruments(variant.get('instrument_counts'))})"
+    elif status_value == "transcribed":
+        pitch = variant.get("pitch_range_midi")
+        pitch_text = f"MIDI {pitch[0]}-{pitch[1]}" if pitch else "MIDI ?"
+        detail = f"{variant.get('note_count')} notes, {pitch_text}"
+        if variant.get("max_note_duration_s") is not None:
+            detail += f", max {variant['max_note_duration_s']:.3g}s"
+        if variant.get("max_simultaneous_voices") is not None:
+            detail += f", max {variant['max_simultaneous_voices']} voices"
+    elif status_value == "skipped-missing-source":
+        detail = "skipped - source unavailable"
+    elif status_value == "error":
+        detail = f"error - {variant.get('error')}"
+    else:
+        detail = "not yet run"
+    return f"{label} ({variant['id']}) {detail}, profile {profile}"
 
 
 def _format_drum_instruments(value: Any) -> str:

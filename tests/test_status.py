@@ -110,7 +110,12 @@ def test_status_handles_older_sidecars_and_missing_sidecars(tmp_path: Path, caps
     assert "tempo: missing" in text
     assert "Last analysis: unknown" in text
     assert "Last human correction: unknown" in text
-    assert "transcription (not yet run): 0 requested" in text
+    # `build_status` now runs the sidecar through `sidecar.upgrade` (see
+    # status.py), so a transcription-block-less legacy sidecar reports the
+    # same schema-v9 default request `analyze()` itself would actually use
+    # (`DEFAULT_TRANSCRIPTION_TARGETS`), rather than status's previous,
+    # inconsistent "0 requested" read of the untouched raw block.
+    assert "transcription (not yet run): 1 requested, 0 retained variant(s)" in text
 
 
 def test_status_json_loads_legacy_transcription_record_without_events_file(tmp_path: Path, capsys) -> None:

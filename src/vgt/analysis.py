@@ -35,6 +35,7 @@ from .sidecar import (
     DETECTED_SPLIT_STAGES,
     artifact_namespace_dir,
     ensure_artifact_namespace,
+    migrate_transcription_target,
     read_sidecar,
     refresh_stage,
     stage_is_current,
@@ -48,6 +49,7 @@ from .transcribe import (
     TranscriptionError,
     error_entry,
     events_artifact_name,
+    effective_profile_name_for_target,
     midi_artifact_name,
     missing_source_entry,
     notes_artifact_name,
@@ -58,6 +60,14 @@ from .transcribe import (
     transcribed_entry,
     validate_profile_for_target,
     validate_target,
+)
+from .transcription_variants import (
+    VariantRequest,
+    garbage_collect_raw_cache,
+    reconcile_variants,
+    variant_events_name,
+    variant_midi_name,
+    variant_notes_name,
 )
 
 FUSION_STEM_NAMES = ("instrumental", "guitar", "backing")
@@ -207,6 +217,7 @@ def _refresh_target(
     *,
     force: bool,
     emit: Callable[[str], None],
+    variant_compatibility: bool = False,
 ) -> dict[str, Any]:
     """Reconcile one transcription target's `targets` index entry.
 
@@ -219,6 +230,110 @@ def _refresh_target(
     `sidecar.py` schema v10 and `docs/transcription-plan.md` section 2).
     """
     validate_target(target)
+
+    existing_target = analysis["transcription"]["targets"].get(target)
+    genuine_variants = (
+        isinstance(existing_target, dict)
+        and isinstance(existing_target.get("variants"), dict)
+        and "status" not in existing_target
+    )
+    if not variant_compatibility and not genuine_variants:
+        return _refresh_legacy_target(
+            project_path, target, analysis, reference_source, namespace, router, force=force, emit=emit
+        )
+
+    # Schema v13 retains several generated candidates for one target.  The
+    # established analyze flags remain a compatibility surface over that
+    # model: they reconcile the selected variant (or the target's first,
+    # default variant), never replace the complete target record with the old
+    # one-result representation.  In particular, a routine `vgt analyze`
+    # after `variant add` must not make the alternatives disappear.
+    if isinstance(existing_target, dict):
+        record = migrate_transcription_target(
+            target, existing_target, analysis["transcription"].get("modes") or {}
+        )
+    else:
+        record = {}
+    variants = record.get("variants") if isinstance(record.get("variants"), dict) else {}
+    order = record.get("variant_order") if isinstance(record.get("variant_order"), list) else []
+    selected_id = record.get("selected_variant_id")
+    selected_id = selected_id if selected_id in variants else (order[0] if order else None)
+
+    # Keep the historical name for the automatically managed candidate.  Its
+    # immutable id is deterministic for a newly-created compatibility entry,
+    # while a migrated or explicitly-created variant retains its existing id.
+    if selected_id is None:
+        selected_id = f"default-{target}"
+        suffix = 2
+        while selected_id in variants:
+            selected_id = f"default-{target}-{suffix}"
+            suffix += 1
+        label = "default"
+        created_default = True
+    else:
+        label = variants[selected_id].get("label") or "default"
+        created_default = False
+
+    tempo_value = analysis["tempo"].get("value")
+    midi_tempo = tempo_value.get("bpm") if isinstance(tempo_value, dict) else None
+    time_signature = tempo_value.get("time_signature") if isinstance(tempo_value, dict) else None
+    modes = analysis["transcription"].get("modes") or {}
+    transcriber = router.for_target(target)
+    spec = router.spec_for_target(target, midi_tempo=midi_tempo, modes=modes, time_signature=time_signature)
+    profile = modes.get(target) or (variants.get(selected_id) or {}).get("requested_profile") or "default"
+    effective_profile = (
+        modes.get(target)
+        or (variants.get(selected_id) or {}).get("effective_profile")
+        or effective_profile_name_for_target(target, modes)
+    )
+    request = VariantRequest(
+        variant_id=selected_id,
+        label=label,
+        requested_profile=profile,
+        effective_profile=effective_profile,
+        profile_definition_hash=(variants.get(selected_id) or {}).get("profile_definition_hash"),
+        spec=spec,
+        resolved_settings=(variants.get(selected_id) or {}).get("resolved_settings") or {"detection": {}, "cleanup": []},
+    )
+    resolved = resolve_target_source(project_path, target, analysis, reference_source=reference_source)
+    source_path, artifact = resolved if resolved is not None else (None, None)
+    input_hash = target_input_hash(source_path, artifact) if source_path is not None else None
+    outcome = reconcile_variants(
+        target=target,
+        requests=[request],
+        transcriber=transcriber,
+        source=source_path,
+        input_hash=input_hash,
+        namespace_dir=artifact_namespace_dir(project_path, namespace),
+        existing_variants=variants,
+        detection_cache=analysis["transcription"].get("detection_cache"),
+        force=force,
+        emit=emit,
+    )
+    variants[selected_id] = outcome.variants[selected_id]
+    record["variants"] = variants
+    record["variant_order"] = [*order, selected_id] if selected_id not in order else list(order)
+    # A newly-created automatic default becomes selected on success.  An
+    # explicit `variant unselect` remains meaningful on later analyze runs.
+    if created_default and outcome.variants[selected_id].get("status") == "transcribed":
+        record["selected_variant_id"] = selected_id
+    elif "selected_variant_id" not in record:
+        record["selected_variant_id"] = None
+    record.setdefault("discarded_variants", [])
+    analysis["transcription"]["detection_cache"] = outcome.detection_cache
+
+    return record
+
+
+def _refresh_legacy_target(
+    project_path: Path, target: str, analysis: dict[str, Any], reference_source: Path,
+    namespace: str, router: TranscriberRouter, *, force: bool, emit: Callable[[str], None],
+) -> dict[str, Any]:
+    """The pre-v13 single-result implementation retained for API callers.
+
+    The CLI opts into the variant compatibility path; direct callers that
+    supplied a legacy `Transcriber` with only ``transcribe`` remain supported.
+    """
     tempo_value = analysis["tempo"].get("value")
     midi_tempo = tempo_value.get("bpm") if isinstance(tempo_value, dict) else None
     time_signature = tempo_value.get("time_signature") if isinstance(tempo_value, dict) else None
@@ -226,26 +341,19 @@ def _refresh_target(
     transcriber = router.for_target(target)
     spec = router.spec_for_target(target, midi_tempo=midi_tempo, modes=modes, time_signature=time_signature)
     settings_hash = spec_hash(spec)
-
     resolved = resolve_target_source(project_path, target, analysis, reference_source=reference_source)
     if resolved is None:
         emit(f"transcription skipped for {target}: no {target} stem available")
         return missing_source_entry(spec, target)
-
     source_path, artifact = resolved
     input_hash = target_input_hash(source_path, artifact)
-
     existing = analysis["transcription"]["targets"].get(target)
     if (
-        not force
-        and isinstance(existing, dict)
-        and existing.get("status") == "transcribed"
-        and existing.get("input_hash") == input_hash
-        and existing.get("settings_hash") == settings_hash
+        not force and isinstance(existing, dict) and existing.get("status") == "transcribed"
+        and existing.get("input_hash") == input_hash and existing.get("settings_hash") == settings_hash
     ):
         emit(f"transcription — {target}: unchanged, using cached result")
         return existing
-
     emit(f"transcription — {target}: transcribing…")
     namespace_dir = artifact_namespace_dir(project_path, namespace)
     work_dir = namespace_dir / "transcription" / f"_work-{target}"
@@ -255,7 +363,6 @@ def _refresh_target(
         except TranscriptionError as exc:
             emit(f"transcription error for {target}: {exc}")
             return error_entry(spec, source_role=target, input_hash=input_hash, error=str(exc))
-
         _replace_artifact(result.midi_path, namespace_dir / midi_artifact_name(target))
         if result.notes_path is not None:
             _replace_artifact(result.notes_path, namespace_dir / notes_artifact_name(target))
@@ -264,16 +371,10 @@ def _refresh_target(
     finally:
         if work_dir.is_dir():
             shutil.rmtree(work_dir, ignore_errors=True)
-
     return transcribed_entry(
-        spec,
-        source_role=target,
-        input_hash=input_hash,
-        target=target,
-        result=result,
+        spec, source_role=target, input_hash=input_hash, target=target, result=result,
         transcribed_at=datetime.now(UTC).isoformat().replace("+00:00", "Z"),
     )
-
 
 def _tempo_beat_times(tempo_value: dict[str, Any] | None, source: Path) -> list[float]:
     """Beat timestamps backing the chords stage's grid alignment: reused from
@@ -401,6 +502,7 @@ def analyze(
     transcriber: Transcriber | None = None,
     transcriber_router: TranscriberRouter | None = None,
     transcription_targets: tuple[str, ...] | None = None,
+    variant_compatibility: bool = False,
 ) -> dict[str, Any]:
     """Run (or refresh) analysis for `project` and persist it into the sidecar.
 
@@ -480,14 +582,20 @@ def analyze(
                     active_router,
                     force=force,
                     emit=emit,
+                    variant_compatibility=variant_compatibility,
                 )
                 # Each target's success (or failure) becomes durable
                 # immediately, same as every other stage below -- a later
                 # target failing must not roll back an earlier one.
                 update_analysis(
                     project_path,
-                    lambda current, target=target: current["transcription"]["targets"].__setitem__(
-                        target, copy.deepcopy(analysis["transcription"]["targets"][target])
+                    lambda current, target=target: (
+                        current["transcription"]["targets"].__setitem__(
+                            target, copy.deepcopy(analysis["transcription"]["targets"][target])
+                        ),
+                        current["transcription"].__setitem__(
+                            "detection_cache", copy.deepcopy(analysis["transcription"].get("detection_cache", {}))
+                        ),
                     ),
                 )
             continue
@@ -591,7 +699,16 @@ def forget_transcription_targets(project: str | Path | None, targets: tuple[str,
     """Remove `targets` from the persisted requested set, drop their
     `targets` index entries, and delete their MIDI/notes artifacts -- the
     only way a kept transcription goes away (see docs/transcription-plan.md
-    section 4). A target never requested/computed is silently a no-op."""
+    section 4). A target never requested/computed is silently a no-op.
+
+    A target that has retained multi-variant records (schema v13, see
+    `vgt.transcription_lifecycle`) discards every one of its variants' own
+    generated artifacts too -- "explicitly discards every generated variant
+    for that target", per docs/transcription-variants-plan.md's CLI
+    compatibility section -- and any raw detection cache entry left
+    unreferenced afterward is garbage-collected, same as a single `variant
+    discard` would.
+    """
     for target in targets:
         validate_target(target)
     project_path = locate_project(project)
@@ -608,11 +725,28 @@ def forget_transcription_targets(project: str | Path | None, targets: tuple[str,
                 path = namespace_dir / name
                 if path.is_file():
                     path.unlink()
+            variant_ids = (sidecar["analysis"]["transcription"]["targets"].get(target) or {}).get("variants") or {}
+            for variant_id in variant_ids:
+                for name in (
+                    variant_midi_name(target, variant_id),
+                    variant_notes_name(target, variant_id),
+                    variant_events_name(target, variant_id),
+                ):
+                    path = namespace_dir / name
+                    if path.is_file():
+                        path.unlink()
 
     def update(current: dict[str, Any]) -> None:
         transcription = current["transcription"]
         transcription["requested_targets"] = [t for t in transcription["requested_targets"] if t not in targets]
         for target in targets:
             transcription["targets"].pop(target, None)
+        if namespace:
+            kept_cache, _removed = garbage_collect_raw_cache(
+                namespace_dir=artifact_namespace_dir(project_path, namespace),
+                detection_cache=transcription.get("detection_cache") or {},
+                targets=transcription["targets"],
+            )
+            transcription["detection_cache"] = kept_cache
 
     return update_analysis(project_path, update)
