@@ -190,6 +190,33 @@ def _parser() -> argparse.ArgumentParser:
     return parser
 
 
+def _normalize_transcription_project_argument(arguments: list[str]) -> list[str]:
+    """Allow lifecycle commands to retain the documented trailing project.
+
+    ``argparse`` does not revisit an optional positional once it encounters an
+    option.  Consequently its usual ``TARGET --name LABEL PROJECT.RPP`` form
+    leaves ``PROJECT.RPP`` unconsumed when ``project`` is ``nargs='?'``.  The
+    public examples deliberately put the project last, so move a final RPP
+    argument ahead of the first option before parsing.  This is restricted to
+    the variant lifecycle commands; it neither changes their values nor the
+    grammar of the existing commands.
+    """
+    if len(arguments) < 5 or arguments[:2] != ["transcription", "variant"]:
+        return arguments
+    if arguments[2] not in {"add", "rename", "select", "discard", "purge-discarded", "unselect"}:
+        return arguments
+    project = arguments[-1]
+    if project.startswith("-") or not project.lower().endswith(".rpp"):
+        return arguments
+    try:
+        first_option = next(index for index, value in enumerate(arguments[3:], start=3) if value.startswith("--"))
+    except StopIteration:
+        return arguments
+    normalized = arguments[:-1]
+    normalized.insert(first_option, project)
+    return normalized
+
+
 def _prompt_for_guitar_type() -> str:
     """Get an unambiguous declaration without making automation guess."""
     while True:
@@ -291,6 +318,7 @@ def main(argv: list[str] | None = None) -> int:
         "inspect", "apply", "sync", "analyze", "status", "install-reascripts", "transcription", "-h", "--help",
     }:
         arguments.insert(0, "inspect")
+    arguments = _normalize_transcription_project_argument(arguments)
     args = _parser().parse_args(arguments)
     try:
         if args.command == "install-reascripts":
