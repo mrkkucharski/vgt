@@ -416,7 +416,7 @@ def _click_track_lua_mock(rpp_path: Path) -> str:
             "reaper = {}",
             "function reaper.EnumProjects(idx, buf) return true, arg[1] end",
             "local tracks = {}",
-            "function reaper.InsertTrackAtIndex(index, defaults) tracks[index + 1] = {index = index, name = nil, mute = 0} end",
+            "function reaper.InsertTrackAtIndex(index, defaults) tracks[index + 1] = {index = index, name = nil, mute = 0, values = {}} end",
             "function reaper.GetTrack(proj, index) return tracks[index + 1] end",
             "function reaper.GetSetMediaTrackInfo_String(track, key, value, set)",
             "  if set then",
@@ -428,7 +428,8 @@ def _click_track_lua_mock(rpp_path: Path) -> str:
             "  if key == 'P_NAME' then return true, track.name end",
             "  return true, (track.ext and track.ext[key]) or ''",
             "end",
-            "function reaper.SetMediaTrackInfo_Value(track, key, value) if key == 'B_MUTE' then track.mute = value end end",
+            "function reaper.SetMediaTrackInfo_Value(track, key, value) track.values[key] = value; if key == 'B_MUTE' then track.mute = value end end",
+            "function reaper.ColorToNative(red, green, blue) _G.__color_request = {red, green, blue}; return 0x3A9BD8 end",
             "function reaper.PCM_Source_CreateFromFile(path) return {path = path} end",
             "function reaper.GetMediaSourceLength(source) return 2.5, false end",
             "local items = {}",
@@ -762,6 +763,40 @@ def test_removal_preserves_a_marked_track_the_user_renamed_away_from_the_vgt_pre
     assert result.stdout == "My Reclaimed Track:{A11CE-0001};"
 
 
+def test_variant_reconciliation_removes_generated_tracks_but_preserves_a_working_copy(tmp_path: Path) -> None:
+    """Discard is represented by omitting its variant on the next apply. The
+    reconciliation removal phase may clear old generated variants, but it must
+    leave a `[work]` copy of the selected candidate alone before retained
+    variants are rebuilt in their stable order."""
+    rpp = tmp_path / "song.RPP"
+    sidecar = tmp_path / "song.vgt"
+    sidecar.write_text(json.dumps({"managed_track_guids": []}), encoding="utf-8")
+    script = APPLY_SCRIPT.read_text()
+    helpers_end = script.index("local function remove_previous_managed_regions()")
+    lua_program = "\n".join(
+        [
+            "local tracks = {"
+            "{name = '[vgt] Guitar Ref — Discarded (MIDI)', guid = '{A11CE-0001}', managed = true},"
+            "{name = '[work] Guitar Ref — Clean (MIDI)', guid = '{C0DE-0002}', managed = false},"
+            "{name = '[vgt] Guitar Ref — Clean (MIDI)', guid = '{A11CE-0003}', managed = true},"
+            "}",
+            "reaper = {}",
+            "function reaper.EnumProjects() return true, arg[1] end",
+            "function reaper.CountTracks() return #tracks end",
+            "function reaper.GetTrack(_, index) return tracks[index + 1] end",
+            "function reaper.GetTrackGUID(track) return track.guid end",
+            "function reaper.GetTrackName(track) return true, track.name end",
+            _mark_lua_mock(),
+            "function reaper.DeleteTrack(track) for i, candidate in ipairs(tracks) do if candidate == track then table.remove(tracks, i); return end end end",
+            script[:helpers_end],
+            "remove_previous_managed_tracks()",
+            "for _, track in ipairs(tracks) do io.write(track.name, ';') end",
+        ]
+    )
+    result = subprocess.run([LUA, "-", str(rpp)], input=lua_program, text=True, capture_output=True, check=True)
+    assert result.stdout == "[work] Guitar Ref — Clean (MIDI);"
+
+
 def test_add_locked_track_marks_the_track_with_a_durable_ext_state() -> None:
     """`mark_track_managed` must be the thing add_locked_track (and thus every
     [vgt]-owned track it builds) actually calls, so ownership survives even if
@@ -842,13 +877,57 @@ def test_drum_transcription_rejects_any_path_except_its_recorded_namespace_file(
 
 def test_transcription_import_source_and_opt_in_verifier_are_present() -> None:
     script = APPLY_SCRIPT.read_text()
-    assert "local function add_reference_midi_track(index, target, transcription, reference_start, managed_tracks, artifact_namespace)" in script
-    assert "record.status ~= \"transcribed\"" in script
-    assert "local midi_track = add_locked_track(index, PREFIX .. \" \" .. definition.label .. \" Ref (MIDI)\", false)" in script
+    assert "local function add_reference_midi_tracks(index, target, transcription, reference_start, managed_tracks, artifact_namespace)" in script
+    assert "local function add_reference_midi_variant(index, target, variant_id" in script
+    assert "variant.status ~= \"transcribed\"" in script
+    assert '" Ref — " .. label .. " (MIDI)"' in script
     assert 'record.midi_file ~= expected_filename' in script
     assert "analysis and analysis.transcription" in script
     assert script.index("remove_previous_managed_tracks()") < script.index("add_stem_tracks(reaper.CountTracks(0)")
     assert TRANSCRIPTION_VERIFY_SCRIPT.is_file()
+
+
+def test_variant_transcriptions_import_in_order_after_their_source_and_mark_selection(tmp_path: Path) -> None:
+    rpp = tmp_path / "song.RPP"
+    namespace = tmp_path / "vgt" / "song-abc123"
+    (namespace / "transcription" / "guitar").mkdir(parents=True)
+    for variant_id in ("detail", "clean"):
+        (namespace / "transcription" / "guitar" / f"{variant_id}.mid").write_bytes(b"MThd")
+    guitar_wav = namespace / "stems" / "guitar.wav"
+    guitar_wav.parent.mkdir()
+    guitar_wav.write_bytes(b"RIFF....WAVE")
+    script = APPLY_SCRIPT.read_text()
+    helpers_end = script.index("local function remove_previous_managed_regions()")
+    lua_program = "\n".join([
+        _click_track_lua_mock(rpp), script[:helpers_end], "local managed_tracks = {}",
+        "add_stem_tracks(0, {artifact_namespace = 'song-abc123', artifacts = {guitar = {file = 'vgt/song-abc123/stems/guitar.wav', size_bytes = 12, duration_seconds = 1}}}, {targets = {guitar = {selected_variant_id = 'clean', variant_order = {'detail', 'clean'}, variants = {detail = {label = 'Detail', status = 'transcribed', midi_file = 'transcription/guitar/detail.mid'}, clean = {label = 'Clean', status = 'transcribed', midi_file = 'transcription/guitar/clean.mid'}}}}}, 2, managed_tracks)",
+        "for _, track in ipairs(__tracks) do io.write(track.name, ':', track.mute, ':', tostring(track.values.I_CUSTOMCOLOR), ';') end io.write('rgb=', table.concat(__color_request, ','))",
+    ])
+    result = subprocess.run([LUA, "-", str(rpp)], input=lua_program, text=True, capture_output=True, check=True)
+    assert result.stdout == (
+        "[vgt] Guitar:0:nil;[vgt] Guitar Ref — Detail (MIDI):0:nil;"
+        "[vgt] Guitar Ref — Clean (MIDI):0:20618200;rgb=216,155,58"
+    )
+
+
+def test_variant_transcriptions_skip_missing_and_error_and_reject_non_scoped_paths(tmp_path: Path) -> None:
+    rpp = tmp_path / "song.RPP"
+    namespace = tmp_path / "vgt" / "song-abc123" / "transcription" / "guitar"
+    namespace.mkdir(parents=True)
+    (namespace / "good.mid").write_bytes(b"MThd")
+    original = tmp_path / "vgt" / "song-abc123" / "transcription" / "original"
+    original.mkdir()
+    (original / "mix.mid").write_bytes(b"MThd")
+    script = APPLY_SCRIPT.read_text()
+    helpers_end = script.index("local function remove_previous_managed_regions()")
+    lua_program = "\n".join([
+        _click_track_lua_mock(rpp), "function reaper.ShowConsoleMsg(message) io.stderr:write(message) end", script[:helpers_end], "local managed_tracks = {}",
+        "add_stem_tracks(0, {artifact_namespace = 'song-abc123', artifacts = {}}, {targets = {guitar = {variant_order = {'missing', 'error', 'bad', 'good'}, selected_variant_id = 'good', variants = {missing = {label = 'Missing', status = 'skipped-missing-source'}, error = {label = 'Error', status = 'error'}, bad = {label = 'Bad', status = 'transcribed', midi_file = '../user.mid'}, good = {label = 'Good', status = 'transcribed', midi_file = 'transcription/guitar/good.mid'}}}, original = {variant_order = {'mix'}, selected_variant_id = 'mix', variants = {mix = {label = 'Mix', status = 'transcribed', midi_file = 'transcription/original/mix.mid'}}}}}, 0, managed_tracks)",
+        "for _, track in ipairs(__tracks) do io.write(track.name, ';') end",
+    ])
+    result = subprocess.run([LUA, "-", str(rpp)], input=lua_program, text=True, capture_output=True, check=True)
+    assert result.stdout == "[vgt] Guitar Ref — Good (MIDI);[vgt] Original Ref — Mix (MIDI);"
+    assert "variant bad: sidecar MIDI file is outside the expected transcription namespace" in result.stderr
 
 
 def test_live_stem_lease_is_detected_without_mutating_the_project(tmp_path: Path) -> None:
