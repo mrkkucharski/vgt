@@ -101,6 +101,7 @@ _VARIANT_FIELDS: tuple[str, ...] = (
     "backend", "package_pin", "serialization", "settings_hash", "detection_hash",
     "raw_notes_hash", "cleanup_hash", "status", "note_count", "event_count",
     "instrument_counts", "pitch_range_midi", "first_note_s", "last_note_s",
+    "max_note_duration_s", "max_simultaneous_voices",
     "first_event_s", "last_event_s", "midi_tempo", "transcribed_at", "error",
     "midi_file", "notes_file", "events_file",
 )
@@ -460,6 +461,10 @@ def _format_variant_line(variant: dict[str, Any]) -> str:
         pitch = variant.get("pitch_range_midi")
         pitch_text = f"MIDI {pitch[0]}-{pitch[1]}" if pitch else "MIDI ?"
         detail = f"{variant.get('note_count')} notes, {pitch_text}"
+        if variant.get("max_note_duration_s") is not None:
+            detail += f", max {variant['max_note_duration_s']:.3g}s"
+        if variant.get("max_simultaneous_voices") is not None:
+            detail += f", max {variant['max_simultaneous_voices']} voices"
     elif status_value == "skipped-missing-source":
         detail = "skipped - source unavailable"
     elif status_value == "error":

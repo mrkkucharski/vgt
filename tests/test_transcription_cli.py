@@ -291,6 +291,8 @@ def test_status_shows_ordered_variants_and_selected_marker(tmp_path: Path, capsy
     selected = [variant for variant in guitar["variants"] if variant["selected"]]
     assert len(selected) == 1
     assert selected[0]["label"] == "detail"
+    assert selected[0]["max_note_duration_s"] is not None
+    assert selected[0]["max_simultaneous_voices"] is not None
 
 
 def test_forget_transcription_removes_variant_artifacts_and_gcs_cache(tmp_path: Path, capsys) -> None:

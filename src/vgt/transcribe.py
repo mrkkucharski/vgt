@@ -886,6 +886,8 @@ class TranscriptionResult:
     backend_tempo: float | None = None
     midi_tempo: float | None = None
     confidence: float | None = None
+    max_note_duration_s: float | None = None
+    max_simultaneous_voices: int | None = None
 
 
 @dataclass
@@ -1337,6 +1339,28 @@ def _summarize_notes(notes: list[ParsedNote]) -> tuple[int, tuple[int, int] | No
     )
 
 
+def _note_comparison_metrics(notes: list[ParsedNote]) -> tuple[float | None, int | None]:
+    """Return the two comparison metrics exposed for retained variants.
+
+    End events sort before starts at the same timestamp: a note ending at an
+    onset does not overlap the newly starting note.  This is also the
+    convention used by the voice-cap cleanup stage.
+    """
+    if not notes:
+        return None, None
+    events = sorted(
+        ((note.start_s, 1) for note in notes),
+        key=lambda event: (event[0], event[1]),
+    )
+    events.extend((note.end_s, -1) for note in notes)
+    events.sort(key=lambda event: (event[0], event[1]))
+    active = maximum = 0
+    for _time, delta in events:
+        active += delta
+        maximum = max(maximum, active)
+    return max(note.end_s - note.start_s for note in notes), maximum
+
+
 def _merge_fragments(notes: list[ParsedNote], max_gap_s: float) -> list[ParsedNote]:
     """Rejoin a held note the model split in place.
 
@@ -1777,6 +1801,7 @@ def derive_variant_artifacts(
     midi_notes = [(note.start_s, note.end_s, note.pitch_midi, note.velocity) for note in notes]
     _write_midi(midi_path, midi_notes, spec.midi_tempo or 120.0)
     note_count, pitch_range_midi, first_note_s, last_note_s = _summarize_notes(notes)
+    max_note_duration_s, max_simultaneous_voices = _note_comparison_metrics(notes)
     return TranscriptionResult(
         note_count=note_count,
         pitch_range_midi=pitch_range_midi,
@@ -1784,6 +1809,8 @@ def derive_variant_artifacts(
         last_note_s=last_note_s,
         midi_path=midi_path,
         notes_path=notes_path,
+        max_note_duration_s=max_note_duration_s,
+        max_simultaneous_voices=max_simultaneous_voices,
     )
 
 
@@ -1880,6 +1907,7 @@ class BasicPitchTranscriber:
                 notes = cleaned
 
         note_count, pitch_range_midi, first_note_s, last_note_s = _summarize_notes(notes)
+        max_note_duration_s, max_simultaneous_voices = _note_comparison_metrics(notes)
         emit = progress or (lambda _message: None)
         emit(f"transcribed (basic-pitch): {note_count} notes")
 
@@ -1890,6 +1918,8 @@ class BasicPitchTranscriber:
             last_note_s=last_note_s,
             midi_path=raw.raw_midi_path,
             notes_path=raw.raw_notes_path,
+            max_note_duration_s=max_note_duration_s,
+            max_simultaneous_voices=max_simultaneous_voices,
         )
 
 

@@ -65,7 +65,8 @@ _DISCARDED_RECORD_FIELDS: tuple[str, ...] = (
     "label", "requested_profile", "profile_definition_hash", "effective_profile",
     "backend", "package_pin", "settings_hash", "detection_hash", "cleanup_hash",
     "resolved_settings", "status", "note_count", "event_count", "instrument_counts",
-    "pitch_range_midi", "first_note_s", "last_note_s", "first_event_s", "last_event_s",
+    "pitch_range_midi", "first_note_s", "last_note_s", "max_note_duration_s", "max_simultaneous_voices",
+    "first_event_s", "last_event_s",
     "transcribed_at", "error",
 )
 
