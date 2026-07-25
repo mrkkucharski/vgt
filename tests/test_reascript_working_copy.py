@@ -186,14 +186,14 @@ def test_build_working_copy_produces_an_editable_user_owned_track() -> None:
         [
             _build_copy_mock(),
             script[:helpers_end],
-            "build_working_copy(0, 'TRACKID {OLD-1}\\n', '[vgt] Guitar Ref (MIDI)', -1)",
+            "build_working_copy(0, 'TRACKID {OLD-1}\\n', '[vgt] Guitar Ref — Clean (MIDI)', -1)",
             "local t = reaper.GetTrack(0, 0)",
             "io.write(t.name, '|', tostring(t.values.B_MUTE), '|', tostring(t.values.I_FOLDERDEPTH), '|', tostring(t.ext['P_EXT:vgt_managed']), '|', tostring(t.selected), '|', tostring(t.items[1].C_LOCK), tostring(t.items[2].C_LOCK), '|', t.chunk)",
         ]
     )
     result = _run(lua_program)
     name, mute, depth, mark, selected, locks, chunk = result.stdout.split("|")
-    assert name == "[work] Guitar Ref (MIDI)"  # user namespace, not [vgt]
+    assert name == "[work] Guitar Ref — Clean (MIDI)"  # user namespace, not [vgt]
     assert mute == "0"  # unmuted so it is audible/visible while editing
     assert depth == "-1"  # closes the folder as requested
     assert mark == ""  # ownership mark cleared -> vgt ignores it

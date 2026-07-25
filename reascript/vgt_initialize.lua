@@ -32,6 +32,11 @@ local TRANSCRIPTION_TARGETS = {
   {target = "original", label = "Original"},
 }
 local STEM_LEASE_TIMEOUT_SECONDS = 30 * 60
+-- Selected transcription variants use this warm gold REAPER custom colour.
+-- Colour is presentation only: the durable P_EXT mark remains the sole track
+-- ownership signal, so users may recolour generated tracks without affecting
+-- reconciliation. I_CUSTOMCOLOR's high flag enables the supplied BGR value.
+local SELECTED_VARIANT_COLOR = 0x1000000 + 0x3A9BD8
 
 local function project_path()
   local _, path = reaper.EnumProjects(-1, "")
@@ -768,12 +773,19 @@ end
 -- MIDI records follow the same namespace rule as stems. Unlike WAV stem
 -- records they have no committed size/duration metadata; REAPER validates the
 -- MIDI data when it opens the source.
-local function valid_midi_artifact(record, target, artifact_namespace)
+local function valid_midi_artifact(record, target, variant_id, artifact_namespace, allow_legacy_path)
   if type(record) ~= "table" or type(record.midi_file) ~= "string" then return nil, "sidecar record is missing midi_file" end
   if not artifact_namespace or artifact_namespace == "" or artifact_namespace:find("[\\/]") or artifact_namespace:find("%.%.") then
     return nil, "sidecar artifact namespace is invalid"
   end
-  local expected_filename = "transcription/" .. target .. ".mid"
+  -- Variant IDs are artifact identities, not labels. Restrict them before
+  -- constructing a filename so no sidecar value can introduce traversal.
+  if type(variant_id) ~= "string" or not variant_id:match("^[%w_-]+$") then
+    return nil, "variant id is invalid"
+  end
+  local expected_filename = "transcription/" .. target .. "/" .. variant_id .. ".mid"
+  -- v13 migration retains this exact old flat path until the next refresh.
+  if allow_legacy_path then expected_filename = "transcription/" .. target .. ".mid" end
   if record.midi_file ~= expected_filename then return nil, "sidecar MIDI file is outside the expected transcription namespace" end
   local path = project_dir() .. "vgt/" .. artifact_namespace .. "/" .. record.midi_file
   local file = io.open(path, "rb")
@@ -782,27 +794,37 @@ local function valid_midi_artifact(record, target, artifact_namespace)
   return path
 end
 
-local function add_reference_midi_track(index, target, transcription, reference_start, managed_tracks, artifact_namespace)
-  local record = type(transcription) == "table" and transcription.targets and transcription.targets[target] or nil
-  if type(record) ~= "table" or record.status ~= "transcribed" then return index, false end
+local function transcription_definition(target)
   local definition = nil
   for _, candidate in ipairs(TRANSCRIPTION_TARGETS) do
     if candidate.target == target then definition = candidate break end
   end
+  return definition
+end
+
+local function add_reference_midi_variant(index, target, variant_id, variant, selected, reference_start, managed_tracks, artifact_namespace, allow_legacy_path, legacy_track_name)
+  if type(variant) ~= "table" or variant.status ~= "transcribed" then return index, false end
+  local definition = transcription_definition(target)
   if not definition then return index, true end
-  local path, reason = valid_midi_artifact(record, target, artifact_namespace)
+  local path, reason = valid_midi_artifact(variant, target, variant_id, artifact_namespace, allow_legacy_path)
+  local warning_subject = "skipping transcription " .. target
+  if not legacy_track_name then warning_subject = warning_subject .. " variant " .. tostring(variant_id) end
   if not path then
-    warn("skipping transcription " .. target .. ": " .. reason)
+    warn(warning_subject .. ": " .. reason)
     return index, true
   end
   local source = reaper.PCM_Source_CreateFromFile(path)
   if not source then
-    warn("skipping transcription " .. target .. ": REAPER could not open MIDI")
+    warn(warning_subject .. ": REAPER could not open MIDI")
     return index, true
   end
   -- MIDI has no instrument on this track, so it is silent but remains visible
   -- and readable in the arrange view like Chords and Beats.
-  local midi_track = add_locked_track(index, PREFIX .. " " .. definition.label .. " Ref (MIDI)", false)
+  local label = type(variant.label) == "string" and variant.label or tostring(variant_id)
+  local name = PREFIX .. " " .. definition.label .. " Ref — " .. label .. " (MIDI)"
+  if legacy_track_name then name = PREFIX .. " " .. definition.label .. " Ref (MIDI)" end
+  local midi_track = add_locked_track(index, name, false)
+  if selected then reaper.SetMediaTrackInfo_Value(midi_track, "I_CUSTOMCOLOR", SELECTED_VARIANT_COLOR) end
   local item = reaper.AddMediaItemToTrack(midi_track)
   reaper.SetMediaItemInfo_Value(item, "D_POSITION", reference_start)
   reaper.SetMediaItemInfo_Value(item, "D_LENGTH", reaper.GetMediaSourceLength(source))
@@ -811,6 +833,39 @@ local function add_reference_midi_track(index, target, transcription, reference_
   reaper.SetMediaItemTake_Source(take, source)
   managed_tracks[#managed_tracks + 1] = midi_track
   return index + 1, true
+end
+
+-- Retained variants are imported only in explicit variant_order. A malformed
+-- duplicate in that order still creates one generated track, never two.
+local function add_reference_midi_tracks(index, target, transcription, reference_start, managed_tracks, artifact_namespace)
+  local record = type(transcription) == "table" and transcription.targets and transcription.targets[target] or nil
+  if type(record) ~= "table" then return index, false end
+  local imported = false
+  if type(record.variants) == "table" and type(record.variant_order) == "table" then
+    local seen = {}
+    for _, variant_id in ipairs(record.variant_order) do
+      if not seen[variant_id] then
+        seen[variant_id] = true
+        local variant = record.variants[variant_id]
+        -- Only migration-produced records retain flat status and the legacy path.
+        local allow_legacy_path = record.status ~= nil and type(variant) == "table"
+          and variant.midi_file == "transcription/" .. target .. ".mid"
+        local next_index, attempted = add_reference_midi_variant(index, target, variant_id, variant,
+          record.selected_variant_id == variant_id, reference_start, managed_tracks, artifact_namespace,
+          allow_legacy_path, allow_legacy_path)
+        index = next_index
+        imported = imported or attempted
+      end
+    end
+    return index, imported
+  end
+  -- Pre-v13 sidecars retain their old name and path until sidecar upgrade.
+  if record.status ~= "transcribed" then return index, false end
+  local legacy = {}
+  for key, value in pairs(record) do legacy[key] = value end
+  legacy.label = "default"
+  return add_reference_midi_variant(index, target, "legacy", legacy, false, reference_start,
+    managed_tracks, artifact_namespace, true, true)
 end
 
 -- Import only records that the separator committed into its own
@@ -849,7 +904,7 @@ local function add_stem_tracks(index, stems, transcription, reference_start, man
           managed_tracks[#managed_tracks + 1] = stem_track
           index = index + 1
           imported_stems[definition.artifact] = true
-          index = add_reference_midi_track(index, definition.artifact, transcription, reference_start, managed_tracks, artifact_namespace)
+          index = add_reference_midi_tracks(index, definition.artifact, transcription, reference_start, managed_tracks, artifact_namespace)
         end
       end
     end
@@ -858,7 +913,7 @@ local function add_stem_tracks(index, stems, transcription, reference_start, man
   -- Keep them anyway, after the stem block, in Python's target-table order.
   for _, definition in ipairs(TRANSCRIPTION_TARGETS) do
     if not imported_stems[definition.target] then
-      index = add_reference_midi_track(index, definition.target, transcription, reference_start, managed_tracks, artifact_namespace)
+      index = add_reference_midi_tracks(index, definition.target, transcription, reference_start, managed_tracks, artifact_namespace)
     end
   end
 end

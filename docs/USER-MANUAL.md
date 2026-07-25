@@ -56,7 +56,7 @@ vgt creates a `[vgt] <reference name>` container and may add:
 | `[vgt] Click` | Tempo-click artifact exists | Muted audio track; unmute temporarily to check the beat grid. |
 | Vocals, Instrumental, Bass, Drums, Guitar, Backing | Standard separation | Unmuted, time-based audio tracks. |
 | Strings, Keys / Piano | Explicitly requested | Unmuted, time-based optional stem tracks. |
-| `[vgt] <Target> Ref (MIDI)` | A requested target was transcribed | Unmuted, time-based MIDI item directly beneath the stem it was transcribed from. It has no sound without an instrument; muting it would only dim the notes meant to be read. |
+| `[vgt] <Target> Ref — <Label> (MIDI)` | A retained transcription variant was transcribed | Unmuted, time-based MIDI item directly beneath the stem it was transcribed from. The selected variant uses a warm-gold track colour solely as a visual cue; colour is not an ownership signal. It has no sound without an instrument; muting it would only dim the notes meant to be read. |
 | `[vgt]` section regions | Section analysis | Movable and renamable section markers. |
 
 Chords and Beats are unmuted so labels stay visible, but contain no audible
@@ -254,7 +254,7 @@ Then set `VGT_DRUMSCRIPT_CMD` to the command for that installed `drumscript`
 executable; it replaces vgt's normal isolated `uvx` invocation. vgt parses the
 override with `shlex.split` and never runs it through a shell.
 
-`[vgt] <Target> Ref (MIDI)` is recreated on every apply, like every other
+`[vgt] <Target> Ref — <Label> (MIDI)` is recreated on every apply, like every other
 vgt-owned object, for both backends. Edits to it do not survive: make a working
 copy before editing (see [Working copies](#working-copies-vgt_working_copylua)).
 There is no `vgt sync` read-back for MIDI.
@@ -270,7 +270,7 @@ Install it with `vgt install-reascripts` (it ships alongside the other two
 actions) and run it from REAPER's Action List. It offers two choices:
 
 - **Create working copy from selected tracks** — select the track(s) you want
-  to work with (typically `[vgt] <Target> Ref (MIDI)`, plus its stem and
+  to work with (typically the selected `[vgt] <Target> Ref — <Label> (MIDI)`, plus its stem and
   `[vgt] Chords` for context), then run this. Each selected track is duplicated
   into a `[work]` folder track — created if missing, reused if present. The
   copies are unmuted, unlocked, and immediately editable.
