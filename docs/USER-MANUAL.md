@@ -73,12 +73,15 @@ Artifacts live under `vgt/<stable-id>/` beside the project:
 - `tempo-click.wav` — compare by unmuting `[vgt] Click`.
 - `chords.txt` — effective chord list.
 - `sections.txt` — effective section timeline.
-- `transcription/<target>.mid` — a cached reference MIDI for each successfully
-  transcribed target.
-- `transcription/<target>.csv` — its Basic Pitch note-events data (every
-  target except `drums`).
-- `transcription/drums.json` — DrumScript's percussion event data (instrument
-  labels and onset times) for the `drums` target.
+- `transcription/<target>/<variant-id>.mid` — a generated reference MIDI for
+  each retained successful variant. The opaque ID is stable; a label is not a
+  filename.
+- `transcription/<target>/<variant-id>.csv` — that Basic Pitch variant's
+  derived note-events data (every target except `drums`).
+- `transcription/cache/basic-pitch/<detection-hash>/raw.csv` (and raw MIDI) —
+  shared raw detection data. Cleanup-only guitar variants can reuse it.
+- `transcription/drums/<variant-id>.json` — a DrumScript variant's percussion
+  event data (instrument labels and onset times).
 
 vgt writes a tempo map only when the project still has REAPER's default 120
 BPM, 4/4 map and analysis detected a downbeat. Beat-only fallback analysis
@@ -188,8 +191,9 @@ equivalent `guitar-acoustic` transcription profile when their sidecar upgrades.
 
 ### Retaining several variants per target
 
-`--transcribe`/`--mode` keep working exactly as above; a target still has one
-persisted profile selection through this path. To retain and compare several
+`--transcribe`/`--mode` keep working exactly as above during the compatibility
+transition; they create or update the selected/default variant for a target.
+New workflows should use a variant-level `--profile`. To retain and compare several
 independently configured candidates for the same target (for example a
 detail-preserving pass alongside a clean, chord-oriented one), use the
 `vgt transcription` command group instead:
@@ -227,6 +231,42 @@ every target's retained variants in persisted order, which one is selected,
 and each one's requested/effective profile, cache identity, metrics, and
 errors.
 
+Generated variants are reproducible machine outputs. The selected variant is
+only the preferred generated candidate for that target: selecting it changes
+neither MIDI nor cache files, and it does not make it authoritative. A
+`[work]` copy is a separate user-owned editable track; it is not a variant,
+is never synchronized back into vgt, and survives variant reconciliation.
+
+### Authoring project profiles
+
+Put advanced, auditable profile definitions in the project-adjacent
+`Song.vgt-profiles.toml`, then validate them before adding a variant:
+
+```toml
+schema_version = 1
+
+[profiles.my-clean-guitar]
+target = "guitar"
+extends = "guitar-acoustic-clean"
+description = "Conservative chord-reading candidate"
+
+[profiles.my-clean-guitar.cleanup.drop_harmonic_ghosts]
+enabled = true
+spectral_n_fft = 4096
+spectral_hop_length = 512
+spectral_max_harmonic_order = 8
+spectral_freq_tolerance_semitones = 0.5
+spectral_independent_energy_ratio = 1.5
+```
+
+Use `vgt transcription profile validate "Song.RPP"`, then add it with
+`vgt transcription variant add guitar --name "my clean" --profile
+my-clean-guitar "Song.RPP"`. Profiles inherit from built-ins; only overrides
+belong in TOML. Unknown keys, incompatible targets, invalid bounds, cycles,
+and reordering cleanup stages are rejected. All output-changing settings,
+including spectral FFT/hop values, are recorded in the resolved variant
+snapshot and hashes.
+
 If a backend's execution or output validation fails, `drums` (or any other
 target) is recorded with `status: error` and analysis continues for every
 other requested target. There is no automatic fallback between backends: a
@@ -244,6 +284,15 @@ per-instrument event counts (for example, `drums 428 events (kick 91, snare
 status artifact list includes each target's MIDI and, depending on backend,
 CSV or JSON when available.
 
+For example, `*` is a persisted selection marker, not a quality score:
+
+```text
+transcription: 1 target, 2 retained variants
+  guitar
+    * clean   443 notes, MIDI 40-76, guitar-acoustic-clean
+      detail  1060 notes, MIDI 40-88, guitar-acoustic-detail
+```
+
 ### Basic Pitch (guitar, bass, vocals, piano, strings, instrumental, backing, original mix)
 
 For a machine that must not build Basic Pitch's environment on first use,
@@ -260,6 +309,11 @@ Treat the result as a **draft reference**, not a transcription to trust note for
 note. Guitar transcription remains an open research problem, especially for
 distorted or polyphonic parts. The MIDI carries pitches and timing, but no
 fretboard or string information, so vgt does not produce tablature.
+
+The clean acoustic profile's round-three spectral ghost gate is conservative:
+it has synthetic regression coverage, but has not been re-measured on the real
+7Rivers stem. It can make a candidate easier to read; it is not evidence that
+the clean MIDI is ground truth or that intentional octave shapes were kept.
 
 ### DrumScript (drums)
 
@@ -335,8 +389,9 @@ sidecar and never touches a `[vgt]` or user track.
 Autonomous vgt work and its automated tests only cover static artifact
 validation (readable MIDI, well-formed JSON, correct REAPER placement via
 stubbed tests). They never open REAPER, run a live ReaScript, or judge whether
-a transcription sounds right. Before trusting a drum reference in practice,
-the user should, in a real REAPER session:
+a transcription sounds right. This checklist is human-owned, not an
+autonomous-agent acceptance task. Before trusting a reference in practice, the
+user should, in a real REAPER session:
 
 - listen to `[vgt] Drums Ref (MIDI)` against the `[vgt] Drums` audio stem with
   a drum-kit instrument loaded, and judge whether the detected kicks, snares,
@@ -345,6 +400,13 @@ the user should, in a real REAPER session:
   aligned after `apply`/`sync`;
 - treat any transcription, but especially drums, as a draft reference to
   correct by ear, not a ground truth.
+- compare guitar detail and clean candidates against the same stem; verify the
+  spectral gate did not remove intentional octave chord shapes, and use
+  `scripts/guitar_transcription_probe.py` to compare ghost share, polyphony,
+  fragmentation, and both chord-tone metrics;
+- create a `[work]` copy from the preferred generated candidate, edit it, run
+  analyze/apply, and confirm it remains intact; then discard a rejected
+  generated variant and confirm only that generated track/artifacts disappear.
 
 ## Permanent regression contract
 
@@ -364,8 +426,14 @@ the user should, in a real REAPER session:
 - Ordinary `--force` makes no LALAL charges; paid work is cached, checkpointed,
   and explicitly confirmed when forced or optional.
 - Transcription runs locally after separation, never triggers paid separation,
-  and independently caches each requested target's MIDI plus its CSV (Basic
-  Pitch targets) or JSON (`drums`) artifact.
+  and caches raw Basic Pitch detection separately from each retained derived
+  variant's MIDI/CSV (or a DrumScript variant's MIDI/JSON) artifact.
+- Generated variants, their per-target selected state, and user-owned `[work]`
+  copies have distinct ownership: apply reconciles generated `[vgt]` tracks,
+  selection never edits artifacts, and working copies are preserved.
+- Automatic chord analysis remains audio-based (original mix plus available
+  instrumental/guitar/backing stems). Selected or clean MIDI is never fed back
+  into chord analysis and is not ground truth.
 - DrumScript backs `drums`; Basic Pitch backs every other target. A DrumScript
   or Basic Pitch failure records a per-target error and never falls back to
   the other backend.
