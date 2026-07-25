@@ -98,11 +98,18 @@ def _artifact_paths(project_path: Path, analysis: dict[str, Any]) -> dict[str, P
 
 _VARIANT_FIELDS: tuple[str, ...] = (
     "label", "requested_profile", "effective_profile", "profile_definition_hash",
-    "backend", "package_pin", "serialization", "settings_hash", "detection_hash",
+    # Keep the complete persisted identity visible here.  A variant can share
+    # a detection cache entry with another variant while differing in cleanup,
+    # and a source change invalidates both identities; omitting either the
+    # source/input identity or the resolved recipe makes JSON status an
+    # incomplete comparison/debugging view.
+    "backend", "package_pin", "serialization", "source_role", "input_hash",
+    "settings_hash", "detection_hash",
     "raw_notes_hash", "cleanup_hash", "status", "note_count", "event_count",
     "instrument_counts", "pitch_range_midi", "first_note_s", "last_note_s",
     "max_note_duration_s", "max_simultaneous_voices",
-    "first_event_s", "last_event_s", "midi_tempo", "transcribed_at", "error",
+    "first_event_s", "last_event_s", "backend_tempo", "midi_tempo", "confidence",
+    "resolved_settings", "transcribed_at", "error",
     "midi_file", "notes_file", "events_file",
 )
 

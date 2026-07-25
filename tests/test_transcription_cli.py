@@ -163,6 +163,13 @@ def test_add_two_variants_share_detection_and_full_lifecycle(tmp_path: Path, cap
     assert clean_id not in after_discard["variant_order"]
     assert after_discard["selected_variant_id"] == detail_id
     assert [entry["id"] for entry in after_discard["discarded_variants"]] == [clean_id]
+    archived = after_discard["discarded_variants"][0]
+    assert archived["input_hash"] == clean["input_hash"]
+    assert archived["detection_hash"] == clean["detection_hash"]
+    assert archived["raw_notes_hash"] == clean["raw_notes_hash"]
+    assert archived["cleanup_hash"] == clean["cleanup_hash"]
+    assert archived["resolved_settings"] == clean["resolved_settings"]
+    assert not {"midi_file", "notes_file", "events_file"}.intersection(archived)
 
     namespace_dir = project.parent / "vgt" / read_sidecar(project)["analysis"]["stems"]["artifact_namespace"]
     assert not (namespace_dir / "transcription" / "guitar" / f"{clean_id}.mid").exists()
@@ -291,6 +298,15 @@ def test_status_shows_ordered_variants_and_selected_marker(tmp_path: Path, capsy
     selected = [variant for variant in guitar["variants"] if variant["selected"]]
     assert len(selected) == 1
     assert selected[0]["label"] == "detail"
+    # JSON status is the read-only comparison/debugging view, so it must
+    # retain the source/detection/cleanup cache identity as well as the
+    # displayed metrics.
+    assert selected[0]["source_role"] == "guitar"
+    assert selected[0]["input_hash"]
+    assert selected[0]["detection_hash"]
+    assert selected[0]["raw_notes_hash"]
+    assert selected[0]["cleanup_hash"]
+    assert selected[0]["resolved_settings"]
     assert selected[0]["max_note_duration_s"] is not None
     assert selected[0]["max_simultaneous_voices"] is not None
 
