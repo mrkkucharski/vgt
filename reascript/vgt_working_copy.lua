@@ -238,9 +238,13 @@ local function discard()
   reaper.PreventUIRefresh(1)
   local removed = 0
   local reclaimed = forget_reclaimed_work_objects()
-  local removable_folders = {}
-  -- Decide folder removal before deleting its closing child. This avoids
-  -- interpreting unrelated following tracks as children of an empty folder.
+  local removable_tracks = {}
+  -- Decide the whole workspace before deleting any child.  A folder's closing
+  -- child carries its balancing -1 depth; deleting that child while preserving
+  -- an unmarked user track in the same folder would accidentally pull later
+  -- tracks into the folder.  Therefore a mixed workspace is preserved as a
+  -- unit.  We only remove a complete, marked workspace whose every object is
+  -- still in the scratch namespace.
   for index = 0, reaper.CountTracks(0) - 1 do
     local track = reaper.GetTrack(0, index)
     if track_name(track) == WORK_FOLDER_NAME
@@ -248,17 +252,18 @@ local function discard()
       and is_top_level_track(index)
       and reaper.GetMediaTrackInfo_Value(track, "I_FOLDERDEPTH") >= 1
       and workspace_has_only_discardable_children(index) then
-      removable_folders[track] = true
+      local last_child = folder_last_child_index(index)
+      for child_index = index, last_child do
+        removable_tracks[reaper.GetTrack(0, child_index)] = true
+      end
     end
   end
-  -- Delete only objects that this action marked *and* that still have the
-  -- `[work]` prefix. Legacy/unmarked names are always preserved. A marked copy
-  -- renamed away from the prefix is thereby permanently reclaimed by its user.
+  -- Delete only objects belonging to one of those complete workspaces.  This
+  -- additionally prevents a user-moved marked track, or a mixed workspace,
+  -- from being guessed at just because it retains a `[work]` name.
   for index = reaper.CountTracks(0) - 1, 0, -1 do
     local track = reaper.GetTrack(0, index)
-    local is_folder = reaper.GetMediaTrackInfo_Value(track, "I_FOLDERDEPTH") >= 1
-    if is_discardable_work_object(track)
-      and (not is_folder or track_name(track) ~= WORK_FOLDER_NAME or removable_folders[track]) then
+    if removable_tracks[track] and is_discardable_work_object(track) then
       reaper.DeleteTrack(track)
       removed = removed + 1
     end

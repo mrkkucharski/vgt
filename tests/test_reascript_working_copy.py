@@ -286,9 +286,9 @@ def test_discard_removes_only_marked_work_tracks() -> None:
     lua_program = "\n".join(
         [
             "local tracks = {",
-            "  {name = '[work]', ext={['P_EXT:vgt_working_copy']='1'}},",
-            "  {name = '[work] Guitar Ref (MIDI)', ext={['P_EXT:vgt_working_copy']='1'}},",
-            "  {name = '[work] User folder'}, {name = '[work] User track'},",
+            "  {name = '[work]', values={I_FOLDERDEPTH=1}, ext={['P_EXT:vgt_working_copy']='1'}},",
+            "  {name = '[work] Guitar Ref (MIDI)', values={I_FOLDERDEPTH=-1}, ext={['P_EXT:vgt_working_copy']='1'}},",
+            "  {name = '[work] User folder', values={I_FOLDERDEPTH=0}}, {name = '[work] User track', values={I_FOLDERDEPTH=0}},",
             "  {name = '[work] Reclaimed', ext={['P_EXT:vgt_working_copy']='1'}, renamed='Kept by user'},",
             "  {name = '[vgt] Guitar Ref (MIDI)'}, {name = 'My Keeper'},",
             "}",
@@ -298,7 +298,7 @@ def test_discard_removes_only_marked_work_tracks() -> None:
             "function reaper.GetTrack(_, index) return tracks[index + 1] end",
             "function reaper.GetTrackName(track) return true, track.name end",
             "function reaper.GetSetMediaTrackInfo_String(track, key, value, set) if set then track.ext = track.ext or {}; track.ext[key] = value; return true, value end; return true, track.ext and track.ext[key] or '' end",
-            "function reaper.GetMediaTrackInfo_Value() return 0 end",
+            "function reaper.GetMediaTrackInfo_Value(track, key) return track.values and track.values[key] or 0 end",
             "function reaper.DeleteTrack(track) for i, t in ipairs(tracks) do if t == track then table.remove(tracks, i); return end end end",
             "function reaper.Undo_BeginBlock() end",
             "function reaper.Undo_EndBlock() end",
@@ -313,6 +313,40 @@ def test_discard_removes_only_marked_work_tracks() -> None:
         ]
     )
     assert _run(lua_program).stdout == "[work] User folder:;[work] User track:;Kept by user:;[vgt] Guitar Ref (MIDI):;My Keeper:;"
+
+
+def test_discard_preserves_a_mixed_marked_workspace_without_breaking_its_folder() -> None:
+    """One user track in a marked workspace makes the entire workspace
+    ineligible.  In particular, vgt must not delete its marked closing child
+    and leave the user's folder open over the following track."""
+    script = WORKING_COPY_SCRIPT.read_text()
+    helpers_end = script.index("local function choose_action")
+    lua_program = "\n".join(
+        [
+            "local tracks = {",
+            "  {name='[work]', values={I_FOLDERDEPTH=1}, ext={['P_EXT:vgt_working_copy']='1'}},",
+            "  {name='[work] disposable', values={I_FOLDERDEPTH=0}, ext={['P_EXT:vgt_working_copy']='1'}},",
+            "  {name='User addition', values={I_FOLDERDEPTH=-1}, ext={}},",
+            "  {name='Outside', values={I_FOLDERDEPTH=0}, ext={}},",
+            "}",
+            "reaper = {}",
+            "function reaper.CountTracks() return #tracks end",
+            "function reaper.GetTrack(_, index) return tracks[index + 1] end",
+            "function reaper.GetTrackName(track) return true, track.name end",
+            "function reaper.GetMediaTrackInfo_Value(track, key) return track.values[key] or 0 end",
+            "function reaper.GetSetMediaTrackInfo_String(track, key, value, set) if set then track.ext[key] = value; return true, value end; return true, track.ext[key] or '' end",
+            "function reaper.DeleteTrack() error('a mixed workspace must remain intact') end",
+            "function reaper.Undo_BeginBlock() end; function reaper.Undo_EndBlock() end",
+            "function reaper.PreventUIRefresh() end; function reaper.TrackList_AdjustWindows() end; function reaper.UpdateArrange() end",
+            "function reaper.MarkProjectDirty() error('nothing changed') end",
+            "function reaper.ShowMessageBox(text) io.write('WARNED:', text) end",
+            script[:helpers_end],
+            "discard()",
+            "for _,t in ipairs(tracks) do io.write(t.name, ':', t.values.I_FOLDERDEPTH, ';') end",
+        ]
+    )
+    result = _run(lua_program)
+    assert result.stdout.endswith("[work]:1;[work] disposable:0;User addition:-1;Outside:0;")
 
 
 def test_discard_preserves_reclaimed_copy_permanently_and_keeps_folder_depths() -> None:

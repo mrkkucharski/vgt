@@ -376,7 +376,10 @@ actions) and run it from REAPER's Action List. It offers two choices:
   existing unmarked `[work]` folder or track is treated as user-owned and left
   alone. The copies are unmuted, unlocked, and immediately editable.
 - **Discard all [work] copies** — deletes only marked tracks that still start
-  with `[work]`; unmarked legacy or user-created `[work]` tracks are preserved.
+  with `[work]` in a complete marked workspace; unmarked legacy or user-created
+  `[work]` tracks are preserved. If you add any unmarked track to a marked
+  workspace, that whole mixed folder is preserved rather than risking its
+  folder structure.
 
 The copies are deliberately outside normal vgt ownership: they are named
 `[work]` (never `[vgt]`), carry no `vgt_managed` mark, and instead carry a
