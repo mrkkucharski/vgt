@@ -6,6 +6,7 @@ Krumhansl-Schmuckler template-correlation fallback is always available.
 
 from __future__ import annotations
 
+import math
 from pathlib import Path
 from typing import Any
 
@@ -20,16 +21,40 @@ class KeyDetectionError(RuntimeError):
     """No backend could produce a key estimate for the source audio."""
 
 
+def _validate_key_result(result: Any) -> tuple[str, str, float] | None:
+    """Return a usable backend result, or ``None`` for malformed output."""
+    try:
+        if not isinstance(result, tuple) or len(result) != 3:
+            return None
+        root, scale, confidence = result
+        if root not in _PITCH_CLASSES or scale not in ("major", "minor"):
+            return None
+        confidence = float(confidence)
+        if not math.isfinite(confidence) or not 0.0 <= confidence <= 1.0:
+            return None
+    except Exception:
+        return None
+    return root, scale, confidence
+
+
 def _essentia_key(source: Path) -> tuple[str, str, float] | None:
-    """Root/scale/confidence via Essentia, or None if it isn't installed."""
+    """Root/scale/confidence via Essentia, or ``None`` when it is unusable.
+
+    Essentia is optional and its Apple Silicon builds can import successfully
+    but fail while decoding audio or executing ``KeyExtractor``. Treat either
+    case, and malformed backend output, like an unavailable installation so
+    the required librosa fallback remains reachable.
+    """
     try:
         import essentia.standard as es  # type: ignore[import-not-found]
-    except ImportError:
+    except Exception:
         return None
 
-    audio = es.MonoLoader(filename=str(source))()
-    root, scale, strength = es.KeyExtractor()(audio)
-    return root, scale, float(strength)
+    try:
+        audio = es.MonoLoader(filename=str(source))()
+        return _validate_key_result(es.KeyExtractor()(audio))
+    except Exception:
+        return None
 
 
 def _correlate(profile_a, profile_b) -> float:
@@ -77,7 +102,21 @@ def detect_key(source: Path, settings: dict[str, Any] | None = None) -> dict[str
         root, scale, confidence = essentia_result
         backend = "essentia"
     else:
-        root, scale, confidence = _librosa_key(source)
+        try:
+            librosa_result = _librosa_key(source)
+        except Exception as exc:
+            raise KeyDetectionError(
+                f"Could not detect key for {source}: Essentia was unavailable or failed, "
+                f"and the librosa fallback failed ({exc}). Check that the source is readable "
+                "and that vgt's audio dependencies are installed."
+            ) from exc
+        validated = _validate_key_result(librosa_result)
+        if validated is None:
+            raise KeyDetectionError(
+                f"Could not detect key for {source}: Essentia was unavailable or failed, "
+                "and the librosa fallback returned an invalid result."
+            )
+        root, scale, confidence = validated
         backend = "librosa"
 
     return {
