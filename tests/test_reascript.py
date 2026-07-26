@@ -816,6 +816,46 @@ def test_reconciliation_refuses_multiple_root_candidates_without_guessing(tmp_pa
     assert "root candidates=2" in result.stdout
 
 
+def test_reconciliation_does_not_authenticate_one_root_from_another_track(tmp_path: Path) -> None:
+    """Ownership must prove the candidate root itself.  A stale marked child
+    elsewhere used to make an unowned same-named folder look safe, after which
+    initialize would preserve that folder and append a new root beside it."""
+    rpp = tmp_path / "7Rivers.RPP"
+    (tmp_path / "7Rivers.vgt").write_text(json.dumps({"managed_track_guids": ["{B00B-0002}"]}), encoding="utf-8")
+    script = APPLY_SCRIPT.read_text()
+    helpers_end = script.index("local function find_track_by_guid")
+    lua_program = "\n".join([
+        "local tracks = {{name = '[vgt] Seven Rivers', guid = '{A11CE-0001}', depth = 1, managed = false}, {name = '[vgt] Old child', guid = '{B00B-0002}', depth = -1, managed = true}}",
+        "reaper = {}", "function reaper.EnumProjects() return true, arg[1] end", "function reaper.CountTracks() return #tracks end",
+        "function reaper.GetTrack(_, index) return tracks[index + 1] end", "function reaper.GetTrackGUID(track) return track.guid end",
+        "function reaper.GetTrackName(track) return true, track.name end", "function reaper.GetMediaTrackInfo_Value(track) return track.depth end",
+        "function reaper.GetSetMediaTrackInfo_String(track, key, buf, set) return true, track.managed and '1' or '' end",
+        "function reaper.GetProjExtState() return 0, '' end",
+        script[:helpers_end], "local ok, message = pcall(validate_reconciliation_inventory, {})", "io.write(tostring(ok), '|', message)",
+    ])
+    result = subprocess.run([LUA, "-", str(rpp)], input=lua_program, text=True, capture_output=True, check=True)
+    assert "false|" in result.stdout
+    assert "existing [vgt] root has no authenticated ownership evidence" in result.stdout
+    assert "live GUID matches=1; P_EXT:vgt_managed matches=1; root candidates=1" in result.stdout
+
+
+def test_reconciliation_refuses_a_manifest_role_conflict(tmp_path: Path) -> None:
+    rpp = tmp_path / "7Rivers.RPP"
+    script = APPLY_SCRIPT.read_text()
+    helpers_end = script.index("local function find_track_by_guid")
+    lua_program = "\n".join([
+        "local tracks = {{name = '[vgt] Seven Rivers', guid = '{A11CE-0001}', depth = 1, role = 'managed-root'}, {name = '[vgt] Guitar', guid = '{C0DE-0002}', depth = -1, role = 'stem:bass'}}",
+        "reaper = {}", "function reaper.EnumProjects() return true, arg[1] end", "function reaper.CountTracks() return #tracks end",
+        "function reaper.GetTrack(_, index) return tracks[index + 1] end", "function reaper.GetTrackGUID(track) return track.guid end",
+        "function reaper.GetTrackName(track) return true, track.name end", "function reaper.GetMediaTrackInfo_Value(track) return track.depth end",
+        "function reaper.GetSetMediaTrackInfo_String(track, key, buf, set) if key == 'P_EXT:vgt_role' then return true, track.role end return true, track.guid == '{A11CE-0001}' and '1' or '' end",
+        "function reaper.GetProjExtState() return 1, 'root={A11CE-0001};{A11CE-0001}=managed-root;{C0DE-0002}=stem:guitar' end",
+        script[:helpers_end], "local ok, message = pcall(validate_reconciliation_inventory, {})", "io.write(tostring(ok), '|', message)",
+    ])
+    result = subprocess.run([LUA, "-", str(rpp)], input=lua_program, text=True, capture_output=True, check=True)
+    assert "false|" in result.stdout and "managed track role disagrees" in result.stdout
+
+
 def test_reconciliation_accepts_live_sidecar_guid_when_track_ext_state_is_unreadable(tmp_path: Path) -> None:
     rpp = tmp_path / "7Rivers.RPP"
     (tmp_path / "7Rivers.vgt").write_text(json.dumps({"managed_track_guids": ["{A11CE-0001}"]}), encoding="utf-8")

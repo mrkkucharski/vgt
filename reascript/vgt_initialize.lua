@@ -118,6 +118,14 @@ local function manifest_root_guid()
   return read_root_manifest():match("root=({[%x%-]+})") or ""
 end
 
+local function manifest_roles()
+  local roles = {}
+  for guid, role in read_root_manifest():gmatch("({[%x%-]+})=([^;]+)") do
+    roles[guid] = role
+  end
+  return roles
+end
+
 -- Regions have no per-object equivalent of a track's P_EXT mark, but they
 -- need the same durability: `managed_region_ids` is regenerated wholesale and
 -- persisted last, so the same crash/restored-backup/copied-folder window that
@@ -489,6 +497,7 @@ end
 local function reconciliation_inventory(analysis)
   local sidecar_guids = read_managed_guids()
   local manifest_guid = manifest_root_guid()
+  local manifest_role_by_guid = manifest_roles()
   local live_guid_count, marked_count = 0, 0
   local roots, roles = {}, {"managed-root"}
   if type(analysis) == "table" then
@@ -498,7 +507,15 @@ local function reconciliation_inventory(analysis)
     local artifacts = analysis.stems and analysis.stems.artifacts
     if type(artifacts) == "table" then for name in pairs(artifacts) do roles[#roles + 1] = "stem:" .. name end end
     local targets = analysis.transcription and analysis.transcription.targets
-    if type(targets) == "table" then for name in pairs(targets) do roles[#roles + 1] = "variant:" .. name end end
+    if type(targets) == "table" then
+      for name, record in pairs(targets) do
+        if type(record) == "table" and type(record.variant_order) == "table" then
+          for _, variant_id in ipairs(record.variant_order) do roles[#roles + 1] = "variant:" .. name .. ":" .. tostring(variant_id) end
+        else
+          roles[#roles + 1] = "variant:" .. name .. ":legacy"
+        end
+      end
+    end
   end
   for index = 0, reaper.CountTracks(0) - 1 do
     local track = reaper.GetTrack(0, index)
@@ -506,12 +523,18 @@ local function reconciliation_inventory(analysis)
     if sidecar_guids[guid] then live_guid_count = live_guid_count + 1 end
     if track_is_marked_managed(track) then marked_count = marked_count + 1 end
     if starts_with_vgt(track) and reaper.GetMediaTrackInfo_Value(track, "I_FOLDERDEPTH") > 0 then
-      roots[#roots + 1] = {track = track, guid = guid, name = track_name(track)}
+      roots[#roots + 1] = {
+        track = track, guid = guid, name = track_name(track),
+        sidecar_match = sidecar_guids[guid] == true,
+        ext_state_match = track_is_marked_managed(track),
+        manifest_match = manifest_guid ~= "" and manifest_guid == guid,
+      }
     end
   end
   return {
     sidecar_guid_count = table_count(sidecar_guids), live_guid_count = live_guid_count,
     marked_count = marked_count, roots = roots, manifest_guid = manifest_guid,
+    manifest_role_by_guid = manifest_role_by_guid,
     expected_roles = roles,
   }
 end
@@ -535,12 +558,30 @@ local function validate_reconciliation_inventory(analysis)
   end
   if #inventory.roots == 1 then
     local root = inventory.roots[1]
-    local authenticated = inventory.live_guid_count > 0 or inventory.marked_count > 0
-      or (inventory.manifest_guid ~= "" and inventory.manifest_guid == root.guid)
+    -- Evidence elsewhere in the project cannot authenticate this particular
+    -- same-named folder.  Treating it as sufficient was still capable of
+    -- appending beside an unauthenticated user folder after deleting an
+    -- unrelated old vgt track.
+    if inventory.manifest_guid ~= "" and not root.manifest_match then
+      error("managed-root manifest disagrees with the live [vgt] root; no project mutation was made. "
+        .. inventory_diagnostic(inventory))
+    end
+    local authenticated = root.sidecar_match or root.ext_state_match or root.manifest_match
     if not authenticated then
       error("existing [vgt] root has no authenticated ownership evidence; no project mutation was made. "
         .. inventory_diagnostic(inventory)
         .. ". This folder may be user-owned. Restore its sidecar/manifest or deliberately reclaim it before applying.")
+    end
+    -- Roles are an additional consistency check once both representations are
+    -- present. Missing roles remain a supported migration/unreadable-marker
+    -- state; conflicting durable identities are never guessed through.
+    for index = 0, reaper.CountTracks(0) - 1 do
+      local track = reaper.GetTrack(0, index)
+      local guid, manifest_role, live_role = reaper.GetTrackGUID(track), inventory.manifest_role_by_guid[reaper.GetTrackGUID(track)], track_role(track)
+      if manifest_role and live_role ~= "" and manifest_role ~= live_role then
+        error("managed track role disagrees with the project manifest; no project mutation was made. "
+          .. inventory_diagnostic(inventory) .. "; guid=" .. guid .. "; manifest role=" .. manifest_role .. "; track role=" .. live_role)
+      end
     end
   end
   return inventory
