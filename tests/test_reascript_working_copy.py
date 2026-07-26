@@ -211,6 +211,34 @@ def test_find_work_folder_preserves_marked_workspaces_with_altered_folder_depth(
     assert _run(lua_program).stdout == "nil"
 
 
+def test_find_work_folder_preserves_marked_workspaces_with_nested_children() -> None:
+    """A total depth of zero is insufficient: a marked child may have been
+    made into a folder. Reusing a +1/0/+1/-2 layout would leave that nested
+    level open after the old closer is demoted."""
+    script = WORKING_COPY_SCRIPT.read_text()
+    helpers_end = script.index("local function selected_source_tracks")
+    lua_program = "\n".join(
+        [
+            "local tracks = {",
+            "  {name = '[work]', depth = 1, ext={['P_EXT:vgt_working_copy']='1'}},",
+            "  {name = '[work] first copy', depth = 0, ext={['P_EXT:vgt_working_copy']='1'}},",
+            "  {name = '[work] nested copy', depth = 1, ext={['P_EXT:vgt_working_copy']='1'}},",
+            "  {name = '[work] nested child', depth = -2, ext={['P_EXT:vgt_working_copy']='1'}},",
+            "  {name = 'Outside', depth = 0},",
+            "}",
+            "reaper = {}",
+            "function reaper.CountTracks() return #tracks end",
+            "function reaper.GetTrack(_, index) return tracks[index + 1] end",
+            "function reaper.GetTrackName(track) return true, track.name end",
+            "function reaper.GetMediaTrackInfo_Value(track, key) return key == 'I_FOLDERDEPTH' and track.depth or 0 end",
+            "function reaper.GetSetMediaTrackInfo_String(track, key, value, set) if set then track.ext = track.ext or {}; track.ext[key] = value; return true, value end; return true, track.ext and track.ext[key] or '' end",
+            script[:helpers_end],
+            "io.write(tostring(find_work_folder()))",
+        ]
+    )
+    assert _run(lua_program).stdout == "nil"
+
+
 def _build_copy_mock() -> str:
     return "\n".join(
         [
@@ -405,6 +433,42 @@ def test_discard_preserves_a_marked_workspace_with_altered_folder_depth() -> Non
     )
     result = _run(lua_program)
     assert result.stdout.endswith("[work]:2;[work] altered copy:-2;Outside:0;")
+
+
+def test_discard_preserves_a_marked_workspace_with_nested_children() -> None:
+    """Discard applies the same exact-shape guard as reuse, so it cannot
+    remove a marker-bearing workspace after the user creates nested folders."""
+    script = WORKING_COPY_SCRIPT.read_text()
+    helpers_end = script.index("local function choose_action")
+    lua_program = "\n".join(
+        [
+            "local tracks = {",
+            "  {name='[work]', values={I_FOLDERDEPTH=1}, ext={['P_EXT:vgt_working_copy']='1'}},",
+            "  {name='[work] first copy', values={I_FOLDERDEPTH=0}, ext={['P_EXT:vgt_working_copy']='1'}},",
+            "  {name='[work] nested copy', values={I_FOLDERDEPTH=1}, ext={['P_EXT:vgt_working_copy']='1'}},",
+            "  {name='[work] nested child', values={I_FOLDERDEPTH=-2}, ext={['P_EXT:vgt_working_copy']='1'}},",
+            "  {name='Outside', values={I_FOLDERDEPTH=0}, ext={}},",
+            "}",
+            "reaper = {}",
+            "function reaper.CountTracks() return #tracks end",
+            "function reaper.GetTrack(_, index) return tracks[index + 1] end",
+            "function reaper.GetTrackName(track) return true, track.name end",
+            "function reaper.GetMediaTrackInfo_Value(track, key) return track.values[key] or 0 end",
+            "function reaper.GetSetMediaTrackInfo_String(track, key, value, set) if set then track.ext[key] = value; return true, value end; return true, track.ext[key] or '' end",
+            "function reaper.DeleteTrack() error('a nested workspace must remain intact') end",
+            "function reaper.Undo_BeginBlock() end; function reaper.Undo_EndBlock() end",
+            "function reaper.PreventUIRefresh() end; function reaper.TrackList_AdjustWindows() end; function reaper.UpdateArrange() end",
+            "function reaper.MarkProjectDirty() error('nothing changed') end",
+            "function reaper.ShowMessageBox(text) io.write('WARNED:', text) end",
+            script[:helpers_end],
+            "discard()",
+            "for _,t in ipairs(tracks) do io.write(t.name, ':', t.values.I_FOLDERDEPTH, ';') end",
+        ]
+    )
+    result = _run(lua_program)
+    assert result.stdout.endswith(
+        "[work]:1;[work] first copy:0;[work] nested copy:1;[work] nested child:-2;Outside:0;"
+    )
 
 
 def test_discard_preserves_reclaimed_copy_permanently_and_keeps_folder_depths() -> None:

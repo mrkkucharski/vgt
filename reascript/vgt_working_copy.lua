@@ -129,11 +129,18 @@ local function is_complete_work_folder(folder_index, track)
   if reaper.GetMediaTrackInfo_Value(track, "I_FOLDERDEPTH") ~= 1 then return false end
   local last_child = folder_last_child_index(folder_index)
   if last_child <= folder_index then return false end
-  local depth = 0
-  for index = folder_index, last_child do
-    depth = depth + reaper.GetMediaTrackInfo_Value(reaper.GetTrack(0, index), "I_FOLDERDEPTH")
+  for index = folder_index + 1, last_child do
+    local depth = reaper.GetMediaTrackInfo_Value(reaper.GetTrack(0, index), "I_FOLDERDEPTH")
+    -- The action creates a flat list of copies and exactly one -1 closer.
+    -- A merely balanced +1/-2 (or any other nested) child shape is user
+    -- structural editing, even when every track still has our marker.
+    if index == last_child then
+      if depth ~= -1 then return false end
+    elseif depth ~= 0 then
+      return false
+    end
   end
-  return depth == 0 and workspace_has_only_discardable_children(folder_index)
+  return workspace_has_only_discardable_children(folder_index)
 end
 
 -- The reused `[work]` folder, if one created by this action already exists: a
