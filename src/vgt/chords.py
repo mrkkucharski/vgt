@@ -41,7 +41,7 @@ def _madmom_chords(source: Path) -> list[tuple[float, float, str]] | None:
     try:
         from madmom.audio.chroma import DeepChromaProcessor  # type: ignore[import-not-found]
         from madmom.features.chords import DeepChromaChordRecognitionProcessor  # type: ignore[import-not-found]
-    except ImportError:
+    except Exception:
         return None
 
     try:
@@ -424,10 +424,22 @@ def detect_chords(
             if chordino_result is not None:
                 raw_segments, backend = chordino_result, "chordino"
             else:
-                raw_segments, backend = _template_chords(source, grid, settings, tempo), "librosa"
+                try:
+                    raw_segments = _template_chords(source, grid, settings, tempo)
+                except Exception as exc:
+                    raise ChordDetectionError(
+                        f"Could not detect chords for {source}: madmom and Chordino were unavailable or failed, "
+                        f"and the librosa fallback failed ({exc})."
+                    ) from exc
+                backend = "librosa"
         contributors = ["original"]
     else:
-        raw_segments, contributors = _template_chords_fused(source_map, grid, settings, tempo)
+        try:
+            raw_segments, contributors = _template_chords_fused(source_map, grid, settings, tempo)
+        except Exception as exc:
+            raise ChordDetectionError(
+                f"Could not detect chords for {source}: the librosa fusion fallback failed ({exc})."
+            ) from exc
         backend = "librosa_fusion"
 
     segments = _snap_segments_to_grid(raw_segments, grid)

@@ -1,4 +1,7 @@
+import builtins
 from pathlib import Path
+import sys
+import types
 
 import numpy as np
 import pytest
@@ -53,6 +56,66 @@ def test_label_segments_gives_distinct_labels_when_dissimilar() -> None:
 def test_detect_sections_requires_an_existing_source_file(tmp_path: Path) -> None:
     with pytest.raises(SectionDetectionError, match="not found"):
         detect_sections(tmp_path / "missing.mp3")
+
+
+def test_detect_sections_falls_back_when_msaf_initialization_fails(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """An incompatible MSAF import must leave the librosa path usable."""
+    import vgt.sections as sections_module
+
+    source = tmp_path / "source.mp3"
+    source.touch()
+    original_import = builtins.__import__
+
+    def failing_import(name: str, *args: object, **kwargs: object) -> object:
+        if name == "msaf":
+            raise RuntimeError("MSAF extension initialization failed")
+        return original_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", failing_import)
+    monkeypatch.setattr(sections_module, "_librosa_sections", lambda _source, _settings: ([0.0, 2.0], ["A"]))
+
+    assert detect_sections(source) == [
+        {"index": 0, "start_seconds": 0.0, "end_seconds": 2.0, "label": "A", "backend": "librosa"}
+    ]
+
+
+def test_detect_sections_falls_back_when_msaf_processing_fails(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Runtime failure remains equivalent to an unavailable MSAF backend."""
+    import vgt.sections as sections_module
+
+    def failing_process(*_args: object, **_kwargs: object) -> object:
+        raise RuntimeError("MSAF processing failed")
+
+    msaf_module = types.ModuleType("msaf")
+    msaf_module.process = failing_process  # type: ignore[attr-defined]
+    monkeypatch.setitem(sys.modules, "msaf", msaf_module)
+    source = tmp_path / "source.mp3"
+    source.touch()
+    monkeypatch.setattr(sections_module, "_librosa_sections", lambda _source, _settings: ([0.0, 2.0], ["A"]))
+
+    assert detect_sections(source)[0]["backend"] == "librosa"
+
+
+def test_detect_sections_normalizes_a_terminal_fallback_failure(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import vgt.sections as sections_module
+
+    source = tmp_path / "source.mp3"
+    source.touch()
+    monkeypatch.setattr(sections_module, "_msaf_sections", lambda _source: None)
+
+    def failing_librosa(_source: Path, _settings: dict[str, object]) -> tuple[list[float], list[str]]:
+        raise RuntimeError("decoder unavailable")
+
+    monkeypatch.setattr(sections_module, "_librosa_sections", failing_librosa)
+
+    with pytest.raises(SectionDetectionError, match="librosa fallback failed"):
+        detect_sections(source)
 
 
 def test_detect_sections_on_real_fixture_covers_the_track_end_to_end() -> None:

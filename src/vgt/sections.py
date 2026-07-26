@@ -41,7 +41,7 @@ def _msaf_sections(source: Path) -> tuple[list[float], list[str]] | None:
     installed, fails to import, or raises during processing."""
     try:
         import msaf  # type: ignore[import-not-found]
-    except ImportError:
+    except Exception:
         return None
     try:
         boundaries, labels = msaf.process(str(source), boundaries_id="foote", labels_id="fmc2d")
@@ -192,7 +192,13 @@ def detect_sections(source: Path, settings: dict[str, Any] | None = None) -> lis
         boundary_times, labels = msaf_result
         backend = "msaf"
     else:
-        boundary_times, labels = _librosa_sections(source, settings)
+        try:
+            boundary_times, labels = _librosa_sections(source, settings)
+        except Exception as exc:
+            raise SectionDetectionError(
+                f"Could not detect sections for {source}: MSAF was unavailable or failed, "
+                f"and the librosa fallback failed ({exc})."
+            ) from exc
         backend = "librosa"
 
     sections = []
