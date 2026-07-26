@@ -11,11 +11,13 @@ import json
 from pathlib import Path
 import shutil
 import subprocess
+from typing import Any
 
 import pytest
 
 from vgt import analysis as analysis_module
 from vgt.analysis import analyze
+from vgt.cli import main
 from vgt.separation import FakeSeparator, separate
 from vgt.sidecar import artifact_namespace_dir, read_sidecar
 from vgt.transcribe import FakeTranscriber, TargetTranscriberRouter
@@ -55,6 +57,82 @@ class CountingTranscriber(FakeTranscriber):
         """Expose raw Basic Pitch work separately from legacy transcribe()."""
         self.raw_calls = getattr(self, "raw_calls", 0) + 1
         return super().detect_raw(*args, **kwargs)
+
+
+class OfflineLalalLedger:
+    """Observe CLI-paid work while keeping the acceptance test fully offline."""
+
+    def __init__(self, *, fail_stems_once: set[str] | None = None) -> None:
+        self.backends: list[OfflineLalalSeparator] = []
+        self.charged_stems: list[str] = []
+        self.resumed_stems: list[str] = []
+        self.quoted_operation_counts: list[int] = []
+        self.fail_stems_once = set(fail_stems_once or ())
+
+    def make_backend(self) -> "OfflineLalalSeparator":
+        backend = OfflineLalalSeparator(self)
+        self.backends.append(backend)
+        return backend
+
+
+class OfflineLalalSeparator(FakeSeparator):
+    """LALAL-shaped fake with a durable paid-task ledger.
+
+    A task id already in ``resume_state`` represents a task paid for by a
+    previous process.  The fake then completes it without adding another
+    charge, exactly like the real seam's resume path.
+    """
+
+    name = "lalal"
+    api_version = "offline-contract-v1"
+
+    def __init__(self, ledger: OfflineLalalLedger) -> None:
+        super().__init__()
+        self.ledger = ledger
+
+    def __enter__(self) -> "OfflineLalalSeparator":
+        return self
+
+    def __exit__(self, *_: object) -> None:
+        return None
+
+    def preflight(
+        self,
+        *,
+        sources: list[tuple[Path, int]],
+        source_states: list[dict[str, Any]],
+        checkpoint: Any,
+    ) -> list[dict[str, Any]]:
+        self.ledger.quoted_operation_counts.append(sum(count for _source, count in sources))
+        states = [
+            {
+                "source_id": state.get("source_id") or f"offline-upload-{index}",
+                "source_expires": 4_102_444_800,
+                "source_duration_seconds": 1.0,
+            }
+            for index, state in enumerate(source_states, start=1)
+        ]
+        for index, state in enumerate(states):
+            checkpoint(index, state)
+        return states
+
+    def split(self, source: Path, out_dir: Path, spec: Any, *, resume_state: dict[str, Any] | None, checkpoint: Any):
+        state = resume_state or {}
+        if state.get("task_id"):
+            self.ledger.resumed_stems.append(spec.stem)
+        else:
+            self.ledger.charged_stems.append(spec.stem)
+            if spec.stem in self.ledger.fail_stems_once:
+                self.ledger.fail_stems_once.remove(spec.stem)
+                checkpoint(
+                    {
+                        "idempotency_key": f"offline-key-{spec.stem}",
+                        "task_id": f"offline-task-{spec.stem}",
+                        "status": "submitted",
+                    }
+                )
+                raise RuntimeError("offline interruption after paid-task checkpoint")
+        return super().split(source, out_dir, spec, resume_state=resume_state, checkpoint=checkpoint)
 
 
 def _copy_project(tmp_path: Path) -> Path:
@@ -398,6 +476,113 @@ sync()
         managed_tracks=final_sidecar["managed_track_guids"],
         managed_regions=final_sidecar["managed_region_ids"],
     ) == before
+
+
+def test_goal_contract_exercises_cli_paid_stem_cost_controls_and_resume(
+    tmp_path: Path,
+    deterministic_detectors: None,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Prove the CLI's paid-work guardrails with no credential or network.
+
+    This deliberately drives ``main`` rather than ``separate`` so the
+    acceptance contract covers the non-interactive consent boundary as well
+    as the lower-level durable cache/checkpoint behavior.
+    """
+    credential = "offline-contract-license-must-not-persist"
+    monkeypatch.setenv("LALAL_LICENSE_KEY", credential)
+    monkeypatch.setattr("sys.stdin.isatty", lambda: False)
+
+    project = _copy_project(tmp_path / "cost-controls")
+    _run_apply(project, _lua_state(project))
+    ledger = OfflineLalalLedger()
+    monkeypatch.setattr("vgt.cli.LalalSeparator", ledger.make_backend)
+    output_fragments: list[str] = []
+
+    # Establish the cached five-operation recipe through the actual CLI.
+    assert main(["analyze", "--guitar", "electric", str(project)]) == 0
+    assert len(ledger.charged_stems) == 5
+    assert ledger.quoted_operation_counts == [5]
+    captured = capsys.readouterr()
+    output_fragments.extend((captured.out, captured.err))
+
+    # --force refreshes local analysis only; it cannot reopen the paid recipe.
+    assert main(["analyze", "--guitar", "electric", "--force", str(project)]) == 0
+    assert len(ledger.backends) == 1
+    assert len(ledger.charged_stems) == 5
+    captured = capsys.readouterr()
+    assert "--force never spends credits" in captured.err
+    output_fragments.extend((captured.out, captured.err))
+
+    # Neither forced nor opt-in paid work gets as far as creating a backend
+    # (and therefore cannot submit) without the explicit non-interactive ack.
+    assert main(["analyze", "--guitar", "electric", "--force-stems", str(project)]) == 2
+    assert main(["analyze", "--guitar", "electric", "--extra-stem", "strings", str(project)]) == 2
+    assert len(ledger.backends) == 1
+    captured = capsys.readouterr()
+    refusal_output = captured.err
+    assert refusal_output.count("requires --accept-stem-cost") == 2
+    output_fragments.extend((captured.out, captured.err))
+
+    # The accepted two-stem request is quoted as two operations, creates both
+    # requested artifacts, and is fully cached when retried without flags.
+    assert main(
+        [
+            "analyze", "--guitar", "electric", "--extra-stem", "strings", "--extra-stem", "keys/piano",
+            "--accept-stem-cost", str(project),
+        ]
+    ) == 0
+    assert ledger.quoted_operation_counts[-1] == 2
+    assert ledger.charged_stems[-2:] == ["strings", "piano"]
+    stems = read_sidecar(project)["analysis"]["stems"]
+    namespace = artifact_namespace_dir(project, stems["artifact_namespace"])
+    assert stems["optional_stems"] == ["strings", "piano"]
+    assert (namespace / "stems" / "strings.wav").is_file() and (namespace / "stems" / "piano.wav").is_file()
+    charged_after_optional = list(ledger.charged_stems)
+    captured = capsys.readouterr()
+    assert "PAID stem operations requested for 2 operations" in captured.err
+    output_fragments.extend((captured.out, captured.err))
+    assert main(["analyze", "--guitar", "electric", "--accept-stem-cost", str(project)]) == 0
+    assert ledger.charged_stems == charged_after_optional
+    captured = capsys.readouterr()
+    output_fragments.extend((captured.out, captured.err))
+
+    # A second copied project isolates an interruption: the fake checkpoints
+    # the strings task after charging it, then the CLI retry resumes that
+    # exact task id without another submission/charge.
+    interrupted = _copy_project(tmp_path / "checkpoint-resume")
+    _run_apply(interrupted, _lua_state(interrupted))
+    interrupted_ledger = OfflineLalalLedger(fail_stems_once={"strings"})
+    monkeypatch.setattr("vgt.cli.LalalSeparator", interrupted_ledger.make_backend)
+    assert main(
+        ["analyze", "--guitar", "electric", "--extra-stem", "strings", "--accept-stem-cost", str(interrupted)]
+    ) == 0
+    interrupted_stems = read_sidecar(interrupted)["analysis"]["stems"]
+    checkpointed = interrupted_stems["operations"]["strings-original"]
+    assert checkpointed["backend_state"]["task_id"] == "offline-task-strings"
+    assert interrupted_ledger.charged_stems.count("strings") == 1
+    assert main(["analyze", "--guitar", "electric", "--accept-stem-cost", str(interrupted)]) == 0
+    assert interrupted_ledger.charged_stems.count("strings") == 1
+    assert interrupted_ledger.resumed_stems == ["strings"]
+    assert read_sidecar(interrupted)["analysis"]["stems"]["operations"]["strings-original"]["status"] == "completed"
+
+    # The only credential used by this test is a canary. It must never escape
+    # into durable JSON/artifacts or CLI output.
+    captured = capsys.readouterr()
+    output_fragments.extend((captured.out, captured.err))
+    persisted = [
+        project.with_suffix(".vgt").read_text(encoding="utf-8"),
+        interrupted.with_suffix(".vgt").read_text(encoding="utf-8"),
+        *(path.read_bytes().decode("latin1") for path in namespace.rglob("*") if path.is_file()),
+        *(
+            path.read_bytes().decode("latin1")
+            for path in artifact_namespace_dir(interrupted, interrupted_stems["artifact_namespace"]).rglob("*")
+            if path.is_file()
+        ),
+        *output_fragments,
+    ]
+    assert all(credential not in value for value in persisted)
 
 
 def test_goal_contract_reconciles_two_guitar_variants_without_touching_working_copies(
