@@ -1,10 +1,10 @@
 {
-  "current_issue": 168,
-  "session_id": "f3dd09e7-3063-4465-a0a0-fcb8627c6e44",
-  "pid": 56604,
-  "process_started_at": "Sun Jul 26 10:49:55 2026",
+  "current_issue": 170,
+  "session_id": "9ee2e85d-d221-46c8-9771-6739400ad5e6",
+  "pid": 58024,
+  "process_started_at": "Sun Jul 26 11:00:24 2026",
   "agent": "codex",
-  "started_at": "2026-07-26T08:49:54.035974+00:00",
+  "started_at": "2026-07-26T09:00:22.782869+00:00",
   "scheduler_stalls": {},
   "budget": {
     "window_start": "2026-07-26T06:57:36.064492+00:00",
@@ -17,15 +17,15 @@
   "verification_followups": {
     "f0d8bfc9d2dc6da7a31609184e25c4d66d3986fd2340b33a83e98204fb86691e": "created"
   },
-  "role": "review",
-  "branch": "issue-168-make-key-detection-resilient-to-broken-o",
-  "worktree_path": "/Users/marekkucharski/projects/.pm-worktrees/vgt/issue-168",
-  "pr_number": 169,
+  "role": "implement",
+  "branch": "issue-170-make-optional-analysis-backends-fail-ope",
+  "worktree_path": "/Users/marekkucharski/projects/.pm-worktrees/vgt/issue-170",
+  "pr_number": null,
   "followup_generation": {
-    "fingerprint": "5ae10b7d042433e01004975897a8363e91fbb80253a4bc5d6af1472b9f805008",
+    "fingerprint": "b690557f4e89ea84476a4062e8a700e7d7642f559b4858f01b49b59f071e307b",
     "items": {
-      "75528f2f60903839cdf880ab04ca3485121186ac902eadef3010a9ffd2e68803": {
-        "title": "Make key detection resilient to broken optional Essentia installs",
+      "ac71900a996396afb6a6df15e438d2be4bb992a720ae4387ceeb5ba2a32ec2f2": {
+        "title": "Make optional analysis backends fail open consistently",
         "status": "created"
       }
     }
@@ -56,13 +56,13 @@
     "166": 4
   },
   "pending_transition": {
-    "issue": 168,
+    "issue": 170,
     "target": "working",
-    "event": "agent.review_started",
+    "event": "agent.started",
     "detail": {
-      "issue": 168,
+      "issue": 170,
       "agent": "codex",
-      "pr": 169
+      "branch": "issue-170-make-optional-analysis-backends-fail-ope"
     },
     "cleanup": {}
   }
