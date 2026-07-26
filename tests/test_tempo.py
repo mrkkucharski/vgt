@@ -1,10 +1,11 @@
+import builtins
 import sys
 import types
 from pathlib import Path
 
 import pytest
 
-from vgt.tempo import _MIN_SPAN_BEATS, _piecewise_spans, build_tempo_grid, detect_beats
+from vgt.tempo import TempoDetectionError, _MIN_SPAN_BEATS, _piecewise_spans, build_tempo_grid, detect_beats
 
 FIXTURE_SOURCE = Path(__file__).parents[1] / "test" / "Reaper Project" / "Media" / "Paris Metro Punk.mp3"
 
@@ -130,3 +131,38 @@ def test_detect_beats_falls_back_to_librosa_when_madmom_processing_fails(
     assert backend == "librosa"
     assert len(beat_times) >= 2
     assert len(beat_positions) == len(beat_times)
+
+
+def test_detect_beats_falls_back_when_madmom_initialization_fails(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """An incompatible madmom can raise while importing its submodule."""
+    source = tmp_path / "source.mp3"
+    source.touch()
+    original_import = builtins.__import__
+
+    def failing_import(name: str, *args: object, **kwargs: object) -> object:
+        if name == "madmom.features.downbeats":
+            raise RuntimeError("madmom extension initialization failed")
+        return original_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", failing_import)
+    monkeypatch.setattr("vgt.tempo._librosa_beats", lambda _source: ([0.0, 0.5], [1, 1]))
+
+    assert detect_beats(source) == ([0.0, 0.5], [1, 1], "librosa")
+
+
+def test_detect_beats_normalizes_a_terminal_fallback_failure(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    source = tmp_path / "source.mp3"
+    source.touch()
+    monkeypatch.setattr("vgt.tempo._madmom_beats", lambda _source: None)
+
+    def failing_librosa(_source: Path) -> tuple[list[float], list[int]]:
+        raise RuntimeError("decoder unavailable")
+
+    monkeypatch.setattr("vgt.tempo._librosa_beats", failing_librosa)
+
+    with pytest.raises(TempoDetectionError, match="librosa fallback failed"):
+        detect_beats(source)

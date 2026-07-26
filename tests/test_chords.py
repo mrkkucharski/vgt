@@ -1,4 +1,7 @@
+import builtins
 from pathlib import Path
+import sys
+import types
 
 import pytest
 
@@ -116,6 +119,83 @@ def test_detect_chords_uses_chordino_when_madmom_is_unavailable(monkeypatch: pyt
         {"start_seconds": 0.0, "end_seconds": 1.0, "chord": "C:maj"},
         {"start_seconds": 1.0, "end_seconds": 2.0, "chord": "G:maj"},
     ]
+
+
+def test_detect_chords_falls_back_when_madmom_initialization_fails(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """An incompatible madmom must leave the documented Chordino path usable."""
+    import vgt.chords as chords_module
+
+    source = tmp_path / "source.mp3"
+    source.touch()
+    original_import = builtins.__import__
+
+    def failing_import(name: str, *args: object, **kwargs: object) -> object:
+        if name == "madmom.audio.chroma":
+            raise RuntimeError("madmom extension initialization failed")
+        return original_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", failing_import)
+    monkeypatch.setattr(chords_module, "_chordino_chords", lambda _source: [(0.0, 1.0, "C:maj"), (1.0, 2.0, "G:maj")])
+
+    assert detect_chords(source, beat_times=[0.0, 1.0, 2.0])["backend"] == "chordino"
+
+
+def test_detect_chords_falls_back_when_madmom_processing_fails(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Runtime failure remains equivalent to an unavailable madmom backend."""
+    import vgt.chords as chords_module
+
+    class FailingProcessor:
+        def __call__(self, *_args: object, **_kwargs: object) -> object:
+            raise RuntimeError("madmom model processing failed")
+
+    chroma_module = types.ModuleType("madmom.audio.chroma")
+    chroma_module.DeepChromaProcessor = FailingProcessor  # type: ignore[attr-defined]
+    chords_backend_module = types.ModuleType("madmom.features.chords")
+    chords_backend_module.DeepChromaChordRecognitionProcessor = FailingProcessor  # type: ignore[attr-defined]
+    audio_module = types.ModuleType("madmom.audio")
+    audio_module.chroma = chroma_module  # type: ignore[attr-defined]
+    features_module = types.ModuleType("madmom.features")
+    features_module.chords = chords_backend_module  # type: ignore[attr-defined]
+    madmom_module = types.ModuleType("madmom")
+    madmom_module.audio = audio_module  # type: ignore[attr-defined]
+    madmom_module.features = features_module  # type: ignore[attr-defined]
+    for name, module in {
+        "madmom": madmom_module,
+        "madmom.audio": audio_module,
+        "madmom.audio.chroma": chroma_module,
+        "madmom.features": features_module,
+        "madmom.features.chords": chords_backend_module,
+    }.items():
+        monkeypatch.setitem(sys.modules, name, module)
+
+    source = tmp_path / "source.mp3"
+    source.touch()
+    monkeypatch.setattr(chords_module, "_chordino_chords", lambda _source: [(0.0, 2.0, "C:maj")])
+
+    assert detect_chords(source, beat_times=[0.0, 1.0, 2.0])["backend"] == "chordino"
+
+
+def test_detect_chords_normalizes_a_terminal_fallback_failure(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import vgt.chords as chords_module
+
+    source = tmp_path / "source.mp3"
+    source.touch()
+    monkeypatch.setattr(chords_module, "_madmom_chords", lambda _source: None)
+    monkeypatch.setattr(chords_module, "_chordino_chords", lambda _source: None)
+
+    def failing_template(*_args: object, **_kwargs: object) -> list[tuple[float, float, str]]:
+        raise RuntimeError("decoder unavailable")
+
+    monkeypatch.setattr(chords_module, "_template_chords", failing_template)
+
+    with pytest.raises(ChordDetectionError, match="librosa fallback failed"):
+        detect_chords(source, beat_times=[0.0, 1.0])
 
 
 def test_detect_chords_rejects_too_short_a_grid() -> None:

@@ -42,7 +42,7 @@ def _madmom_beats(source: Path) -> tuple[list[float], list[int]] | None:
     must fall back to librosa."""
     try:
         from madmom.features.downbeats import DBNDownBeatTrackingProcessor, RNNDownBeatProcessor
-    except ImportError:
+    except Exception:
         return None
 
     try:
@@ -75,7 +75,13 @@ def detect_beats(source: Path) -> tuple[list[float], list[int], str]:
         beat_times, beat_positions = madmom_result
         backend = "madmom"
     else:
-        beat_times, beat_positions = _librosa_beats(source)
+        try:
+            beat_times, beat_positions = _librosa_beats(source)
+        except Exception as exc:
+            raise TempoDetectionError(
+                f"Could not detect beats for {source}: madmom was unavailable or failed, "
+                f"and the librosa fallback failed ({exc})."
+            ) from exc
         backend = "librosa"
     if len(beat_times) < 2:
         raise TempoDetectionError(f"Too few beats detected in {source} to build a tempo grid.")
