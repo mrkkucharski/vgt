@@ -1,25 +1,32 @@
 {
-  "current_issue": 172,
-  "session_id": "dec8fe98-86d9-4b25-9ec7-42f08afd2356",
-  "pid": 62351,
-  "process_started_at": "Sun Jul 26 11:45:47 2026",
+  "current_issue": 174,
+  "session_id": "7249eb00-dd8c-4fea-a05d-4fbae15c609c",
+  "pid": 75846,
+  "process_started_at": "Sun Jul 26 16:58:24 2026",
   "agent": "codex",
-  "started_at": "2026-07-26T09:45:45.693100+00:00",
-  "scheduler_stalls": {},
-  "budget": {
-    "window_start": "2026-07-26T06:57:36.064492+00:00",
-    "seconds_used": 630.391693,
-    "dollars_used": 0.0,
-    "seconds_used_by_agent": {
-      "codex": 630.391693
+  "started_at": "2026-07-26T14:58:23.101243+00:00",
+  "scheduler_stalls": {
+    "blocked_issues": {
+      "172": {
+        "first_seen_at": "2026-07-26T09:50:20.792554+00:00",
+        "last_seen_at": "2026-07-26T14:57:12.367909+00:00",
+        "consecutive_passes": 271,
+        "title": "Verify the complete goal contract on current main"
+      }
     }
+  },
+  "budget": {
+    "window_start": "2026-07-26T14:58:19.801535+00:00",
+    "seconds_used": 0.0,
+    "dollars_used": 0.0,
+    "seconds_used_by_agent": {}
   },
   "verification_followups": {
     "f0d8bfc9d2dc6da7a31609184e25c4d66d3986fd2340b33a83e98204fb86691e": "created"
   },
   "role": "implement",
-  "branch": "issue-172-verify-the-complete-goal-contract-on-cur",
-  "worktree_path": "/Users/marekkucharski/projects/.pm-worktrees/vgt/issue-172",
+  "branch": "issue-174-prevent-initialize-from-appending-duplic",
+  "worktree_path": "/Users/marekkucharski/projects/.pm-worktrees/vgt/issue-174",
   "pr_number": null,
   "followup_generation": {
     "fingerprint": "c9062f68c1374ea6634d453b9678aa05a94a75a7c794f6b3ababa76bb4460fc5",
@@ -56,13 +63,13 @@
     "166": 4
   },
   "pending_transition": {
-    "issue": 172,
+    "issue": 174,
     "target": "working",
     "event": "agent.started",
     "detail": {
-      "issue": 172,
+      "issue": 174,
       "agent": "codex",
-      "branch": "issue-172-verify-the-complete-goal-contract-on-cur"
+      "branch": "issue-174-prevent-initialize-from-appending-duplic"
     },
     "cleanup": {}
   }
