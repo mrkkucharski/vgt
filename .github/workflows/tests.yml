@@ -69,21 +69,24 @@ jobs:
 
           uv tool install --python 3.11 dist/*.whl
           vgt="$UV_TOOL_BIN_DIR/vgt"
+          tool_python="$(head -n 1 "$vgt" | sed 's/^#!//')"
 
           "$vgt" --help
           "$vgt" inspect "test/Reaper Project/Reaper Project.RPP"
 
           destination="$smoke_dir/ReaScripts"
+          script_names="$smoke_dir/script-names"
+          "$tool_python" -c 'from vgt.reascripts import SCRIPT_NAMES; print(*SCRIPT_NAMES, sep="\n")' > "$script_names"
           "$vgt" install-reascripts --destination "$destination"
-          cmp reascript/vgt_initialize.lua "$destination/vgt_initialize.lua"
-          cmp reascript/vgt_sync.lua "$destination/vgt_sync.lua"
+          while IFS= read -r script; do
+            cmp "reascript/$script" "$destination/$script"
+            stat -f %m "$destination/$script" > "$smoke_dir/$script.mtime"
+          done < "$script_names"
 
           # A matching reinstall must leave the installed actions untouched.
-          initialize_mtime="$(stat -f %m "$destination/vgt_initialize.lua")"
-          sync_mtime="$(stat -f %m "$destination/vgt_sync.lua")"
           sleep 1
           "$vgt" install-reascripts --destination "$destination"
-          test "$initialize_mtime" = "$(stat -f %m "$destination/vgt_initialize.lua")"
-          test "$sync_mtime" = "$(stat -f %m "$destination/vgt_sync.lua")"
-          cmp reascript/vgt_initialize.lua "$destination/vgt_initialize.lua"
-          cmp reascript/vgt_sync.lua "$destination/vgt_sync.lua"
+          while IFS= read -r script; do
+            test "$(cat "$smoke_dir/$script.mtime")" = "$(stat -f %m "$destination/$script")"
+            cmp "reascript/$script" "$destination/$script"
+          done < "$script_names"
