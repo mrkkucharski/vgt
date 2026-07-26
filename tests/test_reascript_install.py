@@ -9,7 +9,7 @@ from vgt.cli import main
 from vgt.reascripts import ReaScriptInstallError, SCRIPT_NAMES, install_reascripts
 
 
-def test_install_reascripts_copies_both_actions_and_is_idempotent(tmp_path: Path) -> None:
+def test_install_reascripts_copies_all_actions_and_is_idempotent(tmp_path: Path) -> None:
     destination = tmp_path / "Scripts" / "vgt"
 
     installed = install_reascripts(destination)
@@ -59,12 +59,12 @@ def test_cli_install_reports_paths_and_action_list_step(tmp_path: Path, capsys) 
     assert main(["install-reascripts", "--destination", str(destination), "--dry-run"]) == 0
 
     output = capsys.readouterr().out
-    assert str(destination / "vgt_initialize.lua") in output
-    assert str(destination / "vgt_sync.lua") in output
+    for name in SCRIPT_NAMES:
+        assert str(destination / name) in output
     assert "Action List" in output
 
 
-def test_build_artifacts_contain_both_reascripts(tmp_path: Path) -> None:
+def test_build_artifacts_contain_all_reascripts(tmp_path: Path) -> None:
     """The install command must work after `uv tool install`, not only in a checkout."""
     root = Path(__file__).parents[1]
     dist = tmp_path / "dist"

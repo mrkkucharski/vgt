@@ -17,12 +17,16 @@ checklist.
 
    The actions are installed to
    `~/Library/Application Support/REAPER/Scripts/vgt`. In REAPER's Action
-   List, use `ReaScript: Load` to register both installed Lua files once.
-   This step does not require retaining a source checkout. `--dry-run` previews
-   paths without changing them and `--destination DIR` is useful for a custom
-   REAPER resource location or automated test. The installer leaves identical
-   files alone and asks before replacing a different file; use `--force` only
-   when you intend to replace it.
+   List, use `ReaScript: Load` to register all three installed Lua files once:
+   `vgt_initialize.lua` initializes and applies vgt-managed objects,
+   `vgt_sync.lua` saves chord and section corrections, and
+   `vgt_working_copy.lua` creates protected user-owned `[work]` copies of
+   generated reference MIDI. This step does not require retaining a source
+   checkout. `--dry-run` previews paths without changing them and
+   `--destination DIR` is useful for a custom REAPER resource location or
+   automated test. The installer leaves identical files alone and asks before
+   replacing a different file; use `--force` only when you intend to replace
+   it.
 2. Save the target `.RPP` in REAPER 7.x.
 3. Run `vgt_initialize.lua` from REAPER's Action List.
    On first use choose a file-backed reference track and declare whether its
