@@ -119,6 +119,23 @@ local function workspace_has_only_discardable_children(folder_index)
   return true
 end
 
+-- A workspace made by this action has exactly one folder level and a child
+-- which closes it back to the surrounding top-level depth.  Do not try to
+-- repair a marked container whose folder depths have been edited or damaged:
+-- reusing it could leave later user tracks inside an unclosed folder.  Keeping
+-- such a workspace is safer than inferring that its remaining marker permits
+-- structural edits.
+local function is_complete_work_folder(folder_index, track)
+  if reaper.GetMediaTrackInfo_Value(track, "I_FOLDERDEPTH") ~= 1 then return false end
+  local last_child = folder_last_child_index(folder_index)
+  if last_child <= folder_index then return false end
+  local depth = 0
+  for index = folder_index, last_child do
+    depth = depth + reaper.GetMediaTrackInfo_Value(reaper.GetTrack(0, index), "I_FOLDERDEPTH")
+  end
+  return depth == 0 and workspace_has_only_discardable_children(folder_index)
+end
+
 -- The reused `[work]` folder, if one created by this action already exists: a
 -- marked top-level folder track named exactly `[work]`. Legacy/unmarked folders
 -- are user-owned and intentionally not guessed at. Returns track and index.
@@ -128,8 +145,7 @@ local function find_work_folder()
     if track_name(track) == WORK_FOLDER_NAME
       and is_marked_work_object(track)
       and is_top_level_track(index)
-      and reaper.GetMediaTrackInfo_Value(track, "I_FOLDERDEPTH") >= 1
-      and workspace_has_only_discardable_children(index) then
+      and is_complete_work_folder(index, track) then
       return track, index
     end
   end
@@ -250,8 +266,7 @@ local function discard()
     if track_name(track) == WORK_FOLDER_NAME
       and is_marked_work_object(track)
       and is_top_level_track(index)
-      and reaper.GetMediaTrackInfo_Value(track, "I_FOLDERDEPTH") >= 1
-      and workspace_has_only_discardable_children(index) then
+      and is_complete_work_folder(index, track) then
       local last_child = folder_last_child_index(index)
       for child_index = index, last_child do
         removable_tracks[reaper.GetTrack(0, child_index)] = true

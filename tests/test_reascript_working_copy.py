@@ -185,6 +185,32 @@ def test_find_work_folder_preserves_unmarked_and_nested_work_collisions() -> Non
     assert _run(lua_program).stdout == "nil"
 
 
+def test_find_work_folder_preserves_marked_workspaces_with_altered_folder_depth() -> None:
+    """The marker is not permission to repair a structurally changed folder.
+    Reusing this +2/-2 workspace as though it were vgt's +1/-1 shape would
+    leave one folder level open after appending a new copy."""
+    script = WORKING_COPY_SCRIPT.read_text()
+    helpers_end = script.index("local function selected_source_tracks")
+    lua_program = "\n".join(
+        [
+            "local tracks = {",
+            "  {name = '[work]', depth = 2, ext={['P_EXT:vgt_working_copy']='1'}},",
+            "  {name = '[work] altered copy', depth = -2, ext={['P_EXT:vgt_working_copy']='1'}},",
+            "  {name = 'Outside', depth = 0},",
+            "}",
+            "reaper = {}",
+            "function reaper.CountTracks() return #tracks end",
+            "function reaper.GetTrack(_, index) return tracks[index + 1] end",
+            "function reaper.GetTrackName(track) return true, track.name end",
+            "function reaper.GetMediaTrackInfo_Value(track, key) return key == 'I_FOLDERDEPTH' and track.depth or 0 end",
+            "function reaper.GetSetMediaTrackInfo_String(track, key, value, set) if set then track.ext = track.ext or {}; track.ext[key] = value; return true, value end; return true, track.ext and track.ext[key] or '' end",
+            script[:helpers_end],
+            "io.write(tostring(find_work_folder()))",
+        ]
+    )
+    assert _run(lua_program).stdout == "nil"
+
+
 def _build_copy_mock() -> str:
     return "\n".join(
         [
@@ -347,6 +373,38 @@ def test_discard_preserves_a_mixed_marked_workspace_without_breaking_its_folder(
     )
     result = _run(lua_program)
     assert result.stdout.endswith("[work]:1;[work] disposable:0;User addition:-1;Outside:0;")
+
+
+def test_discard_preserves_a_marked_workspace_with_altered_folder_depth() -> None:
+    """A durable marker only identifies vgt's original scratch shape; it does
+    not authorize deleting a workspace whose nesting has been changed."""
+    script = WORKING_COPY_SCRIPT.read_text()
+    helpers_end = script.index("local function choose_action")
+    lua_program = "\n".join(
+        [
+            "local tracks = {",
+            "  {name='[work]', values={I_FOLDERDEPTH=2}, ext={['P_EXT:vgt_working_copy']='1'}},",
+            "  {name='[work] altered copy', values={I_FOLDERDEPTH=-2}, ext={['P_EXT:vgt_working_copy']='1'}},",
+            "  {name='Outside', values={I_FOLDERDEPTH=0}, ext={}},",
+            "}",
+            "reaper = {}",
+            "function reaper.CountTracks() return #tracks end",
+            "function reaper.GetTrack(_, index) return tracks[index + 1] end",
+            "function reaper.GetTrackName(track) return true, track.name end",
+            "function reaper.GetMediaTrackInfo_Value(track, key) return track.values[key] or 0 end",
+            "function reaper.GetSetMediaTrackInfo_String(track, key, value, set) if set then track.ext[key] = value; return true, value end; return true, track.ext[key] or '' end",
+            "function reaper.DeleteTrack() error('an altered workspace must remain intact') end",
+            "function reaper.Undo_BeginBlock() end; function reaper.Undo_EndBlock() end",
+            "function reaper.PreventUIRefresh() end; function reaper.TrackList_AdjustWindows() end; function reaper.UpdateArrange() end",
+            "function reaper.MarkProjectDirty() error('nothing changed') end",
+            "function reaper.ShowMessageBox(text) io.write('WARNED:', text) end",
+            script[:helpers_end],
+            "discard()",
+            "for _,t in ipairs(tracks) do io.write(t.name, ':', t.values.I_FOLDERDEPTH, ';') end",
+        ]
+    )
+    result = _run(lua_program)
+    assert result.stdout.endswith("[work]:2;[work] altered copy:-2;Outside:0;")
 
 
 def test_discard_preserves_reclaimed_copy_permanently_and_keeps_folder_depths() -> None:
