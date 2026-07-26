@@ -1,23 +1,23 @@
 {
   "current_issue": 166,
-  "session_id": "c4420063-15a8-4d0f-9207-3d256c3f94e7",
-  "pid": 53109,
-  "process_started_at": "Sun Jul 26 10:28:01 2026",
+  "session_id": "3f8cef0c-8adf-4a41-bac7-da2e39681cfa",
+  "pid": 53630,
+  "process_started_at": "Sun Jul 26 10:30:24 2026",
   "agent": "codex",
-  "started_at": "2026-07-26T08:28:00.542466+00:00",
+  "started_at": "2026-07-26T08:30:22.636668+00:00",
   "scheduler_stalls": {},
   "budget": {
     "window_start": "2026-07-26T06:57:36.064492+00:00",
-    "seconds_used": 490.417305,
+    "seconds_used": 630.391693,
     "dollars_used": 0.0,
     "seconds_used_by_agent": {
-      "codex": 490.417305
+      "codex": 630.391693
     }
   },
   "verification_followups": {
     "f0d8bfc9d2dc6da7a31609184e25c4d66d3986fd2340b33a83e98204fb86691e": "created"
   },
-  "role": "review",
+  "role": "fix",
   "branch": "issue-166-make-work-cleanup-respect-durable-owners",
   "worktree_path": "/Users/marekkucharski/projects/.pm-worktrees/vgt/issue-166",
   "pr_number": 167,
@@ -53,16 +53,16 @@
     "131": 2,
     "150": 5,
     "151": 1,
-    "166": 3
+    "166": 4
   },
   "pending_transition": {
     "issue": 166,
     "target": "working",
-    "event": "agent.review_started",
+    "event": "agent.fix_started",
     "detail": {
       "issue": 166,
       "agent": "codex",
-      "pr": 167
+      "fix_count": 4
     },
     "cleanup": {}
   }
