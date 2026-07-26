@@ -430,6 +430,16 @@ user should, in a real REAPER session:
   duplicate block, because ownership is also recorded directly in the REAPER
   project (a per-track mark for tracks, project-scoped extended state for
   regions) and reconciled from the union of both records.
+- Track ownership also records a stable role (`managed-root`, `beats`, `key`,
+  `chords`, `stem:<name>`, or `variant:<target>:<id>`) and the project stores
+  a managed-root manifest. If apply finds a `[vgt]` folder but cannot
+  authenticate it, or finds multiple candidate roots, it stops before changing
+  the project and reports the project/sidecar paths and every ownership count.
+  This is intentional: a `[vgt]` name never grants deletion permission. To
+  recover a duplicated project, save a backup, use the reported GUIDs to keep
+  the authenticated root, and rename each unauthenticated folder to `[work]`
+  (or another non-`[vgt]` name) before applying again. The renamed folder is
+  then preserved as user-owned; apply never removes it automatically.
 - Project mutation uses REAPER's API, never RPP text editing.
 - Heavy analysis runs in the CLI, not inside REAPER.
 - vgt-owned audio is time-based and does not stretch with tempo-map changes.

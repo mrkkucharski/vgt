@@ -204,6 +204,7 @@ function reaper.GetSetMediaTrackInfo_String(t, key, value, set)
   if key == 'P_NAME' then return true, t.name end
   return true, (t.ext and t.ext[key]) or ''
 end
+function reaper.GetMediaTrackInfo_Value(t, key) return t[key] or 0 end
 function reaper.SetMediaTrackInfo_Value(t, key, value) t[key]=value end
 function reaper.ColorToNative(red, green, blue) return blue * 65536 + green * 256 + red end
 function reaper.AddMediaItemToTrack(t) local i={{position=0,length=0}}; table.insert(t.items,i); return i end
