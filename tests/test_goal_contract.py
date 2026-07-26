@@ -19,7 +19,7 @@ from vgt.analysis import analyze
 from vgt.separation import FakeSeparator, separate
 from vgt.sidecar import artifact_namespace_dir, read_sidecar
 from vgt.transcribe import FakeTranscriber, TargetTranscriberRouter
-from vgt.transcription_lifecycle import add_variant, discard_variant, select_variant
+from vgt.transcription_lifecycle import add_variant, discard_variant, purge_discarded, select_variant
 
 
 ROOT = Path(__file__).parents[1]
@@ -507,6 +507,136 @@ def test_goal_contract_reconciles_two_guitar_variants_without_touching_working_c
     # The working-copy snapshot augments, rather than changes, the original
     # user state captured before vgt initialized the project.
     assert "The Seven Rivers (Full March - 3_00)" in original_user_state
+
+
+def test_goal_contract_reconciles_independent_guitar_bass_and_drum_targets(
+    tmp_path: Path, deterministic_detectors: None,
+) -> None:
+    """Prove the delivered multi-target transcription contract end to end.
+
+    The two fake backends are deliberately distinct instances: guitar and
+    bass must use the Basic Pitch route (including its raw-detection cache),
+    while drums must use the DrumScript route.  Applying the resulting
+    sidecar through the real ReaScript fixture proves each MIDI track stays
+    adjacent to its own stem rather than following target request order.
+    """
+    project = _copy_project(tmp_path)
+    state = _lua_state(project)
+    original_user_state = _user_snapshot(project, state)
+
+    state, _ = _run_apply(project, state)
+    separator = CountingSeparator()
+    separate(project, separator, guitar_type="electric")
+    basic_pitch = CountingTranscriber()
+    drumscript = CountingTranscriber()
+    router = TargetTranscriberRouter(
+        basic_pitch=basic_pitch,
+        drumscript=drumscript,
+        drumscript_targets=("drums",),
+    )
+
+    guitar_variant = add_variant(project, "guitar", label="lead", profile="default", router=router)
+    bass_variant = add_variant(project, "bass", label="low-end", profile="default", router=router)
+    drums_variant = add_variant(project, "drums", label="kit", profile="default", router=router)
+    sidecar = read_sidecar(project)
+    targets = sidecar["analysis"]["transcription"]["targets"]
+    guitar_id = targets["guitar"]["variant_order"][0]
+    bass_id = targets["bass"]["variant_order"][0]
+    drums_id = targets["drums"]["variant_order"][0]
+
+    # Guitar and bass are independently detected through Basic Pitch; drums
+    # use the separate DrumScript backend and never create a raw-note cache.
+    assert separator.calls == 5
+    assert (basic_pitch.raw_calls, basic_pitch.calls, drumscript.calls) == (2, 0, 1)
+    assert guitar_variant["backend"] == bass_variant["backend"] == "basic-pitch"
+    assert drums_variant["backend"] == "drumscript"
+    assert targets["guitar"]["selected_variant_id"] == guitar_id
+    assert targets["bass"]["selected_variant_id"] == bass_id
+    assert targets["drums"]["selected_variant_id"] == drums_id
+    detection_cache = sidecar["analysis"]["transcription"]["detection_cache"]
+    assert set(detection_cache) == {guitar_variant["detection_hash"], bass_variant["detection_hash"]}
+
+    namespace_dir = artifact_namespace_dir(project, sidecar["analysis"]["stems"]["artifact_namespace"])
+    guitar_midi = namespace_dir / guitar_variant["midi_file"]
+    bass_midi = namespace_dir / bass_variant["midi_file"]
+    drums_midi = namespace_dir / drums_variant["midi_file"]
+    assert guitar_midi.is_file() and bass_midi.is_file() and drums_midi.is_file()
+
+    # Stem order is bass, drums, guitar in the fixture's managed block; MIDI
+    # must follow each stem immediately, not the order variants were added.
+    state, first_apply = _run_apply(project, state)
+    names = first_apply.split("#", 1)[0].split("|")
+    for stem, midi in (
+        ("[vgt] Bass", "[vgt] Bass Ref — low-end (MIDI)"),
+        ("[vgt] Drums", "[vgt] Drums Ref — kit (MIDI)"),
+        ("[vgt] Guitar", "[vgt] Guitar Ref — lead (MIDI)"),
+    ):
+        assert names.count(midi) == 1
+        assert names.index(midi) == names.index(stem) + 1
+    state, second_apply = _run_apply(project, state)
+    second_names = second_apply.split("#", 1)[0].split("|")
+    assert second_names == names
+
+    # These intentionally user-owned copies cover both the target being
+    # discarded and the targets that must survive that cleanup.
+    applied_sidecar = read_sidecar(project)
+    assert _user_snapshot(
+        project,
+        state,
+        managed_tracks=applied_sidecar["managed_track_guids"],
+        managed_regions=applied_sidecar["managed_region_ids"],
+    ) == original_user_state
+    state, _ = _run(project, state, "", """
+for _, name in ipairs({
+  '[work] Guitar Ref — lead (MIDI)', '[work] Bass Ref — low-end (MIDI)', '[work] Drums Ref — kit (MIDI)'
+}) do
+  table.insert(tracks, {guid=name, name=name, B_MUTE=0, items={{position=10,length=1,C_LOCK=0,take={name='edited by user',source=''}}}})
+end
+""")
+    work_snapshot = _user_snapshot(
+        project,
+        state,
+        managed_tracks=applied_sidecar["managed_track_guids"],
+        managed_regions=applied_sidecar["managed_region_ids"],
+    )
+
+    # Discarding the selected bass candidate is explicit and target-local.
+    # It removes only bass's MIDI/cache and never changes guitar or drums'
+    # selections, artifacts, or user-owned working copies.
+    discard_variant(project, "bass", bass_id, clear_selected=True)
+    assert not bass_midi.exists() and guitar_midi.is_file() and drums_midi.is_file()
+    after_discard = read_sidecar(project)
+    after_targets = after_discard["analysis"]["transcription"]["targets"]
+    assert after_targets["bass"]["selected_variant_id"] is None
+    assert after_targets["guitar"]["selected_variant_id"] == guitar_id
+    assert after_targets["drums"]["selected_variant_id"] == drums_id
+    assert set(after_discard["analysis"]["transcription"]["detection_cache"]) == {guitar_variant["detection_hash"]}
+
+    # Purging the discarded bass audit is similarly local: retained targets
+    # still have their artifacts and cache, while every user-owned object is
+    # byte-for-byte identical to the snapshot taken after working copies.
+    purge_discarded(project, "bass")
+    after_purge = read_sidecar(project)
+    assert after_purge["analysis"]["transcription"]["targets"]["bass"]["discarded_variants"] == []
+    assert guitar_midi.is_file() and drums_midi.is_file()
+    assert set(after_purge["analysis"]["transcription"]["detection_cache"]) == {guitar_variant["detection_hash"]}
+    state, final_apply = _run_apply(project, state)
+    final_names = final_apply.split("#", 1)[0].split("|")
+    assert "[vgt] Bass Ref — low-end (MIDI)" not in final_names
+    for name in (
+        "[vgt] Guitar Ref — lead (MIDI)", "[vgt] Drums Ref — kit (MIDI)",
+        "[work] Guitar Ref — lead (MIDI)", "[work] Bass Ref — low-end (MIDI)", "[work] Drums Ref — kit (MIDI)",
+    ):
+        assert final_names.count(name) == 1
+    state, reapplied = _run_apply(project, state)
+    assert reapplied.split("#", 1)[0].split("|") == final_names
+    final_sidecar = read_sidecar(project)
+    assert _user_snapshot(
+        project,
+        state,
+        managed_tracks=final_sidecar["managed_track_guids"],
+        managed_regions=final_sidecar["managed_region_ids"],
+    ) == work_snapshot
 
 
 def test_goal_contract_sync_survives_a_concurrent_analyze_commit(tmp_path: Path, deterministic_detectors: None) -> None:
