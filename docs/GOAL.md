@@ -37,11 +37,14 @@ correction workflow, cost controls, and the current regression contract.
 `tests/test_goal_contract.py` is the offline executable acceptance test for
 this goal. It copies the real RPP fixture and drives initialization, fake
 LALAL separation, fake transcription, variant lifecycle operations, ReaScript
-apply and sync, and reconciliation passes. It proves the
+apply and sync, CLI paid-stem consent/quote/cache/checkpoint-recovery paths,
+and reconciliation passes. It proves the
 non-destructive/idempotent object contract, correction and detected-baseline
 behavior, non-invasive tempo fallback, raw-detection cache reuse, exact
-discarded-artifact/cache cleanup, persistent selection, and preservation of
-user tracks plus a simulated `[work]` copy. It is part of the automatic
+discarded-artifact/cache cleanup, persistent selection, paid-work refusal
+without explicit non-interactive consent, no duplicate paid submission after
+checkpoint recovery, credential non-persistence, and preservation of user
+tracks plus a simulated `[work]` copy. It is part of the automatic
 `Tests` workflow, which runs on every push and pull request (and may also be
 manually dispatched). The Linux job runs the complete offline suite; a separate
 macOS installed-distribution smoke job remains covered by the same workflow.
