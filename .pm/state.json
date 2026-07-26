@@ -1,10 +1,10 @@
 {
   "current_issue": 164,
-  "session_id": "89d0849d-10ea-4b82-bbb1-05d590018db4",
-  "pid": 45168,
-  "process_started_at": "Sun Jul 26 09:41:24 2026",
+  "session_id": "98d62c74-c8ed-4f36-b646-2f62832431cc",
+  "pid": 46267,
+  "process_started_at": "Sun Jul 26 09:49:29 2026",
   "agent": "codex",
-  "started_at": "2026-07-26T07:41:22.583834+00:00",
+  "started_at": "2026-07-26T07:49:28.005290+00:00",
   "scheduler_stalls": {},
   "budget": {
     "window_start": "2026-07-26T06:57:36.064492+00:00",
@@ -15,10 +15,10 @@
   "verification_followups": {
     "f0d8bfc9d2dc6da7a31609184e25c4d66d3986fd2340b33a83e98204fb86691e": "created"
   },
-  "role": "implement",
+  "role": "review",
   "branch": "issue-164-exercise-paid-stem-cost-controls-in-the",
   "worktree_path": "/Users/marekkucharski/projects/.pm-worktrees/vgt/issue-164",
-  "pr_number": null,
+  "pr_number": 165,
   "followup_generation": {
     "fingerprint": "3cadb8f41d652ab30df6ac86dbecaa55965a77f46e573d3c30fa419500f78515",
     "items": {
@@ -55,11 +55,11 @@
   "pending_transition": {
     "issue": 164,
     "target": "working",
-    "event": "agent.started",
+    "event": "agent.review_started",
     "detail": {
       "issue": 164,
       "agent": "codex",
-      "branch": "issue-164-exercise-paid-stem-cost-controls-in-the"
+      "pr": 165
     },
     "cleanup": {}
   }
