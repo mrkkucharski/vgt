@@ -10,10 +10,10 @@
 -- named `[work] ...` (never `[vgt] ...`) and carries no vgt-ownership mark, so
 -- vgt_initialize.lua's remove_previous_managed_tracks leaves it untouched forever
 -- -- it deletes only tracks that are *both* vgt-owned *and* still `[vgt]`-named.
--- This action likewise only ever adds `[work]` tracks and, on discard, deletes
--- only `[work]` tracks: it never creates, deletes, or mutates a `[vgt]` or user
--- track. Finishing an edit is a manual drag of the `[work]` track wherever you
--- want it; rename it away from the `[work]` prefix to keep it past a discard.
+-- A separate working-copy marker records which `[work]` objects this action
+-- created. Names alone are user-controlled and therefore never prove ownership.
+-- Finishing an edit is a manual drag of the `[work]` track wherever you want it;
+-- rename it away from the `[work]` prefix to keep it past a discard.
 
 local VGT_PREFIX = "[vgt]"
 local WORK_PREFIX = "[work]"
@@ -22,7 +22,11 @@ local WORK_FOLDER_NAME = WORK_PREFIX
 -- must never carry it, or a future apply could treat the copy as a stale vgt
 -- track to reconcile (the name guard already protects it, but clearing the mark
 -- makes the copy correct by both of vgt's ownership tests, not just one).
-local EXT_STATE_KEY = "P_EXT:vgt_managed"
+local VGT_EXT_STATE_KEY = "P_EXT:vgt_managed"
+-- This is deliberately distinct from vgt_managed: normal vgt reconciliation
+-- must continue to ignore working copies and their container.
+local WORK_EXT_STATE_KEY = "P_EXT:vgt_working_copy"
+local WORK_EXT_STATE_VALUE = "1"
 
 local function track_name(track)
   local _, name = reaper.GetTrackName(track, "")
@@ -68,12 +72,46 @@ local function folder_last_child_index(folder_index)
   return last
 end
 
--- The reused `[work]` folder, if one already exists: a top-level folder track
--- named exactly `[work]`. Returns the track and its index, or nil.
+local function is_marked_work_object(track)
+  local _, value = reaper.GetSetMediaTrackInfo_String(track, WORK_EXT_STATE_KEY, "", false)
+  return value == WORK_EXT_STATE_VALUE
+end
+
+local function is_discardable_work_object(track)
+  return is_marked_work_object(track) and starts_with(track_name(track), WORK_PREFIX)
+end
+
+local function is_top_level_track(index)
+  local depth = 0
+  for previous = 0, index - 1 do
+    depth = depth + reaper.GetMediaTrackInfo_Value(reaper.GetTrack(0, previous), "I_FOLDERDEPTH")
+  end
+  return depth == 0
+end
+
+-- Never extend or remove a marked container that now contains a user-owned
+-- object (including a marked copy reclaimed by renaming). Doing so could change
+-- that user's folder depth. It remains visible but is no longer this action's
+-- reusable/discardable scratch area.
+local function workspace_has_only_discardable_children(folder_index)
+  local last_child = folder_last_child_index(folder_index)
+  for index = folder_index + 1, last_child do
+    if not is_discardable_work_object(reaper.GetTrack(0, index)) then return false end
+  end
+  return true
+end
+
+-- The reused `[work]` folder, if one created by this action already exists: a
+-- marked top-level folder track named exactly `[work]`. Legacy/unmarked folders
+-- are user-owned and intentionally not guessed at. Returns track and index.
 local function find_work_folder()
   for index = 0, reaper.CountTracks(0) - 1 do
     local track = reaper.GetTrack(0, index)
-    if track_name(track) == WORK_FOLDER_NAME and reaper.GetMediaTrackInfo_Value(track, "I_FOLDERDEPTH") >= 1 then
+    if track_name(track) == WORK_FOLDER_NAME
+      and is_marked_work_object(track)
+      and is_top_level_track(index)
+      and reaper.GetMediaTrackInfo_Value(track, "I_FOLDERDEPTH") >= 1
+      and workspace_has_only_discardable_children(index) then
       return track, index
     end
   end
@@ -99,7 +137,8 @@ local function build_working_copy(insert_index, source_chunk, source_name, folde
   reaper.GetSetMediaTrackInfo_String(track, "P_NAME", working_name(source_name), true)
   reaper.SetMediaTrackInfo_Value(track, "B_MUTE", 0)
   reaper.SetMediaTrackInfo_Value(track, "I_FOLDERDEPTH", folder_depth)
-  reaper.GetSetMediaTrackInfo_String(track, EXT_STATE_KEY, "", true)
+  reaper.GetSetMediaTrackInfo_String(track, VGT_EXT_STATE_KEY, "", true)
+  reaper.GetSetMediaTrackInfo_String(track, WORK_EXT_STATE_KEY, WORK_EXT_STATE_VALUE, true)
   reaper.SetTrackSelected(track, true)
   -- A vgt reference item is left unlocked already, but a copied label/beat item
   -- can be locked; unlock every item so the whole copy is immediately editable.
@@ -145,14 +184,16 @@ local function create()
     reaper.SetMediaTrackInfo_Value(reaper.GetTrack(0, last_child), "I_FOLDERDEPTH", 0)
     insert_index = last_child + 1
   else
-    -- Create the `[work]` folder at the end. It is deliberately user-owned:
-    -- no vgt mark, a non-`[vgt]` name -- so vgt never touches it.
+    -- Create a marked `[work]` folder at the end. Its marker belongs only to
+    -- this action (not normal vgt reconciliation); an unmarked legacy folder
+    -- is preserved rather than reused based on its name.
     insert_index = reaper.CountTracks(0)
     reaper.InsertTrackAtIndex(insert_index, false)
     local created = reaper.GetTrack(0, insert_index)
     reaper.GetSetMediaTrackInfo_String(created, "P_NAME", WORK_FOLDER_NAME, true)
     reaper.SetMediaTrackInfo_Value(created, "B_MUTE", 0)
     reaper.SetMediaTrackInfo_Value(created, "I_FOLDERDEPTH", 1)
+    reaper.GetSetMediaTrackInfo_String(created, WORK_EXT_STATE_KEY, WORK_EXT_STATE_VALUE, true)
     insert_index = insert_index + 1
   end
 
@@ -174,12 +215,26 @@ local function discard()
   reaper.Undo_BeginBlock()
   reaper.PreventUIRefresh(1)
   local removed = 0
-  -- Delete only tracks still named `[work] ...`: a copy the user renamed away
-  -- from the prefix is theirs to keep, mirroring how vgt treats a `[vgt]` track
-  -- the user reclaimed by renaming.
+  local removable_folders = {}
+  -- Decide folder removal before deleting its closing child. This avoids
+  -- interpreting unrelated following tracks as children of an empty folder.
+  for index = 0, reaper.CountTracks(0) - 1 do
+    local track = reaper.GetTrack(0, index)
+    if track_name(track) == WORK_FOLDER_NAME
+      and is_marked_work_object(track)
+      and reaper.GetMediaTrackInfo_Value(track, "I_FOLDERDEPTH") >= 1
+      and workspace_has_only_discardable_children(index) then
+      removable_folders[track] = true
+    end
+  end
+  -- Delete only objects that this action marked *and* that still have the
+  -- `[work]` prefix. Legacy/unmarked names are always preserved. A marked copy
+  -- renamed away from the prefix is thereby permanently reclaimed by its user.
   for index = reaper.CountTracks(0) - 1, 0, -1 do
     local track = reaper.GetTrack(0, index)
-    if starts_with(track_name(track), WORK_PREFIX) then
+    local is_folder = reaper.GetMediaTrackInfo_Value(track, "I_FOLDERDEPTH") >= 1
+    if is_discardable_work_object(track)
+      and (not is_folder or track_name(track) ~= WORK_FOLDER_NAME or removable_folders[track]) then
       reaper.DeleteTrack(track)
       removed = removed + 1
     end

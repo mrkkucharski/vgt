@@ -371,19 +371,23 @@ actions) and run it from REAPER's Action List. It offers two choices:
 - **Create working copy from selected tracks** — select the track(s) you want
   to work with (typically the selected `[vgt] <Target> Ref — <Label> (MIDI)`, plus its stem and
   `[vgt] Chords` for context), then run this. Each selected track is duplicated
-  into a `[work]` folder track — created if missing, reused if present. The
-  copies are unmuted, unlocked, and immediately editable.
-- **Discard all [work] copies** — deletes every track still named `[work] …`,
-  clearing the scratch area in one step.
+  into a `[work]` folder track. The action puts a durable private working-copy
+  marker on that folder and its copies; only a marked folder is reused. An
+  existing unmarked `[work]` folder or track is treated as user-owned and left
+  alone. The copies are unmuted, unlocked, and immediately editable.
+- **Discard all [work] copies** — deletes only marked tracks that still start
+  with `[work]`; unmarked legacy or user-created `[work]` tracks are preserved.
 
-The copies are deliberately outside vgt's ownership: they are named `[work]`
-(never `[vgt]`) and carry no vgt-managed mark, so `vgt_initialize.lua` leaves
-them alone forever — it only ever deletes tracks that are both vgt-owned and
-still `[vgt]`-named. To **keep** an edited copy past a discard (or promote it as
-your finished part), drag it where you want and rename it so it no longer starts
-with `[work]`; it is yours from then on, exactly like a `[vgt]` track you
-reclaimed by renaming. The vgt reference it came from stays as the muted machine
-baseline, regenerated on the next apply.
+The copies are deliberately outside normal vgt ownership: they are named
+`[work]` (never `[vgt]`), carry no `vgt_managed` mark, and instead carry a
+separate private working-copy marker used only by this action. Normal
+reconciliation never touches them. Older unmarked `[work]` objects are
+conservatively treated as user-owned and cannot be discarded by vgt. To **keep**
+an edited copy past a discard (or promote it as your finished part), drag it
+where you want and rename it so it no longer starts with `[work]`; it is yours
+from then on, exactly like a `[vgt]` track you reclaimed by renaming. The vgt
+reference it came from remains as the unmuted machine baseline, regenerated on
+the next apply.
 
 The action edits the live project only: it never reads or writes the `.vgt`
 sidecar and never touches a `[vgt]` or user track.
