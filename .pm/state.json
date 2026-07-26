@@ -1,10 +1,10 @@
 {
-  "current_issue": 170,
-  "session_id": "d0672090-c744-4245-b97e-d61835457499",
-  "pid": 58834,
-  "process_started_at": "Sun Jul 26 11:06:11 2026",
+  "current_issue": 172,
+  "session_id": "dec8fe98-86d9-4b25-9ec7-42f08afd2356",
+  "pid": 62351,
+  "process_started_at": "Sun Jul 26 11:45:47 2026",
   "agent": "codex",
-  "started_at": "2026-07-26T09:06:09.756503+00:00",
+  "started_at": "2026-07-26T09:45:45.693100+00:00",
   "scheduler_stalls": {},
   "budget": {
     "window_start": "2026-07-26T06:57:36.064492+00:00",
@@ -17,15 +17,15 @@
   "verification_followups": {
     "f0d8bfc9d2dc6da7a31609184e25c4d66d3986fd2340b33a83e98204fb86691e": "created"
   },
-  "role": "review",
-  "branch": "issue-170-make-optional-analysis-backends-fail-ope",
-  "worktree_path": "/Users/marekkucharski/projects/.pm-worktrees/vgt/issue-170",
-  "pr_number": 171,
+  "role": "implement",
+  "branch": "issue-172-verify-the-complete-goal-contract-on-cur",
+  "worktree_path": "/Users/marekkucharski/projects/.pm-worktrees/vgt/issue-172",
+  "pr_number": null,
   "followup_generation": {
-    "fingerprint": "b690557f4e89ea84476a4062e8a700e7d7642f559b4858f01b49b59f071e307b",
+    "fingerprint": "c9062f68c1374ea6634d453b9678aa05a94a75a7c794f6b3ababa76bb4460fc5",
     "items": {
-      "ac71900a996396afb6a6df15e438d2be4bb992a720ae4387ceeb5ba2a32ec2f2": {
-        "title": "Make optional analysis backends fail open consistently",
+      "f0ad824207ac1bebbd30dc48addaea1b9b7ce00e39179d232b34a621dc2f3b40": {
+        "title": "Verify the complete goal contract on current main",
         "status": "created"
       }
     }
@@ -56,13 +56,13 @@
     "166": 4
   },
   "pending_transition": {
-    "issue": 170,
+    "issue": 172,
     "target": "working",
-    "event": "agent.review_started",
+    "event": "agent.started",
     "detail": {
-      "issue": 170,
+      "issue": 172,
       "agent": "codex",
-      "pr": 171
+      "branch": "issue-172-verify-the-complete-goal-contract-on-cur"
     },
     "cleanup": {}
   }
