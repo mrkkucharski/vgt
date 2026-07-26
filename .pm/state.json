@@ -1,10 +1,10 @@
 {
-  "current_issue": 158,
-  "session_id": "c718a282-5978-45ea-bc09-6391e8276bf9",
-  "pid": 40802,
-  "process_started_at": "Sun Jul 26 09:10:13 2026",
+  "current_issue": 160,
+  "session_id": "46e512de-acf9-45a6-a16a-27190eb165d0",
+  "pid": 42215,
+  "process_started_at": "Sun Jul 26 09:22:13 2026",
   "agent": "codex",
-  "started_at": "2026-07-26T07:10:11.648204+00:00",
+  "started_at": "2026-07-26T07:22:11.568019+00:00",
   "scheduler_stalls": {},
   "budget": {
     "window_start": "2026-07-26T06:57:36.064492+00:00",
@@ -15,15 +15,19 @@
   "verification_followups": {
     "f0d8bfc9d2dc6da7a31609184e25c4d66d3986fd2340b33a83e98204fb86691e": "created"
   },
-  "role": "review",
-  "branch": "issue-158-restore-automatic-offline-tests-workflow",
-  "worktree_path": "/Users/marekkucharski/projects/.pm-worktrees/vgt/issue-158",
-  "pr_number": 159,
+  "role": "implement",
+  "branch": "issue-160-extend-the-goal-contract-across-transcri",
+  "worktree_path": "/Users/marekkucharski/projects/.pm-worktrees/vgt/issue-160",
+  "pr_number": null,
   "followup_generation": {
-    "fingerprint": "09f473416fddba1debcdc4b2395ebd66587114e548a877858e16ccf6fd7aa334",
+    "fingerprint": "67ccf5b469bf3435de74e3deada23e263cd6850ce0854dab583f8205fb0b9faa",
     "items": {
-      "2e9b61b45fac4131c02ff3c757abb5911c8d20b59a4507b6ca898e6f0d758448": {
-        "title": "Restore automatic offline Tests workflow",
+      "ca7f92a7e005dce2c937d3a845622220dbcff2b6e37663e437643816867b5184": {
+        "title": "Extend the goal contract across transcription targets",
+        "status": "created"
+      },
+      "60cf6c43a75a3f611d6e1a4161bb8d1b84f38aece95c41fed326d01f239345da": {
+        "title": "Align installation with the three bundled ReaScripts",
         "status": "created"
       }
     }
@@ -53,13 +57,13 @@
     "151": 1
   },
   "pending_transition": {
-    "issue": 158,
+    "issue": 160,
     "target": "working",
-    "event": "agent.review_started",
+    "event": "agent.started",
     "detail": {
-      "issue": 158,
+      "issue": 160,
       "agent": "codex",
-      "pr": 159
+      "branch": "issue-160-extend-the-goal-contract-across-transcri"
     },
     "cleanup": {}
   }
