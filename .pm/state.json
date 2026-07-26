@@ -1,10 +1,10 @@
 {
-  "current_issue": 161,
-  "session_id": "929fde39-04cb-435a-a7e2-752fa9b51025",
-  "pid": 44178,
-  "process_started_at": "Sun Jul 26 09:32:48 2026",
+  "current_issue": 164,
+  "session_id": "89d0849d-10ea-4b82-bbb1-05d590018db4",
+  "pid": 45168,
+  "process_started_at": "Sun Jul 26 09:41:24 2026",
   "agent": "codex",
-  "started_at": "2026-07-26T07:32:47.429300+00:00",
+  "started_at": "2026-07-26T07:41:22.583834+00:00",
   "scheduler_stalls": {},
   "budget": {
     "window_start": "2026-07-26T06:57:36.064492+00:00",
@@ -15,19 +15,15 @@
   "verification_followups": {
     "f0d8bfc9d2dc6da7a31609184e25c4d66d3986fd2340b33a83e98204fb86691e": "created"
   },
-  "role": "review",
-  "branch": "issue-161-align-installation-with-the-three-bundle",
-  "worktree_path": "/Users/marekkucharski/projects/.pm-worktrees/vgt/issue-161",
-  "pr_number": 163,
+  "role": "implement",
+  "branch": "issue-164-exercise-paid-stem-cost-controls-in-the",
+  "worktree_path": "/Users/marekkucharski/projects/.pm-worktrees/vgt/issue-164",
+  "pr_number": null,
   "followup_generation": {
-    "fingerprint": "67ccf5b469bf3435de74e3deada23e263cd6850ce0854dab583f8205fb0b9faa",
+    "fingerprint": "3cadb8f41d652ab30df6ac86dbecaa55965a77f46e573d3c30fa419500f78515",
     "items": {
-      "ca7f92a7e005dce2c937d3a845622220dbcff2b6e37663e437643816867b5184": {
-        "title": "Extend the goal contract across transcription targets",
-        "status": "created"
-      },
-      "60cf6c43a75a3f611d6e1a4161bb8d1b84f38aece95c41fed326d01f239345da": {
-        "title": "Align installation with the three bundled ReaScripts",
+      "596cf561316865bb1bfdcfdc32fe8f61e6873becfb8328420c148ff0f527db0a": {
+        "title": "Exercise paid stem cost controls in the offline goal contract",
         "status": "created"
       }
     }
@@ -57,13 +53,13 @@
     "151": 1
   },
   "pending_transition": {
-    "issue": 161,
+    "issue": 164,
     "target": "working",
-    "event": "agent.review_started",
+    "event": "agent.started",
     "detail": {
-      "issue": 161,
+      "issue": 164,
       "agent": "codex",
-      "pr": 163
+      "branch": "issue-164-exercise-paid-stem-cost-controls-in-the"
     },
     "cleanup": {}
   }
