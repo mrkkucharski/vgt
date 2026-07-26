@@ -1,10 +1,10 @@
 {
   "current_issue": 168,
-  "session_id": "0ef39288-f919-45bd-b201-4b21c07b2719",
-  "pid": 55504,
-  "process_started_at": "Sun Jul 26 10:44:06 2026",
+  "session_id": "f3dd09e7-3063-4465-a0a0-fcb8627c6e44",
+  "pid": 56604,
+  "process_started_at": "Sun Jul 26 10:49:55 2026",
   "agent": "codex",
-  "started_at": "2026-07-26T08:44:04.961023+00:00",
+  "started_at": "2026-07-26T08:49:54.035974+00:00",
   "scheduler_stalls": {},
   "budget": {
     "window_start": "2026-07-26T06:57:36.064492+00:00",
@@ -17,10 +17,10 @@
   "verification_followups": {
     "f0d8bfc9d2dc6da7a31609184e25c4d66d3986fd2340b33a83e98204fb86691e": "created"
   },
-  "role": "implement",
+  "role": "review",
   "branch": "issue-168-make-key-detection-resilient-to-broken-o",
   "worktree_path": "/Users/marekkucharski/projects/.pm-worktrees/vgt/issue-168",
-  "pr_number": null,
+  "pr_number": 169,
   "followup_generation": {
     "fingerprint": "5ae10b7d042433e01004975897a8363e91fbb80253a4bc5d6af1472b9f805008",
     "items": {
@@ -58,11 +58,11 @@
   "pending_transition": {
     "issue": 168,
     "target": "working",
-    "event": "agent.started",
+    "event": "agent.review_started",
     "detail": {
       "issue": 168,
       "agent": "codex",
-      "branch": "issue-168-make-key-detection-resilient-to-broken-o"
+      "pr": 169
     },
     "cleanup": {}
   }
