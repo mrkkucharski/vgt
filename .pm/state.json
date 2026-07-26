@@ -1,10 +1,10 @@
 {
   "current_issue": 158,
-  "session_id": "7e6fc246-d160-4246-a0ca-0960a776cd4c",
-  "pid": 39901,
-  "process_started_at": "Sun Jul 26 09:04:25 2026",
+  "session_id": "c718a282-5978-45ea-bc09-6391e8276bf9",
+  "pid": 40802,
+  "process_started_at": "Sun Jul 26 09:10:13 2026",
   "agent": "codex",
-  "started_at": "2026-07-26T07:04:23.706366+00:00",
+  "started_at": "2026-07-26T07:10:11.648204+00:00",
   "scheduler_stalls": {},
   "budget": {
     "window_start": "2026-07-26T06:57:36.064492+00:00",
@@ -15,10 +15,10 @@
   "verification_followups": {
     "f0d8bfc9d2dc6da7a31609184e25c4d66d3986fd2340b33a83e98204fb86691e": "created"
   },
-  "role": "implement",
+  "role": "review",
   "branch": "issue-158-restore-automatic-offline-tests-workflow",
   "worktree_path": "/Users/marekkucharski/projects/.pm-worktrees/vgt/issue-158",
-  "pr_number": null,
+  "pr_number": 159,
   "followup_generation": {
     "fingerprint": "09f473416fddba1debcdc4b2395ebd66587114e548a877858e16ccf6fd7aa334",
     "items": {
@@ -55,11 +55,11 @@
   "pending_transition": {
     "issue": 158,
     "target": "working",
-    "event": "agent.started",
+    "event": "agent.review_started",
     "detail": {
       "issue": 158,
       "agent": "codex",
-      "branch": "issue-158-restore-automatic-offline-tests-workflow"
+      "pr": 159
     },
     "cleanup": {}
   }
