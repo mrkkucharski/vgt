@@ -51,3 +51,7 @@ requests, downloads model environments, starts REAPER, or requires human
 verification. `tests/test_analysis.py` mocks the expensive real-MP3 detector
 calls while testing orchestration and sidecar behavior; the focused
 tempo/key/section/chord detector tests retain their small local audio fixtures.
+The automatic Linux job runs the complete suite, including the executable
+`tests/test_goal_contract.py` acceptance contract. A separate macOS job builds
+the wheel and smoke-tests the documented installed-distribution path. Each job
+has a bounded timeout, and newer runs cancel superseded runs for the same ref.

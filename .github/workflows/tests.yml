@@ -1,14 +1,24 @@
 name: Tests
 
 on:
+  push:
+  pull_request:
   workflow_dispatch:
 
 permissions:
   contents: read
 
+# A newer commit supersedes an older result for the same ref.  Cancelling the
+# superseded run keeps the offline checks bounded when several commits land in
+# quick succession.
+concurrency:
+  group: tests-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   test:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     env:
       # The test contract is intentionally independent of the runner's
       # locale, clock zone, hash randomization, and globally installed pytest
@@ -39,6 +49,7 @@ jobs:
     # macOS is the supported user platform.  Exercise the wheel through the
     # documented `uv tool install` path, separate from the checkout's env.
     runs-on: macos-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
