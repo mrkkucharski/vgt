@@ -1,43 +1,29 @@
 {
-  "current_issue": 147,
-  "session_id": "a458bdad-d10a-42ca-a504-d30d9396da84",
-  "pid": 6293,
-  "process_started_at": "Sat Jul 25 22:20:13 2026",
+  "current_issue": 158,
+  "session_id": "7e6fc246-d160-4246-a0ca-0960a776cd4c",
+  "pid": 39901,
+  "process_started_at": "Sun Jul 26 09:04:25 2026",
   "agent": "codex",
-  "started_at": "2026-07-25T20:20:12.398521+00:00",
+  "started_at": "2026-07-26T07:04:23.706366+00:00",
   "scheduler_stalls": {},
   "budget": {
-    "window_start": "2026-07-25T17:37:12.524700+00:00",
-    "seconds_used": 768.234004,
+    "window_start": "2026-07-26T06:57:36.064492+00:00",
+    "seconds_used": 0.0,
     "dollars_used": 0.0,
-    "seconds_used_by_agent": {
-      "codex": 768.234004
-    }
+    "seconds_used_by_agent": {}
   },
   "verification_followups": {
     "f0d8bfc9d2dc6da7a31609184e25c4d66d3986fd2340b33a83e98204fb86691e": "created"
   },
   "role": "implement",
-  "branch": "issue-147-implement-multiple-transcription-variant",
-  "worktree_path": "/Users/marekkucharski/projects/.pm-worktrees/vgt/issue-147",
+  "branch": "issue-158-restore-automatic-offline-tests-workflow",
+  "worktree_path": "/Users/marekkucharski/projects/.pm-worktrees/vgt/issue-158",
   "pr_number": null,
   "followup_generation": {
-    "fingerprint": "d982f8926d0e86fe89dd3034f7dcb5ecbd29ae33e0d5db1334bdc33e99111ddf",
+    "fingerprint": "09f473416fddba1debcdc4b2395ebd66587114e548a877858e16ccf6fd7aa334",
     "items": {
-      "1f3a4ac6e1532e07e550c72df51a13848e8dffbf12ab3aa9d8f2f3c915b175b5": {
-        "title": "Persist and validate the selected reference mix across applies",
-        "status": "created"
-      },
-      "2522f5e558c30ed330c2abe54c82632e1ebd2e79e5325a3d0423198530264b57": {
-        "title": "Make managed region ownership durable across interrupted apply",
-        "status": "created"
-      },
-      "ef544c9652db39a83e9d910073857d090e98209db969ec890d5bcdd88e01d9dc": {
-        "title": "Make ReaScript sidecar updates atomic and concurrency-safe",
-        "status": "created"
-      },
-      "67a398abdea775534f4b1699c74f96febcb74aa63dd4e750e65f388ce8a032b4": {
-        "title": "Recover safely from interrupted vgt tempo-map writes",
+      "2e9b61b45fac4131c02ff3c757abb5911c8d20b59a4507b6ca898e6f0d758448": {
+        "title": "Restore automatic offline Tests workflow",
         "status": "created"
       }
     }
@@ -67,13 +53,13 @@
     "151": 1
   },
   "pending_transition": {
-    "issue": 147,
+    "issue": 158,
     "target": "working",
     "event": "agent.started",
     "detail": {
-      "issue": 147,
+      "issue": 158,
       "agent": "codex",
-      "branch": "issue-147-implement-multiple-transcription-variant"
+      "branch": "issue-158-restore-automatic-offline-tests-workflow"
     },
     "cleanup": {}
   }
