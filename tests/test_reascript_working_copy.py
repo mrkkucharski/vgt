@@ -27,6 +27,7 @@ def test_working_copy_is_never_vgt_owned() -> None:
     # action's distinct provenance marker is stamped.
     assert 'reaper.GetSetMediaTrackInfo_String(track, VGT_EXT_STATE_KEY, "", true)' in script
     assert 'reaper.GetSetMediaTrackInfo_String(track, WORK_EXT_STATE_KEY, WORK_EXT_STATE_VALUE, true)' in script
+    assert 'local function forget_reclaimed_work_objects()' in script
     # Discard requires both name and durable provenance, never just `[work]`.
     assert "is_marked_work_object(track) and starts_with(track_name(track), WORK_PREFIX)" in script
 
@@ -127,7 +128,7 @@ def test_find_work_folder_matches_only_a_top_level_work_folder_track() -> None:
             "function reaper.GetTrack(_, index) return tracks[index + 1] end",
             "function reaper.GetTrackName(track) return true, track.name end",
             "function reaper.GetMediaTrackInfo_Value(track, key) return key == 'I_FOLDERDEPTH' and track.depth or 0 end",
-            "function reaper.GetSetMediaTrackInfo_String(track, key, value, set) return true, track.ext and track.ext[key] or '' end",
+            "function reaper.GetSetMediaTrackInfo_String(track, key, value, set) if set then track.ext = track.ext or {}; track.ext[key] = value; return true, value end; return true, track.ext and track.ext[key] or '' end",
             script[:helpers_end],
             "local folder, index = find_work_folder()",
             "io.write(folder.name, ':', index)",
@@ -176,7 +177,7 @@ def test_find_work_folder_preserves_unmarked_and_nested_work_collisions() -> Non
             "function reaper.GetTrack(_, index) return tracks[index + 1] end",
             "function reaper.GetTrackName(track) return true, track.name end",
             "function reaper.GetMediaTrackInfo_Value(track, key) return key == 'I_FOLDERDEPTH' and track.depth or 0 end",
-            "function reaper.GetSetMediaTrackInfo_String(track, key, value, set) return true, track.ext and track.ext[key] or '' end",
+            "function reaper.GetSetMediaTrackInfo_String(track, key, value, set) if set then track.ext = track.ext or {}; track.ext[key] = value; return true, value end; return true, track.ext and track.ext[key] or '' end",
             script[:helpers_end],
             "io.write(tostring(find_work_folder()))",
         ]
@@ -296,7 +297,7 @@ def test_discard_removes_only_marked_work_tracks() -> None:
             "function reaper.CountTracks() return #tracks end",
             "function reaper.GetTrack(_, index) return tracks[index + 1] end",
             "function reaper.GetTrackName(track) return true, track.name end",
-            "function reaper.GetSetMediaTrackInfo_String(track, key, value, set) return true, track.ext and track.ext[key] or '' end",
+            "function reaper.GetSetMediaTrackInfo_String(track, key, value, set) if set then track.ext = track.ext or {}; track.ext[key] = value; return true, value end; return true, track.ext and track.ext[key] or '' end",
             "function reaper.GetMediaTrackInfo_Value() return 0 end",
             "function reaper.DeleteTrack(track) for i, t in ipairs(tracks) do if t == track then table.remove(tracks, i); return end end end",
             "function reaper.Undo_BeginBlock() end",
@@ -308,10 +309,44 @@ def test_discard_removes_only_marked_work_tracks() -> None:
             "function reaper.ShowMessageBox() error('should not warn when [work] tracks were removed') end",
             script[:helpers_end],
             "discard()",
-            "for _, t in ipairs(tracks) do io.write(t.name, ';') end",
+            "for _, t in ipairs(tracks) do io.write(t.name, ':', t.ext and (t.ext['P_EXT:vgt_working_copy'] or '') or '', ';') end",
         ]
     )
-    assert _run(lua_program).stdout == "[work] User folder;[work] User track;Kept by user;[vgt] Guitar Ref (MIDI);My Keeper;"
+    assert _run(lua_program).stdout == "[work] User folder:;[work] User track:;Kept by user:;[vgt] Guitar Ref (MIDI):;My Keeper:;"
+
+
+def test_discard_preserves_reclaimed_copy_permanently_and_keeps_folder_depths() -> None:
+    """A renamed copy has its private marker cleared before disposal.  Even if
+    the user subsequently gives it a `[work]` name again, it remains a user
+    track; the adjacent marked scratch folder is still removed cleanly."""
+    script = WORKING_COPY_SCRIPT.read_text()
+    helpers_end = script.index("local function choose_action")
+    lua_program = "\n".join(
+        [
+            "local tracks = {",
+            "  {name='User folder', values={I_FOLDERDEPTH=1}, ext={}},",
+            "  {name='User child', values={I_FOLDERDEPTH=-1}, ext={}},",
+            "  {name='[work]', values={I_FOLDERDEPTH=1}, ext={['P_EXT:vgt_working_copy']='1'}},",
+            "  {name='[work] disposable', values={I_FOLDERDEPTH=-1}, ext={['P_EXT:vgt_working_copy']='1'}},",
+            "  {name='Kept part', values={I_FOLDERDEPTH=0}, ext={['P_EXT:vgt_working_copy']='1'}},",
+            "}",
+            "reaper = {}",
+            "function reaper.CountTracks() return #tracks end",
+            "function reaper.GetTrack(_, index) return tracks[index + 1] end",
+            "function reaper.GetTrackName(track) return true, track.name end",
+            "function reaper.GetMediaTrackInfo_Value(track, key) return track.values[key] or 0 end",
+            "function reaper.GetSetMediaTrackInfo_String(track, key, value, set) if set then track.ext[key] = value; return true, value end; return true, track.ext[key] or '' end",
+            "function reaper.DeleteTrack(track) for i, t in ipairs(tracks) do if t == track then table.remove(tracks, i); return end end end",
+            "function reaper.Undo_BeginBlock() end; function reaper.Undo_EndBlock() end",
+            "function reaper.PreventUIRefresh() end; function reaper.TrackList_AdjustWindows() end; function reaper.UpdateArrange() end",
+            "function reaper.MarkProjectDirty() end; function reaper.ShowMessageBox() error('unexpected warning') end",
+            script[:helpers_end],
+            "discard()",
+            "tracks[3].name = '[work] Kept part again'",
+            "for _,t in ipairs(tracks) do io.write(t.name, ':', t.values.I_FOLDERDEPTH, ':', t.ext['P_EXT:vgt_working_copy'] or '', ';') end",
+        ]
+    )
+    assert _run(lua_program).stdout == "User folder:1:;User child:-1:;[work] Kept part again:0:;"
 
 
 def test_discard_warns_when_there_is_nothing_to_remove() -> None:

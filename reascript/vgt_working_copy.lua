@@ -81,6 +81,24 @@ local function is_discardable_work_object(track)
   return is_marked_work_object(track) and starts_with(track_name(track), WORK_PREFIX)
 end
 
+-- A name outside the scratch namespace is the user's durable reclaim signal.
+-- Forget our private provenance as soon as a later invocation observes that
+-- signal, so even a subsequent rename back to `[work] ...` can never make the
+-- track eligible for automated discard again.  This is intentionally the only
+-- metadata vgt changes on a reclaimed copy; its media, routing and placement
+-- are left entirely alone.
+local function forget_reclaimed_work_objects()
+  local reclaimed = 0
+  for index = 0, reaper.CountTracks(0) - 1 do
+    local track = reaper.GetTrack(0, index)
+    if is_marked_work_object(track) and not starts_with(track_name(track), WORK_PREFIX) then
+      reaper.GetSetMediaTrackInfo_String(track, WORK_EXT_STATE_KEY, "", true)
+      reclaimed = reclaimed + 1
+    end
+  end
+  return reclaimed
+end
+
 local function is_top_level_track(index)
   local depth = 0
   for previous = 0, index - 1 do
@@ -175,6 +193,10 @@ local function create()
   -- Clear the selection so only the new copies end up selected.
   for _, source in ipairs(sources) do reaper.SetTrackSelected(source, false) end
 
+  -- Persist a user's prior rename before looking for a reusable workspace.
+  -- This makes reclamation permanent rather than depending on its current name.
+  forget_reclaimed_work_objects()
+
   local _, folder_index = find_work_folder()
   local insert_index
   if folder_index then
@@ -215,6 +237,7 @@ local function discard()
   reaper.Undo_BeginBlock()
   reaper.PreventUIRefresh(1)
   local removed = 0
+  local reclaimed = forget_reclaimed_work_objects()
   local removable_folders = {}
   -- Decide folder removal before deleting its closing child. This avoids
   -- interpreting unrelated following tracks as children of an empty folder.
@@ -222,6 +245,7 @@ local function discard()
     local track = reaper.GetTrack(0, index)
     if track_name(track) == WORK_FOLDER_NAME
       and is_marked_work_object(track)
+      and is_top_level_track(index)
       and reaper.GetMediaTrackInfo_Value(track, "I_FOLDERDEPTH") >= 1
       and workspace_has_only_discardable_children(index) then
       removable_folders[track] = true
@@ -243,7 +267,7 @@ local function discard()
   reaper.TrackList_AdjustWindows(false)
   reaper.UpdateArrange()
   reaper.Undo_EndBlock("vgt: discard working copies", -1)
-  if removed > 0 then
+  if removed > 0 or reclaimed > 0 then
     reaper.MarkProjectDirty(0)
   else
     reaper.ShowMessageBox(
