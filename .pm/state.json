@@ -1,10 +1,10 @@
 {
   "current_issue": 161,
-  "session_id": "aa680bbe-700e-4b61-b572-26d930583eb2",
-  "pid": 43338,
-  "process_started_at": "Sun Jul 26 09:28:09 2026",
+  "session_id": "929fde39-04cb-435a-a7e2-752fa9b51025",
+  "pid": 44178,
+  "process_started_at": "Sun Jul 26 09:32:48 2026",
   "agent": "codex",
-  "started_at": "2026-07-26T07:28:08.141757+00:00",
+  "started_at": "2026-07-26T07:32:47.429300+00:00",
   "scheduler_stalls": {},
   "budget": {
     "window_start": "2026-07-26T06:57:36.064492+00:00",
@@ -15,10 +15,10 @@
   "verification_followups": {
     "f0d8bfc9d2dc6da7a31609184e25c4d66d3986fd2340b33a83e98204fb86691e": "created"
   },
-  "role": "implement",
+  "role": "review",
   "branch": "issue-161-align-installation-with-the-three-bundle",
   "worktree_path": "/Users/marekkucharski/projects/.pm-worktrees/vgt/issue-161",
-  "pr_number": null,
+  "pr_number": 163,
   "followup_generation": {
     "fingerprint": "67ccf5b469bf3435de74e3deada23e263cd6850ce0854dab583f8205fb0b9faa",
     "items": {
@@ -59,11 +59,11 @@
   "pending_transition": {
     "issue": 161,
     "target": "working",
-    "event": "agent.started",
+    "event": "agent.review_started",
     "detail": {
       "issue": 161,
       "agent": "codex",
-      "branch": "issue-161-align-installation-with-the-three-bundle"
+      "pr": 163
     },
     "cleanup": {}
   }
