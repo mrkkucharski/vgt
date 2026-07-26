@@ -1,16 +1,16 @@
 {
   "current_issue": 174,
-  "session_id": "05f69aee-ce15-4981-b003-37891fa649f0",
-  "pid": 77768,
-  "process_started_at": "Sun Jul 26 17:07:43 2026",
+  "session_id": "142b0e6b-823d-4aa9-a970-30debc011d62",
+  "pid": 78637,
+  "process_started_at": "Sun Jul 26 17:12:25 2026",
   "agent": "codex",
-  "started_at": "2026-07-26T15:07:42.156418+00:00",
+  "started_at": "2026-07-26T15:12:23.510521+00:00",
   "scheduler_stalls": {
     "blocked_issues": {
       "172": {
         "first_seen_at": "2026-07-26T09:50:20.792554+00:00",
-        "last_seen_at": "2026-07-26T15:06:31.135841+00:00",
-        "consecutive_passes": 279,
+        "last_seen_at": "2026-07-26T15:11:11.864936+00:00",
+        "consecutive_passes": 283,
         "title": "Verify the complete goal contract on current main"
       }
     }
@@ -26,7 +26,7 @@
   "verification_followups": {
     "f0d8bfc9d2dc6da7a31609184e25c4d66d3986fd2340b33a83e98204fb86691e": "created"
   },
-  "role": "fix",
+  "role": "review",
   "branch": "issue-174-prevent-initialize-from-appending-duplic",
   "worktree_path": "/Users/marekkucharski/projects/.pm-worktrees/vgt/issue-174",
   "pr_number": 175,
@@ -68,11 +68,11 @@
   "pending_transition": {
     "issue": 174,
     "target": "working",
-    "event": "agent.fix_started",
+    "event": "agent.review_started",
     "detail": {
       "issue": 174,
       "agent": "codex",
-      "fix_count": 1
+      "pr": 175
     },
     "cleanup": {}
   }
