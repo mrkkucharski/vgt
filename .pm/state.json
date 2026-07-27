@@ -1,10 +1,10 @@
 {
-  "current_issue": 176,
-  "session_id": "f379b4b1-9051-43d7-8d00-85e9040d3510",
-  "pid": 20680,
-  "process_started_at": "Mon Jul 27 08:28:22 2026",
+  "current_issue": 177,
+  "session_id": "24b5a30c-7262-40aa-aff1-029d1a295f46",
+  "pid": 21502,
+  "process_started_at": "Mon Jul 27 08:34:13 2026",
   "agent": "claude",
-  "started_at": "2026-07-27T06:28:20.496103+00:00",
+  "started_at": "2026-07-27T06:34:11.903134+00:00",
   "scheduler_stalls": {},
   "budget": {
     "window_start": "2026-07-27T06:10:54.862777+00:00",
@@ -15,10 +15,10 @@
   "verification_followups": {
     "f0d8bfc9d2dc6da7a31609184e25c4d66d3986fd2340b33a83e98204fb86691e": "created"
   },
-  "role": "review",
-  "branch": "issue-176-remove-transcription-variant-selection-a",
-  "worktree_path": "/Users/marekkucharski/projects/.pm-worktrees/vgt/issue-176",
-  "pr_number": 178,
+  "role": "implement",
+  "branch": "issue-177-add-opt-in-drums-clean-transcription-pro",
+  "worktree_path": "/Users/marekkucharski/projects/.pm-worktrees/vgt/issue-177",
+  "pr_number": null,
   "followup_generation": {
     "fingerprint": "c9062f68c1374ea6634d453b9678aa05a94a75a7c794f6b3ababa76bb4460fc5",
     "items": {
@@ -55,13 +55,13 @@
     "174": 2
   },
   "pending_transition": {
-    "issue": 176,
+    "issue": 177,
     "target": "working",
-    "event": "agent.review_started",
+    "event": "agent.started",
     "detail": {
-      "issue": 176,
+      "issue": 177,
       "agent": "claude",
-      "pr": 178
+      "branch": "issue-177-add-opt-in-drums-clean-transcription-pro"
     },
     "cleanup": {}
   }
