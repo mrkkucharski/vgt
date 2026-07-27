@@ -98,6 +98,97 @@ def test_profile_show_unknown_profile_fails_clearly(tmp_path: Path, capsys) -> N
     assert "unknown profile" in capsys.readouterr().err
 
 
+def _init_project_with_drums(tmp_path: Path) -> Path:
+    project = _init_project(tmp_path)
+    _write_wav(project.parent / "drums.wav", b"fake-drums-stem-bytes")
+
+    def add_drums_artifact(current: dict) -> None:
+        current["stems"]["artifacts"]["drums"] = {"file": "drums.wav"}
+        requested = current["transcription"]["requested_targets"]
+        if "drums" not in requested:
+            requested.append("drums")
+
+    from vgt.sidecar import update_analysis
+    update_analysis(project, add_drums_artifact)
+    return project
+
+
+def test_drums_clean_profile_is_listed_shown_and_distinct_from_default(tmp_path: Path, capsys) -> None:
+    project = _init_project(tmp_path)
+
+    assert main(["transcription", "profile", "list", str(project)]) == 0
+    listing = capsys.readouterr().out
+    assert "drums-clean (builtin, drums)" in listing
+
+    assert main(["transcription", "profile", "show", "drums-clean", str(project)]) == 0
+    shown = json.loads(capsys.readouterr().out)
+    assert shown["name"] == "drums-clean"
+    assert shown["target"] == "drums"
+    assert shown["is_builtin"] is True
+    assert shown["enabled"] is True
+
+
+def test_mode_drums_equals_drums_clean_is_accepted_and_persisted(tmp_path: Path, capsys) -> None:
+    project = _init_project_with_drums(tmp_path)
+
+    assert main([
+        "analyze", "--mode", "drums=drums-clean", str(project),
+    ]) == 0
+    capsys.readouterr()
+
+    modes = read_sidecar(project)["analysis"]["transcription"]["modes"]
+    assert modes["drums"] == "drums-clean"
+
+    assert main(["status", "--json", str(project)]) == 0
+    status = json.loads(capsys.readouterr().out)
+    assert status["transcription"]["targets"]["drums"]["effective_profile"] == "drums-clean"
+
+
+def test_mode_drums_equals_unknown_profile_is_rejected(tmp_path: Path, capsys) -> None:
+    project = _init_project_with_drums(tmp_path)
+
+    assert main(["analyze", "--mode", "drums=not-a-real-profile", str(project)]) == 2
+    assert "profile for 'drums'" in capsys.readouterr().err
+
+
+def test_variant_add_target_drums_profile_drums_clean_writes_channel_10_midi(tmp_path: Path, capsys) -> None:
+    from vgt.transcribe import _midi_has_non_percussion_notes
+
+    project = _init_project_with_drums(tmp_path)
+
+    assert main([
+        "transcription", "variant", "add", "drums",
+        "--name", "clean", "--profile", "drums-clean", str(project),
+    ]) == 0
+    clean = json.loads(capsys.readouterr().out)
+    assert clean["status"] == "transcribed"
+    assert clean["effective_profile"] == "drums-clean"
+
+    assert main([
+        "transcription", "variant", "add", "drums",
+        "--name", "raw", "--profile", "default", str(project),
+    ]) == 0
+    raw = json.loads(capsys.readouterr().out)
+    assert raw["settings_hash"] != clean["settings_hash"]
+
+    namespace_dir = project.parent / "vgt" / read_sidecar(project)["analysis"]["stems"]["artifact_namespace"]
+    clean_id = next(
+        vid for vid, v in _variants(project, "drums")["variants"].items() if v["label"] == "clean"
+    )
+    midi_path = namespace_dir / "transcription" / "drums" / f"{clean_id}.mid"
+    assert not _midi_has_non_percussion_notes(midi_path.read_bytes())
+
+
+def test_variant_add_target_drums_rejects_an_unknown_profile(tmp_path: Path, capsys) -> None:
+    project = _init_project_with_drums(tmp_path)
+
+    assert main([
+        "transcription", "variant", "add", "drums",
+        "--name", "bogus", "--profile", "not-a-real-profile", str(project),
+    ]) == 2
+    assert "drums" in capsys.readouterr().err
+
+
 def test_add_two_variants_share_detection_and_full_lifecycle(tmp_path: Path, capsys) -> None:
     project = _init_project(tmp_path)
 

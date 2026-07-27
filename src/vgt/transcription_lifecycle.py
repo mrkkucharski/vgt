@@ -23,6 +23,7 @@ from typing import Any, Callable
 import secrets
 
 from .analysis import reference_source_path
+from .drum_cleanup import DRUM_CLEANUP_PROFILE_NAMES, DRUM_CLEANUP_PROFILES
 from .project import locate_project
 from .sidecar import (
     artifact_namespace_dir,
@@ -190,12 +191,17 @@ def add_variant(
     time_signature = tempo_value.get("time_signature") if isinstance(tempo_value, dict) else None
 
     if target == "drums":
-        if profile not in ("default", "drums"):
-            raise VariantLifecycleError("target 'drums' uses the fixed DrumScript backend; omit --profile or pass 'default'")
-        effective_profile = "default"
+        if profile not in DRUM_CLEANUP_PROFILE_NAMES:
+            raise VariantLifecycleError(
+                f"target 'drums' uses the fixed DrumScript backend; --profile must be one of "
+                f"{DRUM_CLEANUP_PROFILE_NAMES}, got {profile!r}"
+            )
+        effective_profile = profile
         profile_definition_hash = None
-        resolved_settings: dict[str, Any] = {"detection": {}, "cleanup": []}
-        spec = default_spec_for_target(target, backend="drumscript", midi_tempo=midi_tempo, time_signature=time_signature)
+        resolved_settings = {"cleanup_profile": profile, **DRUM_CLEANUP_PROFILES[profile].as_identity()}
+        spec = default_spec_for_target(
+            target, backend="drumscript", midi_tempo=midi_tempo, time_signature=time_signature, modes={target: profile}
+        )
     else:
         try:
             resolved = validate_profile_for_target(profile, target, project_profiles)

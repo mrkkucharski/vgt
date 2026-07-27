@@ -273,6 +273,52 @@ def test_drumscript_spec_identity_covers_every_drumscript_setting() -> None:
     assert spec_hash(spec) != spec_hash(replace(spec, time_signature=(4, 4)))
 
 
+def test_drumscript_default_spec_is_byte_identical_to_before_drums_clean() -> None:
+    """Issue #177's compatibility contract: an unselected/absent `modes`
+    entry for drums must produce exactly the pre-#177 spec identity, so
+    every existing default drums variant's `settings_hash` is unchanged."""
+    unset = default_spec_for_target("drums", backend="drumscript")
+    explicit_default = default_spec_for_target("drums", backend="drumscript", modes={"drums": "default"})
+    stale = default_spec_for_target("drums", backend="drumscript", modes={"drums": "not-a-real-profile"})
+
+    assert unset.cleanup_profile == "default"
+    assert unset.cleanup == ()
+    assert unset.to_dict() == {
+        "backend": "drumscript",
+        "package_pin": "drumscript==0.1.6",
+        "runtime_version": "python==3.12",
+        "classifier_mode": "standard-polyphonic",
+        "time_signature": None,
+    }
+    assert spec_hash(unset) == spec_hash(explicit_default) == spec_hash(stale)
+
+
+def test_drumscript_clean_profile_has_a_distinct_settings_hash() -> None:
+    default_spec = default_spec_for_target("drums", backend="drumscript")
+    clean_spec = default_spec_for_target("drums", backend="drumscript", modes={"drums": "drums-clean"})
+
+    assert clean_spec.cleanup_profile == "drums-clean"
+    assert len(clean_spec.cleanup) == 1
+    assert clean_spec.cleanup[0].name == "drums-clean"
+    assert spec_hash(clean_spec) != spec_hash(default_spec)
+    # Every other target's identity is untouched by drums selecting a clean profile.
+    guitar_spec = default_spec_for_target("guitar", modes={"drums": "drums-clean"})
+    assert guitar_spec.cleanup == ()
+
+
+def test_drumscript_clean_profile_name_is_valid_for_the_drums_target() -> None:
+    from vgt.transcribe import effective_profile_name_for_target, valid_profile_names_for_target, validate_profile_for_target
+
+    assert valid_profile_names_for_target("drums") == ("default", "drums-clean")
+    assert validate_profile_for_target("drums", "drums-clean") == "drums-clean"
+    with pytest.raises(TranscriptionError):
+        validate_profile_for_target("drums", "not-a-real-profile")
+
+    assert effective_profile_name_for_target("drums", None) == "default"
+    assert effective_profile_name_for_target("drums", {"drums": "drums-clean"}) == "drums-clean"
+    assert effective_profile_name_for_target("drums", {"drums": "not-a-real-profile"}) == "default"
+
+
 def test_router_routes_only_drums_to_an_injected_drum_backend() -> None:
     class FakeBasicPitch(FakeTranscriber):
         name = "basic-pitch"

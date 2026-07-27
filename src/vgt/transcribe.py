@@ -29,6 +29,16 @@ import shutil
 import subprocess
 import tempfile
 
+from .drum_cleanup import (
+    DRUM_CLEANUP_PROFILES,
+    DRUM_CLEANUP_PROFILE_NAMES,
+    AudioOnsetEvidenceSource,
+    NullOnsetEvidenceSource,
+    apply_drum_cleanup,
+    cleaned_events_to_json,
+    cleaned_events_to_midi_notes,
+)
+
 # Valid target names: the separation artifact names, plus the untouched mix
 # ("original"). A target is always a single named source, never a merged set.
 VALID_TARGETS: tuple[str, ...] = (
@@ -470,6 +480,7 @@ _PROFILE_NAMES_BY_TARGET["guitar"] = (
     "guitar-acoustic-strict-chords",
 )
 _PROFILE_NAMES_BY_TARGET["bass"] = ("default", "bass", "bass-monophonic")
+_PROFILE_NAMES_BY_TARGET["drums"] = DRUM_CLEANUP_PROFILE_NAMES
 
 
 def validate_profile_name(profile: str) -> str:
@@ -494,6 +505,15 @@ def validate_profile_for_target(target: str, profile: str) -> str:
     return profile
 
 
+def _drum_cleanup_profile_name(modes: Mapping[str, str] | None) -> str:
+    """Resolve `drums`'s selected `vgt.drum_cleanup` profile from `modes`,
+    mirroring `_profile_for_target`'s missing/stale-selection fallback: an
+    absent or unrecognised selection safely uses "default" -- DrumScript's
+    untouched raw output -- rather than raising."""
+    name = modes.get("drums") if isinstance(modes, Mapping) else None
+    return name if name in DRUM_CLEANUP_PROFILE_NAMES else "default"
+
+
 def _profile_for_target(target: str, modes: Mapping[str, str] | None) -> InstrumentProfile:
     """Resolve ``target`` through an optional target-to-profile map.
 
@@ -513,7 +533,12 @@ def effective_profile_name_for_target(target: str, modes: Mapping[str, str] | No
     This deliberately shares the missing/stale-mode fallback path with
     :func:`default_spec_for_target`, so read-only callers can describe the
     effective configuration without reimplementing profile selection.
+    `drums` is not in `_INSTRUMENT_PROFILES` (it selects a `vgt.drum_cleanup`
+    recipe, not a Basic Pitch `InstrumentProfile`) so it resolves through
+    `_drum_cleanup_profile_name` instead.
     """
+    if target == "drums":
+        return _drum_cleanup_profile_name(modes)
     return _profile_for_target(target, modes).name
 
 
@@ -625,9 +650,29 @@ class DrumScriptSpec:
     runtime_version: str
     classifier_mode: str
     time_signature: tuple[int, int] | None
+    # `drums-clean` (issue #177): which built-in `vgt.drum_cleanup` recipe to
+    # apply to DrumScript's raw events before writing MIDI/JSON. Defaults to
+    # "default" -- DrumScript's raw output, untouched -- so every existing
+    # spec keeps its exact prior identity (see `to_dict`).
+    cleanup_profile: str = "default"
+    cleanup: tuple[CleanupStage, ...] = ()
 
     def to_dict(self) -> dict[str, Any]:
-        return asdict(self)
+        """Serialize for `spec_hash`. Reproduces the pre-#177 five-field
+        shape exactly when `cleanup_profile` is "default", so `settings_hash`
+        is byte-identical to before this issue for every existing drums
+        variant -- `drums-clean`'s hash is the one deliberate change."""
+        data: dict[str, Any] = {
+            "backend": self.backend,
+            "package_pin": self.package_pin,
+            "runtime_version": self.runtime_version,
+            "classifier_mode": self.classifier_mode,
+            "time_signature": list(self.time_signature) if self.time_signature else None,
+        }
+        if self.cleanup_profile != "default":
+            data["cleanup_profile"] = self.cleanup_profile
+            data["cleanup"] = [{"name": stage.name, "params": stage.params} for stage in self.cleanup]
+        return data
 
 
 TranscriptionSpec = BasicPitchSpec | DrumScriptSpec
@@ -670,12 +715,17 @@ def default_spec_for_target(
     """
     validate_target(target)
     if backend == "drumscript":
+        cleanup_profile_name = _drum_cleanup_profile_name(modes)
+        cleanup_profile = DRUM_CLEANUP_PROFILES[cleanup_profile_name]
+        cleanup = (CleanupStage("drums-clean", cleanup_profile.as_identity()),) if cleanup_profile.enabled else ()
         return DrumScriptSpec(
             backend=backend,
             package_pin=package_pin if package_pin != BASIC_PITCH_PACKAGE_PIN else DRUMSCRIPT_PACKAGE_PIN,
             runtime_version=drumscript_runtime_version,
             classifier_mode=drumscript_classifier_mode,
             time_signature=drumscript_time_signature,
+            cleanup_profile=cleanup_profile_name,
+            cleanup=cleanup,
         )
     profile = _profile_for_target(target, modes)
     bar_seconds = _bar_duration_seconds(midi_tempo, time_signature)
@@ -967,6 +1017,7 @@ class TargetTranscriberRouter:
                 backend=backend,
                 package_pin=self.drumscript_package_pin,
                 midi_tempo=midi_tempo,
+                modes=modes,
                 drumscript_runtime_version=self.drumscript_runtime_version,
                 drumscript_classifier_mode=self.drumscript_classifier_mode,
                 drumscript_time_signature=self.drumscript_time_signature,
@@ -1104,21 +1155,35 @@ class FakeTranscriber:
                 {"time_sec": round(index * 0.5, 6), "instruments": [instruments[_content_seed(source, spec, f"event-{index}") % len(instruments)]]}
                 for index in range(event_count)
             ]
-            drum_notes = [
-                (event["time_sec"], event["time_sec"] + 0.1, DRUMSCRIPT_INSTRUMENTS[event["instruments"][0]], 100)
-                for event in events
-            ]
             midi_path = destination_dir / "transcription.mid"
             events_path = destination_dir / "transcription.json"
-            _write_midi(midi_path, drum_notes, 120.0, channel=9)
-            events_path.write_text(json.dumps(events), encoding="utf-8")
-            counts = {name: sum(name in event["instruments"] for event in events) for name in instruments}
+            if spec.cleanup_profile == "default":
+                drum_notes = [
+                    (event["time_sec"], event["time_sec"] + 0.1, DRUMSCRIPT_INSTRUMENTS[event["instruments"][0]], 100)
+                    for event in events
+                ]
+                _write_midi(midi_path, drum_notes, 120.0, channel=9)
+                events_path.write_text(json.dumps(events), encoding="utf-8")
+                final_events = events
+            else:
+                # No real audio to analyze offline, so the fake backend always
+                # exercises `drums-clean`'s "evidence unavailable" fallback
+                # path -- deterministic role-default velocities, no timing
+                # change, no suppression.
+                cleanup_profile = DRUM_CLEANUP_PROFILES[spec.cleanup_profile]
+                cleaned = apply_drum_cleanup(events, profile=cleanup_profile, evidence_source=NullOnsetEvidenceSource())
+                notes = cleaned_events_to_midi_notes(cleaned, instrument_pitch=DRUMSCRIPT_INSTRUMENTS)
+                _write_midi(midi_path, notes, 120.0, channel=9)
+                json_events = cleaned_events_to_json(cleaned)
+                events_path.write_text(json.dumps(json_events), encoding="utf-8")
+                final_events = [event for event in json_events if not event["cleanup"]["suppressed"]]
+            counts = {name: sum(name in event["instruments"] for event in final_events) for name in instruments}
             counts = {name: count for name, count in counts.items() if count}
             return TranscriptionResult(
-                note_count=len(events), pitch_range_midi=None, first_note_s=None, last_note_s=None,
+                note_count=len(final_events), pitch_range_midi=None, first_note_s=None, last_note_s=None,
                 midi_path=midi_path, events_path=events_path, instrument_counts=counts,
-                event_count=len(events), first_event_s=events[0]["time_sec"] if events else None,
-                last_event_s=events[-1]["time_sec"] if events else None, midi_tempo=120.0,
+                event_count=len(final_events), first_event_s=final_events[0]["time_sec"] if final_events else None,
+                last_event_s=final_events[-1]["time_sec"] if final_events else None, midi_tempo=120.0,
             )
 
         notes = _fake_notes(source, spec)
@@ -1981,33 +2046,46 @@ class DrumScriptTranscriber:
             try:
                 midi_source, events_source = _collect_drumscript_outputs(work_dir)
                 _validate_drumscript_midi(midi_source)
-                events = parse_drumscript_events(events_source)
-                _validate_event_times(events, _source_duration_seconds(source))
+                raw_events = parse_drumscript_events(events_source)
+                _validate_event_times(raw_events, _source_duration_seconds(source))
                 destination_dir.mkdir(parents=True, exist_ok=True)
                 midi_path = destination_dir / "transcription.mid"
                 events_path = destination_dir / "transcription.json"
-                shutil.copy2(midi_source, midi_path)
-                shutil.copy2(events_source, events_path)
+                if spec.cleanup_profile == "default":
+                    shutil.copy2(midi_source, midi_path)
+                    shutil.copy2(events_source, events_path)
+                    final_events = raw_events
+                else:
+                    tempo_bpm = _midi_tempo_bpm(midi_source) or 120.0
+                    cleanup_profile = DRUM_CLEANUP_PROFILES[spec.cleanup_profile]
+                    cleaned = apply_drum_cleanup(
+                        raw_events, profile=cleanup_profile, evidence_source=AudioOnsetEvidenceSource(source)
+                    )
+                    notes = cleaned_events_to_midi_notes(cleaned, instrument_pitch=DRUMSCRIPT_INSTRUMENTS)
+                    _write_midi(midi_path, notes, tempo_bpm, channel=9)
+                    json_events = cleaned_events_to_json(cleaned)
+                    events_path.write_text(json.dumps(json_events), encoding="utf-8")
+                    final_events = [event for event in json_events if not event["cleanup"]["suppressed"]]
             except (OSError, TranscriptionError) as exc:
                 # The work directory is intentionally not useful to callers:
                 # it is deleted at scope exit and must never enter the sidecar.
                 raise TranscriptionError(_without_temporary_path(str(exc), work_dir)) from exc
 
         counts: dict[str, int] = {}
-        for event in events:
+        for event in final_events:
             for instrument in event["instruments"]:
                 counts[instrument] = counts.get(instrument, 0) + 1
-        times = [event["time_sec"] for event in events]
-        emit(f"transcribed (drumscript): {len(events)} events")
+        times = [event["time_sec"] for event in final_events]
+        emit(f"transcribed (drumscript): {len(final_events)} events")
         return TranscriptionResult(
-            note_count=len(events),
+            note_count=len(final_events),
             pitch_range_midi=None,
             first_note_s=None,
             last_note_s=None,
             midi_path=midi_path,
             events_path=events_path,
             instrument_counts=counts,
-            event_count=len(events),
+            event_count=len(final_events),
             first_event_s=min(times) if times else None,
             last_event_s=max(times) if times else None,
             backend_tempo=_drumscript_backend_tempo(completed),

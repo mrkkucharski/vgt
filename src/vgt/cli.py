@@ -9,6 +9,7 @@ import sys
 from typing import Any
 
 from .analysis import AnalysisError, add_transcription_targets, analyze, forget_transcription_targets, set_transcription_modes
+from .drum_cleanup import CLEAN_PROFILE_NAME, DRUM_CLEANUP_PROFILE_NAMES, DRUM_CLEANUP_PROFILES
 from .lalal import LalalError, LalalSeparator
 from .project import ProjectError, locate_project, read_project
 from .reascripts import ReaScriptInstallError, confirm_overwrite, default_destination, install_reascripts
@@ -236,10 +237,32 @@ def _dispatch_transcription(args: argparse.Namespace, project: Path) -> int:
         if args.profile_command == "list":
             for name in VALID_PROFILE_NAMES:
                 print(f"{name} (builtin)")
+            for name in DRUM_CLEANUP_PROFILE_NAMES:
+                if name not in VALID_PROFILE_NAMES:
+                    print(f"{name} (builtin, drums)")
             for name in project_profiles:
                 print(f"{name} (project)")
             return 0
         if args.profile_command == "show":
+            # `drums-clean` is a `vgt.drum_cleanup` recipe, not a Basic Pitch
+            # `InstrumentProfile` -- `resolve_profile` below only knows the
+            # latter (and explicitly rejects a 'drums' target), so it is
+            # reported directly instead. "default" stays on the generic path
+            # below since it is shared with every other target.
+            if args.name == CLEAN_PROFILE_NAME:
+                profile = DRUM_CLEANUP_PROFILES[CLEAN_PROFILE_NAME]
+                print(json.dumps(
+                    {
+                        "name": profile.name,
+                        "target": "drums",
+                        "backend": "drumscript",
+                        "is_builtin": True,
+                        "profile_definition_hash": None,
+                        **profile.as_identity(),
+                    },
+                    indent=2,
+                ))
+                return 0
             try:
                 resolved = resolve_profile(args.name, project_profiles)
             except ProfileDefinitionError as exc:
