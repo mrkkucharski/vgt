@@ -114,8 +114,8 @@ _VARIANT_FIELDS: tuple[str, ...] = (
 )
 
 
-def _variant_summary(variant_id: str, variant: dict[str, Any], *, selected: bool) -> dict[str, Any]:
-    return {"id": variant_id, "selected": selected, **{key: variant.get(key) for key in _VARIANT_FIELDS}}
+def _variant_summary(variant_id: str, variant: dict[str, Any]) -> dict[str, Any]:
+    return {"id": variant_id, **{key: variant.get(key) for key in _VARIANT_FIELDS}}
 
 
 def _transcription_status(analysis: dict[str, Any]) -> dict[str, Any]:
@@ -124,12 +124,13 @@ def _transcription_status(analysis: dict[str, Any]) -> dict[str, Any]:
 
     Each target's flat summary fields (`status`/`note_count`/... -- kept for
     compatibility with callers that predate schema v13's `variants` index)
-    are drawn from its selected variant when one exists, falling back to its
-    first retained variant, or its own pre-v13 flat fields for a legacy
-    record `sidecar.upgrade` hasn't (yet) rewritten. `variant_order` is
-    reported exactly as stored -- this function never reorders or infers a
-    selection, matching the plan's "Status remains read-only and stable in
-    `variant_order`" requirement.
+    are drawn from its first retained variant (`variant_order[0]`) when one
+    exists, or its own pre-v13 flat fields for a legacy record
+    `sidecar.upgrade` hasn't (yet) rewritten. This labels that summary
+    explicitly as the first retained variant, not a preference -- retained
+    variants are peers (#176). `variant_order` is reported exactly as
+    stored -- this function never reorders it, matching the plan's "Status
+    remains read-only and stable in `variant_order`" requirement.
     """
     transcription = analysis.get("transcription") if isinstance(analysis.get("transcription"), dict) else {}
     requested = transcription.get("requested_targets") if isinstance(transcription.get("requested_targets"), list) else []
@@ -152,21 +153,18 @@ def _transcription_status(analysis: dict[str, Any]) -> dict[str, Any]:
         record = targets.get(target) if isinstance(targets.get(target), dict) else {}
         variant_order = record.get("variant_order") if isinstance(record.get("variant_order"), list) else []
         variants_index = record.get("variants") if isinstance(record.get("variants"), dict) else {}
-        selected_variant_id = record.get("selected_variant_id")
         discarded_variants = record.get("discarded_variants") if isinstance(record.get("discarded_variants"), list) else []
         retained_variant_count += len(variant_order)
 
         # A legacy pre-v13 record carries its own flat fields directly; a
         # genuine multi-variant record has none at top level, so its summary
-        # is drawn from the selected (or first retained) variant instead.
-        # A migrated compatibility record may retain its former flat fields
-        # beside the v13 index.  Once variants exist, selection is the source
-        # of truth; otherwise a later `variant select` would leave status
-        # reporting the old, previously selected flat summary.
+        # is drawn from the first retained variant instead -- labeled as
+        # such, not as a preference (#176 removed selection). A migrated
+        # compatibility record may retain its former flat fields beside the
+        # v13 index; once variants exist, `variant_order[0]` is the source
+        # of truth.
         if variants_index:
-            summary_source = variants_index.get(selected_variant_id) or (
-                variants_index.get(variant_order[0]) if variant_order else {}
-            )
+            summary_source = variants_index.get(variant_order[0]) if variant_order else {}
         else:
             summary_source = record
         if not isinstance(summary_source, dict):
@@ -177,7 +175,7 @@ def _transcription_status(analysis: dict[str, Any]) -> dict[str, Any]:
             package_pin = summary_source.get("package_pin")
 
         variants_list = [
-            _variant_summary(variant_id, variants_index[variant_id], selected=variant_id == selected_variant_id)
+            _variant_summary(variant_id, variants_index[variant_id])
             for variant_id in variant_order
             if isinstance(variants_index.get(variant_id), dict)
         ]
@@ -203,7 +201,6 @@ def _transcription_status(analysis: dict[str, Any]) -> dict[str, Any]:
             "midi_tempo": summary_source.get("midi_tempo"),
             "confidence": summary_source.get("confidence"),
             "variant_order": list(variant_order),
-            "selected_variant_id": selected_variant_id,
             "variants": variants_list,
             "discarded_variant_count": len(discarded_variants),
             "discarded_variants": list(discarded_variants),
@@ -232,8 +229,8 @@ def build_status(project_path: Path) -> dict[str, Any]:
     # `upgrade` is a pure, non-writing function: applying it here (rather
     # than only inside `read_sidecar`) is what lets a read-only `vgt status`
     # see a pre-v13 flat transcription record's migrated `variants`/
-    # `variant_order`/`selected_variant_id` view too, without ever writing it
-    # back -- see `_transcription_status`.
+    # `variant_order` view too, without ever writing it back -- see
+    # `_transcription_status`.
     raw = upgrade(raw)
 
     config = raw.get("config") if isinstance(raw.get("config"), dict) else {}
@@ -418,8 +415,7 @@ def format_status(status: dict[str, Any]) -> str:
             lines.append(f"  {target:<8} not yet run, {profile_text}")
         variants = entry.get("variants") or []
         for variant in variants:
-            marker = "*" if variant.get("selected") else " "
-            lines.append(f"    {marker} {_format_variant_line(variant)}")
+            lines.append(f"    {_format_variant_line(variant)}")
         discarded_count = entry.get("discarded_variant_count") or 0
         if discarded_count:
             lines.append(f"    ({discarded_count} discarded)")
@@ -456,9 +452,10 @@ def format_status(status: dict[str, Any]) -> str:
 def _format_variant_line(variant: dict[str, Any]) -> str:
     """One `label id status metrics profile [error]` line for a retained
     variant, used beneath each target's existing single-line summary (see
-    `format_status`) -- the plan's "ordered variants, selected marker,
-    requested/effective profiles, ... metrics, errors, and paths" status
-    extension."""
+    `format_status`) -- the plan's "ordered variants, requested/effective
+    profiles, ... metrics, errors, and paths" status extension. Retained
+    variants are peers ordered only for stable presentation (#176); no
+    marker implies preference."""
     label = variant.get("label") or variant["id"]
     profile = variant.get("effective_profile") or variant.get("requested_profile") or "default"
     status_value = variant.get("status")

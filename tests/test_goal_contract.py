@@ -21,7 +21,7 @@ from vgt.cli import main
 from vgt.separation import FakeSeparator, separate
 from vgt.sidecar import artifact_namespace_dir, read_sidecar
 from vgt.transcribe import FakeTranscriber, TargetTranscriberRouter
-from vgt.transcription_lifecycle import add_variant, discard_variant, purge_discarded, select_variant
+from vgt.transcription_lifecycle import add_variant, discard_variant, purge_discarded
 
 
 ROOT = Path(__file__).parents[1]
@@ -693,8 +693,9 @@ def test_goal_contract_reconciles_two_guitar_variants_without_touching_working_c
 
     This intentionally uses the public lifecycle operations rather than
     constructing variant dictionaries: it is the integration proof that the
-    sidecar model, raw-cache sharing, ReaScript apply reconciliation, explicit
-    selection/discard semantics, and user-owned working copies agree.
+    sidecar model, raw-cache sharing, ReaScript apply reconciliation, direct
+    discard semantics (#176 removed selection), and user-owned working
+    copies agree.
     """
     project = _copy_project(tmp_path)
     state = _lua_state(project)
@@ -724,9 +725,9 @@ def test_goal_contract_reconciles_two_guitar_variants_without_touching_working_c
     assert transcriber.raw_calls == 1
     assert len(sidecar["analysis"]["transcription"]["detection_cache"]) == 1
 
-    # Apply twice.  The selected candidate persists, each generated track is
-    # rebuilt exactly once, and a simulated working copy is outside vgt's
-    # durable ownership inventory.
+    # Apply twice.  Both retained candidates persist as peers, each generated
+    # track is rebuilt exactly once, and a simulated working copy is outside
+    # vgt's durable ownership inventory.
     state, first_apply = _run_apply(project, state)
     first_names = first_apply.split("#", 1)[0].split("|")
     assert first_names.count("[vgt] Guitar Ref — detail (MIDI)") == 1
@@ -744,23 +745,23 @@ def test_goal_contract_reconciles_two_guitar_variants_without_touching_working_c
         managed_tracks=applied_sidecar["managed_track_guids"],
         managed_regions=applied_sidecar["managed_region_ids"],
     )
-    select_variant(project, "guitar", clean_id)
     state, second_apply = _run_apply(project, state)
     second_names = second_apply.split("#", 1)[0].split("|")
     assert second_names.count("[vgt] Guitar Ref — detail (MIDI)") == 1
     assert second_names.count("[vgt] Guitar Ref — clean (MIDI)") == 1
     assert second_names.count("[work] Guitar Ref — clean (MIDI)") == 1
-    selected = read_sidecar(project)["analysis"]["transcription"]["targets"]["guitar"]["selected_variant_id"]
-    assert selected == clean_id
+    guitar_after_apply = read_sidecar(project)["analysis"]["transcription"]["targets"]["guitar"]
+    assert "selected_variant_id" not in guitar_after_apply
+    assert set(guitar_after_apply["variant_order"]) == {detail_id, clean_id}
 
     namespace_dir = artifact_namespace_dir(project, read_sidecar(project)["analysis"]["stems"]["artifact_namespace"])
     detail_midi = namespace_dir / detail["midi_file"]
     clean_midi = namespace_dir / clean["midi_file"]
     assert detail_midi.is_file() and clean_midi.is_file()
 
-    # Rejecting the unselected candidate removes exactly its derived files but
-    # keeps the shared raw cache for the selected clean candidate.  Reapply
-    # must remove only that generated track and preserve the editable copy.
+    # Discarding one retained peer directly removes exactly its derived files
+    # but keeps the shared raw cache for the other.  Reapply must remove only
+    # that generated track and preserve the editable copy.
     discard_variant(project, "guitar", detail_id)
     assert not detail_midi.exists() and clean_midi.is_file()
     assert len(read_sidecar(project)["analysis"]["transcription"]["detection_cache"]) == 1
@@ -770,14 +771,15 @@ def test_goal_contract_reconciles_two_guitar_variants_without_touching_working_c
     assert names_after_detail_discard.count("[vgt] Guitar Ref — clean (MIDI)") == 1
     assert names_after_detail_discard.count("[work] Guitar Ref — clean (MIDI)") == 1
 
-    # Discarding the final selected candidate is explicit.  It clears the
-    # selection and removes the now-unreferenced raw cache, while leaving both
-    # original user tracks and the user's working copy byte-for-byte intact.
-    discard_variant(project, "guitar", clean_id, clear_selected=True)
+    # Discarding the final retained candidate is just as direct -- no
+    # selection to clear -- and removes the now-unreferenced raw cache, while
+    # leaving both original user tracks and the user's working copy
+    # byte-for-byte intact.
+    discard_variant(project, "guitar", clean_id)
     final_sidecar = read_sidecar(project)
     assert not clean_midi.exists()
     assert final_sidecar["analysis"]["transcription"]["detection_cache"] == {}
-    assert final_sidecar["analysis"]["transcription"]["targets"]["guitar"]["selected_variant_id"] is None
+    assert "selected_variant_id" not in final_sidecar["analysis"]["transcription"]["targets"]["guitar"]
     state, final_apply = _run_apply(project, state)
     final_names = final_apply.split("#", 1)[0].split("|")
     assert "[vgt] Guitar Ref — detail (MIDI)" not in final_names
@@ -836,9 +838,9 @@ def test_goal_contract_reconciles_independent_guitar_bass_and_drum_targets(
     assert (basic_pitch.raw_calls, basic_pitch.calls, drumscript.calls) == (2, 0, 1)
     assert guitar_variant["backend"] == bass_variant["backend"] == "basic-pitch"
     assert drums_variant["backend"] == "drumscript"
-    assert targets["guitar"]["selected_variant_id"] == guitar_id
-    assert targets["bass"]["selected_variant_id"] == bass_id
-    assert targets["drums"]["selected_variant_id"] == drums_id
+    assert "selected_variant_id" not in targets["guitar"]
+    assert "selected_variant_id" not in targets["bass"]
+    assert "selected_variant_id" not in targets["drums"]
     detection_cache = sidecar["analysis"]["transcription"]["detection_cache"]
     assert set(detection_cache) == {guitar_variant["detection_hash"], bass_variant["detection_hash"]}
 
@@ -886,16 +888,16 @@ end
         managed_regions=applied_sidecar["managed_region_ids"],
     )
 
-    # Discarding the selected bass candidate is explicit and target-local.
-    # It removes only bass's MIDI/cache and never changes guitar or drums'
-    # selections, artifacts, or user-owned working copies.
-    discard_variant(project, "bass", bass_id, clear_selected=True)
+    # Discarding the bass candidate directly is target-local: it removes only
+    # bass's MIDI/cache and never touches guitar or drums' artifacts or
+    # user-owned working copies.
+    discard_variant(project, "bass", bass_id)
     assert not bass_midi.exists() and guitar_midi.is_file() and drums_midi.is_file()
     after_discard = read_sidecar(project)
     after_targets = after_discard["analysis"]["transcription"]["targets"]
-    assert after_targets["bass"]["selected_variant_id"] is None
-    assert after_targets["guitar"]["selected_variant_id"] == guitar_id
-    assert after_targets["drums"]["selected_variant_id"] == drums_id
+    assert after_targets["bass"]["variant_order"] == []
+    assert "selected_variant_id" not in after_targets["guitar"]
+    assert "selected_variant_id" not in after_targets["drums"]
     assert set(after_discard["analysis"]["transcription"]["detection_cache"]) == {guitar_variant["detection_hash"]}
 
     # Purging the discarded bass audit is similarly local: retained targets

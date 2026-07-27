@@ -1,8 +1,9 @@
 """CLI/status coverage for the variant lifecycle surface (issue #150, section
-C of docs/transcription-variants-plan.md): profile list/show/validate, and
-variant add/rename/select/discard/purge-discarded. Every backend call runs
-through `FakeTranscriber` (via a monkeypatched `production_transcriber_router`)
-so this suite never invokes real Basic Pitch/DrumScript."""
+C of docs/transcription-variants-plan.md; selection removed by #176): profile
+list/show/validate, and variant add/rename/discard/purge-discarded. Every
+backend call runs through `FakeTranscriber` (via a monkeypatched
+`production_transcriber_router`) so this suite never invokes real Basic
+Pitch/DrumScript."""
 
 from __future__ import annotations
 
@@ -124,8 +125,7 @@ def test_add_two_variants_share_detection_and_full_lifecycle(tmp_path: Path, cap
     assert set(record["variant_order"]) == {
         vid for vid, v in record["variants"].items() if v["label"] in ("detail", "clean")
     }
-    # The first variant added becomes selected automatically; the second does not.
-    assert record["selected_variant_id"] == record["variant_order"][0]
+    assert "selected_variant_id" not in record
 
     detail_id = next(vid for vid, v in record["variants"].items() if v["label"] == "detail")
     clean_id = next(vid for vid, v in record["variants"].items() if v["label"] == "clean")
@@ -145,23 +145,13 @@ def test_add_two_variants_share_detection_and_full_lifecycle(tmp_path: Path, cap
     assert renamed["variants"][detail_id]["label"] == "detail take 2"
     assert renamed["variants"][detail_id]["midi_file"] == detail["midi_file"]
 
-    # Select by label.
-    assert main(["transcription", "variant", "select", "guitar", "clean", str(project)]) == 0
-    after_select = json.loads(capsys.readouterr().out)
-    assert after_select["selected_variant_id"] == clean_id
-
-    # Discarding the selected variant without --select/--clear-selected is refused.
-    assert main(["transcription", "variant", "discard", "guitar", "clean", str(project)]) == 2
-    assert "selected variant" in capsys.readouterr().err
-
-    # Discard with an explicit replacement succeeds and archives a compact record.
-    assert main([
-        "transcription", "variant", "discard", "guitar", "clean", "--select", "detail take 2", str(project),
-    ]) == 0
+    # Any retained variant may be discarded directly -- no replacement/clear
+    # requirement, since retained variants are peers (#176).
+    assert main(["transcription", "variant", "discard", "guitar", "clean", str(project)]) == 0
     after_discard = json.loads(capsys.readouterr().out)
     assert clean_id not in after_discard["variants"]
     assert clean_id not in after_discard["variant_order"]
-    assert after_discard["selected_variant_id"] == detail_id
+    assert "selected_variant_id" not in after_discard
     assert [entry["id"] for entry in after_discard["discarded_variants"]] == [clean_id]
     archived = after_discard["discarded_variants"][0]
     assert archived["input_hash"] == clean["input_hash"]
@@ -210,7 +200,7 @@ def test_ambiguous_label_requires_immutable_id(tmp_path: Path, capsys) -> None:
 
     # Force a second variant with a colliding label directly in the sidecar
     # (bypassing add's own duplicate-label rejection) to exercise ambiguous
-    # ref resolution on rename/select/discard.
+    # ref resolution on rename/discard.
     sidecar = read_sidecar(project)
     target = sidecar["analysis"]["transcription"]["targets"]["guitar"]
     duplicate = dict(target["variants"][first_id])
@@ -218,10 +208,10 @@ def test_ambiguous_label_requires_immutable_id(tmp_path: Path, capsys) -> None:
     target["variant_order"].append("dup00000")
     write_sidecar(project, sidecar)
 
-    assert main(["transcription", "variant", "select", "guitar", "take", str(project)]) == 2
+    assert main(["transcription", "variant", "rename", "guitar", "take", "--name", "renamed", str(project)]) == 2
     assert "ambiguous" in capsys.readouterr().err
 
-    assert main(["transcription", "variant", "select", "guitar", first_id, str(project)]) == 0
+    assert main(["transcription", "variant", "rename", "guitar", first_id, "--name", "renamed", str(project)]) == 0
 
 
 def test_discard_uses_recorded_artifact_paths_and_never_escapes_namespace(tmp_path: Path, capsys) -> None:
@@ -242,34 +232,56 @@ def test_discard_uses_recorded_artifact_paths_and_never_escapes_namespace(tmp_pa
     target["variants"][variant_id]["midi_file"] = "../../must-not-delete.mid"
     write_sidecar(project, sidecar)
 
-    assert main([
-        "transcription", "variant", "discard", "guitar", variant_id,
-        "--clear-selected", str(project),
-    ]) == 0
+    assert main(["transcription", "variant", "discard", "guitar", variant_id, str(project)]) == 0
     assert outside.exists()
     # The normal path was not recorded by this malformed candidate, so it is
     # deliberately left alone instead of being inferred from the immutable id.
     assert generated_midi.exists()
 
 
-def test_select_clear_and_reselect(tmp_path: Path, capsys) -> None:
+def test_select_and_unselect_are_removed_and_cannot_mutate_state(tmp_path: Path, capsys) -> None:
     project = _init_project(tmp_path)
     assert main([
         "transcription", "variant", "add", "guitar",
         "--name", "detail", "--profile", "guitar-acoustic-detail", str(project),
     ]) == 0
     capsys.readouterr()
+    before = read_sidecar(project)
 
-    assert main(["transcription", "variant", "unselect", "guitar", str(project)]) == 0
-    cleared = json.loads(capsys.readouterr().out)
-    assert cleared["selected_variant_id"] is None
+    # `select`/`unselect` are ordinary unsupported CLI syntax now (#176):
+    # argparse rejects the unknown subcommand before any sidecar mutation.
+    with pytest.raises(SystemExit) as select_exit:
+        main(["transcription", "variant", "select", "guitar", "detail", str(project)])
+    assert select_exit.value.code == 2
+    with pytest.raises(SystemExit) as unselect_exit:
+        main(["transcription", "variant", "unselect", "guitar", str(project)])
+    assert unselect_exit.value.code == 2
+    capsys.readouterr()
 
-    assert main(["transcription", "variant", "select", "guitar", "detail", str(project)]) == 0
-    reselected = json.loads(capsys.readouterr().out)
-    assert reselected["selected_variant_id"] is not None
+    assert read_sidecar(project) == before
 
 
-def test_status_shows_ordered_variants_and_selected_marker(tmp_path: Path, capsys) -> None:
+def test_discard_no_longer_accepts_selection_flags(tmp_path: Path, capsys) -> None:
+    project = _init_project(tmp_path)
+    assert main([
+        "transcription", "variant", "add", "guitar",
+        "--name", "detail", "--profile", "guitar-acoustic-detail", str(project),
+    ]) == 0
+    capsys.readouterr()
+    before = read_sidecar(project)
+
+    with pytest.raises(SystemExit) as select_flag_exit:
+        main(["transcription", "variant", "discard", "guitar", "detail", "--select", "nope", str(project)])
+    assert select_flag_exit.value.code == 2
+    with pytest.raises(SystemExit) as clear_flag_exit:
+        main(["transcription", "variant", "discard", "guitar", "detail", "--clear-selected", str(project)])
+    assert clear_flag_exit.value.code == 2
+    capsys.readouterr()
+
+    assert read_sidecar(project) == before
+
+
+def test_status_shows_ordered_variants_without_selection(tmp_path: Path, capsys) -> None:
     project = _init_project(tmp_path)
     assert main([
         "transcription", "variant", "add", "guitar",
@@ -285,30 +297,31 @@ def test_status_shows_ordered_variants_and_selected_marker(tmp_path: Path, capsy
     assert main(["status", str(project)]) == 0
     text = capsys.readouterr().out
     assert "2 retained variant(s)" in text
-    assert "* detail (" in text
-    assert "  clean (" in text
+    assert "detail (" in text
+    assert "clean (" in text
+    assert "*" not in text
 
     assert main(["status", "--json", str(project)]) == 0
     status = json.loads(capsys.readouterr().out)
     guitar = status["transcription"]["targets"]["guitar"]
     assert guitar["variant_order"] == list(_variants(project)["variant_order"])
-    assert guitar["selected_variant_id"] == _variants(project)["selected_variant_id"]
+    assert "selected_variant_id" not in guitar
     ids = {variant["id"] for variant in guitar["variants"]}
     assert ids == set(_variants(project)["variants"])
-    selected = [variant for variant in guitar["variants"] if variant["selected"]]
-    assert len(selected) == 1
-    assert selected[0]["label"] == "detail"
+    for variant in guitar["variants"]:
+        assert "selected" not in variant
+    first = next(variant for variant in guitar["variants"] if variant["label"] == "detail")
     # JSON status is the read-only comparison/debugging view, so it must
     # retain the source/detection/cleanup cache identity as well as the
     # displayed metrics.
-    assert selected[0]["source_role"] == "guitar"
-    assert selected[0]["input_hash"]
-    assert selected[0]["detection_hash"]
-    assert selected[0]["raw_notes_hash"]
-    assert selected[0]["cleanup_hash"]
-    assert selected[0]["resolved_settings"]
-    assert selected[0]["max_note_duration_s"] is not None
-    assert selected[0]["max_simultaneous_voices"] is not None
+    assert first["source_role"] == "guitar"
+    assert first["input_hash"]
+    assert first["detection_hash"]
+    assert first["raw_notes_hash"]
+    assert first["cleanup_hash"]
+    assert first["resolved_settings"]
+    assert first["max_note_duration_s"] is not None
+    assert first["max_simultaneous_voices"] is not None
 
 
 def test_forget_transcription_removes_variant_artifacts_and_gcs_cache(tmp_path: Path, capsys) -> None:

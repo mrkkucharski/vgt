@@ -244,10 +244,11 @@ def _refresh_target(
 
     # Schema v13 retains several generated candidates for one target.  The
     # established analyze flags remain a compatibility surface over that
-    # model: they reconcile the selected variant (or the target's first,
-    # default variant), never replace the complete target record with the old
-    # one-result representation.  In particular, a routine `vgt analyze`
-    # after `variant add` must not make the alternatives disappear.
+    # model: they reconcile the target's first retained variant (or create
+    # one), never replace the complete target record with the old one-result
+    # representation, and never designate any candidate as preferred (#176).
+    # In particular, a routine `vgt analyze` after `variant add` must not
+    # make the alternatives disappear.
     if isinstance(existing_target, dict):
         record = migrate_transcription_target(
             target, existing_target, analysis["transcription"].get("modes") or {}
@@ -256,23 +257,20 @@ def _refresh_target(
         record = {}
     variants = record.get("variants") if isinstance(record.get("variants"), dict) else {}
     order = record.get("variant_order") if isinstance(record.get("variant_order"), list) else []
-    selected_id = record.get("selected_variant_id")
-    selected_id = selected_id if selected_id in variants else (order[0] if order else None)
+    target_variant_id = order[0] if order and order[0] in variants else None
 
     # Keep the historical name for the automatically managed candidate.  Its
     # immutable id is deterministic for a newly-created compatibility entry,
     # while a migrated or explicitly-created variant retains its existing id.
-    if selected_id is None:
-        selected_id = f"default-{target}"
+    if target_variant_id is None:
+        target_variant_id = f"default-{target}"
         suffix = 2
-        while selected_id in variants:
-            selected_id = f"default-{target}-{suffix}"
+        while target_variant_id in variants:
+            target_variant_id = f"default-{target}-{suffix}"
             suffix += 1
         label = "default"
-        created_default = True
     else:
-        label = variants[selected_id].get("label") or "default"
-        created_default = False
+        label = variants[target_variant_id].get("label") or "default"
 
     tempo_value = analysis["tempo"].get("value")
     midi_tempo = tempo_value.get("bpm") if isinstance(tempo_value, dict) else None
@@ -280,20 +278,20 @@ def _refresh_target(
     modes = analysis["transcription"].get("modes") or {}
     transcriber = router.for_target(target)
     spec = router.spec_for_target(target, midi_tempo=midi_tempo, modes=modes, time_signature=time_signature)
-    profile = modes.get(target) or (variants.get(selected_id) or {}).get("requested_profile") or "default"
+    profile = modes.get(target) or (variants.get(target_variant_id) or {}).get("requested_profile") or "default"
     effective_profile = (
         modes.get(target)
-        or (variants.get(selected_id) or {}).get("effective_profile")
+        or (variants.get(target_variant_id) or {}).get("effective_profile")
         or effective_profile_name_for_target(target, modes)
     )
     request = VariantRequest(
-        variant_id=selected_id,
+        variant_id=target_variant_id,
         label=label,
         requested_profile=profile,
         effective_profile=effective_profile,
-        profile_definition_hash=(variants.get(selected_id) or {}).get("profile_definition_hash"),
+        profile_definition_hash=(variants.get(target_variant_id) or {}).get("profile_definition_hash"),
         spec=spec,
-        resolved_settings=(variants.get(selected_id) or {}).get("resolved_settings") or {"detection": {}, "cleanup": []},
+        resolved_settings=(variants.get(target_variant_id) or {}).get("resolved_settings") or {"detection": {}, "cleanup": []},
     )
     resolved = resolve_target_source(project_path, target, analysis, reference_source=reference_source)
     source_path, artifact = resolved if resolved is not None else (None, None)
@@ -310,15 +308,9 @@ def _refresh_target(
         force=force,
         emit=emit,
     )
-    variants[selected_id] = outcome.variants[selected_id]
+    variants[target_variant_id] = outcome.variants[target_variant_id]
     record["variants"] = variants
-    record["variant_order"] = [*order, selected_id] if selected_id not in order else list(order)
-    # A newly-created automatic default becomes selected on success.  An
-    # explicit `variant unselect` remains meaningful on later analyze runs.
-    if created_default and outcome.variants[selected_id].get("status") == "transcribed":
-        record["selected_variant_id"] = selected_id
-    elif "selected_variant_id" not in record:
-        record["selected_variant_id"] = None
+    record["variant_order"] = [*order, target_variant_id] if target_variant_id not in order else list(order)
     record.setdefault("discarded_variants", [])
     analysis["transcription"]["detection_cache"] = outcome.detection_cache
 

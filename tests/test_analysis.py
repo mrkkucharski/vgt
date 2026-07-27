@@ -126,7 +126,7 @@ def test_upgrade_keeps_v1_fields_and_adds_v2_analysis_skeleton() -> None:
 
     upgraded = upgrade(v1)
 
-    assert upgraded["schema_version"] == 13
+    assert upgraded["schema_version"] == 14
     assert upgraded["managed_region_ids"] == []
     assert upgraded["managed_track_guids"] == ["{AAAA}", "{BBBB}"]
     assert upgraded["config"] == {"reference_track_guid": REFERENCE_GUID}
@@ -179,7 +179,7 @@ def test_upgrade_marks_legacy_librosa_tempo_as_unknown_bar_phase() -> None:
         "backend": "librosa", "bpm": 120.0, "downbeat_offset_seconds": 0.25,
     }}}})
 
-    assert upgraded["schema_version"] == 13
+    assert upgraded["schema_version"] == 14
     assert upgraded["analysis"]["tempo"]["value"]["downbeat_detected"] is False
 
 
@@ -218,7 +218,7 @@ def test_upgrade_adds_v10_transcription_block_to_a_v8_sidecar() -> None:
 
     upgraded = upgrade(v8)
 
-    assert upgraded["schema_version"] == 13
+    assert upgraded["schema_version"] == 14
     assert upgraded["analysis"]["transcription"] == {"requested_targets": ["guitar"], "modes": {}, "targets": {}, "detection_cache": {}}
     # Unrelated v8 fields survive the upgrade untouched.
     assert upgraded["analysis"]["stems"]["artifact_namespace"] == "abc12345"
@@ -247,15 +247,16 @@ def test_upgrade_preserves_an_existing_transcription_block() -> None:
     assert guitar["status"] == "transcribed"
     assert guitar["note_count"] == 872
     # A schema v13 `variants` view is derived from those flat fields too.
-    assert guitar["variant_order"] == [guitar["selected_variant_id"]]
-    variant_id = guitar["selected_variant_id"]
+    assert "selected_variant_id" not in guitar
+    assert len(guitar["variant_order"]) == 1
+    variant_id = guitar["variant_order"][0]
     assert guitar["variants"][variant_id]["label"] == "default"
     assert guitar["variants"][variant_id]["status"] == "transcribed"
     assert guitar["variants"][variant_id]["note_count"] == 872
     assert guitar["discarded_variants"] == []
     # Deterministic and idempotent: re-upgrading an already-migrated record
     # (e.g. a second `read_sidecar` call) derives the same variant id.
-    assert upgrade(upgraded)["analysis"]["transcription"]["targets"]["guitar"]["selected_variant_id"] == variant_id
+    assert upgrade(upgraded)["analysis"]["transcription"]["targets"]["guitar"]["variant_order"][0] == variant_id
 
 
 def test_upgrade_preserves_an_intentionally_empty_transcription_target_set() -> None:
@@ -319,7 +320,8 @@ def test_upgrade_migrates_an_existing_acoustic_guitar_target_to_a_guitar_acousti
     guitar = upgraded["analysis"]["transcription"]["targets"]["guitar"]
     # Legacy artifact paths are untouched -- no file is moved during migration.
     assert guitar["midi_file"] == "transcription/guitar.mid"
-    variant_id = guitar["selected_variant_id"]
+    assert "selected_variant_id" not in guitar
+    variant_id = guitar["variant_order"][0]
     variant = guitar["variants"][variant_id]
     assert variant["requested_profile"] == "guitar-acoustic"
     assert variant["effective_profile"] == "guitar-acoustic"
@@ -433,7 +435,7 @@ def test_analyze_writes_v2_sidecar_with_skeleton_and_provenance(tmp_path: Path) 
 
     result = analyze(project)
 
-    assert result["schema_version"] == 13
+    assert result["schema_version"] == 14
     assert result["managed_track_guids"] == ["{AAAA}", "{BBBB}"]  # phase 0 fields intact
     for stage in ANALYSIS_STAGES:
         if stage == "transcription":
@@ -893,7 +895,7 @@ def test_cli_analyze_preserves_local_results_when_lalal_is_unavailable(
     captured = capsys.readouterr()
     assert captured.out == ""
     sidecar = read_sidecar(project)
-    assert sidecar["schema_version"] == 13
+    assert sidecar["schema_version"] == 14
     assert sidecar["analysis"]["tempo"]["value"] is not None
     assert "stem separation unavailable; continuing with available sources" in captured.err
 
@@ -1045,9 +1047,10 @@ def test_refresh_target_per_target_cache_independence(tmp_path: Path) -> None:
     assert second["analysis"]["transcription"]["targets"]["bass"] == bass_first
 
 
-def test_variant_compatibility_refresh_preserves_unselected_candidates(tmp_path: Path) -> None:
-    """The CLI's historical analyze flags refresh one selected/default
-    variant, never collapse a target back to the old flat one-result record."""
+def test_variant_compatibility_refresh_preserves_other_candidates(tmp_path: Path) -> None:
+    """The CLI's historical analyze flags refresh one target's first retained
+    (default) variant, never collapse a target back to the old flat
+    one-result record, and never designate any candidate as preferred (#176)."""
     project = _project_copy(tmp_path)
     _write_v1_sidecar(project)
     sidecar = read_sidecar(project)
@@ -1059,7 +1062,8 @@ def test_variant_compatibility_refresh_preserves_unselected_candidates(tmp_path:
         transcriber=FakeTranscriber(), variant_compatibility=True,
     )
     target = first["analysis"]["transcription"]["targets"]["guitar"]
-    default_id = target["selected_variant_id"]
+    assert "selected_variant_id" not in target
+    default_id = target["variant_order"][0]
     assert default_id is not None
 
     sidecar = read_sidecar(project)
@@ -1076,7 +1080,7 @@ def test_variant_compatibility_refresh_preserves_unselected_candidates(tmp_path:
     target = refreshed["analysis"]["transcription"]["targets"]["guitar"]
     assert target["variant_order"] == [default_id, alternative_id]
     assert set(target["variants"]) == {default_id, alternative_id}
-    assert target["selected_variant_id"] == default_id
+    assert "selected_variant_id" not in target
 
 
 def test_selecting_one_mode_changes_only_its_target_settings_hash(tmp_path: Path) -> None:

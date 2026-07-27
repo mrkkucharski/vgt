@@ -32,14 +32,6 @@ local TRANSCRIPTION_TARGETS = {
   {target = "original", label = "Original"},
 }
 local STEM_LEASE_TIMEOUT_SECONDS = 30 * 60
--- Selected transcription variants use this warm gold REAPER custom colour.
--- Colour is presentation only: ownership is still determined by the durable
--- P_EXT mark plus the [vgt] name guard, so users may recolour generated tracks
--- without affecting reconciliation. Ask REAPER to translate RGB into its
--- platform-native value rather than assuming Windows' BGR representation.
-local function selected_variant_color()
-  return 0x1000000 + reaper.ColorToNative(216, 155, 58)
-end
 
 local function project_path()
   local _, path = reaper.EnumProjects(-1, "")
@@ -962,7 +954,7 @@ local function transcription_definition(target)
   return definition
 end
 
-local function add_reference_midi_variant(index, target, variant_id, variant, selected, reference_start, managed_tracks, artifact_namespace, allow_legacy_path, legacy_track_name)
+local function add_reference_midi_variant(index, target, variant_id, variant, reference_start, managed_tracks, artifact_namespace, allow_legacy_path, legacy_track_name)
   if type(variant) ~= "table" or variant.status ~= "transcribed" then return index, false end
   local definition = transcription_definition(target)
   if not definition then return index, true end
@@ -984,7 +976,6 @@ local function add_reference_midi_variant(index, target, variant_id, variant, se
   local name = PREFIX .. " " .. definition.label .. " Ref — " .. label .. " (MIDI)"
   if legacy_track_name then name = PREFIX .. " " .. definition.label .. " Ref (MIDI)" end
   local midi_track = add_locked_track(index, name, false, "variant:" .. target .. ":" .. variant_id)
-  if selected then reaper.SetMediaTrackInfo_Value(midi_track, "I_CUSTOMCOLOR", selected_variant_color()) end
   local item = reaper.AddMediaItemToTrack(midi_track)
   reaper.SetMediaItemInfo_Value(item, "D_POSITION", reference_start)
   reaper.SetMediaItemInfo_Value(item, "D_LENGTH", reaper.GetMediaSourceLength(source))
@@ -1011,8 +1002,7 @@ local function add_reference_midi_tracks(index, target, transcription, reference
         local allow_legacy_path = record.status ~= nil and type(variant) == "table"
           and variant.midi_file == "transcription/" .. target .. ".mid"
         local next_index, attempted = add_reference_midi_variant(index, target, variant_id, variant,
-          record.selected_variant_id == variant_id, reference_start, managed_tracks, artifact_namespace,
-          allow_legacy_path, allow_legacy_path)
+          reference_start, managed_tracks, artifact_namespace, allow_legacy_path, allow_legacy_path)
         index = next_index
         imported = imported or attempted
       end
@@ -1024,7 +1014,7 @@ local function add_reference_midi_tracks(index, target, transcription, reference
   local legacy = {}
   for key, value in pairs(record) do legacy[key] = value end
   legacy.label = "default"
-  return add_reference_midi_variant(index, target, "legacy", legacy, false, reference_start,
+  return add_reference_midi_variant(index, target, "legacy", legacy, reference_start,
     managed_tracks, artifact_namespace, true, true)
 end
 

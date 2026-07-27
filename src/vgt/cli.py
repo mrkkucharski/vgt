@@ -21,7 +21,6 @@ from .transcription_lifecycle import (
     discard_variant,
     purge_discarded,
     rename_variant,
-    select_variant,
 )
 from .transcription_profiles import (
     ProfileDefinitionError,
@@ -136,7 +135,7 @@ def _parser() -> argparse.ArgumentParser:
     )
     profile_validate.add_argument("project", nargs="?", help="Path to a .RPP project (defaults to cwd's only .RPP).")
 
-    variant_parser = transcription_sub.add_parser("variant", help="Add, rename, select, discard, or purge retained variants.")
+    variant_parser = transcription_sub.add_parser("variant", help="Add, rename, discard, or purge retained variants.")
     variant_sub = variant_parser.add_subparsers(dest="variant_command", required=True)
 
     variant_add = variant_sub.add_parser("add", help="Create and reconcile a new named variant for one target.")
@@ -152,33 +151,11 @@ def _parser() -> argparse.ArgumentParser:
     variant_rename.add_argument("--name", required=True, dest="new_label", help="The variant's new label.")
     variant_rename.add_argument("project", nargs="?", help="Path to a .RPP project (defaults to cwd's only .RPP).")
 
-    # `ref` is required (not `nargs="?"`) so this never collides with the
-    # trailing optional `project` positional -- two consecutive `nargs="?"`
-    # positionals are ambiguous to argparse when only one token is given.
-    # Clearing a selection is therefore the separate `variant unselect`
-    # subcommand below, not this one with `ref` omitted.
-    variant_select = variant_sub.add_parser("select", help="Set one target's selected variant.")
-    variant_select.add_argument("target", choices=VALID_TARGETS)
-    variant_select.add_argument("ref", metavar="VARIANT", help="The variant's immutable id or unambiguous label.")
-    variant_select.add_argument("project", nargs="?", help="Path to a .RPP project (defaults to cwd's only .RPP).")
-
-    variant_unselect = variant_sub.add_parser("unselect", help="Explicitly clear one target's selected variant.")
-    variant_unselect.add_argument("target", choices=VALID_TARGETS)
-    variant_unselect.add_argument("project", nargs="?", help="Path to a .RPP project (defaults to cwd's only .RPP).")
-
     variant_discard = variant_sub.add_parser(
         "discard", help="Delete one variant's generated artifacts and archive a compact recipe/metrics record."
     )
     variant_discard.add_argument("target", choices=VALID_TARGETS)
     variant_discard.add_argument("ref", metavar="VARIANT", help="The variant's immutable id or unambiguous label.")
-    variant_discard.add_argument(
-        "--select", metavar="VARIANT",
-        help="Select this replacement variant if the one being discarded is currently selected.",
-    )
-    variant_discard.add_argument(
-        "--clear-selected", action="store_true",
-        help="Explicitly clear the selection if the one being discarded is currently selected.",
-    )
     variant_discard.add_argument("project", nargs="?", help="Path to a .RPP project (defaults to cwd's only .RPP).")
 
     variant_purge = variant_sub.add_parser(
@@ -203,7 +180,7 @@ def _normalize_transcription_project_argument(arguments: list[str]) -> list[str]
     """
     if len(arguments) < 5 or arguments[:2] != ["transcription", "variant"]:
         return arguments
-    if arguments[2] not in {"add", "rename", "select", "discard", "purge-discarded", "unselect"}:
+    if arguments[2] not in {"add", "rename", "discard", "purge-discarded"}:
         return arguments
     project = arguments[-1]
     if project.startswith("-") or not project.lower().endswith(".rpp"):
@@ -289,18 +266,8 @@ def _dispatch_transcription(args: argparse.Namespace, project: Path) -> int:
         variant_record = rename_variant(project, args.target, args.ref, new_label=args.new_label)
         print(json.dumps(variant_record, indent=2))
         return 0
-    if args.variant_command == "select":
-        variant_record = select_variant(project, args.target, args.ref)
-        print(json.dumps(variant_record, indent=2))
-        return 0
-    if args.variant_command == "unselect":
-        variant_record = select_variant(project, args.target, None, clear=True)
-        print(json.dumps(variant_record, indent=2))
-        return 0
     if args.variant_command == "discard":
-        variant_record = discard_variant(
-            project, args.target, args.ref, select=args.select, clear_selected=args.clear_selected
-        )
+        variant_record = discard_variant(project, args.target, args.ref)
         print(json.dumps(variant_record, indent=2))
         return 0
     if args.variant_command == "purge-discarded":
