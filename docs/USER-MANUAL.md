@@ -179,10 +179,12 @@ vgt analyze --transcribe bass --transcribe drums "Song.RPP"
   persisted set.
 - `--mode <target>=<profile>` persists a transcription profile for one target;
   repeat it to select several. Current profiles are `default`, `guitar`,
-  `bass`, `bass-monophonic`, `vocals`, and `guitar-acoustic`. For example,
-  `vgt analyze --mode guitar=guitar-acoustic "Song.RPP"`. A stale mode from
-  an older sidecar safely falls back to the target default, but a profile named
-  explicitly on the command line must be valid.
+  `bass`, `bass-monophonic`, `vocals`, `guitar-acoustic`, and (for `drums`)
+  `drums-clean`. For example, `vgt analyze --mode guitar=guitar-acoustic
+  "Song.RPP"` or `vgt analyze --mode drums=drums-clean "Song.RPP"` (see
+  [DrumScript](#drumscript-drums) below). A stale mode from an older sidecar
+  safely falls back to the target default, but a profile named explicitly on
+  the command line must be valid.
 - `--mode bass=bass-monophonic` opts into a cleanup that allows only one
   sounding bass note at a time. It is not the default because a separated bass
   stem can contain bleed; use it only when that trade-off is right for the
@@ -333,6 +335,49 @@ Two limitations to know before reading the output:
   sidecar report `"confidence": null`.
 - **Fixed velocity.** The exported MIDI uses a constant velocity (100) for
   every note, so it does not preserve playing dynamics.
+
+`default` (shown above) is DrumScript's raw output, untouched. An opt-in
+**`drums-clean`** profile is also available:
+
+```sh
+vgt analyze --mode drums=drums-clean "Song.RPP"
+# or, to retain default and clean side by side:
+vgt transcription variant add drums --name raw --profile default "Song.RPP"
+vgt transcription variant add drums --name clean --profile drums-clean "Song.RPP"
+```
+
+`drums-clean` applies a small, conservative post-processing pass to
+DrumScript's raw events, all within fixed, documented bounds — it never
+assumes a repeated groove, a fixed number of hits per bar, or that a role
+from one measure should be copied to the next:
+
+- Coalesces events DrumScript reports a MIDI tick or two apart into one
+  aligned onset (an 8ms window).
+- Nudges each onset toward a nearby audio transient when the evidence is
+  strong and unambiguous, bounded to ±30ms; otherwise leaves the timing
+  untouched. No implicit global latency correction is ever applied — a
+  correction this conservative for one measure can be wrong for another
+  (see `docs/drums-clean-profile.md` for the measurement behind that
+  choice).
+- Shapes each note's velocity from local transient strength when that
+  evidence is reliable, falling back to a bounded, per-instrument default
+  (not a flat 100) when it isn't.
+- Suppresses a note only when reproducible local audio evidence shows it's
+  weak; every other event, however unusual next to its neighbours, is kept.
+
+Both profiles have their own settings identity, cache, and artifacts, so
+retaining both (as in the second example above) costs one extra DrumScript
+run, not a rerun of the first. **Retain both and compare them**: `default`
+is DrumScript's unfiltered read and the more complete audit trail;
+`drums-clean` is easier to read at a glance but, like any automatic cleanup,
+can occasionally suppress or nudge something a human ear would have kept.
+Neither is authoritative. `vgt transcription profile show drums-clean
+"Song.RPP"` prints its exact windows/thresholds; the generated
+`transcription/drums/<variant-id>.json` for a clean variant records, per
+note, its raw DrumScript time/instrument alongside the cleanup decision
+(timing adjustment, velocity source, suppression) applied to it, so a
+surprising result is always traceable back to what DrumScript actually
+detected.
 
 Because these are GM percussion selectors rather than musical pitches, the
 reference MIDI has no meaningful pitch range to display — treat the note names

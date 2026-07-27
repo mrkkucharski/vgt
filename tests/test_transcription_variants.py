@@ -380,6 +380,82 @@ def test_drumscript_variant_is_cached_and_not_rerun_when_unchanged(tmp_path: Pat
     assert second.variants["v-default"] is first.variants["v-default"]
 
 
+def test_drumscript_clean_variant_gets_its_own_cache_identity_and_channel_10_midi(tmp_path: Path) -> None:
+    """Issue #177: selecting `drums-clean` must not touch the `default`
+    drums variant's artifacts/identity, must produce its own distinct
+    settings_hash-keyed cache entry, and must guarantee GM percussion
+    channel 10 output even though it's regenerated (not copied) MIDI."""
+    from vgt.transcribe import _midi_has_non_percussion_notes
+
+    source = _write_source(tmp_path)
+    default_spec = default_spec_for_target("drums", backend="drumscript")
+    clean_spec = default_spec_for_target("drums", backend="drumscript", modes={"drums": "drums-clean"})
+    default_request = VariantRequest(
+        variant_id="v-default", label="default", requested_profile="default",
+        effective_profile="default", profile_definition_hash=None, spec=default_spec,
+        resolved_settings={"cleanup_profile": "default"},
+    )
+    clean_request = VariantRequest(
+        variant_id="v-clean", label="clean", requested_profile="drums-clean",
+        effective_profile="drums-clean", profile_definition_hash=None, spec=clean_spec,
+        resolved_settings={"cleanup_profile": "drums-clean"},
+    )
+    transcriber = _CountingFake()
+
+    outcome = reconcile_variants(
+        target="drums", requests=[default_request, clean_request], transcriber=transcriber,
+        source=source, input_hash=_input_hash(source), namespace_dir=tmp_path / "ns",
+    )
+
+    default_variant = outcome.variants["v-default"]
+    clean_variant = outcome.variants["v-clean"]
+    assert default_variant["settings_hash"] != clean_variant["settings_hash"]
+    assert clean_variant["status"] == "transcribed"
+
+    # `midi_file` is a namespace-relative path (e.g. "drums/v-clean.mid").
+    midi_path = tmp_path / "ns" / clean_variant["midi_file"]
+    assert not _midi_has_non_percussion_notes(midi_path.read_bytes())
+
+
+def test_drumscript_clean_variant_reconciliation_only_invalidates_its_own_variant_when_retuned(tmp_path: Path) -> None:
+    from dataclasses import replace
+
+    source = _write_source(tmp_path)
+    clean_spec = default_spec_for_target("drums", backend="drumscript", modes={"drums": "drums-clean"})
+    default_spec = default_spec_for_target("drums", backend="drumscript")
+    default_request = VariantRequest(
+        variant_id="v-default", label="default", requested_profile="default",
+        effective_profile="default", profile_definition_hash=None, spec=default_spec,
+        resolved_settings={"cleanup_profile": "default"},
+    )
+    clean_request = VariantRequest(
+        variant_id="v-clean", label="clean", requested_profile="drums-clean",
+        effective_profile="drums-clean", profile_definition_hash=None, spec=clean_spec,
+        resolved_settings={"cleanup_profile": "drums-clean"},
+    )
+    transcriber = _CountingFake()
+
+    first = reconcile_variants(
+        target="drums", requests=[default_request, clean_request], transcriber=transcriber,
+        source=source, input_hash=_input_hash(source), namespace_dir=tmp_path / "ns",
+    )
+
+    # Retune only the clean spec's identity (simulating a later change to the
+    # `drums-clean` recipe); the default request/spec is untouched.
+    retuned_clean_spec = replace(clean_spec, cleanup=(replace(clean_spec.cleanup[0], name="drums-clean-retuned"),))
+    retuned_clean_request = replace(clean_request, spec=retuned_clean_spec)
+
+    second = reconcile_variants(
+        target="drums", requests=[default_request, retuned_clean_request], transcriber=transcriber,
+        source=source, input_hash=_input_hash(source), namespace_dir=tmp_path / "ns",
+        existing_variants=first.variants,
+    )
+
+    assert second.variants["v-default"] is first.variants["v-default"]  # untouched
+    assert second.variants["v-clean"] is not first.variants["v-clean"]  # rerun
+    assert len(transcriber.transcribe_calls) == 3  # default once, clean twice (initial + retuned)
+
+
 def test_spectrogram_is_computed_once_per_run_across_variants_needing_ghost_confirmation(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
