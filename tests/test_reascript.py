@@ -1096,7 +1096,10 @@ def test_transcription_import_source_and_opt_in_verifier_are_present() -> None:
     assert TRANSCRIPTION_VERIFY_SCRIPT.is_file()
 
 
-def test_variant_transcriptions_import_in_order_after_their_source_and_mark_selection(tmp_path: Path) -> None:
+def test_variant_transcriptions_import_in_order_with_neutral_color(tmp_path: Path) -> None:
+    """Retained variants are peers (#176 removed selection): every imported
+    variant track gets no custom color, regardless of any leftover
+    `selected_variant_id` pointer a pre-migration sidecar might still carry."""
     rpp = tmp_path / "song.RPP"
     namespace = tmp_path / "vgt" / "song-abc123"
     (namespace / "transcription" / "guitar").mkdir(parents=True)
@@ -1110,12 +1113,12 @@ def test_variant_transcriptions_import_in_order_after_their_source_and_mark_sele
     lua_program = "\n".join([
         _click_track_lua_mock(rpp), script[:helpers_end], "local managed_tracks = {}",
         "add_stem_tracks(0, {artifact_namespace = 'song-abc123', artifacts = {guitar = {file = 'vgt/song-abc123/stems/guitar.wav', size_bytes = 12, duration_seconds = 1}}}, {targets = {guitar = {selected_variant_id = 'clean', variant_order = {'detail', 'clean'}, variants = {detail = {label = 'Detail', status = 'transcribed', midi_file = 'transcription/guitar/detail.mid'}, clean = {label = 'Clean', status = 'transcribed', midi_file = 'transcription/guitar/clean.mid'}}}}}, 2, managed_tracks)",
-        "for _, track in ipairs(__tracks) do io.write(track.name, ':', track.mute, ':', tostring(track.values.I_CUSTOMCOLOR), ';') end io.write('rgb=', table.concat(__color_request, ','))",
+        "for _, track in ipairs(__tracks) do io.write(track.name, ':', track.mute, ':', tostring(track.values.I_CUSTOMCOLOR), ';') end",
     ])
     result = subprocess.run([LUA, "-", str(rpp)], input=lua_program, text=True, capture_output=True, check=True)
     assert result.stdout == (
         "[vgt] Guitar:0:nil;[vgt] Guitar Ref — Detail (MIDI):0:nil;"
-        "[vgt] Guitar Ref — Clean (MIDI):0:20618200;rgb=216,155,58"
+        "[vgt] Guitar Ref — Clean (MIDI):0:nil;"
     )
 
 

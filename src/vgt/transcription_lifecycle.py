@@ -1,18 +1,19 @@
-"""Variant lifecycle CLI surface: add/rename/select/discard/purge-discarded
-for the multi-variant transcription model (issue #150, section C of
-docs/transcription-variants-plan.md).
+"""Variant lifecycle CLI surface: add/rename/discard/purge-discarded for the
+multi-variant transcription model (issue #150, section C of
+docs/transcription-variants-plan.md; selection removed by #176).
 
 This module owns the sidecar-facing CRUD layer over one target's `variants`/
-`variant_order`/`selected_variant_id`/`discarded_variants` index. It never
-duplicates execution logic: `add_variant` is the only operation that runs a
-backend, and it does so by handing a single `VariantRequest` to
-`vgt.transcription_variants.reconcile_variants` -- the same engine issue #149
-built -- so a new variant shares a raw detection cache entry with any
-existing variant whose `detection_hash` matches, exactly as the plan's
-"Execution behavior" section requires. `rename_variant`/`select_variant`
-never touch a backend or an artifact; they only ever move sidecar pointers
-around (see the plan's "Rename and select operations do not rerun
-transcription" verification requirement).
+`variant_order`/`discarded_variants` index. Retained variants are peers,
+ordered only for stable presentation -- none is designated preferred,
+active, best, or selected. It never duplicates execution logic: `add_variant`
+is the only operation that runs a backend, and it does so by handing a
+single `VariantRequest` to `vgt.transcription_variants.reconcile_variants` --
+the same engine issue #149 built -- so a new variant shares a raw detection
+cache entry with any existing variant whose `detection_hash` matches, exactly
+as the plan's "Execution behavior" section requires. `rename_variant` never
+touches a backend or an artifact; it only ever moves a sidecar pointer (see
+the plan's "Rename ... does not rerun transcription" verification
+requirement).
 """
 
 from __future__ import annotations
@@ -82,22 +83,21 @@ _LEGACY_FLAT_FIELDS: tuple[str, ...] = (
 
 
 def _empty_target_record() -> dict[str, Any]:
-    return {"variants": {}, "variant_order": [], "selected_variant_id": None, "discarded_variants": []}
+    return {"variants": {}, "variant_order": [], "discarded_variants": []}
 
 
 def target_record(transcription: dict[str, Any], target: str) -> dict[str, Any]:
-    """The schema-v13 `variants`/`variant_order`/`selected_variant_id`/
-    `discarded_variants` view for `target`, migrating a pre-v13 flat record
-    eagerly (rather than only at read time, see `sidecar.upgrade`) so a
-    lifecycle mutation writing this record back never drops a legacy
-    `--transcribe`/`--mode` result it hasn't been asked to touch."""
+    """The schema-v14 `variants`/`variant_order`/`discarded_variants` view
+    for `target`, migrating a pre-v13 flat record eagerly (rather than only
+    at read time, see `sidecar.upgrade`) so a lifecycle mutation writing this
+    record back never drops a legacy `--transcribe`/`--mode` result it hasn't
+    been asked to touch."""
     record = transcription.get("targets", {}).get(target)
     if not isinstance(record, dict):
         return _empty_target_record()
     migrated = migrate_transcription_target(target, record, transcription.get("modes") or {})
     migrated.setdefault("variants", {})
     migrated.setdefault("variant_order", [])
-    migrated.setdefault("selected_variant_id", None)
     migrated.setdefault("discarded_variants", [])
     # A lifecycle mutation promotes a flat compatibility record to the
     # variants-only shape.  Leaving its old top-level `status` in place would
@@ -105,6 +105,9 @@ def target_record(transcription: dict[str, Any], target: str) -> dict[str, Any]:
     # the retained alternatives through the one-result path.
     for field in _LEGACY_FLAT_FIELDS:
         migrated.pop(field, None)
+    # Selection was removed by #176; strip any pointer a not-yet-upgraded
+    # schema-13 record still carries rather than reviving it.
+    migrated.pop("selected_variant_id", None)
     return migrated
 
 
@@ -167,10 +170,8 @@ def add_variant(
     Sharing a raw Basic Pitch detection with an existing variant of this
     target is `reconcile_variants`'s job given the current
     `detection_cache` -- this function never re-derives or reruns another
-    variant. The first variant a target ever retains becomes its selected
-    variant automatically only when it actually transcribes; a target with
-    every variant missing/error keeps `selected_variant_id: null`, matching
-    the plan's selection semantics.
+    variant. A new variant is simply appended to `variant_order`; it is
+    never designated preferred, active, best, or selected (#176).
     """
     validate_target(target)
     if not label:
@@ -263,8 +264,6 @@ def add_variant(
         current_record = target_record(current_transcription, target)
         current_record["variants"][variant_id] = new_variant
         current_record["variant_order"] = [*current_record["variant_order"], variant_id]
-        if current_record.get("selected_variant_id") is None and new_variant.get("status") == "transcribed":
-            current_record["selected_variant_id"] = variant_id
         current_transcription["targets"][target] = current_record
         current_transcription.setdefault("detection_cache", {})
         for detection_hash_value, entry in outcome.detection_cache.items():
@@ -297,31 +296,6 @@ def rename_variant(project: str | Path | None, target: str, ref: str, *, new_lab
     return update_analysis(project_path, update)["analysis"]["transcription"]["targets"][target]
 
 
-def select_variant(project: str | Path | None, target: str, ref: str | None, *, clear: bool = False) -> dict[str, Any]:
-    """Set (or explicitly clear) `target`'s selected variant. Never changes
-    artifacts and never reruns transcription -- selection is purely which
-    retained variant is preferred (see the plan's "Selection ... never
-    changes artifacts")."""
-    validate_target(target)
-    if clear and ref is not None:
-        raise VariantLifecycleError("--clear cannot be combined with a variant reference")
-    if not clear and ref is None:
-        raise VariantLifecycleError("a variant reference (id or label) or --clear is required")
-    project_path = locate_project(project)
-
-    def update(current: dict[str, Any]) -> None:
-        transcription = current["transcription"]
-        transcription.setdefault("targets", {})
-        record = target_record(transcription, target)
-        if clear:
-            record["selected_variant_id"] = None
-        else:
-            record["selected_variant_id"] = resolve_variant_ref(record, ref)  # type: ignore[arg-type]
-        transcription["targets"][target] = record
-
-    return update_analysis(project_path, update)["analysis"]["transcription"]["targets"][target]
-
-
 def _delete_variant_artifacts(namespace_dir: Path, variant: dict[str, Any]) -> None:
     """Delete only artifacts explicitly recorded by ``variant``.
 
@@ -345,45 +319,23 @@ def _delete_variant_artifacts(namespace_dir: Path, variant: dict[str, Any]) -> N
             path.unlink()
 
 
-def discard_variant(
-    project: str | Path | None,
-    target: str,
-    ref: str,
-    *,
-    select: str | None = None,
-    clear_selected: bool = False,
-) -> dict[str, Any]:
+def discard_variant(project: str | Path | None, target: str, ref: str) -> dict[str, Any]:
     """Discard one retained variant: delete its own generated artifacts,
     remove it from the live index, archive a compact recipe/metrics record,
     and garbage-collect any raw detection entry no other live variant still
     references (see the plan's "Discarding one variant" steps).
 
-    If `ref` names the currently selected variant, exactly one of `select`
-    (an id/label naming a different retained variant) or `clear_selected`
-    must be given -- discard never silently picks a replacement (see the
-    plan's "do not silently choose a winner" and this issue's "explicit
-    selection semantics" acceptance criterion).
+    Any retained variant may be discarded directly -- retained variants are
+    peers, so there is no replacement/clear requirement to satisfy first
+    (#176 removed selection).
     """
     validate_target(target)
-    if select is not None and clear_selected:
-        raise VariantLifecycleError("--select and --clear-selected are mutually exclusive")
     project_path = locate_project(project)
     sidecar = read_sidecar(project_path)
     analysis = sidecar["analysis"]
     transcription = analysis["transcription"]
     record = target_record(transcription, target)
     variant_id = resolve_variant_ref(record, ref)
-
-    replacement_id: str | None = None
-    if record.get("selected_variant_id") == variant_id:
-        if select is not None:
-            replacement_id = resolve_variant_ref(record, select)
-            if replacement_id == variant_id:
-                raise VariantLifecycleError("--select cannot name the variant being discarded")
-        elif not clear_selected:
-            raise VariantLifecycleError(
-                f"{ref!r} is the selected variant for {target!r}; pass --select <replacement> or --clear-selected"
-            )
 
     namespace = analysis["stems"].get("artifact_namespace")
     if namespace:
@@ -403,8 +355,6 @@ def discard_variant(
         }
         current_record["variant_order"] = [vid for vid in current_record["variant_order"] if vid != variant_id]
         current_record["discarded_variants"] = [*current_record["discarded_variants"], archived]
-        if current_record.get("selected_variant_id") == variant_id:
-            current_record["selected_variant_id"] = replacement_id
         transcription["targets"][target] = current_record
         if namespace:
             kept_cache, _removed = garbage_collect_raw_cache(

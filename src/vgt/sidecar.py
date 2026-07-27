@@ -142,11 +142,8 @@ Schema versions:
       A legacy variant's id is `sha256(f"legacy:{target}:{settings_hash}")`
       truncated to 8 hex characters, so it stays stable across repeated
       upgrades of the same underlying record. `variant_order` is always
-      `[id]`; `selected_variant_id` is `id` only when the flat record's
-      `status == "transcribed"` (an error or skipped-missing-source record
-      has nothing usable to select), matching the plan's migration step 3.
-      The migrated variant's `requested_profile`/`effective_profile` come
-      from mapping the legacy `analysis.transcription.modes[target]`
+      `[id]`. The migrated variant's `requested_profile`/`effective_profile`
+      come from mapping the legacy `analysis.transcription.modes[target]`
       selection through `vgt.transcribe.effective_profile_name_for_target`
       (migration step 6); for a Basic Pitch target this is also resolved
       through `vgt.transcription_profiles` to populate `resolved_settings`
@@ -154,6 +151,21 @@ Schema versions:
       would carry. `profile_definition_hash` and `raw_notes_hash` are
       `None`: a legacy record was never resolved against a project profile
       file and has no raw-detection cache entry.
+
+      Superseded by schema 14: this described `selected_variant_id`, which
+      schema 14 removes; the shape above otherwise still applies.
+ 14 -- Selection removed (#176): retained transcription variants are peers,
+      ordered only for stable presentation, with none designated preferred,
+      active, best, or selected. `analysis.transcription.targets[target]`
+      no longer carries `selected_variant_id` in any form -- not renamed,
+      not replaced by a first-candidate default. Upgrading a schema-13
+      sidecar drops that one field losslessly: every variant, its immutable
+      id, `variant_order`, labels, recipes, metrics, paths, detection cache
+      references, and `discarded_variants` audit records are preserved
+      exactly. The upgrade never reruns transcription and never moves or
+      deletes an artifact. Repeating the upgrade over an already-migrated
+      sidecar is a no-op: the field is simply absent on every subsequent
+      read.
 
 Every stage entry has the same shape:
   {
@@ -203,7 +215,7 @@ import uuid
 from . import transcription_profiles
 from .transcribe import effective_profile_name_for_target
 
-SCHEMA_VERSION = 13
+SCHEMA_VERSION = 14
 STEMS_LEASE_TIMEOUT = timedelta(minutes=30)
 
 ANALYSIS_STAGES = ("tempo", "key", "sections", "chords", "transcription")
@@ -419,7 +431,6 @@ def migrate_transcription_target(target: str, record: dict[str, Any], modes: dic
 
     migrated["variants"] = {variant_id: variant}
     migrated["variant_order"] = [variant_id]
-    migrated["selected_variant_id"] = variant_id if migrated.get("status") == "transcribed" else None
     migrated["discarded_variants"] = list(migrated.get("discarded_variants") or [])
     return migrated
 
@@ -490,11 +501,19 @@ def upgrade(data: dict[str, Any]) -> dict[str, Any]:
         transcription["modes"]["guitar"] = "guitar-acoustic"
     detection_cache = transcription.get("detection_cache")
     transcription["detection_cache"] = dict(detection_cache) if isinstance(detection_cache, dict) else {}
-    transcription["targets"] = {
+    targets = {
         target: migrate_transcription_target(target, record, transcription["modes"])
         for target, record in transcription["targets"].items()
         if isinstance(record, dict)
     }
+    # Schema 14 (#176) removes selection: a pre-14 sidecar's target record --
+    # legacy flat or already variants-only -- may still carry the retired
+    # `selected_variant_id` pointer. Drop it losslessly; every other field
+    # (variants, variant_order, discarded_variants, ...) passes through
+    # untouched.
+    for record in targets.values():
+        record.pop("selected_variant_id", None)
+    transcription["targets"] = targets
     analysis["transcription"] = transcription
 
     upgraded["analysis"] = analysis

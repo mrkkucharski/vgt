@@ -1,6 +1,13 @@
 # Multiple transcription variants per stem
 
-Status: design plan, 2026-07-24.
+Status: design plan, 2026-07-24. **Superseded in part by #176 (2026-07-27):**
+selection (`selected_variant_id`, `variant select`/`unselect`, and the
+warm-gold generated-track colour) described throughout this document was
+removed as a deliberate product simplification. Retained variants remain
+ordered candidates; none is designated preferred, active, best, or selected.
+The rest of this document -- retained variants, immutable ids, labels,
+rename, discard, purge-discarded, raw-detection cache sharing -- still
+describes current behavior; do not resurrect selection from this history.
 
 ## Goal
 

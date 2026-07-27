@@ -60,7 +60,7 @@ vgt creates a `[vgt] <reference name>` container and may add:
 | `[vgt] Click` | Tempo-click artifact exists | Muted audio track; unmute temporarily to check the beat grid. |
 | Vocals, Instrumental, Bass, Drums, Guitar, Backing | Standard separation | Unmuted, time-based audio tracks. |
 | Strings, Keys / Piano | Explicitly requested | Unmuted, time-based optional stem tracks. |
-| `[vgt] <Target> Ref — <Label> (MIDI)` | A retained transcription variant was transcribed | Unmuted, time-based MIDI item directly beneath the stem it was transcribed from. The selected variant uses a warm-gold track colour solely as a visual cue; colour is not an ownership signal. It has no sound without an instrument; muting it would only dim the notes meant to be read. |
+| `[vgt] <Target> Ref — <Label> (MIDI)` | A retained transcription variant was transcribed | Unmuted, time-based MIDI item directly beneath the stem it was transcribed from, in default/neutral track colour; every retained variant is a peer, ordered only for stable presentation, with none marked preferred. It has no sound without an instrument; muting it would only dim the notes meant to be read. |
 | `[vgt]` section regions | Section analysis | Movable and renamable section markers. |
 
 Chords and Beats are unmuted so labels stay visible, but contain no audible
@@ -196,7 +196,7 @@ equivalent `guitar-acoustic` transcription profile when their sidecar upgrades.
 ### Retaining several variants per target
 
 `--transcribe`/`--mode` keep working exactly as above during the compatibility
-transition; they create or update the selected/default variant for a target.
+transition; they create or update a target's first retained (default) variant.
 New workflows should use a variant-level `--profile`. To retain and compare several
 independently configured candidates for the same target (for example a
 detail-preserving pass alongside a clean, chord-oriented one), use the
@@ -212,15 +212,12 @@ vgt transcription profile validate "Song.RPP"
 vgt transcription variant add guitar --name detail --profile guitar-acoustic-detail "Song.RPP"
 vgt transcription variant add guitar --name clean --profile guitar-acoustic-clean "Song.RPP"
 
-# Rename or select without ever rerunning transcription.
+# Rename without ever rerunning transcription.
 vgt transcription variant rename guitar clean --name "clean chords" "Song.RPP"
-vgt transcription variant select guitar "clean chords" "Song.RPP"
-vgt transcription variant unselect guitar "Song.RPP"
 
-# Discard a rejected candidate (its own generated artifacts and any
-# now-unreferenced raw detection cache are removed); if it was selected, pass
-# --select <replacement> or --clear-selected.
-vgt transcription variant discard guitar detail --select "clean chords" "Song.RPP"
+# Discard a rejected candidate directly (its own generated artifacts and any
+# now-unreferenced raw detection cache are removed).
+vgt transcription variant discard guitar detail "Song.RPP"
 
 # Clear the compact discarded-variant recipe/metrics history as a separate step.
 vgt transcription variant purge-discarded guitar "Song.RPP"
@@ -231,15 +228,14 @@ that label is unambiguous for the target, or its immutable id always. Two
 variants that only differ in cleanup (like `guitar-acoustic-detail` and
 `guitar-acoustic-clean`) share one Basic Pitch detection pass; only a variant
 whose detection settings actually changed reruns it. `vgt status` reports
-every target's retained variants in persisted order, which one is selected,
-and each one's requested/effective profile, cache identity, metrics, and
-errors.
+every target's retained variants in persisted order, and each one's
+requested/effective profile, cache identity, metrics, and errors.
 
-Generated variants are reproducible machine outputs. The selected variant is
-only the preferred generated candidate for that target: selecting it changes
-neither MIDI nor cache files, and it does not make it authoritative. A
-`[work]` copy is a separate user-owned editable track; it is not a variant,
-is never synchronized back into vgt, and survives variant reconciliation.
+Generated variants are reproducible machine outputs and peers: retained
+variants are ordered only for stable presentation, and none is designated
+preferred, active, best, or selected. A `[work]` copy is a separate
+user-owned editable track; it is not a variant, is never synchronized back
+into vgt, and survives variant reconciliation.
 
 ### Authoring project profiles
 
@@ -288,13 +284,14 @@ per-instrument event counts (for example, `drums 428 events (kick 91, snare
 status artifact list includes each target's MIDI and, depending on backend,
 CSV or JSON when available.
 
-For example, `*` is a persisted selection marker, not a quality score:
+For example, retained variants are listed in persisted order, with no marker
+implying preference:
 
 ```text
 transcription: 1 target, 2 retained variants
   guitar
-    * clean   443 notes, MIDI 40-76, guitar-acoustic-clean
-      detail  1060 notes, MIDI 40-88, guitar-acoustic-detail
+    clean   443 notes, MIDI 40-76, guitar-acoustic-clean
+    detail  1060 notes, MIDI 40-88, guitar-acoustic-detail
 ```
 
 ### Basic Pitch (guitar, bass, vocals, piano, strings, instrumental, backing, original mix)
@@ -465,12 +462,13 @@ never block closing an issue:
 - Transcription runs locally after separation, never triggers paid separation,
   and caches raw Basic Pitch detection separately from each retained derived
   variant's MIDI/CSV (or a DrumScript variant's MIDI/JSON) artifact.
-- Generated variants, their per-target selected state, and user-owned `[work]`
-  copies have distinct ownership: apply reconciles generated `[vgt]` tracks,
-  selection never edits artifacts, and working copies are preserved.
+- Generated variants (peers, ordered only for presentation) and user-owned
+  `[work]` copies have distinct ownership, tracked through provenance rather
+  than color: apply reconciles generated `[vgt]` tracks, and working copies
+  are preserved.
 - Automatic chord analysis remains audio-based (original mix plus available
-  instrumental/guitar/backing stems). Selected or clean MIDI is never fed back
-  into chord analysis and is not ground truth.
+  instrumental/guitar/backing stems). Generated or clean MIDI is never fed
+  back into chord analysis and is not ground truth.
 - DrumScript backs `drums`; Basic Pitch backs every other target. A DrumScript
   or Basic Pitch failure records a per-target error and never falls back to
   the other backend.

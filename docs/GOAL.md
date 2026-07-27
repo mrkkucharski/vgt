@@ -19,9 +19,9 @@ analyzes it, optionally creates practice stems, and adds a clearly owned
 - **Supporting capability — reference transcription:** requested separated
   stems are transcribed locally into cached reference MIDI variants and
   imported beside their source stem. A target can retain several generated
-  candidates with immutable IDs and editable labels; cleanup-only guitar
-  variants share raw Basic Pitch detection, while selection is persistent and
-  non-destructive. DrumScript transcribes `drums`; Basic Pitch transcribes
+  candidates with immutable IDs and editable labels, ordered only for stable
+  presentation -- none is preferred, active, best, or selected; cleanup-only
+  guitar variants share raw Basic Pitch detection. DrumScript transcribes
   every other supported target (guitar, bass, vocals, piano, strings,
   instrumental, backing, and original mix). Generated variants are draft
   references, not chord-analysis inputs or ground truth; `[work]` copies are
@@ -41,8 +41,8 @@ apply and sync, CLI paid-stem consent/quote/cache/checkpoint-recovery paths,
 and reconciliation passes. It proves the
 non-destructive/idempotent object contract, correction and detected-baseline
 behavior, non-invasive tempo fallback, raw-detection cache reuse, exact
-discarded-artifact/cache cleanup, persistent selection, paid-work refusal
-without explicit non-interactive consent, no duplicate paid submission after
+discarded-artifact/cache cleanup, paid-work refusal without explicit
+non-interactive consent, no duplicate paid submission after
 checkpoint recovery, credential non-persistence, and preservation of user
 tracks plus a simulated `[work]` copy. It is part of the automatic
 `Tests` workflow, which runs on every push and pull request (and may also be
@@ -63,9 +63,11 @@ live REAPER.
 - **Correctable:** human-synchronized chord and section edits survive future
   runs; machine detections remain available as a baseline.
 - **Separate ownership and evidence:** generated variants can be reconciled or
-  discarded, selected variants only express a preference, and `[work]` copies
-  remain user-owned. Automatic chord analysis stays audio-based; clean MIDI is
-  a useful draft, never ground truth.
+  discarded and are peers -- ordered only for stable presentation, never
+  preferred, active, best, or selected -- while `[work]` copies remain
+  user-owned, distinguished by ownership/provenance, never color. Automatic
+  chord analysis stays audio-based; clean MIDI is a useful draft, never
+  ground truth.
 - **Respect the project:** vgt does not overwrite an existing or human-edited
   tempo map; it falls back to non-invasive beat labels.
 - **Cost safe:** LALAL credentials are environment-only; paid work is cached,
