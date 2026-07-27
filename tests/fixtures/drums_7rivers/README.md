@@ -14,9 +14,15 @@ directly comparable.
 ## Files
 
 - **`corrected_ground_truth.json`** — the maintainer's hand-corrected drum MIDI
-  (`[work] Drums MIDI corrected`), parsed from the RPP. `[{time_sec, instrument}]`,
+  (`[work] Drums MIDI corrected`), parsed from the RPP. `[{time_sec, instruments:[...]}]`,
   318 notes. This is the reference truth for scoring precision/recall/timing.
   It is a human creative edit; it contains no audio.
+  **Coverage: measures 3-30 only (~0-57 s).** The maintainer cleaned and trimmed
+  just that span, so `drumscript_raw_events.json` (full song, 0-160 s) has many
+  events with no counterpart here. When scoring, restrict the candidate to the
+  0-57 s window (or trim it to this ground truth's span) - otherwise the
+  candidate's later notes all count as false positives and the numbers are
+  meaningless.
 
 - **`drumscript_raw_events.json`** — DrumScript 0.1.6's raw `default`-profile
   output for the same stem. `[{time_sec, instruments:[...]}]`, 421 events. The
