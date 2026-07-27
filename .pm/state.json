@@ -1,10 +1,10 @@
 {
   "current_issue": 180,
-  "session_id": "1b27f681-edd0-4210-81b0-206c06bbed53",
-  "pid": 34741,
-  "process_started_at": "Mon Jul 27 13:02:43 2026",
+  "session_id": "00a2ee87-3e9a-4809-bdd9-85b6b9f3ec1b",
+  "pid": 35390,
+  "process_started_at": "Mon Jul 27 13:06:16 2026",
   "agent": "claude",
-  "started_at": "2026-07-27T11:02:41.654052+00:00",
+  "started_at": "2026-07-27T11:06:14.521913+00:00",
   "scheduler_stalls": {},
   "budget": {
     "window_start": "2026-07-27T06:10:54.862777+00:00",
@@ -15,10 +15,10 @@
   "verification_followups": {
     "f0d8bfc9d2dc6da7a31609184e25c4d66d3986fd2340b33a83e98204fb86691e": "created"
   },
-  "role": "implement",
+  "role": "review",
   "branch": "issue-180-fix-failing-tests-test-tests-workflow-py",
   "worktree_path": "/Users/marekkucharski/projects/.pm-worktrees/vgt/issue-180",
-  "pr_number": null,
+  "pr_number": 181,
   "followup_generation": {
     "fingerprint": "fbea9b2e785aa0658e1c7e8448235eb91893fcd6925ed6740c4cf98dd212c31b",
     "items": {
@@ -57,11 +57,11 @@
   "pending_transition": {
     "issue": 180,
     "target": "working",
-    "event": "agent.started",
+    "event": "agent.review_started",
     "detail": {
       "issue": 180,
       "agent": "claude",
-      "branch": "issue-180-fix-failing-tests-test-tests-workflow-py"
+      "pr": 181
     },
     "cleanup": {}
   }
