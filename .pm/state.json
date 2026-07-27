@@ -1,13 +1,21 @@
 {
-  "current_issue": 180,
-  "session_id": "00a2ee87-3e9a-4809-bdd9-85b6b9f3ec1b",
-  "pid": 35390,
-  "process_started_at": "Mon Jul 27 13:06:16 2026",
+  "current_issue": 182,
+  "session_id": "9c448b35-1f8b-4f40-89b4-0e37f42ba8a3",
+  "pid": 49555,
+  "process_started_at": "Mon Jul 27 23:22:18 2026",
   "agent": "claude",
-  "started_at": "2026-07-27T11:06:14.521913+00:00",
-  "scheduler_stalls": {},
+  "started_at": "2026-07-27T21:22:16.496765+00:00",
+  "scheduler_stalls": {
+    "malformed_responses": {
+      "followup_issues": {
+        "first_seen_at": "2026-07-27T11:14:22.717435+00:00",
+        "last_seen_at": "2026-07-27T11:24:08.714549+00:00",
+        "consecutive_passes": 2
+      }
+    }
+  },
   "budget": {
-    "window_start": "2026-07-27T06:10:54.862777+00:00",
+    "window_start": "2026-07-27T21:22:12.536257+00:00",
     "seconds_used": 0.0,
     "dollars_used": 0.0,
     "seconds_used_by_agent": {}
@@ -15,10 +23,10 @@
   "verification_followups": {
     "f0d8bfc9d2dc6da7a31609184e25c4d66d3986fd2340b33a83e98204fb86691e": "created"
   },
-  "role": "review",
-  "branch": "issue-180-fix-failing-tests-test-tests-workflow-py",
-  "worktree_path": "/Users/marekkucharski/projects/.pm-worktrees/vgt/issue-180",
-  "pr_number": 181,
+  "role": "implement",
+  "branch": "issue-182-offline-drum-transcription-scoring-harne",
+  "worktree_path": "/Users/marekkucharski/projects/.pm-worktrees/vgt/issue-182",
+  "pr_number": null,
   "followup_generation": {
     "fingerprint": "fbea9b2e785aa0658e1c7e8448235eb91893fcd6925ed6740c4cf98dd212c31b",
     "items": {
@@ -55,13 +63,13 @@
     "174": 2
   },
   "pending_transition": {
-    "issue": 180,
+    "issue": 182,
     "target": "working",
-    "event": "agent.review_started",
+    "event": "agent.started",
     "detail": {
-      "issue": 180,
+      "issue": 182,
       "agent": "claude",
-      "pr": 181
+      "branch": "issue-182-offline-drum-transcription-scoring-harne"
     },
     "cleanup": {}
   }
