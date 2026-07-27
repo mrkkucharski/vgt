@@ -204,6 +204,7 @@ function reaper.GetSetMediaTrackInfo_String(t, key, value, set)
   if key == 'P_NAME' then return true, t.name end
   return true, (t.ext and t.ext[key]) or ''
 end
+function reaper.GetMediaTrackInfo_Value(t, key) return t[key] or 0 end
 function reaper.SetMediaTrackInfo_Value(t, key, value) t[key]=value end
 function reaper.ColorToNative(red, green, blue) return blue * 65536 + green * 256 + red end
 function reaper.AddMediaItemToTrack(t) local i={{position=0,length=0}}; table.insert(t.items,i); return i end
@@ -476,6 +477,106 @@ sync()
         managed_tracks=final_sidecar["managed_track_guids"],
         managed_regions=final_sidecar["managed_region_ids"],
     ) == before
+
+
+def _guid(seed: int) -> str:
+    # GUIDs are matched by the reascript's `{[%x%-]+}` pattern, so only
+    # hex/hyphen characters are valid here.
+    return "{AAAAAAAA-0000-0000-0000-%012d}" % seed
+
+
+def test_goal_contract_reconciles_the_7rivers_incident_fixture_into_a_single_root(tmp_path: Path) -> None:
+    """Regression fixture derived from the actual saved 7Rivers.RPP evidence in
+    issue #174: a 13-track managed folder (root + 12 children) whose sidecar
+    `managed_track_guids`, per-track `P_EXT:vgt_managed` marks, and project
+    root manifest all agree, plus 9 managed regions, sitting alongside a
+    genuine user track/region that must survive untouched. Reconciling it must
+    collapse to exactly one managed root -- and, because that first apply
+    leaves a *flattened* root behind (no analysis, so nothing nests under it),
+    applying a second time must still leave exactly one, proving the
+    flattened-root recognition fix rather than just the folder-root case
+    already covered by test_goal_contract_is_offline_non_destructive_and_idempotent."""
+    project = tmp_path / "7Rivers.RPP"
+    sidecar = tmp_path / "7Rivers.vgt"
+
+    root_guid = _guid(0)
+    child_roles = [
+        "beats", "click", "key", "chords",
+        "stem:vocals", "stem:instrumental", "stem:bass", "stem:drums",
+        "stem:guitar", "stem:backing", "stem:strings", "stem:piano",
+    ]
+    child_guids = [_guid(index + 1) for index in range(len(child_roles))]
+    managed_guids = [root_guid] + child_guids
+    region_ids = list(range(1, 10))  # nine managed regions, matching the evidence
+    folder_name = "[vgt] The Seven Rivers (Full March - 3_00)"
+
+    sidecar.write_text(json.dumps({
+        "schema_version": 4,
+        "generation": 3,
+        "managed_track_guids": managed_guids,
+        "managed_region_ids": region_ids,
+        "config": {
+            "reference_track_name": "The Seven Rivers (Full March - 3_00)",
+            "reference_track_guid": REFERENCE_GUID,
+            "folder_name": folder_name,
+            "tempo_map_applied": False,
+            "tempo_map_fingerprint": "",
+            "tempo_data_fingerprint": "",
+            "guitar_type": "electric",
+        },
+    }), encoding="utf-8")
+
+    manifest = ";".join(["root=" + root_guid] + [f"{guid}={role}" for guid, role in zip(child_guids, child_roles)])
+
+    track_lines = [
+        "{guid=%r, name=%r, I_FOLDERDEPTH=1, ext={['P_EXT:vgt_managed']='1', ['P_EXT:vgt_role']='managed-root'}, items={}}"
+        % (root_guid, folder_name)
+    ]
+    for index, (guid, role) in enumerate(zip(child_guids, child_roles)):
+        depth = -1 if index == len(child_roles) - 1 else 0
+        track_lines.append(
+            "{guid=%r, name='[vgt] Child %d', I_FOLDERDEPTH=%d, ext={['P_EXT:vgt_managed']='1', ['P_EXT:vgt_role']=%r}, items={}}"
+            % (guid, index, depth, role)
+        )
+    track_lines.append(
+        "{guid=%r, name='The Seven Rivers (Full March - 3_00)', B_MUTE=0, "
+        "items={{position=10,length=4,C_LOCK=0,take={name='Original mix',source='Media/x.mp3'}}}}" % REFERENCE_GUID
+    )
+    track_lines.append(
+        "{guid='{B00B0000-0000-0000-0000-000000000000}', name='Paris Metro Punk', B_MUTE=1, "
+        "items={{position=2,length=3,C_LOCK=1,take={name='Paris source',source='Media/Paris Metro Punk.mp3'}}}}"
+    )
+
+    region_lines = [f"{{id={region_id}, start={region_id}, finish={region_id + 1}, name='[vgt] Section {region_id}'}}" for region_id in region_ids]
+    region_lines.append("{id=900, start=50, finish=51, name='User region', color=42}")
+
+    api_start = _lua_state(project).index("reaper = {}")
+    api = _lua_state(project)[api_start:]
+    prelude = f"""
+local state = {{tracks={{{",".join(track_lines)}}},regions={{{",".join(region_lines)}}},markers={{{{time=0,bpm=100,num=4,den=4}}}},
+  next_guid=1,next_region=2000,tempo_writes=0,proj_ext={{['vgt:managed_root_manifest']={manifest!r}}}}}
+local tracks, regions, markers = state.tracks, state.regions, state.markers
+local next_guid, next_region, tempo_writes, proj_ext = state.next_guid, state.next_region, state.tempo_writes, state.proj_ext
+"""
+    state = prelude + api
+
+    state, first_apply = _run_apply(project, state)
+    _, user_items, region_count, vgt_count, _ = first_apply.split("#")
+    assert user_items == "2", "the reference and Paris Metro Punk items must survive untouched"
+    assert region_count == "1", "only the unmanaged 'User region' should remain; all nine old managed regions are gone"
+    assert vgt_count == "1", "the old 13-track folder must collapse into exactly one new root, never coexist with it"
+    assert len(read_sidecar(project)["managed_track_guids"]) == 1
+    assert set(managed_guids) & set(read_sidecar(project)["managed_track_guids"]) == set(), "none of the old 7Rivers GUIDs may survive"
+
+    # The new root has nothing analyzed to nest under it, so apply() flattens
+    # it back to I_FOLDERDEPTH 0 -- exactly the shape that escaped detection
+    # before this fix. A second apply must still reconcile to one root.
+    state, second_apply = _run_apply(project, state)
+    _, user_items, region_count, vgt_count, _ = second_apply.split("#")
+    assert user_items == "2"
+    assert region_count == "1"
+    assert vgt_count == "1", "a flattened root must be recognized and reconciled, not duplicated"
+    assert len(read_sidecar(project)["managed_track_guids"]) == 1
 
 
 def test_goal_contract_exercises_cli_paid_stem_cost_controls_and_resume(

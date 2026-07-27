@@ -78,14 +78,52 @@ end
 -- sidecar says, so remove_previous_managed_tracks below never mistakes a
 -- stale record for "nothing to replace" and appends a second folder.
 local EXT_STATE_KEY = "P_EXT:vgt_managed"
+local ROLE_EXT_STATE_KEY = "P_EXT:vgt_role"
+local PROJ_EXT_SECTION = "vgt"
+local PROJ_EXT_ROOT_MANIFEST_KEY = "managed_root_manifest"
 
-local function mark_track_managed(track)
+local function mark_track_managed(track, role)
   reaper.GetSetMediaTrackInfo_String(track, EXT_STATE_KEY, "1", true)
+  if role then reaper.GetSetMediaTrackInfo_String(track, ROLE_EXT_STATE_KEY, role, true) end
 end
 
 local function track_is_marked_managed(track)
   local _, value = reaper.GetSetMediaTrackInfo_String(track, EXT_STATE_KEY, "", false)
   return value == "1"
+end
+
+local function track_role(track)
+  local _, value = reaper.GetSetMediaTrackInfo_String(track, ROLE_EXT_STATE_KEY, "", false)
+  return value or ""
+end
+
+local function read_root_manifest()
+  local _, value = reaper.GetProjExtState(0, PROJ_EXT_SECTION, PROJ_EXT_ROOT_MANIFEST_KEY)
+  return value or ""
+end
+
+local function write_root_manifest(root, managed_tracks)
+  -- Project extended state is saved in the RPP, independently of the sidecar.
+  -- The root GUID authenticates the folder; the roles make this record useful
+  -- to people inspecting a recovered project as well as to later reconcilers.
+  local entries = {"root=" .. reaper.GetTrackGUID(root)}
+  for _, track in ipairs(managed_tracks) do
+    local role = track_role(track)
+    if role ~= "" then entries[#entries + 1] = reaper.GetTrackGUID(track) .. "=" .. role end
+  end
+  reaper.SetProjExtState(0, PROJ_EXT_SECTION, PROJ_EXT_ROOT_MANIFEST_KEY, table.concat(entries, ";"))
+end
+
+local function manifest_root_guid()
+  return read_root_manifest():match("root=({[%x%-]+})") or ""
+end
+
+local function manifest_roles()
+  local roles = {}
+  for guid, role in read_root_manifest():gmatch("({[%x%-]+})=([^;]+)") do
+    roles[guid] = role
+  end
+  return roles
 end
 
 -- Regions have no per-object equivalent of a track's P_EXT mark, but they
@@ -97,7 +135,6 @@ end
 -- so recording each region's ID here as soon as it is created -- rather than
 -- waiting for write_settings -- means that record survives even if
 -- write_settings itself never runs or fails partway through.
-local PROJ_EXT_SECTION = "vgt"
 local PROJ_EXT_REGION_KEY = "managed_region_ids"
 
 local function record_region_ids_ext_state(region_ids)
@@ -434,17 +471,137 @@ local GENERATION_RETRY_LIMIT = 5
 
 local function remove_previous_managed_tracks()
   local managed = read_managed_guids()
-  -- Either the sidecar GUID or the durable per-track mark is evidence of
-  -- ownership -- the mark is what keeps this correct when the sidecar record
-  -- is stale (see mark_track_managed above). Neither is enough on its own:
-  -- preserve any track whose current name is not vgt-owned, since the user
-  -- may have renamed a stale-marked track to make it their own.
+  -- The project root manifest is a third, independent ownership channel
+  -- (ProjExtState, not the sidecar file or a per-track P_EXT read) -- it must
+  -- feed removal too, not just validate_reconciliation_inventory's
+  -- authentication check above. Otherwise a manifest-authenticated root whose
+  -- sidecar and P_EXT mark are both stale would pass validation as safe to
+  -- proceed, and then never actually get deleted here, leaving the old area
+  -- in place while apply() built a second one beside it.
+  for guid in pairs(manifest_roles()) do managed[guid] = true end
+  -- Either the sidecar GUID, the durable per-track mark, or the manifest is
+  -- evidence of ownership -- the mark is what keeps this correct when the
+  -- sidecar record is stale (see mark_track_managed above). None is enough on
+  -- its own: preserve any track whose current name is not vgt-owned, since
+  -- the user may have renamed a stale-marked track to make it their own.
   for index = reaper.CountTracks(0) - 1, 0, -1 do
     local track = reaper.GetTrack(0, index)
     if (managed[reaper.GetTrackGUID(track)] or track_is_marked_managed(track)) and starts_with_vgt(track) then
       reaper.DeleteTrack(track)
     end
   end
+end
+
+local function table_count(values)
+  local count = 0
+  for _ in pairs(values) do count = count + 1 end
+  return count
+end
+
+-- Build this before Undo_BeginBlock: a failed ownership lookup is never a
+-- first-run signal.  In particular, a `[vgt]` folder is a collision that
+-- blocks creation until a human deliberately recovers it; its name alone is
+-- not permission to remove it.
+local function reconciliation_inventory(analysis)
+  local sidecar_guids = read_managed_guids()
+  local manifest_guid = manifest_root_guid()
+  local manifest_role_by_guid = manifest_roles()
+  local live_guid_count, marked_count = 0, 0
+  local roots, roles = {}, {"managed-root"}
+  if type(analysis) == "table" then
+    if analysis.tempo then roles[#roles + 1] = "beats/click" end
+    if analysis.key then roles[#roles + 1] = "key" end
+    if analysis.chords then roles[#roles + 1] = "chords" end
+    local artifacts = analysis.stems and analysis.stems.artifacts
+    if type(artifacts) == "table" then for name in pairs(artifacts) do roles[#roles + 1] = "stem:" .. name end end
+    local targets = analysis.transcription and analysis.transcription.targets
+    if type(targets) == "table" then
+      for name, record in pairs(targets) do
+        if type(record) == "table" and type(record.variant_order) == "table" then
+          for _, variant_id in ipairs(record.variant_order) do roles[#roles + 1] = "variant:" .. name .. ":" .. tostring(variant_id) end
+        else
+          roles[#roles + 1] = "variant:" .. name .. ":legacy"
+        end
+      end
+    end
+  end
+  for index = 0, reaper.CountTracks(0) - 1 do
+    local track = reaper.GetTrack(0, index)
+    local guid = reaper.GetTrackGUID(track)
+    if sidecar_guids[guid] then live_guid_count = live_guid_count + 1 end
+    if track_is_marked_managed(track) then marked_count = marked_count + 1 end
+    local manifest_match = manifest_guid ~= "" and manifest_guid == guid
+    -- A root is not always a folder: apply() flattens it back to a plain
+    -- track (I_FOLDERDEPTH 0) whenever nothing ends up nested under it, so
+    -- FOLDERDEPTH > 0 alone misses a previously-flattened root entirely --
+    -- including one the project manifest still names as root=<guid>. Skipping
+    -- it here meant that root was never authenticated *or* rejected: apply()
+    -- treated its presence as a first run and appended a second one beside it.
+    if starts_with_vgt(track)
+      and (reaper.GetMediaTrackInfo_Value(track, "I_FOLDERDEPTH") > 0 or track_role(track) == "managed-root" or manifest_match)
+    then
+      roots[#roots + 1] = {
+        track = track, guid = guid, name = track_name(track),
+        sidecar_match = sidecar_guids[guid] == true,
+        ext_state_match = track_is_marked_managed(track),
+        manifest_match = manifest_match,
+      }
+    end
+  end
+  return {
+    sidecar_guid_count = table_count(sidecar_guids), live_guid_count = live_guid_count,
+    marked_count = marked_count, roots = roots, manifest_guid = manifest_guid,
+    manifest_role_by_guid = manifest_role_by_guid,
+    expected_roles = roles,
+  }
+end
+
+local function inventory_diagnostic(inventory)
+  local root_names = {}
+  for _, root in ipairs(inventory.roots) do root_names[#root_names + 1] = root.name .. " (" .. root.guid .. ")" end
+  return "project=" .. project_path() .. "; sidecar=" .. sidecar_path()
+    .. "; sidecar GUIDs=" .. inventory.sidecar_guid_count
+    .. "; live GUID matches=" .. inventory.live_guid_count
+    .. "; P_EXT:vgt_managed matches=" .. inventory.marked_count
+    .. "; root candidates=" .. #inventory.roots .. " [" .. table.concat(root_names, ", ") .. "]"
+    .. "; expected roles=" .. table.concat(inventory.expected_roles, ",")
+end
+
+local function validate_reconciliation_inventory(analysis)
+  local inventory = reconciliation_inventory(analysis)
+  if #inventory.roots > 1 then
+    error("ambiguous [vgt] managed-root candidates; no project mutation was made. " .. inventory_diagnostic(inventory)
+      .. ". Keep the intended folder and use a deliberate recovery/reclaim action before applying.")
+  end
+  if #inventory.roots == 1 then
+    local root = inventory.roots[1]
+    -- Evidence elsewhere in the project cannot authenticate this particular
+    -- same-named folder.  Treating it as sufficient was still capable of
+    -- appending beside an unauthenticated user folder after deleting an
+    -- unrelated old vgt track.
+    if inventory.manifest_guid ~= "" and not root.manifest_match then
+      error("managed-root manifest disagrees with the live [vgt] root; no project mutation was made. "
+        .. inventory_diagnostic(inventory))
+    end
+    local authenticated = root.sidecar_match or root.ext_state_match or root.manifest_match
+    if not authenticated then
+      error("existing [vgt] root has no authenticated ownership evidence; no project mutation was made. "
+        .. inventory_diagnostic(inventory)
+        .. ". This folder may be user-owned. Restore its sidecar/manifest or deliberately reclaim it before applying.")
+    end
+    -- Roles are an additional consistency check once both representations are
+    -- present. Missing roles remain a supported migration/unreadable-marker
+    -- state; conflicting durable identities are never guessed through.
+    for index = 0, reaper.CountTracks(0) - 1 do
+      local track = reaper.GetTrack(0, index)
+      local guid, manifest_role, live_role = reaper.GetTrackGUID(track), inventory.manifest_role_by_guid[reaper.GetTrackGUID(track)], track_role(track)
+      if manifest_role and live_role ~= "" and manifest_role ~= live_role then
+        error("managed track role disagrees with the project manifest; no project mutation was made. "
+          .. inventory_diagnostic(inventory) .. "; guid=" .. guid .. "; manifest role=" .. manifest_role .. "; track role=" .. live_role)
+      end
+    end
+  end
+  return inventory
 end
 
 local function find_track_by_guid(guid)
@@ -500,12 +657,12 @@ local function add_labeled_item(track, start_time, end_time, label, locked)
   reaper.GetSetMediaItemTakeInfo_String(take, "P_NAME", label, true)
 end
 
-local function add_locked_track(index, name, muted)
+local function add_locked_track(index, name, muted, role)
   reaper.InsertTrackAtIndex(index, true)
   local track = reaper.GetTrack(0, index)
   reaper.GetSetMediaTrackInfo_String(track, "P_NAME", name, true)
   reaper.SetMediaTrackInfo_Value(track, "B_MUTE", muted and 1 or 0)
-  mark_track_managed(track)
+  mark_track_managed(track, role)
   return track
 end
 
@@ -673,7 +830,7 @@ end
 local function offer_beats_track(index, tempo, reference_start, reference_end, managed_tracks)
   -- This is an item-label-only track, so it does not need muting. Keeping it
   -- unmuted ensures its beat labels remain readable in REAPER.
-  local beats = add_locked_track(index, BEATS_NAME, false)
+  local beats = add_locked_track(index, BEATS_NAME, false, "beats")
   add_beat_markers(beats, tempo, reference_start, reference_end)
   managed_tracks[#managed_tracks + 1] = beats
 end
@@ -686,7 +843,7 @@ local function add_key_track(index, key, reference_start, reference_end, managed
   local root, scale = key.root, key.scale
   if type(root) ~= "string" or root == "" or type(scale) ~= "string" or scale == "" then return end
   if reference_end <= reference_start then return end
-  local key_track = add_locked_track(index, KEY_NAME, false)
+  local key_track = add_locked_track(index, KEY_NAME, false, "key")
   add_labeled_item(key_track, reference_start, reference_end, root .. " " .. scale)
   managed_tracks[#managed_tracks + 1] = key_track
 end
@@ -707,7 +864,7 @@ local function add_click_track(index, tempo, reference_start, managed_tracks, ar
   probe:close()
   local source = reaper.PCM_Source_CreateFromFile(click_path)
   if not source then return end
-  local click_track = add_locked_track(index, CLICK_NAME, true)
+  local click_track = add_locked_track(index, CLICK_NAME, true, "click")
   local item = reaper.AddMediaItemToTrack(click_track)
   reaper.SetMediaItemInfo_Value(item, "D_POSITION", reference_start)
   reaper.SetMediaItemInfo_Value(item, "D_LENGTH", reaper.GetMediaSourceLength(source))
@@ -826,7 +983,7 @@ local function add_reference_midi_variant(index, target, variant_id, variant, se
   local label = type(variant.label) == "string" and variant.label or tostring(variant_id)
   local name = PREFIX .. " " .. definition.label .. " Ref — " .. label .. " (MIDI)"
   if legacy_track_name then name = PREFIX .. " " .. definition.label .. " Ref (MIDI)" end
-  local midi_track = add_locked_track(index, name, false)
+  local midi_track = add_locked_track(index, name, false, "variant:" .. target .. ":" .. variant_id)
   if selected then reaper.SetMediaTrackInfo_Value(midi_track, "I_CUSTOMCOLOR", selected_variant_color()) end
   local item = reaper.AddMediaItemToTrack(midi_track)
   reaper.SetMediaItemInfo_Value(item, "D_POSITION", reference_start)
@@ -897,7 +1054,7 @@ local function add_stem_tracks(index, stems, transcription, reference_start, man
         if not source then
           warn("skipping stem " .. definition.artifact .. ": REAPER could not open WAV")
         else
-          local stem_track = add_locked_track(index, definition.name, false)
+          local stem_track = add_locked_track(index, definition.name, false, "stem:" .. definition.artifact)
           local item = reaper.AddMediaItemToTrack(stem_track)
           reaper.SetMediaItemInfo_Value(item, "D_POSITION", reference_start)
           reaper.SetMediaItemInfo_Value(item, "D_LENGTH", reaper.GetMediaSourceLength(source))
@@ -1058,6 +1215,11 @@ local function apply()
     return
   end
 
+  -- This is deliberately the last operation before Undo_BeginBlock.  It
+  -- reads all ownership representations while the project is untouched and
+  -- fails closed on a root that cannot be authenticated.
+  validate_reconciliation_inventory(analysis)
+
   reaper.Undo_BeginBlock()
   reaper.PreventUIRefresh(1)
   remove_previous_managed_tracks()
@@ -1074,7 +1236,10 @@ local function apply()
   reaper.InsertTrackAtIndex(insert_at, true)
   local folder = reaper.GetTrack(0, insert_at)
   reaper.GetSetMediaTrackInfo_String(folder, "P_NAME", folder_name, true)
-  mark_track_managed(folder)
+  mark_track_managed(folder, "managed-root")
+  -- Persist root identity as soon as it exists. A crash before sidecar commit
+  -- can therefore still be recovered without treating the next run as new.
+  write_root_manifest(folder, {folder})
   -- Tentatively open a folder; if nothing ends up nested under it (no tempo,
   -- click, stems, chords, or sections to add), it is flattened back to a
   -- plain track below rather than left as a folder with no children.
@@ -1194,7 +1359,7 @@ local function apply()
     -- Like Beats, this is an item-label-only track: muting it would only
     -- make the chord labels unreadable in REAPER, since there is no audio
     -- on it to silence.
-    local chords_track = add_locked_track(reaper.CountTracks(0), CHORDS_NAME, false)
+    local chords_track = add_locked_track(reaper.CountTracks(0), CHORDS_NAME, false, "chords")
     for _, chord in ipairs(segments) do
       -- locked = false: chord items are the editing surface for corrections (see add_labeled_item).
       add_labeled_item(chords_track, reference_start + (tonumber(chord.start_seconds) or 0), reference_start + (tonumber(chord.end_seconds) or 0), tostring(chord.chord or chord.label or "N"), false)
@@ -1216,6 +1381,7 @@ local function apply()
   end
 
   write_settings(managed_tracks, managed_region_ids, reference, tempo_map_applied, tempo_map_fingerprint, tempo_data_fp, guitar_type)
+  write_root_manifest(folder, managed_tracks)
   -- The sidecar now durably records whatever this run decided about tempo;
   -- any transaction it left behind (finalized above, or fresh from this same
   -- run) is stale from here on (#139).

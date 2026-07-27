@@ -419,6 +419,22 @@ user should, in a real REAPER session:
   analyze/apply, and confirm it remains intact; then discard a rejected
   generated variant and confirm only that generated track/artifacts disappear.
 
+This is also the place to exercise initialize's duplicate-`[vgt]`-folder
+protection (issue #174) live, since the offline fake-REAPER harness in
+`tests/test_reascript.py` and `tests/test_goal_contract.py` can prove the
+reconciliation logic but never opens REAPER itself. This checklist item is
+human-owned, not an autonomous-agent acceptance gate, and its absence must
+never block closing an issue:
+
+- run initialize twice in a row on a disposable copy of a real project and
+  confirm REAPER shows exactly one `[vgt]` folder both times;
+- add a transcription variant (or run `vgt analyze`/`vgt transcribe` again
+  with different settings), initialize once more, and confirm the same root
+  folder is reconciled in place rather than duplicated;
+- save the project, close and reopen REAPER, and repeat both checks once to
+  exercise the persisted project manifest and per-track marks rather than
+  only in-session state.
+
 ## Permanent regression contract
 
 - vgt changes only objects it created and recorded as `[vgt]`-managed.
@@ -430,6 +446,16 @@ user should, in a real REAPER session:
   duplicate block, because ownership is also recorded directly in the REAPER
   project (a per-track mark for tracks, project-scoped extended state for
   regions) and reconciled from the union of both records.
+- Track ownership also records a stable role (`managed-root`, `beats`, `key`,
+  `chords`, `stem:<name>`, or `variant:<target>:<id>`) and the project stores
+  a managed-root manifest. If apply finds a `[vgt]` folder but cannot
+  authenticate it, or finds multiple candidate roots, it stops before changing
+  the project and reports the project/sidecar paths and every ownership count.
+  This is intentional: a `[vgt]` name never grants deletion permission. To
+  recover a duplicated project, save a backup, use the reported GUIDs to keep
+  the authenticated root, and rename each unauthenticated folder to `[work]`
+  (or another non-`[vgt]` name) before applying again. The renamed folder is
+  then preserved as user-owned; apply never removes it automatically.
 - Project mutation uses REAPER's API, never RPP text editing.
 - Heavy analysis runs in the CLI, not inside REAPER.
 - vgt-owned audio is time-based and does not stretch with tempo-map changes.
