@@ -1,21 +1,13 @@
 {
   "current_issue": 174,
-  "session_id": "07ea4193-fa21-4d30-b296-18ad60ab0e9f",
-  "pid": 16574,
-  "process_started_at": "Mon Jul 27 07:54:30 2026",
+  "session_id": "36b89d57-9572-4913-9cea-655f76f39fb1",
+  "pid": 18891,
+  "process_started_at": "Mon Jul 27 08:10:59 2026",
   "agent": "claude",
-  "started_at": "2026-07-27T05:54:29.231370+00:00",
-  "scheduler_stalls": {
-    "deferred_passes": {
-      "budget": {
-        "first_seen_at": "2026-07-26T15:15:53.875739+00:00",
-        "last_seen_at": "2026-07-27T05:53:19.270977+00:00",
-        "consecutive_passes": 762
-      }
-    }
-  },
+  "started_at": "2026-07-27T06:10:55.679158+00:00",
+  "scheduler_stalls": {},
   "budget": {
-    "window_start": "2026-07-27T00:59:04.266406+00:00",
+    "window_start": "2026-07-27T06:10:54.862777+00:00",
     "seconds_used": 0.0,
     "dollars_used": 0.0,
     "seconds_used_by_agent": {}
@@ -23,7 +15,7 @@
   "verification_followups": {
     "f0d8bfc9d2dc6da7a31609184e25c4d66d3986fd2340b33a83e98204fb86691e": "created"
   },
-  "role": "fix",
+  "role": "review",
   "branch": "issue-174-prevent-initialize-from-appending-duplic",
   "worktree_path": "/Users/marekkucharski/projects/.pm-worktrees/vgt/issue-174",
   "pr_number": 175,
@@ -65,11 +57,11 @@
   "pending_transition": {
     "issue": 174,
     "target": "working",
-    "event": "agent.fix_started",
+    "event": "agent.review_started",
     "detail": {
       "issue": 174,
       "agent": "claude",
-      "fix_count": 2
+      "pr": 175
     },
     "cleanup": {}
   }
