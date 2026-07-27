@@ -1,1274 +1,1910 @@
 [
  {
   "time_sec": 0.072725,
-  "instrument": "hi_hat_closed"
+  "instruments": [
+   "hi_hat_closed"
+  ]
  },
  {
   "time_sec": 0.072725,
-  "instrument": "kick"
+  "instruments": [
+   "kick"
+  ]
  },
  {
   "time_sec": 0.818155,
-  "instrument": "snare"
+  "instruments": [
+   "snare"
+  ]
  },
  {
   "time_sec": 1.077237,
-  "instrument": "hi_hat_closed"
+  "instruments": [
+   "hi_hat_closed"
+  ]
  },
  {
   "time_sec": 1.077237,
-  "instrument": "kick"
+  "instruments": [
+   "kick"
+  ]
  },
  {
   "time_sec": 1.570402,
-  "instrument": "hi_hat_closed"
+  "instruments": [
+   "hi_hat_closed"
+  ]
  },
  {
   "time_sec": 1.570402,
-  "instrument": "snare"
+  "instruments": [
+   "snare"
+  ]
  },
  {
   "time_sec": 1.822667,
-  "instrument": "snare"
+  "instruments": [
+   "snare"
+  ]
  },
  {
   "time_sec": 2.077203,
-  "instrument": "hi_hat_closed"
+  "instruments": [
+   "hi_hat_closed"
+  ]
  },
  {
   "time_sec": 2.077203,
-  "instrument": "kick"
+  "instruments": [
+   "kick"
+  ]
  },
  {
   "time_sec": 2.824906,
-  "instrument": "snare"
+  "instruments": [
+   "snare"
+  ]
  },
  {
   "time_sec": 3.072625,
-  "instrument": "hi_hat_closed"
+  "instruments": [
+   "hi_hat_closed"
+  ]
  },
  {
   "time_sec": 3.072625,
-  "instrument": "kick"
+  "instruments": [
+   "kick"
+  ]
  },
  {
   "time_sec": 3.572608,
-  "instrument": "hi_hat_closed"
+  "instruments": [
+   "hi_hat_closed"
+  ]
  },
  {
   "time_sec": 3.574881,
-  "instrument": "snare"
+  "instruments": [
+   "snare"
+  ]
  },
  {
   "time_sec": 3.8226,
-  "instrument": "snare"
+  "instruments": [
+   "snare"
+  ]
  },
  {
   "time_sec": 4.074864,
-  "instrument": "hi_hat_closed"
+  "instruments": [
+   "hi_hat_closed"
+  ]
  },
  {
   "time_sec": 4.074864,
-  "instrument": "kick"
+  "instruments": [
+   "kick"
+  ]
  },
  {
   "time_sec": 4.827112,
-  "instrument": "snare"
+  "instruments": [
+   "snare"
+  ]
  },
  {
   "time_sec": 5.074831,
-  "instrument": "hi_hat_closed"
+  "instruments": [
+   "hi_hat_closed"
+  ]
  },
  {
   "time_sec": 5.074831,
-  "instrument": "kick"
+  "instruments": [
+   "kick"
+  ]
  },
  {
   "time_sec": 5.570269,
-  "instrument": "hi_hat_closed"
+  "instruments": [
+   "hi_hat_closed"
+  ]
  },
  {
   "time_sec": 5.572542,
-  "instrument": "snare"
+  "instruments": [
+   "snare"
+  ]
  },
  {
   "time_sec": 5.827078,
-  "instrument": "snare"
+  "instruments": [
+   "snare"
+  ]
  },
  {
   "time_sec": 6.074798,
-  "instrument": "hi_hat_closed"
+  "instruments": [
+   "hi_hat_closed"
+  ]
  },
  {
   "time_sec": 6.074798,
-  "instrument": "kick"
+  "instruments": [
+   "kick"
+  ]
  },
  {
   "time_sec": 6.820227,
-  "instrument": "snare"
+  "instruments": [
+   "snare"
+  ]
  },
  {
   "time_sec": 7.079309,
-  "instrument": "hi_hat_closed"
+  "instruments": [
+   "hi_hat_closed"
+  ]
  },
  {
   "time_sec": 7.079309,
-  "instrument": "kick"
+  "instruments": [
+   "kick"
+  ]
  },
  {
   "time_sec": 7.572475,
-  "instrument": "hi_hat_closed"
+  "instruments": [
+   "hi_hat_closed"
+  ]
  },
  {
   "time_sec": 7.572475,
-  "instrument": "snare"
+  "instruments": [
+   "snare"
+  ]
  },
  {
   "time_sec": 7.824739,
-  "instrument": "snare"
+  "instruments": [
+   "snare"
+  ]
  },
  {
   "time_sec": 8.079276,
-  "instrument": "hi_hat_closed"
+  "instruments": [
+   "hi_hat_closed"
+  ]
  },
  {
   "time_sec": 8.079276,
-  "instrument": "kick"
+  "instruments": [
+   "kick"
+  ]
  },
  {
   "time_sec": 8.826978,
-  "instrument": "snare"
+  "instruments": [
+   "snare"
+  ]
  },
  {
   "time_sec": 9.074698,
-  "instrument": "hi_hat_closed"
+  "instruments": [
+   "hi_hat_closed"
+  ]
  },
  {
   "time_sec": 9.074698,
-  "instrument": "kick"
+  "instruments": [
+   "kick"
+  ]
  },
  {
   "time_sec": 9.574681,
-  "instrument": "hi_hat_closed"
+  "instruments": [
+   "hi_hat_closed"
+  ]
  },
  {
   "time_sec": 9.576953,
-  "instrument": "snare"
+  "instruments": [
+   "snare"
+  ]
  },
  {
   "time_sec": 9.824673,
-  "instrument": "snare"
+  "instruments": [
+   "snare"
+  ]
  },
  {
   "time_sec": 10.076937,
-  "instrument": "hi_hat_closed"
+  "instruments": [
+   "hi_hat_closed"
+  ]
  },
  {
   "time_sec": 10.076937,
-  "instrument": "kick"
+  "instruments": [
+   "kick"
+  ]
  },
  {
   "time_sec": 10.829184,
-  "instrument": "snare"
+  "instruments": [
+   "snare"
+  ]
  },
  {
   "time_sec": 11.076903,
-  "instrument": "hi_hat_closed"
+  "instruments": [
+   "hi_hat_closed"
+  ]
  },
  {
   "time_sec": 11.076903,
-  "instrument": "kick"
+  "instruments": [
+   "kick"
+  ]
  },
  {
   "time_sec": 11.572342,
-  "instrument": "hi_hat_closed"
+  "instruments": [
+   "hi_hat_closed"
+  ]
  },
  {
   "time_sec": 11.574614,
-  "instrument": "snare"
+  "instruments": [
+   "snare"
+  ]
  },
  {
   "time_sec": 11.829151,
-  "instrument": "snare"
+  "instruments": [
+   "snare"
+  ]
  },
  {
   "time_sec": 12.070052,
-  "instrument": "hi_hat_closed"
+  "instruments": [
+   "hi_hat_closed"
+  ]
  },
  {
   "time_sec": 12.070052,
-  "instrument": "kick"
+  "instruments": [
+   "kick"
+  ]
  },
  {
   "time_sec": 12.815482,
-  "instrument": "snare"
+  "instruments": [
+   "snare"
+  ]
  },
  {
   "time_sec": 13.074564,
-  "instrument": "hi_hat_closed"
+  "instruments": [
+   "hi_hat_closed"
+  ]
  },
  {
   "time_sec": 13.074564,
-  "instrument": "kick"
+  "instruments": [
+   "kick"
+  ]
  },
  {
   "time_sec": 13.56773,
-  "instrument": "hi_hat_closed"
+  "instruments": [
+   "hi_hat_closed"
+  ]
  },
  {
   "time_sec": 13.56773,
-  "instrument": "snare"
+  "instruments": [
+   "snare"
+  ]
  },
  {
   "time_sec": 13.819994,
-  "instrument": "snare"
+  "instruments": [
+   "snare"
+  ]
  },
  {
   "time_sec": 14.074531,
-  "instrument": "hi_hat_closed"
+  "instruments": [
+   "hi_hat_closed"
+  ]
  },
  {
   "time_sec": 14.074531,
-  "instrument": "kick"
+  "instruments": [
+   "kick"
+  ]
  },
  {
   "time_sec": 14.822233,
-  "instrument": "snare"
+  "instruments": [
+   "snare"
+  ]
  },
  {
   "time_sec": 15.069952,
-  "instrument": "hi_hat_closed"
+  "instruments": [
+   "hi_hat_closed"
+  ]
  },
  {
   "time_sec": 15.069952,
-  "instrument": "kick"
+  "instruments": [
+   "kick"
+  ]
  },
  {
   "time_sec": 15.569936,
-  "instrument": "hi_hat_closed"
+  "instruments": [
+   "hi_hat_closed"
+  ]
  },
  {
   "time_sec": 15.572208,
-  "instrument": "snare"
+  "instruments": [
+   "snare"
+  ]
  },
  {
   "time_sec": 15.819927,
-  "instrument": "snare"
+  "instruments": [
+   "snare"
+  ]
  },
  {
   "time_sec": 16.074464,
-  "instrument": "hi_hat_closed"
+  "instruments": [
+   "hi_hat_closed"
+  ]
  },
  {
   "time_sec": 16.074464,
-  "instrument": "kick"
+  "instruments": [
+   "kick"
+  ]
  },
  {
   "time_sec": 16.819894,
-  "instrument": "snare"
+  "instruments": [
+   "snare"
+  ]
  },
  {
   "time_sec": 17.078976,
-  "instrument": "hi_hat_closed"
+  "instruments": [
+   "hi_hat_closed"
+  ]
  },
  {
   "time_sec": 17.078976,
-  "instrument": "kick"
+  "instruments": [
+   "kick"
+  ]
  },
  {
   "time_sec": 17.572142,
-  "instrument": "hi_hat_closed"
+  "instruments": [
+   "hi_hat_closed"
+  ]
  },
  {
   "time_sec": 17.572142,
-  "instrument": "snare"
+  "instruments": [
+   "snare"
+  ]
  },
  {
   "time_sec": 17.824406,
-  "instrument": "snare"
+  "instruments": [
+   "snare"
+  ]
  },
  {
   "time_sec": 18.078943,
-  "instrument": "hi_hat_closed"
+  "instruments": [
+   "hi_hat_closed"
+  ]
  },
  {
   "time_sec": 18.078943,
-  "instrument": "kick"
+  "instruments": [
+   "kick"
+  ]
  },
  {
   "time_sec": 18.826645,
-  "instrument": "snare"
+  "instruments": [
+   "snare"
+  ]
  },
  {
   "time_sec": 19.074364,
-  "instrument": "hi_hat_closed"
+  "instruments": [
+   "hi_hat_closed"
+  ]
  },
  {
   "time_sec": 19.074364,
-  "instrument": "kick"
+  "instruments": [
+   "kick"
+  ]
  },
  {
   "time_sec": 19.574348,
-  "instrument": "hi_hat_closed"
+  "instruments": [
+   "hi_hat_closed"
+  ]
  },
  {
   "time_sec": 19.57662,
-  "instrument": "snare"
+  "instruments": [
+   "snare"
+  ]
  },
  {
   "time_sec": 19.824339,
-  "instrument": "snare"
+  "instruments": [
+   "snare"
+  ]
  },
  {
   "time_sec": 20.076604,
-  "instrument": "hi_hat_closed"
+  "instruments": [
+   "hi_hat_closed"
+  ]
  },
  {
   "time_sec": 20.076604,
-  "instrument": "kick"
+  "instruments": [
+   "kick"
+  ]
  },
  {
   "time_sec": 20.828851,
-  "instrument": "snare"
+  "instruments": [
+   "snare"
+  ]
  },
  {
   "time_sec": 21.07657,
-  "instrument": "hi_hat_closed"
+  "instruments": [
+   "hi_hat_closed"
+  ]
  },
  {
   "time_sec": 21.07657,
-  "instrument": "kick"
+  "instruments": [
+   "kick"
+  ]
  },
  {
   "time_sec": 21.572008,
-  "instrument": "hi_hat_closed"
+  "instruments": [
+   "hi_hat_closed"
+  ]
  },
  {
   "time_sec": 21.574281,
-  "instrument": "snare"
+  "instruments": [
+   "snare"
+  ]
  },
  {
   "time_sec": 21.828818,
-  "instrument": "snare"
+  "instruments": [
+   "snare"
+  ]
  },
  {
   "time_sec": 22.076537,
-  "instrument": "hi_hat_closed"
+  "instruments": [
+   "hi_hat_closed"
+  ]
  },
  {
   "time_sec": 22.076537,
-  "instrument": "kick"
+  "instruments": [
+   "kick"
+  ]
  },
  {
   "time_sec": 22.821967,
-  "instrument": "snare"
+  "instruments": [
+   "snare"
+  ]
  },
  {
   "time_sec": 23.081049,
-  "instrument": "hi_hat_closed"
+  "instruments": [
+   "hi_hat_closed"
+  ]
  },
  {
   "time_sec": 23.081049,
-  "instrument": "kick"
+  "instruments": [
+   "kick"
+  ]
  },
  {
   "time_sec": 23.574214,
-  "instrument": "hi_hat_closed"
+  "instruments": [
+   "hi_hat_closed"
+  ]
  },
  {
   "time_sec": 23.574214,
-  "instrument": "snare"
+  "instruments": [
+   "snare"
+  ]
  },
  {
   "time_sec": 23.826479,
-  "instrument": "snare"
+  "instruments": [
+   "snare"
+  ]
  },
  {
   "time_sec": 24.081015,
-  "instrument": "hi_hat_closed"
+  "instruments": [
+   "hi_hat_closed"
+  ]
  },
  {
   "time_sec": 24.081015,
-  "instrument": "kick"
+  "instruments": [
+   "kick"
+  ]
  },
  {
   "time_sec": 24.828718,
-  "instrument": "snare"
+  "instruments": [
+   "snare"
+  ]
  },
  {
   "time_sec": 25.076437,
-  "instrument": "hi_hat_closed"
+  "instruments": [
+   "hi_hat_closed"
+  ]
  },
  {
   "time_sec": 25.076437,
-  "instrument": "kick"
+  "instruments": [
+   "kick"
+  ]
  },
  {
   "time_sec": 25.57642,
-  "instrument": "hi_hat_closed"
+  "instruments": [
+   "hi_hat_closed"
+  ]
  },
  {
   "time_sec": 25.578693,
-  "instrument": "snare"
+  "instruments": [
+   "snare"
+  ]
  },
  {
   "time_sec": 25.826412,
-  "instrument": "snare"
+  "instruments": [
+   "snare"
+  ]
  },
  {
   "time_sec": 26.078676,
-  "instrument": "hi_hat_closed"
+  "instruments": [
+   "hi_hat_closed"
+  ]
  },
  {
   "time_sec": 26.078676,
-  "instrument": "kick"
+  "instruments": [
+   "kick"
+  ]
  },
  {
   "time_sec": 26.830924,
-  "instrument": "snare"
+  "instruments": [
+   "snare"
+  ]
  },
  {
   "time_sec": 27.078643,
-  "instrument": "hi_hat_closed"
+  "instruments": [
+   "hi_hat_closed"
+  ]
  },
  {
   "time_sec": 27.078643,
-  "instrument": "kick"
+  "instruments": [
+   "kick"
+  ]
  },
  {
   "time_sec": 27.574081,
-  "instrument": "hi_hat_closed"
+  "instruments": [
+   "hi_hat_closed"
+  ]
  },
  {
   "time_sec": 27.576354,
-  "instrument": "snare"
+  "instruments": [
+   "snare"
+  ]
  },
  {
   "time_sec": 27.83089,
-  "instrument": "snare"
+  "instruments": [
+   "snare"
+  ]
  },
  {
   "time_sec": 28.071792,
-  "instrument": "hi_hat_closed"
+  "instruments": [
+   "hi_hat_closed"
+  ]
  },
  {
   "time_sec": 28.071792,
-  "instrument": "kick"
+  "instruments": [
+   "kick"
+  ]
  },
  {
   "time_sec": 28.817221,
-  "instrument": "snare"
+  "instruments": [
+   "snare"
+  ]
  },
  {
   "time_sec": 29.076304,
-  "instrument": "hi_hat_closed"
+  "instruments": [
+   "hi_hat_closed"
+  ]
  },
  {
   "time_sec": 29.076304,
-  "instrument": "kick"
+  "instruments": [
+   "kick"
+  ]
  },
  {
   "time_sec": 29.569469,
-  "instrument": "hi_hat_closed"
+  "instruments": [
+   "hi_hat_closed"
+  ]
  },
  {
   "time_sec": 29.569469,
-  "instrument": "snare"
+  "instruments": [
+   "snare"
+  ]
  },
  {
   "time_sec": 29.821733,
-  "instrument": "snare"
+  "instruments": [
+   "snare"
+  ]
  },
  {
   "time_sec": 30.07627,
-  "instrument": "hi_hat_closed"
+  "instruments": [
+   "hi_hat_closed"
+  ]
  },
  {
   "time_sec": 30.07627,
-  "instrument": "kick"
+  "instruments": [
+   "kick"
+  ]
  },
  {
   "time_sec": 30.823973,
-  "instrument": "snare"
+  "instruments": [
+   "snare"
+  ]
  },
  {
   "time_sec": 31.071692,
-  "instrument": "hi_hat_closed"
+  "instruments": [
+   "hi_hat_closed"
+  ]
  },
  {
   "time_sec": 31.071692,
-  "instrument": "kick"
+  "instruments": [
+   "kick"
+  ]
  },
  {
   "time_sec": 31.571675,
-  "instrument": "hi_hat_closed"
+  "instruments": [
+   "hi_hat_closed"
+  ]
  },
  {
   "time_sec": 31.573948,
-  "instrument": "snare"
+  "instruments": [
+   "snare"
+  ]
  },
  {
   "time_sec": 31.821667,
-  "instrument": "snare"
+  "instruments": [
+   "snare"
+  ]
  },
  {
   "time_sec": 32.069386,
-  "instrument": "hi_hat_closed"
+  "instruments": [
+   "hi_hat_closed"
+  ]
  },
  {
   "time_sec": 32.069386,
-  "instrument": "kick"
+  "instruments": [
+   "kick"
+  ]
  },
  {
   "time_sec": 32.821633,
-  "instrument": "snare"
+  "instruments": [
+   "snare"
+  ]
  },
  {
   "time_sec": 33.069352,
-  "instrument": "hi_hat_closed"
+  "instruments": [
+   "hi_hat_closed"
+  ]
  },
  {
   "time_sec": 33.069352,
-  "instrument": "kick"
+  "instruments": [
+   "kick"
+  ]
  },
  {
   "time_sec": 33.56479,
-  "instrument": "hi_hat_closed"
+  "instruments": [
+   "hi_hat_closed"
+  ]
  },
  {
   "time_sec": 33.567063,
-  "instrument": "snare"
+  "instruments": [
+   "snare"
+  ]
  },
  {
   "time_sec": 33.8216,
-  "instrument": "snare"
+  "instruments": [
+   "snare"
+  ]
  },
  {
   "time_sec": 34.062501,
-  "instrument": "hi_hat_closed"
+  "instruments": [
+   "hi_hat_closed"
+  ]
  },
  {
   "time_sec": 34.062501,
-  "instrument": "kick"
+  "instruments": [
+   "kick"
+  ]
  },
  {
   "time_sec": 34.807931,
-  "instrument": "snare"
+  "instruments": [
+   "snare"
+  ]
  },
  {
   "time_sec": 35.067013,
-  "instrument": "hi_hat_closed"
+  "instruments": [
+   "hi_hat_closed"
+  ]
  },
  {
   "time_sec": 35.067013,
-  "instrument": "kick"
+  "instruments": [
+   "kick"
+  ]
  },
  {
   "time_sec": 35.560178,
-  "instrument": "hi_hat_closed"
+  "instruments": [
+   "hi_hat_closed"
+  ]
  },
  {
   "time_sec": 35.560178,
-  "instrument": "snare"
+  "instruments": [
+   "snare"
+  ]
  },
  {
   "time_sec": 35.812443,
-  "instrument": "snare"
+  "instruments": [
+   "snare"
+  ]
  },
  {
   "time_sec": 36.06698,
-  "instrument": "hi_hat_closed"
+  "instruments": [
+   "hi_hat_closed"
+  ]
  },
  {
   "time_sec": 36.06698,
-  "instrument": "kick"
+  "instruments": [
+   "kick"
+  ]
  },
  {
   "time_sec": 36.814682,
-  "instrument": "snare"
+  "instruments": [
+   "snare"
+  ]
  },
  {
   "time_sec": 37.062401,
-  "instrument": "hi_hat_closed"
+  "instruments": [
+   "hi_hat_closed"
+  ]
  },
  {
   "time_sec": 37.062401,
-  "instrument": "kick"
+  "instruments": [
+   "kick"
+  ]
  },
  {
   "time_sec": 37.562384,
-  "instrument": "hi_hat_closed"
+  "instruments": [
+   "hi_hat_closed"
+  ]
  },
  {
   "time_sec": 37.564657,
-  "instrument": "snare"
+  "instruments": [
+   "snare"
+  ]
  },
  {
   "time_sec": 37.812376,
-  "instrument": "snare"
+  "instruments": [
+   "snare"
+  ]
  },
  {
   "time_sec": 38.06464,
-  "instrument": "hi_hat_closed"
+  "instruments": [
+   "hi_hat_closed"
+  ]
  },
  {
   "time_sec": 38.06464,
-  "instrument": "kick"
+  "instruments": [
+   "kick"
+  ]
  },
  {
   "time_sec": 38.816888,
-  "instrument": "snare"
+  "instruments": [
+   "snare"
+  ]
  },
  {
   "time_sec": 39.064607,
-  "instrument": "hi_hat_closed"
+  "instruments": [
+   "hi_hat_closed"
+  ]
  },
  {
   "time_sec": 39.064607,
-  "instrument": "kick"
+  "instruments": [
+   "kick"
+  ]
  },
  {
   "time_sec": 39.560045,
-  "instrument": "hi_hat_closed"
+  "instruments": [
+   "hi_hat_closed"
+  ]
  },
  {
   "time_sec": 39.562318,
-  "instrument": "snare"
+  "instruments": [
+   "snare"
+  ]
  },
  {
   "time_sec": 39.816855,
-  "instrument": "snare"
+  "instruments": [
+   "snare"
+  ]
  },
  {
   "time_sec": 40.057756,
-  "instrument": "hi_hat_closed"
+  "instruments": [
+   "hi_hat_closed"
+  ]
  },
  {
   "time_sec": 40.057756,
-  "instrument": "kick"
+  "instruments": [
+   "kick"
+  ]
  },
  {
   "time_sec": 40.803185,
-  "instrument": "snare"
+  "instruments": [
+   "snare"
+  ]
  },
  {
   "time_sec": 41.062268,
-  "instrument": "hi_hat_closed"
+  "instruments": [
+   "hi_hat_closed"
+  ]
  },
  {
   "time_sec": 41.062268,
-  "instrument": "kick"
+  "instruments": [
+   "kick"
+  ]
  },
  {
   "time_sec": 41.555433,
-  "instrument": "hi_hat_closed"
+  "instruments": [
+   "hi_hat_closed"
+  ]
  },
  {
   "time_sec": 41.555433,
-  "instrument": "snare"
+  "instruments": [
+   "snare"
+  ]
  },
  {
   "time_sec": 41.807697,
-  "instrument": "snare"
+  "instruments": [
+   "snare"
+  ]
  },
  {
   "time_sec": 42.062234,
-  "instrument": "hi_hat_closed"
+  "instruments": [
+   "hi_hat_closed"
+  ]
  },
  {
   "time_sec": 42.062234,
-  "instrument": "kick"
+  "instruments": [
+   "kick"
+  ]
  },
  {
   "time_sec": 42.809937,
-  "instrument": "snare"
+  "instruments": [
+   "snare"
+  ]
  },
  {
   "time_sec": 43.057656,
-  "instrument": "hi_hat_closed"
+  "instruments": [
+   "hi_hat_closed"
+  ]
  },
  {
   "time_sec": 43.057656,
-  "instrument": "kick"
+  "instruments": [
+   "kick"
+  ]
  },
  {
   "time_sec": 43.557639,
-  "instrument": "hi_hat_closed"
+  "instruments": [
+   "hi_hat_closed"
+  ]
  },
  {
   "time_sec": 43.559912,
-  "instrument": "snare"
+  "instruments": [
+   "snare"
+  ]
  },
  {
   "time_sec": 43.807631,
-  "instrument": "snare"
+  "instruments": [
+   "snare"
+  ]
  },
  {
   "time_sec": 44.071258,
-  "instrument": "hi_hat_closed"
+  "instruments": [
+   "hi_hat_closed"
+  ]
  },
  {
   "time_sec": 44.071258,
-  "instrument": "kick"
+  "instruments": [
+   "kick"
+  ]
  },
  {
   "time_sec": 44.823506,
-  "instrument": "snare"
+  "instruments": [
+   "snare"
+  ]
  },
  {
   "time_sec": 45.071225,
-  "instrument": "hi_hat_closed"
+  "instruments": [
+   "hi_hat_closed"
+  ]
  },
  {
   "time_sec": 45.071225,
-  "instrument": "kick"
+  "instruments": [
+   "kick"
+  ]
  },
  {
   "time_sec": 45.566663,
-  "instrument": "hi_hat_closed"
+  "instruments": [
+   "hi_hat_closed"
+  ]
  },
  {
   "time_sec": 45.568936,
-  "instrument": "snare"
+  "instruments": [
+   "snare"
+  ]
  },
  {
   "time_sec": 45.823473,
-  "instrument": "snare"
+  "instruments": [
+   "snare"
+  ]
  },
  {
   "time_sec": 46.064374,
-  "instrument": "hi_hat_closed"
+  "instruments": [
+   "hi_hat_closed"
+  ]
  },
  {
   "time_sec": 46.064374,
-  "instrument": "kick"
+  "instruments": [
+   "kick"
+  ]
  },
  {
   "time_sec": 48.07567,
-  "instrument": "kick"
+  "instruments": [
+   "kick"
+  ]
  },
  {
   "time_sec": 48.318844,
-  "instrument": "hi_hat_closed"
+  "instruments": [
+   "hi_hat_closed"
+  ]
  },
  {
   "time_sec": 48.584744,
-  "instrument": "hi_hat_closed"
+  "instruments": [
+   "hi_hat_closed"
+  ]
  },
  {
   "time_sec": 48.818827,
-  "instrument": "hi_hat_closed"
+  "instruments": [
+   "hi_hat_closed"
+  ]
  },
  {
   "time_sec": 48.952914,
-  "instrument": "hi_hat_closed"
+  "instruments": [
+   "hi_hat_closed"
+  ]
  },
  {
   "time_sec": 49.071092,
-  "instrument": "kick"
+  "instruments": [
+   "kick"
+  ]
  },
  {
   "time_sec": 49.325629,
-  "instrument": "hi_hat_closed"
+  "instruments": [
+   "hi_hat_closed"
+  ]
  },
  {
   "time_sec": 49.571075,
-  "instrument": "hi_hat_closed"
+  "instruments": [
+   "hi_hat_closed"
+  ]
  },
  {
   "time_sec": 49.823339,
-  "instrument": "hi_hat_closed"
+  "instruments": [
+   "hi_hat_closed"
+  ]
  },
  {
   "time_sec": 50.071058,
-  "instrument": "kick"
+  "instruments": [
+   "kick"
+  ]
  },
  {
   "time_sec": 50.325595,
-  "instrument": "hi_hat_closed"
+  "instruments": [
+   "hi_hat_closed"
+  ]
  },
  {
   "time_sec": 50.580132,
-  "instrument": "hi_hat_closed"
+  "instruments": [
+   "hi_hat_closed"
+  ]
  },
  {
   "time_sec": 50.818761,
-  "instrument": "hi_hat_closed"
+  "instruments": [
+   "hi_hat_closed"
+  ]
  },
  {
   "time_sec": 51.068752,
-  "instrument": "kick"
+  "instruments": [
+   "kick"
+  ]
  },
  {
   "time_sec": 51.311926,
-  "instrument": "hi_hat_closed"
+  "instruments": [
+   "hi_hat_closed"
+  ]
  },
  {
   "time_sec": 51.577826,
-  "instrument": "hi_hat_closed"
+  "instruments": [
+   "hi_hat_closed"
+  ]
  },
  {
   "time_sec": 51.702822,
-  "instrument": "hi_hat_closed"
+  "instruments": [
+   "hi_hat_closed"
+  ]
  },
  {
   "time_sec": 51.823273,
-  "instrument": "hi_hat_closed"
+  "instruments": [
+   "hi_hat_closed"
+  ]
  },
  {
   "time_sec": 52.073264,
-  "instrument": "kick"
+  "instruments": [
+   "kick"
+  ]
  },
  {
   "time_sec": 52.327801,
-  "instrument": "hi_hat_closed"
+  "instruments": [
+   "hi_hat_closed"
+  ]
  },
  {
   "time_sec": 52.573248,
-  "instrument": "hi_hat_closed"
+  "instruments": [
+   "hi_hat_closed"
+  ]
  },
  {
   "time_sec": 52.823239,
-  "instrument": "hi_hat_closed"
+  "instruments": [
+   "hi_hat_closed"
+  ]
  },
  {
   "time_sec": 53.073231,
-  "instrument": "kick"
+  "instruments": [
+   "kick"
+  ]
  },
  {
   "time_sec": 53.570942,
-  "instrument": "hi_hat_closed"
+  "instruments": [
+   "hi_hat_closed"
+  ]
  },
  {
   "time_sec": 53.823206,
-  "instrument": "hi_hat_closed"
+  "instruments": [
+   "hi_hat_closed"
+  ]
  },
  {
   "time_sec": 54.073198,
-  "instrument": "kick"
+  "instruments": [
+   "kick"
+  ]
  },
  {
   "time_sec": 54.823173,
-  "instrument": "hi_hat_closed"
+  "instruments": [
+   "hi_hat_closed"
+  ]
  },
  {
   "time_sec": 60.018454,
-  "instrument": "hi_hat_closed"
+  "instruments": [
+   "hi_hat_closed"
+  ]
  },
  {
   "time_sec": 60.018454,
-  "instrument": "kick"
+  "instruments": [
+   "kick"
+  ]
  },
  {
   "time_sec": 60.393441,
-  "instrument": "hi_hat_closed"
+  "instruments": [
+   "hi_hat_closed"
+  ]
  },
  {
   "time_sec": 60.393441,
-  "instrument": "snare"
+  "instruments": [
+   "snare"
+  ]
  },
  {
   "time_sec": 60.518437,
-  "instrument": "kick"
+  "instruments": [
+   "kick"
+  ]
  },
  {
   "time_sec": 60.768429,
-  "instrument": "hi_hat_closed"
+  "instruments": [
+   "hi_hat_closed"
+  ]
  },
  {
   "time_sec": 61.018421,
-  "instrument": "kick"
+  "instruments": [
+   "kick"
+  ]
  },
  {
   "time_sec": 61.393408,
-  "instrument": "hi_hat_closed"
+  "instruments": [
+   "hi_hat_closed"
+  ]
  },
  {
   "time_sec": 61.518404,
-  "instrument": "kick"
+  "instruments": [
+   "kick"
+  ]
  },
  {
   "time_sec": 61.768396,
-  "instrument": "hi_hat_closed"
+  "instruments": [
+   "hi_hat_closed"
+  ]
  },
  {
   "time_sec": 62.018387,
-  "instrument": "kick"
+  "instruments": [
+   "kick"
+  ]
  },
  {
   "time_sec": 62.643366,
-  "instrument": "hi_hat_closed"
+  "instruments": [
+   "hi_hat_closed"
+  ]
  },
  {
   "time_sec": 63.018354,
-  "instrument": "kick"
+  "instruments": [
+   "kick"
+  ]
  },
  {
   "time_sec": 63.268346,
-  "instrument": "hi_hat_open"
+  "instruments": [
+   "hi_hat_open"
+  ]
  },
  {
   "time_sec": 63.268346,
-  "instrument": "kick"
+  "instruments": [
+   "kick"
+  ]
  },
  {
   "time_sec": 63.393341,
-  "instrument": "hi_hat_closed"
+  "instruments": [
+   "hi_hat_closed"
+  ]
  },
  {
   "time_sec": 63.518337,
-  "instrument": "kick"
+  "instruments": [
+   "kick"
+  ]
  },
  {
   "time_sec": 63.768329,
-  "instrument": "hi_hat_open"
+  "instruments": [
+   "hi_hat_open"
+  ]
  },
  {
   "time_sec": 63.893325,
-  "instrument": "hi_hat_closed"
+  "instruments": [
+   "hi_hat_closed"
+  ]
  },
  {
   "time_sec": 63.893325,
-  "instrument": "kick"
+  "instruments": [
+   "kick"
+  ]
  },
  {
   "time_sec": 64.018321,
-  "instrument": "hi_hat_closed"
+  "instruments": [
+   "hi_hat_closed"
+  ]
  },
  {
   "time_sec": 64.018321,
-  "instrument": "kick"
+  "instruments": [
+   "kick"
+  ]
  },
  {
   "time_sec": 64.393308,
-  "instrument": "hi_hat_closed"
+  "instruments": [
+   "hi_hat_closed"
+  ]
  },
  {
   "time_sec": 64.518304,
-  "instrument": "hi_hat_closed"
+  "instruments": [
+   "hi_hat_closed"
+  ]
  },
  {
   "time_sec": 64.518304,
-  "instrument": "kick"
+  "instruments": [
+   "kick"
+  ]
  },
  {
   "time_sec": 64.768296,
-  "instrument": "hi_hat_open"
+  "instruments": [
+   "hi_hat_open"
+  ]
  },
  {
   "time_sec": 64.893291,
-  "instrument": "hi_hat_closed"
+  "instruments": [
+   "hi_hat_closed"
+  ]
  },
  {
   "time_sec": 65.018287,
-  "instrument": "hi_hat_open"
+  "instruments": [
+   "hi_hat_open"
+  ]
  },
  {
   "time_sec": 65.018287,
-  "instrument": "kick"
+  "instruments": [
+   "kick"
+  ]
  },
  {
   "time_sec": 65.268279,
-  "instrument": "hi_hat_closed"
+  "instruments": [
+   "hi_hat_closed"
+  ]
  },
  {
   "time_sec": 65.393275,
-  "instrument": "hi_hat_closed"
+  "instruments": [
+   "hi_hat_closed"
+  ]
  },
  {
   "time_sec": 65.518271,
-  "instrument": "hi_hat_open"
+  "instruments": [
+   "hi_hat_open"
+  ]
  },
  {
   "time_sec": 65.518271,
-  "instrument": "kick"
+  "instruments": [
+   "kick"
+  ]
  },
  {
   "time_sec": 65.768262,
-  "instrument": "hi_hat_closed"
+  "instruments": [
+   "hi_hat_closed"
+  ]
  },
  {
   "time_sec": 65.893258,
-  "instrument": "kick"
+  "instruments": [
+   "kick"
+  ]
  },
  {
   "time_sec": 66.018254,
-  "instrument": "hi_hat_closed"
+  "instruments": [
+   "hi_hat_closed"
+  ]
  },
  {
   "time_sec": 66.018254,
-  "instrument": "kick"
+  "instruments": [
+   "kick"
+  ]
  },
  {
   "time_sec": 66.268246,
-  "instrument": "hi_hat_closed"
+  "instruments": [
+   "hi_hat_closed"
+  ]
  },
  {
   "time_sec": 66.393241,
-  "instrument": "hi_hat_closed"
+  "instruments": [
+   "hi_hat_closed"
+  ]
  },
  {
   "time_sec": 66.518237,
-  "instrument": "hi_hat_open"
+  "instruments": [
+   "hi_hat_open"
+  ]
  },
  {
   "time_sec": 66.518237,
-  "instrument": "kick"
+  "instruments": [
+   "kick"
+  ]
  },
  {
   "time_sec": 66.643233,
-  "instrument": "hi_hat_open"
+  "instruments": [
+   "hi_hat_open"
+  ]
  },
  {
   "time_sec": 66.643233,
-  "instrument": "kick"
+  "instruments": [
+   "kick"
+  ]
  },
  {
   "time_sec": 66.768229,
-  "instrument": "hi_hat_open"
+  "instruments": [
+   "hi_hat_open"
+  ]
  },
  {
   "time_sec": 66.893225,
-  "instrument": "hi_hat_open"
+  "instruments": [
+   "hi_hat_open"
+  ]
  },
  {
   "time_sec": 67.018221,
-  "instrument": "hi_hat_open"
+  "instruments": [
+   "hi_hat_open"
+  ]
  },
  {
   "time_sec": 67.018221,
-  "instrument": "kick"
+  "instruments": [
+   "kick"
+  ]
  },
  {
   "time_sec": 67.143216,
-  "instrument": "kick"
+  "instruments": [
+   "kick"
+  ]
  },
  {
   "time_sec": 67.268212,
-  "instrument": "hi_hat_closed"
+  "instruments": [
+   "hi_hat_closed"
+  ]
  },
  {
   "time_sec": 67.393208,
-  "instrument": "hi_hat_closed"
+  "instruments": [
+   "hi_hat_closed"
+  ]
  },
  {
   "time_sec": 67.393208,
-  "instrument": "kick"
+  "instruments": [
+   "kick"
+  ]
  },
  {
   "time_sec": 67.518204,
-  "instrument": "hi_hat_closed"
+  "instruments": [
+   "hi_hat_closed"
+  ]
  },
  {
   "time_sec": 67.518204,
-  "instrument": "kick"
+  "instruments": [
+   "kick"
+  ]
  },
  {
   "time_sec": 67.6432,
-  "instrument": "hi_hat_closed"
+  "instruments": [
+   "hi_hat_closed"
+  ]
  },
  {
   "time_sec": 67.6432,
-  "instrument": "kick"
+  "instruments": [
+   "kick"
+  ]
  },
  {
   "time_sec": 67.768196,
-  "instrument": "hi_hat_closed"
+  "instruments": [
+   "hi_hat_closed"
+  ]
  },
  {
   "time_sec": 67.893191,
-  "instrument": "kick"
+  "instruments": [
+   "kick"
+  ]
  },
  {
   "time_sec": 68.018187,
-  "instrument": "hi_hat_closed"
+  "instruments": [
+   "hi_hat_closed"
+  ]
  },
  {
   "time_sec": 68.018187,
-  "instrument": "kick"
+  "instruments": [
+   "kick"
+  ]
  },
  {
   "time_sec": 68.143183,
-  "instrument": "hi_hat_closed"
+  "instruments": [
+   "hi_hat_closed"
+  ]
  },
  {
   "time_sec": 68.143183,
-  "instrument": "kick"
+  "instruments": [
+   "kick"
+  ]
  },
  {
   "time_sec": 68.268179,
-  "instrument": "hi_hat_closed"
+  "instruments": [
+   "hi_hat_closed"
+  ]
  },
  {
   "time_sec": 68.393175,
-  "instrument": "hi_hat_closed"
+  "instruments": [
+   "hi_hat_closed"
+  ]
  },
  {
   "time_sec": 68.518171,
-  "instrument": "hi_hat_open"
+  "instruments": [
+   "hi_hat_open"
+  ]
  },
  {
   "time_sec": 68.518171,
-  "instrument": "kick"
+  "instruments": [
+   "kick"
+  ]
  },
  {
   "time_sec": 68.643166,
-  "instrument": "hi_hat_open"
+  "instruments": [
+   "hi_hat_open"
+  ]
  },
  {
   "time_sec": 68.643166,
-  "instrument": "kick"
+  "instruments": [
+   "kick"
+  ]
  },
  {
   "time_sec": 68.768162,
-  "instrument": "hi_hat_open"
+  "instruments": [
+   "hi_hat_open"
+  ]
  },
  {
   "time_sec": 68.893158,
-  "instrument": "hi_hat_closed"
+  "instruments": [
+   "hi_hat_closed"
+  ]
  },
  {
   "time_sec": 69.018154,
-  "instrument": "hi_hat_open"
+  "instruments": [
+   "hi_hat_open"
+  ]
  },
  {
   "time_sec": 69.018154,
-  "instrument": "kick"
+  "instruments": [
+   "kick"
+  ]
  },
  {
   "time_sec": 69.14315,
-  "instrument": "hi_hat_open"
+  "instruments": [
+   "hi_hat_open"
+  ]
  },
  {
   "time_sec": 69.14315,
-  "instrument": "kick"
+  "instruments": [
+   "kick"
+  ]
  },
  {
   "time_sec": 69.268146,
-  "instrument": "hi_hat_open"
+  "instruments": [
+   "hi_hat_open"
+  ]
  },
  {
   "time_sec": 69.393141,
-  "instrument": "hi_hat_closed"
+  "instruments": [
+   "hi_hat_closed"
+  ]
  },
  {
   "time_sec": 69.393141,
-  "instrument": "snare"
+  "instruments": [
+   "snare"
+  ]
  },
  {
   "time_sec": 69.518137,
-  "instrument": "hi_hat_closed"
+  "instruments": [
+   "hi_hat_closed"
+  ]
  },
  {
   "time_sec": 69.518137,
-  "instrument": "kick"
+  "instruments": [
+   "kick"
+  ]
  },
  {
   "time_sec": 69.643133,
-  "instrument": "hi_hat_closed"
+  "instruments": [
+   "hi_hat_closed"
+  ]
  },
  {
   "time_sec": 69.643133,
-  "instrument": "kick"
+  "instruments": [
+   "kick"
+  ]
  },
  {
   "time_sec": 69.768129,
-  "instrument": "hi_hat_closed"
+  "instruments": [
+   "hi_hat_closed"
+  ]
  },
  {
   "time_sec": 69.893125,
-  "instrument": "hi_hat_closed"
+  "instruments": [
+   "hi_hat_closed"
+  ]
  },
  {
   "time_sec": 69.893125,
-  "instrument": "kick"
+  "instruments": [
+   "kick"
+  ]
  },
  {
   "time_sec": 70.018121,
-  "instrument": "hi_hat_closed"
+  "instruments": [
+   "hi_hat_closed"
+  ]
  },
  {
   "time_sec": 70.018121,
-  "instrument": "kick"
+  "instruments": [
+   "kick"
+  ]
  },
  {
   "time_sec": 70.143116,
-  "instrument": "hi_hat_closed"
+  "instruments": [
+   "hi_hat_closed"
+  ]
  },
  {
   "time_sec": 70.143116,
-  "instrument": "kick"
+  "instruments": [
+   "kick"
+  ]
  },
  {
   "time_sec": 70.268112,
-  "instrument": "hi_hat_closed"
+  "instruments": [
+   "hi_hat_closed"
+  ]
  },
  {
   "time_sec": 70.393108,
-  "instrument": "hi_hat_closed"
+  "instruments": [
+   "hi_hat_closed"
+  ]
  },
  {
   "time_sec": 70.518104,
-  "instrument": "hi_hat_closed"
+  "instruments": [
+   "hi_hat_closed"
+  ]
  },
  {
   "time_sec": 70.518104,
-  "instrument": "kick"
+  "instruments": [
+   "kick"
+  ]
  },
  {
   "time_sec": 70.6431,
-  "instrument": "hi_hat_closed"
+  "instruments": [
+   "hi_hat_closed"
+  ]
  },
  {
   "time_sec": 70.6431,
-  "instrument": "kick"
+  "instruments": [
+   "kick"
+  ]
  },
  {
   "time_sec": 70.768096,
-  "instrument": "hi_hat_closed"
+  "instruments": [
+   "hi_hat_closed"
+  ]
  },
  {
   "time_sec": 70.893091,
-  "instrument": "hi_hat_closed"
+  "instruments": [
+   "hi_hat_closed"
+  ]
  },
  {
   "time_sec": 70.893091,
-  "instrument": "snare"
+  "instruments": [
+   "snare"
+  ]
  },
  {
   "time_sec": 71.018087,
-  "instrument": "kick"
+  "instruments": [
+   "kick"
+  ]
  },
  {
   "time_sec": 72.018054,
-  "instrument": "kick"
+  "instruments": [
+   "kick"
+  ]
  },
  {
   "time_sec": 73.018021,
-  "instrument": "kick"
+  "instruments": [
+   "kick"
+  ]
  },
  {
   "time_sec": 74.017987,
-  "instrument": "kick"
+  "instruments": [
+   "kick"
+  ]
  },
  {
   "time_sec": 75.017954,
-  "instrument": "kick"
+  "instruments": [
+   "kick"
+  ]
  },
  {
   "time_sec": 76.017921,
-  "instrument": "kick"
+  "instruments": [
+   "kick"
+  ]
  },
  {
   "time_sec": 77.017887,
-  "instrument": "kick"
+  "instruments": [
+   "kick"
+  ]
  },
  {
   "time_sec": 78.017854,
-  "instrument": "kick"
+  "instruments": [
+   "kick"
+  ]
  },
  {
   "time_sec": 79.017821,
-  "instrument": "kick"
+  "instruments": [
+   "kick"
+  ]
  }
 ]
