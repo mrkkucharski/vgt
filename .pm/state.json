@@ -1,19 +1,11 @@
 {
-  "current_issue": 177,
-  "session_id": "4adb22c9-de64-43e4-ae77-10adf3c830af",
-  "pid": 33022,
-  "process_started_at": "Mon Jul 27 12:51:10 2026",
+  "current_issue": 180,
+  "session_id": "1b27f681-edd0-4210-81b0-206c06bbed53",
+  "pid": 34741,
+  "process_started_at": "Mon Jul 27 13:02:43 2026",
   "agent": "claude",
-  "started_at": "2026-07-27T10:51:08.283182+00:00",
-  "scheduler_stalls": {
-    "deferred_passes": {
-      "budget": {
-        "first_seen_at": "2026-07-27T06:54:45.975681+00:00",
-        "last_seen_at": "2026-07-27T10:49:55.944299+00:00",
-        "consecutive_passes": 204
-      }
-    }
-  },
+  "started_at": "2026-07-27T11:02:41.654052+00:00",
+  "scheduler_stalls": {},
   "budget": {
     "window_start": "2026-07-27T06:10:54.862777+00:00",
     "seconds_used": 0.0,
@@ -23,15 +15,15 @@
   "verification_followups": {
     "f0d8bfc9d2dc6da7a31609184e25c4d66d3986fd2340b33a83e98204fb86691e": "created"
   },
-  "role": "review",
-  "branch": "issue-177-add-opt-in-drums-clean-transcription-pro",
-  "worktree_path": "/Users/marekkucharski/projects/.pm-worktrees/vgt/issue-177",
-  "pr_number": 179,
+  "role": "implement",
+  "branch": "issue-180-fix-failing-tests-test-tests-workflow-py",
+  "worktree_path": "/Users/marekkucharski/projects/.pm-worktrees/vgt/issue-180",
+  "pr_number": null,
   "followup_generation": {
-    "fingerprint": "c9062f68c1374ea6634d453b9678aa05a94a75a7c794f6b3ababa76bb4460fc5",
+    "fingerprint": "fbea9b2e785aa0658e1c7e8448235eb91893fcd6925ed6740c4cf98dd212c31b",
     "items": {
-      "f0ad824207ac1bebbd30dc48addaea1b9b7ce00e39179d232b34a621dc2f3b40": {
-        "title": "Verify the complete goal contract on current main",
+      "32a076df519c13568be5113a4fd8857e6088a66c6a26f407025a944db4322947": {
+        "title": "Fix failing tests/test_tests_workflow.py \u2014 restore the GitHub Actions Tests workflow file",
         "status": "created"
       }
     }
@@ -63,13 +55,13 @@
     "174": 2
   },
   "pending_transition": {
-    "issue": 177,
+    "issue": 180,
     "target": "working",
-    "event": "agent.review_started",
+    "event": "agent.started",
     "detail": {
-      "issue": 177,
+      "issue": 180,
       "agent": "claude",
-      "pr": 179
+      "branch": "issue-180-fix-failing-tests-test-tests-workflow-py"
     },
     "cleanup": {}
   }
