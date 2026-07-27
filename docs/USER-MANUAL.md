@@ -419,6 +419,22 @@ user should, in a real REAPER session:
   analyze/apply, and confirm it remains intact; then discard a rejected
   generated variant and confirm only that generated track/artifacts disappear.
 
+This is also the place to exercise initialize's duplicate-`[vgt]`-folder
+protection (issue #174) live, since the offline fake-REAPER harness in
+`tests/test_reascript.py` and `tests/test_goal_contract.py` can prove the
+reconciliation logic but never opens REAPER itself. This checklist item is
+human-owned, not an autonomous-agent acceptance gate, and its absence must
+never block closing an issue:
+
+- run initialize twice in a row on a disposable copy of a real project and
+  confirm REAPER shows exactly one `[vgt]` folder both times;
+- add a transcription variant (or run `vgt analyze`/`vgt transcribe` again
+  with different settings), initialize once more, and confirm the same root
+  folder is reconciled in place rather than duplicated;
+- save the project, close and reopen REAPER, and repeat both checks once to
+  exercise the persisted project manifest and per-track marks rather than
+  only in-session state.
+
 ## Permanent regression contract
 
 - vgt changes only objects it created and recorded as `[vgt]`-managed.

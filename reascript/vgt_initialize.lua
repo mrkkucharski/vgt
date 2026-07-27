@@ -471,11 +471,19 @@ local GENERATION_RETRY_LIMIT = 5
 
 local function remove_previous_managed_tracks()
   local managed = read_managed_guids()
-  -- Either the sidecar GUID or the durable per-track mark is evidence of
-  -- ownership -- the mark is what keeps this correct when the sidecar record
-  -- is stale (see mark_track_managed above). Neither is enough on its own:
-  -- preserve any track whose current name is not vgt-owned, since the user
-  -- may have renamed a stale-marked track to make it their own.
+  -- The project root manifest is a third, independent ownership channel
+  -- (ProjExtState, not the sidecar file or a per-track P_EXT read) -- it must
+  -- feed removal too, not just validate_reconciliation_inventory's
+  -- authentication check above. Otherwise a manifest-authenticated root whose
+  -- sidecar and P_EXT mark are both stale would pass validation as safe to
+  -- proceed, and then never actually get deleted here, leaving the old area
+  -- in place while apply() built a second one beside it.
+  for guid in pairs(manifest_roles()) do managed[guid] = true end
+  -- Either the sidecar GUID, the durable per-track mark, or the manifest is
+  -- evidence of ownership -- the mark is what keeps this correct when the
+  -- sidecar record is stale (see mark_track_managed above). None is enough on
+  -- its own: preserve any track whose current name is not vgt-owned, since
+  -- the user may have renamed a stale-marked track to make it their own.
   for index = reaper.CountTracks(0) - 1, 0, -1 do
     local track = reaper.GetTrack(0, index)
     if (managed[reaper.GetTrackGUID(track)] or track_is_marked_managed(track)) and starts_with_vgt(track) then
@@ -522,12 +530,21 @@ local function reconciliation_inventory(analysis)
     local guid = reaper.GetTrackGUID(track)
     if sidecar_guids[guid] then live_guid_count = live_guid_count + 1 end
     if track_is_marked_managed(track) then marked_count = marked_count + 1 end
-    if starts_with_vgt(track) and reaper.GetMediaTrackInfo_Value(track, "I_FOLDERDEPTH") > 0 then
+    local manifest_match = manifest_guid ~= "" and manifest_guid == guid
+    -- A root is not always a folder: apply() flattens it back to a plain
+    -- track (I_FOLDERDEPTH 0) whenever nothing ends up nested under it, so
+    -- FOLDERDEPTH > 0 alone misses a previously-flattened root entirely --
+    -- including one the project manifest still names as root=<guid>. Skipping
+    -- it here meant that root was never authenticated *or* rejected: apply()
+    -- treated its presence as a first run and appended a second one beside it.
+    if starts_with_vgt(track)
+      and (reaper.GetMediaTrackInfo_Value(track, "I_FOLDERDEPTH") > 0 or track_role(track) == "managed-root" or manifest_match)
+    then
       roots[#roots + 1] = {
         track = track, guid = guid, name = track_name(track),
         sidecar_match = sidecar_guids[guid] == true,
         ext_state_match = track_is_marked_managed(track),
-        manifest_match = manifest_guid ~= "" and manifest_guid == guid,
+        manifest_match = manifest_match,
       }
     end
   end
