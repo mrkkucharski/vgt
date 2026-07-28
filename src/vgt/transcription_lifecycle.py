@@ -193,6 +193,8 @@ def add_variant(
     tempo_value = analysis["tempo"].get("value")
     midi_tempo = tempo_value.get("bpm") if isinstance(tempo_value, dict) else None
     time_signature = tempo_value.get("time_signature") if isinstance(tempo_value, dict) else None
+    beat_times = tempo_value.get("beat_times") if isinstance(tempo_value, dict) else None
+    downbeat_offset_s = tempo_value.get("downbeat_offset_seconds") if isinstance(tempo_value, dict) else None
     tempo_map = tempo_map_reference(tempo_value if isinstance(tempo_value, dict) else None)
 
     if target == "drums":
@@ -213,7 +215,8 @@ def add_variant(
         )
         spec = default_spec_for_target(
             target, backend=backend_for_target_profile(target, {target: profile}), midi_tempo=midi_tempo,
-            time_signature=time_signature, modes={target: profile}, tempo_map=tempo_map
+            time_signature=time_signature, modes={target: profile}, beat_times=beat_times,
+            downbeat_offset_s=downbeat_offset_s, tempo_map=tempo_map,
         )
     else:
         try:

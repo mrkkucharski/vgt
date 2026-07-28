@@ -16,7 +16,7 @@ import pytest
 
 from vgt.cli import main
 from vgt.sidecar import read_sidecar, write_sidecar
-from vgt.transcribe import FakeAdtofTranscriber, FakeTranscriber, TargetTranscriberRouter
+from vgt.transcribe import AdtofSpec, FakeAdtofTranscriber, FakeTranscriber, TargetTranscriberRouter
 
 FIXTURE_DIR = Path(__file__).parents[1] / "test" / "Reaper Project"
 REFERENCE_GUID = "{75418143-1F31-B548-B7D2-96815CB0297D}"
@@ -179,14 +179,46 @@ def test_variant_add_target_drums_profile_drums_clean_writes_channel_10_midi(tmp
     assert not _midi_has_non_percussion_notes(midi_path.read_bytes())
 
 
-def test_variant_add_drums_adtof_coexists_with_drumscript(tmp_path: Path, capsys) -> None:
+def test_variant_add_drums_adtof_coexists_with_drumscript_and_receives_the_project_grid(
+    tmp_path: Path, capsys, monkeypatch: pytest.MonkeyPatch,
+) -> None:
     project = _init_project_with_drums(tmp_path)
+
+    from vgt.sidecar import update_analysis
+
+    update_analysis(project, lambda current: current["tempo"].__setitem__("value", {
+        **current["tempo"]["value"],
+        "beat_times": [0.125, 0.625, 1.125],
+        "downbeat_offset_seconds": 0.125,
+    }))
+
+    class CapturingAdtof(FakeAdtofTranscriber):
+        spec: AdtofSpec | None = None
+
+        def transcribe(self, source, destination_dir, spec, progress=None):  # type: ignore[no-untyped-def]
+            assert isinstance(spec, AdtofSpec)
+            self.spec = spec
+            return super().transcribe(source, destination_dir, spec, progress)
+
+    fake = FakeTranscriber()
+    adtof_transcriber = CapturingAdtof()
+    monkeypatch.setattr(
+        "vgt.transcription_lifecycle.production_transcriber_router",
+        lambda: TargetTranscriberRouter(
+            basic_pitch=fake, drumscript=fake, drumscript_targets=("drums",), adtof=adtof_transcriber,
+        ),
+    )
+
     assert main(["transcription", "variant", "add", "drums", "--name", "raw", "--profile", "default", str(project)]) == 0
     raw = json.loads(capsys.readouterr().out)
     assert main(["transcription", "variant", "add", "drums", "--name", "adtof", "--profile", "drums-adtof", str(project)]) == 0
     adtof = json.loads(capsys.readouterr().out)
     assert adtof["backend"] == "adtof"
     assert adtof["settings_hash"] != raw["settings_hash"]
+    assert adtof_transcriber.spec is not None
+    assert adtof_transcriber.spec.beat_grid is not None
+    assert adtof_transcriber.spec.beat_grid.beat_times == pytest.approx((0.125, 0.625, 1.125))
+    assert adtof_transcriber.spec.beat_grid.downbeat_offset_s == pytest.approx(0.125)
     assert {variant["label"] for variant in _variants(project, "drums")["variants"].values()} == {"raw", "adtof"}
 
 
