@@ -1,10 +1,10 @@
 {
   "current_issue": 183,
-  "session_id": "1dda5ec2-641d-4618-8787-972a7f1c9265",
-  "pid": 51029,
-  "process_started_at": "Mon Jul 27 23:32:51 2026",
-  "agent": "claude",
-  "started_at": "2026-07-27T21:32:49.850812+00:00",
+  "session_id": "3ea2e629-b9cd-4fad-bc10-5b05904635e8",
+  "pid": 65241,
+  "process_started_at": "Tue Jul 28 05:13:16 2026",
+  "agent": "codex",
+  "started_at": "2026-07-28T03:13:14.798154+00:00",
   "scheduler_stalls": {
     "malformed_responses": {
       "followup_issues": {
@@ -12,10 +12,25 @@
         "last_seen_at": "2026-07-27T11:24:08.714549+00:00",
         "consecutive_passes": 2
       }
+    },
+    "deferred_passes": {
+      "budget": {
+        "first_seen_at": "2026-07-27T22:08:37.723141+00:00",
+        "last_seen_at": "2026-07-28T03:12:03.269356+00:00",
+        "consecutive_passes": 264
+      }
+    },
+    "blocked_issues": {
+      "187": {
+        "first_seen_at": "2026-07-27T22:08:37.725495+00:00",
+        "last_seen_at": "2026-07-28T03:12:03.271455+00:00",
+        "consecutive_passes": 264,
+        "title": "Author drum MIDI at the project's detected tempo (not DrumScript's mis-detected tempo)"
+      }
     }
   },
   "budget": {
-    "window_start": "2026-07-27T21:22:12.536257+00:00",
+    "window_start": "2026-07-28T02:22:27.119069+00:00",
     "seconds_used": 0.0,
     "dollars_used": 0.0,
     "seconds_used_by_agent": {}
@@ -23,10 +38,10 @@
   "verification_followups": {
     "f0d8bfc9d2dc6da7a31609184e25c4d66d3986fd2340b33a83e98204fb86691e": "created"
   },
-  "role": "implement",
+  "role": "review",
   "branch": "issue-183-fix-drums-clean-onset-evidence-normaliza",
   "worktree_path": "/Users/marekkucharski/projects/.pm-worktrees/vgt/issue-183",
-  "pr_number": null,
+  "pr_number": 188,
   "followup_generation": {
     "fingerprint": "fbea9b2e785aa0658e1c7e8448235eb91893fcd6925ed6740c4cf98dd212c31b",
     "items": {
@@ -65,11 +80,11 @@
   "pending_transition": {
     "issue": 183,
     "target": "working",
-    "event": "agent.started",
+    "event": "agent.review_started",
     "detail": {
       "issue": 183,
-      "agent": "claude",
-      "branch": "issue-183-fix-drums-clean-onset-evidence-normaliza"
+      "agent": "codex",
+      "pr": 188
     },
     "cleanup": {}
   }
