@@ -1,26 +1,26 @@
 {
-  "current_issue": 200,
-  "session_id": "de42c567-1d26-4522-840e-dafdce830334",
-  "pid": 12943,
-  "process_started_at": "Tue Jul 28 21:47:59 2026",
+  "current_issue": null,
+  "session_id": null,
+  "pid": null,
+  "process_started_at": null,
   "agent": "codex",
   "started_at": "2026-07-28T19:47:57.630113+00:00",
   "scheduler_stalls": {},
   "budget": {
     "window_start": "2026-07-28T16:13:40.657375+00:00",
-    "seconds_used": 142.486364,
+    "seconds_used": 422.995809,
     "dollars_used": 0.0,
     "seconds_used_by_agent": {
-      "codex": 142.486364
+      "codex": 422.995809
     }
   },
   "verification_followups": {
     "f0d8bfc9d2dc6da7a31609184e25c4d66d3986fd2340b33a83e98204fb86691e": "created"
   },
   "role": "review",
-  "branch": "issue-200-adtof-backend-phase-1-profile-driven-bac",
-  "worktree_path": "/Users/marekkucharski/projects/.pm-worktrees/vgt/issue-200",
-  "pr_number": 208,
+  "branch": null,
+  "worktree_path": null,
+  "pr_number": null,
   "followup_generation": {
     "fingerprint": "eef3ed07ced05e409d8e46a7df750bd9186dc49d076ac58bb4bab5a96557ba52",
     "items": {
@@ -69,16 +69,5 @@
     "174": 2,
     "185": 1,
     "200": 1
-  },
-  "pending_transition": {
-    "issue": 200,
-    "target": "working",
-    "event": "agent.review_started",
-    "detail": {
-      "issue": 200,
-      "agent": "codex",
-      "pr": 208
-    },
-    "cleanup": {}
   }
 }
