@@ -1,10 +1,10 @@
 {
-  "current_issue": 183,
-  "session_id": "3ea2e629-b9cd-4fad-bc10-5b05904635e8",
-  "pid": 65241,
-  "process_started_at": "Tue Jul 28 05:13:16 2026",
+  "current_issue": 184,
+  "session_id": "513ba997-944d-470f-99e5-4f4420d882f3",
+  "pid": 65741,
+  "process_started_at": "Tue Jul 28 05:15:41 2026",
   "agent": "codex",
-  "started_at": "2026-07-28T03:13:14.798154+00:00",
+  "started_at": "2026-07-28T03:15:39.793835+00:00",
   "scheduler_stalls": {
     "malformed_responses": {
       "followup_issues": {
@@ -13,18 +13,11 @@
         "consecutive_passes": 2
       }
     },
-    "deferred_passes": {
-      "budget": {
-        "first_seen_at": "2026-07-27T22:08:37.723141+00:00",
-        "last_seen_at": "2026-07-28T03:12:03.269356+00:00",
-        "consecutive_passes": 264
-      }
-    },
     "blocked_issues": {
       "187": {
         "first_seen_at": "2026-07-27T22:08:37.725495+00:00",
-        "last_seen_at": "2026-07-28T03:12:03.271455+00:00",
-        "consecutive_passes": 264,
+        "last_seen_at": "2026-07-28T03:14:26.663087+00:00",
+        "consecutive_passes": 266,
         "title": "Author drum MIDI at the project's detected tempo (not DrumScript's mis-detected tempo)"
       }
     }
@@ -38,10 +31,10 @@
   "verification_followups": {
     "f0d8bfc9d2dc6da7a31609184e25c4d66d3986fd2340b33a83e98204fb86691e": "created"
   },
-  "role": "review",
-  "branch": "issue-183-fix-drums-clean-onset-evidence-normaliza",
-  "worktree_path": "/Users/marekkucharski/projects/.pm-worktrees/vgt/issue-183",
-  "pr_number": 188,
+  "role": "implement",
+  "branch": "issue-184-drums-clean-snap-onsets-to-vgt-beat-grid",
+  "worktree_path": "/Users/marekkucharski/projects/.pm-worktrees/vgt/issue-184",
+  "pr_number": null,
   "followup_generation": {
     "fingerprint": "fbea9b2e785aa0658e1c7e8448235eb91893fcd6925ed6740c4cf98dd212c31b",
     "items": {
@@ -78,13 +71,13 @@
     "174": 2
   },
   "pending_transition": {
-    "issue": 183,
+    "issue": 184,
     "target": "working",
-    "event": "agent.review_started",
+    "event": "agent.started",
     "detail": {
-      "issue": 183,
+      "issue": 184,
       "agent": "codex",
-      "pr": 188
+      "branch": "issue-184-drums-clean-snap-onsets-to-vgt-beat-grid"
     },
     "cleanup": {}
   }
