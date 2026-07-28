@@ -1,10 +1,10 @@
 {
-  "current_issue": 202,
-  "session_id": "abf6bb34-1062-42b8-b0f5-4651c74fa2c3",
-  "pid": 20312,
-  "process_started_at": "Tue Jul 28 22:28:15 2026",
+  "current_issue": 203,
+  "session_id": "d163a8a4-2e3d-4946-bbf1-5e39ca05f00d",
+  "pid": 21405,
+  "process_started_at": "Tue Jul 28 22:31:50 2026",
   "agent": "codex",
-  "started_at": "2026-07-28T20:28:13.752047+00:00",
+  "started_at": "2026-07-28T20:31:48.651034+00:00",
   "scheduler_stalls": {},
   "budget": {
     "window_start": "2026-07-28T16:13:40.657375+00:00",
@@ -17,10 +17,10 @@
   "verification_followups": {
     "f0d8bfc9d2dc6da7a31609184e25c4d66d3986fd2340b33a83e98204fb86691e": "created"
   },
-  "role": "review",
-  "branch": "issue-202-adtof-backend-phase-3-vgt-post-processin",
-  "worktree_path": "/Users/marekkucharski/projects/.pm-worktrees/vgt/issue-202",
-  "pr_number": 210,
+  "role": "implement",
+  "branch": "issue-203-adtof-backend-phase-4-fake-hardening-off",
+  "worktree_path": "/Users/marekkucharski/projects/.pm-worktrees/vgt/issue-203",
+  "pr_number": null,
   "followup_generation": {
     "fingerprint": "eef3ed07ced05e409d8e46a7df750bd9186dc49d076ac58bb4bab5a96557ba52",
     "items": {
@@ -73,13 +73,13 @@
     "202": 1
   },
   "pending_transition": {
-    "issue": 202,
+    "issue": 203,
     "target": "working",
-    "event": "agent.review_started",
+    "event": "agent.started",
     "detail": {
-      "issue": 202,
+      "issue": 203,
       "agent": "codex",
-      "pr": 210
+      "branch": "issue-203-adtof-backend-phase-4-fake-hardening-off"
     },
     "cleanup": {}
   }
