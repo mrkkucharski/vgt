@@ -275,8 +275,10 @@ def test_drumscript_spec_identity_covers_every_drumscript_setting() -> None:
 
 def test_drumscript_default_spec_is_byte_identical_to_before_drums_clean() -> None:
     """Issue #177's compatibility contract: an unselected/absent `modes`
-    entry for drums must produce exactly the pre-#177 spec identity, so
-    every existing default drums variant's `settings_hash` is unchanged."""
+    entry for drums must produce exactly the pre-#177 spec identity plus
+    `midi_tempo` (added by issue #193, since it now changes the authored
+    MIDI's tempo), so every existing default drums variant's `settings_hash`
+    still only depends on `cleanup_profile` selection and the project tempo."""
     unset = default_spec_for_target("drums", backend="drumscript")
     explicit_default = default_spec_for_target("drums", backend="drumscript", modes={"drums": "default"})
     stale = default_spec_for_target("drums", backend="drumscript", modes={"drums": "not-a-real-profile"})
@@ -289,6 +291,7 @@ def test_drumscript_default_spec_is_byte_identical_to_before_drums_clean() -> No
         "runtime_version": "python==3.12",
         "classifier_mode": "standard-polyphonic",
         "time_signature": None,
+        "midi_tempo": None,
     }
     assert spec_hash(unset) == spec_hash(explicit_default) == spec_hash(stale)
 
