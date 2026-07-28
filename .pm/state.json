@@ -1,10 +1,10 @@
 {
-  "current_issue": 196,
-  "session_id": "a6917f90-f531-4128-948a-d045cb7e589c",
-  "pid": 6031,
-  "process_started_at": "Tue Jul 28 21:06:34 2026",
-  "agent": "claude",
-  "started_at": "2026-07-28T19:06:32.485160+00:00",
+  "current_issue": 199,
+  "session_id": "3cd11014-1bb3-4e72-8764-dc4c3b27e05b",
+  "pid": 6636,
+  "process_started_at": "Tue Jul 28 21:11:18 2026",
+  "agent": "codex",
+  "started_at": "2026-07-28T19:11:17.416189+00:00",
   "scheduler_stalls": {},
   "budget": {
     "window_start": "2026-07-28T16:13:40.657375+00:00",
@@ -15,10 +15,10 @@
   "verification_followups": {
     "f0d8bfc9d2dc6da7a31609184e25c4d66d3986fd2340b33a83e98204fb86691e": "created"
   },
-  "role": "review",
-  "branch": "issue-196-make-reference-midi-follow-variable-temp",
-  "worktree_path": "/Users/marekkucharski/projects/.pm-worktrees/vgt/issue-196",
-  "pr_number": 205,
+  "role": "implement",
+  "branch": "issue-199-adtof-backend-phase-0-feasibility-spike",
+  "worktree_path": "/Users/marekkucharski/projects/.pm-worktrees/vgt/issue-199",
+  "pr_number": null,
   "followup_generation": {
     "fingerprint": "eef3ed07ced05e409d8e46a7df750bd9186dc49d076ac58bb4bab5a96557ba52",
     "items": {
@@ -68,13 +68,13 @@
     "185": 1
   },
   "pending_transition": {
-    "issue": 196,
+    "issue": 199,
     "target": "working",
-    "event": "agent.review_started",
+    "event": "agent.started",
     "detail": {
-      "issue": 196,
-      "agent": "claude",
-      "pr": 205
+      "issue": 199,
+      "agent": "codex",
+      "branch": "issue-199-adtof-backend-phase-0-feasibility-spike"
     },
     "cleanup": {}
   }
