@@ -49,16 +49,24 @@ specific event says otherwise.
 
 Implemented in `src/vgt/drum_cleanup.py`, run from `DrumScriptTranscriber`/
 `FakeTranscriber` whenever `DrumScriptSpec.cleanup_profile == "drums-clean"`
-(see `vgt.transcribe.default_spec_for_target`'s `drumscript` branch). Four
+(see `vgt.transcribe.default_spec_for_target`'s `drumscript` branch). Five
 ordered, deterministic stages, each falling back to the untouched raw event
 when its own evidence is absent or ambiguous:
 
-1. **Coalesce simultaneous events** (`CLEAN_SIMULTANEITY_WINDOW_S = 0.008s`,
+1. **Tempo-scaled same-instrument de-duplication**: each DrumScript label
+   has an explicit minimum inter-onset interval in
+   `CLEAN_DEDUP_MINIMUM_INTER_ONSET_BEATS` (normally 1/32 beat; crash is 1/64
+   beat). The local enclosing beat-grid interval converts it to seconds, so
+   this is not a fixed millisecond gate. Only the later onset of a clearly
+   too-close *same-label* pair is removed; coincident kick/hat/snare events
+   are independent. Missing or incomplete beat-grid tempo is ambiguous and
+   retains both events.
+2. **Coalesce simultaneous events** (`CLEAN_SIMULTANEITY_WINDOW_S = 0.008s`,
    8ms): raw events within this window of the group's earliest member are
    merged into one aligned onset time. Generous relative to the ~2ms
    one-tick drift the observed evidence measured at 120 BPM/480 PPQN, still
    well under a 16th note at any reasonable tempo.
-2. **Grid-guided, audio-aware timing alignment**: when the analysis stage
+3. **Grid-guided, audio-aware timing alignment**: when the analysis stage
    supplies its detected beat grid and downbeat anchor, cleanup first looks
    up strong audio peaks in a wider `CLEAN_SYSTEMATIC_ALIGNMENT_WINDOW_S =
    0.08s` window. Only peaks within `CLEAN_GRID_REFERENCE_WINDOW_S = 0.08s`
@@ -73,13 +81,13 @@ when its own evidence is absent or ambiguous:
    behavior. The result is source-start safe. An optional static offset
    (`CLEAN_STATIC_OFFSET_S`) is applied before estimation and remains part of
    the profile identity for a separately measured stable latency.
-3. **Velocity shaping**: when local evidence is available and confident (per
-   stage 2's threshold), velocity is linearly mapped from evidence strength
+4. **Velocity shaping**: when local evidence is available and confident (per
+   stage 3's threshold), velocity is linearly mapped from evidence strength
    into `[CLEAN_VELOCITY_FLOOR, CLEAN_VELOCITY_CEILING] = [30, 120]`.
    Otherwise, a bounded, role-aware default (`CLEAN_VELOCITY_DEFAULTS`, one
    entry per DrumScript instrument label) is used instead of a flat
    constant.
-4. **Conservative suppression**: an event is dropped from the derived MIDI
+5. **Conservative suppression**: an event is dropped from the derived MIDI
    only when local evidence is available and at or below
    `CLEAN_SUPPRESSION_STRENGTH_THRESHOLD = 0.12` — a much stricter bar than
    the alignment/velocity confidence threshold, so a merely-uncertain event

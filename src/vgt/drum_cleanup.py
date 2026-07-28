@@ -37,6 +37,22 @@ CLEAN_PROFILE_NAME = "drums-clean"
 # and docs/drums-clean-profile.md: each of these is a fixed, documented,
 # hash-identity-bearing constant, not a value tuned to one reference track.
 CLEAN_SIMULTANEITY_WINDOW_S = 0.008  # coincident-onset coalescing window; observed evidence: intended-simultaneous notes differed by one MIDI tick (~2ms at 480 PPQN/120 BPM) -- this is a generous multiple of that, still well under a 16th note
+# A minimum inter-onset distance expressed in beats, rather than an absolute
+# number of milliseconds.  These are deliberately only 1/32 of a beat: this
+# stage removes detector duplicates, not musically plausible doubles.  A
+# usable beat grid is required before it acts, so an unknown/changing tempo
+# never turns into an arbitrary time threshold.
+CLEAN_DEDUP_MINIMUM_INTER_ONSET_BEATS: dict[str, float] = {
+    "kick": 1 / 32,
+    "snare": 1 / 32,
+    "low_tom": 1 / 32,
+    "mid_tom": 1 / 32,
+    "high_tom": 1 / 32,
+    "hi_hat_closed": 1 / 32,
+    "hi_hat_open": 1 / 32,
+    "crash": 1 / 64,
+    "ride": 1 / 32,
+}
 CLEAN_ALIGNMENT_WINDOW_S = 0.03  # bounded local search radius for the final audio-aware timing correction
 CLEAN_SYSTEMATIC_ALIGNMENT_WINDOW_S = 0.08  # wider evidence search used only to measure a consistent latency before final local alignment
 CLEAN_GRID_REFERENCE_WINDOW_S = 0.08  # only grid-near audio peaks contribute to the latency estimate; fills remain governed by audio alone
@@ -81,6 +97,7 @@ class DrumCleanupProfile:
 
     name: str
     enabled: bool
+    dedup_minimum_inter_onset_beats: Mapping[str, float]
     simultaneity_window_s: float
     alignment_window_s: float
     systematic_alignment_window_s: float
@@ -98,6 +115,7 @@ class DrumCleanupProfile:
         changing cleaned output must appear here."""
         return {
             "enabled": self.enabled,
+            "dedup_minimum_inter_onset_beats": dict(self.dedup_minimum_inter_onset_beats),
             "simultaneity_window_s": self.simultaneity_window_s,
             "alignment_window_s": self.alignment_window_s,
             "systematic_alignment_window_s": self.systematic_alignment_window_s,
@@ -115,6 +133,7 @@ DRUM_CLEANUP_PROFILES: dict[str, DrumCleanupProfile] = {
     DEFAULT_PROFILE_NAME: DrumCleanupProfile(
         name=DEFAULT_PROFILE_NAME,
         enabled=False,
+        dedup_minimum_inter_onset_beats={},
         simultaneity_window_s=0.0,
         alignment_window_s=0.0,
         systematic_alignment_window_s=0.0,
@@ -129,6 +148,7 @@ DRUM_CLEANUP_PROFILES: dict[str, DrumCleanupProfile] = {
     CLEAN_PROFILE_NAME: DrumCleanupProfile(
         name=CLEAN_PROFILE_NAME,
         enabled=True,
+        dedup_minimum_inter_onset_beats=CLEAN_DEDUP_MINIMUM_INTER_ONSET_BEATS,
         simultaneity_window_s=CLEAN_SIMULTANEITY_WINDOW_S,
         alignment_window_s=CLEAN_ALIGNMENT_WINDOW_S,
         systematic_alignment_window_s=CLEAN_SYSTEMATIC_ALIGNMENT_WINDOW_S,
@@ -189,6 +209,19 @@ class BeatGridReference:
             eighths.extend((left, (left + right) / 2.0))
         eighths.append(beats[-1])
         return tuple(eighths)
+
+    def beat_period_near(self, time_sec: float) -> float | None:
+        """Return the enclosing beat period, or ``None`` when tempo is unknown.
+
+        Requiring an event to lie within two known neighbouring beats makes
+        de-duplication a safe no-op at an incomplete grid's edges rather than
+        extrapolating a possibly stale tempo.
+        """
+        beats = tuple(sorted(set(time for time in self.beat_times if time >= 0.0)))
+        for left, right in zip(beats, beats[1:]):
+            if left <= time_sec <= right and right > left:
+                return right - left
+        return None
 
 
 class NullOnsetEvidenceSource:
@@ -349,6 +382,45 @@ def _coalesce_groups(
     return groups
 
 
+def _deduplicate_same_instrument_onsets(
+    events: Sequence[Mapping[str, Any]], *, minimum_inter_onset_beats: Mapping[str, float],
+    beat_grid: BeatGridReference | None,
+) -> list[Mapping[str, Any]]:
+    """Keep the first of clearly duplicate same-label onsets.
+
+    The interval is calculated from the local enclosing beat.  If the grid,
+    label setting, or local tempo is unavailable, keeping both is the explicit
+    conservative fallback.  Events are rebuilt only when a label is removed,
+    preserving input ordering and all untouched raw-event fields.
+    """
+    if beat_grid is None:
+        return list(events)
+    kept_by_instrument: dict[str, float] = {}
+    deduplicated: list[Mapping[str, Any]] = []
+    for event in sorted(events, key=lambda item: float(item["time_sec"])):
+        time_sec = float(event["time_sec"])
+        beat_period = beat_grid.beat_period_near(time_sec)
+        instruments: list[str] = []
+        for instrument in event["instruments"]:
+            minimum_beats = minimum_inter_onset_beats.get(instrument)
+            previous = kept_by_instrument.get(instrument)
+            if (
+                minimum_beats is not None
+                and beat_period is not None
+                and previous is not None
+                and time_sec - previous < minimum_beats * beat_period
+            ):
+                continue
+            instruments.append(instrument)
+            kept_by_instrument[instrument] = time_sec
+        if instruments:
+            if tuple(instruments) == tuple(event["instruments"]):
+                deduplicated.append(event)
+            else:
+                deduplicated.append({**event, "instruments": instruments})
+    return deduplicated
+
+
 def _nearest_distance(time_sec: float, candidates: Sequence[float]) -> float | None:
     return min((abs(time_sec - candidate) for candidate in candidates), default=None)
 
@@ -391,22 +463,25 @@ def apply_drum_cleanup(
     evidence_source: OnsetEvidenceSource,
     beat_grid: BeatGridReference | None = None,
 ) -> list[CleanedEvent]:
-    """Run the four canonical, ordered `drums-clean` stages over raw
+    """Run the five canonical, ordered `drums-clean` stages over raw
     DrumScript `events` and return one `CleanedEvent` per (group, instrument)
     pair. Deterministic for a given `events`/`profile`/`evidence_source`.
 
     Stage order (each depends on the ones before it):
 
-    1. Coalesce raw events within `simultaneity_window_s` of each other into
+    1. De-duplicate same-instrument onsets closer than that instrument's
+       tempo-scaled minimum interval.  Missing grid/tempo is ambiguous and
+       leaves both onsets intact; different instruments are never compared.
+    2. Coalesce raw events within `simultaneity_window_s` of each other into
        one aligned onset group (DrumScript sometimes reports a single
        intended onset as two events a tick apart).
-    2. Align each group's time to nearby audio evidence, bounded to
+    3. Align each group's time to nearby audio evidence, bounded to
        `alignment_window_s` and never earlier than 0.0 (source-start safe).
        No change when evidence is absent or ambiguous.
-    3. Shape each instrument's velocity from local evidence strength when
+    4. Shape each instrument's velocity from local evidence strength when
        available and above `min_evidence_strength`; otherwise a bounded,
        role-aware default -- never a flat constant.
-    4. Suppress an instrument only when evidence is available and its
+    5. Suppress an instrument only when evidence is available and its
        strength is at or below `suppression_strength_threshold` -- a
        reproducible, conservative signal, not an inferred pattern gap. Every
        other event is retained even if it disagrees with a neighbouring
@@ -415,7 +490,12 @@ def apply_drum_cleanup(
     if not profile.enabled:
         raise ValueError(f"profile {profile.name!r} has cleanup disabled; use the raw DrumScript event path instead")
 
-    groups = _coalesce_groups(events, profile.simultaneity_window_s)
+    deduplicated = _deduplicate_same_instrument_onsets(
+        events,
+        minimum_inter_onset_beats=profile.dedup_minimum_inter_onset_beats,
+        beat_grid=beat_grid,
+    )
+    groups = _coalesce_groups(deduplicated, profile.simultaneity_window_s)
     systematic_offset = _systematic_audio_offset(
         [anchor_time for anchor_time, _group in groups], profile=profile,
         evidence_source=evidence_source, beat_grid=beat_grid,
