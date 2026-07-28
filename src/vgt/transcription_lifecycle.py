@@ -36,6 +36,7 @@ from .transcribe import (
     TranscriberRouter,
     TranscriptionError,
     default_spec_for_target,
+    backend_for_target_profile,
     production_transcriber_router,
     resolve_target_source,
     target_input_hash,
@@ -193,16 +194,17 @@ def add_variant(
     tempo_map = tempo_map_reference(tempo_value if isinstance(tempo_value, dict) else None)
 
     if target == "drums":
-        if profile not in DRUM_CLEANUP_PROFILE_NAMES:
+        if profile not in (*DRUM_CLEANUP_PROFILE_NAMES, "drums-adtof"):
             raise VariantLifecycleError(
-                f"target 'drums' uses the fixed DrumScript backend; --profile must be one of "
-                f"{DRUM_CLEANUP_PROFILE_NAMES}, got {profile!r}"
+                f"profile for 'drums' must be one of {(*DRUM_CLEANUP_PROFILE_NAMES, 'drums-adtof')}, got {profile!r}"
             )
         effective_profile = profile
         profile_definition_hash = None
-        resolved_settings = {"cleanup_profile": profile, **DRUM_CLEANUP_PROFILES[profile].as_identity()}
+        resolved_settings = ({"backend": "adtof"} if profile == "drums-adtof"
+                             else {"cleanup_profile": profile, **DRUM_CLEANUP_PROFILES[profile].as_identity()})
         spec = default_spec_for_target(
-            target, backend="drumscript", midi_tempo=midi_tempo, time_signature=time_signature, modes={target: profile}, tempo_map=tempo_map
+            target, backend=backend_for_target_profile(target, {target: profile}), midi_tempo=midi_tempo,
+            time_signature=time_signature, modes={target: profile}, tempo_map=tempo_map
         )
     else:
         try:
@@ -243,7 +245,7 @@ def add_variant(
     )
 
     active_router = router or production_transcriber_router()
-    transcriber = active_router.for_target(target)
+    transcriber = active_router.for_target(target, {target: profile})
 
     outcome = reconcile_variants(
         target=target,

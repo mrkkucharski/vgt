@@ -237,7 +237,7 @@ def _dispatch_transcription(args: argparse.Namespace, project: Path) -> int:
         if args.profile_command == "list":
             for name in VALID_PROFILE_NAMES:
                 print(f"{name} (builtin)")
-            for name in DRUM_CLEANUP_PROFILE_NAMES:
+            for name in (*DRUM_CLEANUP_PROFILE_NAMES, "drums-adtof"):
                 if name not in VALID_PROFILE_NAMES:
                     print(f"{name} (builtin, drums)")
             for name in project_profiles:
@@ -249,7 +249,13 @@ def _dispatch_transcription(args: argparse.Namespace, project: Path) -> int:
             # latter (and explicitly rejects a 'drums' target), so it is
             # reported directly instead. "default" stays on the generic path
             # below since it is shared with every other target.
-            if args.name == CLEAN_PROFILE_NAME:
+            if args.name in (CLEAN_PROFILE_NAME, "drums-adtof"):
+                if args.name == "drums-adtof":
+                    print(json.dumps({
+                        "name": "drums-adtof", "target": "drums", "backend": "adtof",
+                        "is_builtin": True, "profile_definition_hash": None,
+                    }, indent=2))
+                    return 0
                 profile = DRUM_CLEANUP_PROFILES[CLEAN_PROFILE_NAME]
                 print(json.dumps(
                     {
