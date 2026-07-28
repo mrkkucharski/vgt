@@ -1,11 +1,19 @@
 {
   "current_issue": 195,
-  "session_id": "8fd02478-709b-40f2-913b-6684a17f9b6c",
-  "pid": 97341,
-  "process_started_at": "Tue Jul 28 18:35:46 2026",
-  "agent": "claude",
-  "started_at": "2026-07-28T16:35:44.786988+00:00",
-  "scheduler_stalls": {},
+  "session_id": "08dafde5-0177-47c0-8f36-75d438bb7286",
+  "pid": 98174,
+  "process_started_at": "Tue Jul 28 18:49:49 2026",
+  "agent": "codex",
+  "started_at": "2026-07-28T16:49:47.483776+00:00",
+  "scheduler_stalls": {
+    "deferred_passes": {
+      "budget": {
+        "first_seen_at": "2026-07-28T16:38:07.848584+00:00",
+        "last_seen_at": "2026-07-28T16:48:38.595178+00:00",
+        "consecutive_passes": 10
+      }
+    }
+  },
   "budget": {
     "window_start": "2026-07-28T16:13:40.657375+00:00",
     "seconds_used": 0.0,
@@ -73,7 +81,7 @@
     "event": "agent.started",
     "detail": {
       "issue": 195,
-      "agent": "claude",
+      "agent": "codex",
       "branch": "issue-195-restore-operational-automatic-tests-work"
     },
     "cleanup": {}
