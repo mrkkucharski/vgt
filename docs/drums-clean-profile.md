@@ -1,9 +1,13 @@
 # `drums-clean`: opt-in conservative cleanup for DrumScript output (issue #177)
 
 `default` and `drums-clean` are peers, not a before/after pair. `default` is
-DrumScript's raw output, byte-copied straight through — unchanged by this
+DrumScript's raw output — unfiltered, unaligned, and unreclassified by this
 issue, and still what every project gets unless `drums-clean` is explicitly
-selected. `drums-clean` applies `vgt.drum_cleanup`'s conservative,
+selected. (Its MIDI is no longer a byte-copy of DrumScript's own file: issue
+#193 re-authors it at the project tempo rather than DrumScript's self-detected
+tempo, recovering each note's velocity from DrumScript's MIDI in the process.
+The event data itself — which onsets, which instruments — is untouched.)
+`drums-clean` applies `vgt.drum_cleanup`'s conservative,
 bounded post-processing pass to the same raw events. Retain both variants
 (`vgt transcription variant add drums --profile default` /
 `--profile drums-clean`) and compare them for any given song rather than
@@ -139,5 +143,7 @@ reads through an `OnsetEvidenceSource`:
 `DrumScriptSpec.to_dict()` reproduces the exact pre-#177 five-field shape
 whenever `cleanup_profile == "default"` (the implicit selection for every
 existing project and every `drums` variant that doesn't explicitly ask for
-`drums-clean`), so `settings_hash`, cached artifacts, and MIDI/event output
-for `default` are byte-identical to before this issue.
+`drums-clean`), so `settings_hash` for `default` is unaffected by this issue.
+(`default`'s MIDI output changed separately, under issue #193, to stop
+byte-copying DrumScript's file and fix its timeline authoring — see that
+issue and the note above.)

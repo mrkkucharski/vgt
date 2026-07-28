@@ -2835,8 +2835,12 @@ def _validate_drumscript_midi(path: Path) -> None:
 def _midi_tempo_bpm(path: Path) -> float | None:
     """Return the first SMF tempo meta event, when the exporter wrote one.
 
-    DrumScript MIDI is authoritative for its playback tempo, while no
-    confidence can be inferred from the fixed note velocity it writes.
+    For DrumScript's own raw MIDI this is a detected tempo, not a playback
+    instruction vgt trusts: DrumScript's beat tracker can make gross octave
+    errors, so vgt never authors the drum reference timeline at this value.
+    It re-authors drum MIDI at the project's own tempo instead (issue #193);
+    `_read_percussion_note_velocities` below still needs this value to decode
+    DrumScript's raw ticks back into real seconds when recovering velocity.
     """
     data = path.read_bytes()
     marker = b"\xff\x51\x03"
