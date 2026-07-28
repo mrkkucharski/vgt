@@ -10,6 +10,9 @@ from vgt.transcribe import (
     BasicPitchSpec,
     AdtofSpec,
     ADTOF_PACKAGE_VERSION,
+    ADTOF_PEAK_THRESHOLDS,
+    ADTOF_MIN_INTER_ONSET_SECONDS,
+    AdtofTranscriber,
     ADTOF_MODEL_VERSION,
     ADTOF_WEIGHTS_VERSION,
     BasicPitchTranscriber,
@@ -394,6 +397,9 @@ def test_router_uses_the_drum_profile_backend_and_keeps_drumscript_default() -> 
         "lock_sha256": "c1c0e70cd0ff9f3045536a49940d9a9e8ada6523bd17424c36fd4f40e5ebb3e2",
         "midi_tempo": 120.0,
         "beat_grid": None,
+        "peak_thresholds": ADTOF_PEAK_THRESHOLDS,
+        "min_inter_onset_seconds": ADTOF_MIN_INTER_ONSET_SECONDS,
+        "grid_subdivisions": 2,
     }
 
 
@@ -418,6 +424,7 @@ def test_production_router_sends_drums_to_drumscript_and_everything_else_to_basi
             assert isinstance(router.for_target(target), BasicPitchTranscriber)
     assert isinstance(router.spec_for_target("drums", midi_tempo=120.0), DrumScriptSpec)
     assert router.for_target("drums", {"drums": "drums-adtof"}).name == "adtof"
+    assert isinstance(router.for_target("drums", {"drums": "drums-adtof"}), AdtofTranscriber)
     assert isinstance(router.spec_for_target("drums", midi_tempo=120.0, modes={"drums": "drums-adtof"}), AdtofSpec)
     assert isinstance(router.spec_for_target("guitar", midi_tempo=120.0), BasicPitchSpec)
 

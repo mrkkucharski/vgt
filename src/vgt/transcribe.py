@@ -96,6 +96,38 @@ ADTOF_LOCK_SHA256 = "c1c0e70cd0ff9f3045536a49940d9a9e8ada6523bd17424c36fd4f40e5e
 ADTOF_TIMEOUT_SECONDS = 120
 ADTOF_CLASS_NAMES = ("bass_drum", "snare_drum", "tom_tom", "hi_hat", "cymbal")
 
+# These are deliberately vgt settings, rather than the port's decoder
+# settings: Phase 3 consumes its raw sigmoid outputs and owns the resulting
+# timing/MIDI contract.  A 10 ms frame rate means the IOIs below suppress only
+# duplicate decoder peaks, not musically meaningful repeated drum hits.
+ADTOF_PEAK_THRESHOLDS: dict[str, float] = {
+    "bass_drum": 0.30,
+    "snare_drum": 0.30,
+    "tom_tom": 0.25,
+    "hi_hat": 0.30,
+    # The Phase-0 capture has no cymbal maxima at the port's 0.30 default.
+    "cymbal": 0.20,
+}
+ADTOF_MIN_INTER_ONSET_SECONDS: dict[str, float] = {
+    "bass_drum": 0.08,
+    "snare_drum": 0.08,
+    "tom_tom": 0.08,
+    "hi_hat": 0.05,
+    "cymbal": 0.10,
+}
+# Families from the five-class Frame_RNN model.  The model does not expose
+# open/closed hats, high/mid toms, or crash/ride separately, so the stable
+# primary GM member is used; the companion GM notes remain reserved for a
+# future class-set that can distinguish them.
+ADTOF_GM_INSTRUMENTS: dict[str, tuple[str, int]] = {
+    "bass_drum": ("kick", 36),
+    "snare_drum": ("snare", 38),
+    "tom_tom": ("mid_tom", 45),
+    "hi_hat": ("hi_hat_closed", 42),
+    "cymbal": ("crash", 49),
+}
+ADTOF_NOTE_DURATION_SECONDS = 0.08
+
 # DrumScript's public event labels and their General MIDI percussion notes.
 # Keep this deliberately small and explicit: accepting a new upstream label is
 # an output-contract change, not something to silently pass through.
@@ -766,6 +798,9 @@ class AdtofSpec:
             "midi_tempo": self.midi_tempo,
             "beat_grid": {"beat_times": list(self.beat_grid.beat_times), "downbeat_offset_s": self.beat_grid.downbeat_offset_s}
             if self.beat_grid else None,
+            "peak_thresholds": ADTOF_PEAK_THRESHOLDS,
+            "min_inter_onset_seconds": ADTOF_MIN_INTER_ONSET_SECONDS,
+            "grid_subdivisions": 2,
         }
         if self.tempo_map is not None:
             data["tempo_map"] = self.tempo_map.to_dict()
@@ -1217,7 +1252,8 @@ class TargetTranscriberRouter:
                 tempo_map=tempo_map,
             )
         return default_spec_for_target(
-            target, backend=backend, midi_tempo=midi_tempo, modes=modes, time_signature=time_signature, tempo_map=tempo_map
+            target, backend=backend, midi_tempo=midi_tempo, modes=modes, time_signature=time_signature,
+            beat_times=beat_times, downbeat_offset_s=downbeat_offset_s, tempo_map=tempo_map,
         )
 
 
@@ -1227,7 +1263,7 @@ def production_transcriber_router() -> TranscriberRouter:
     return TargetTranscriberRouter(
         basic_pitch=basic_pitch,
         drumscript=DrumScriptTranscriber(),
-        adtof=FakeAdtofTranscriber(),
+        adtof=AdtofTranscriber(),
         drumscript_targets=("drums",),
     )
 
@@ -2438,6 +2474,166 @@ class AdtofActivationRunner:
                 raise TranscriptionError(_without_temporary_path(str(exc), work_dir)) from exc
 
         return AdtofActivationResult(activations, metadata, cache_key, cache_hit=False)
+
+
+def _adtof_peak_frames(activations: Any, fps: float) -> list[tuple[int, int, float]]:
+    """Return `(frame, class_index, height)` maxima after per-class IOI.
+
+    This intentionally has no dependency on Torch or scipy.  Ties choose the
+    earlier frame, which keeps plateau handling deterministic and lets the
+    subsequent grid association make the musical timing decision.
+    """
+    import numpy as np
+
+    matrix = np.asarray(activations)
+    if matrix.ndim != 2 or matrix.shape[1] != len(ADTOF_CLASS_NAMES):
+        raise TranscriptionError("ADTOF activations have an unexpected shape")
+    if not math.isfinite(fps) or fps <= 0:
+        raise TranscriptionError("ADTOF activation metadata has an invalid fps")
+    peaks: list[tuple[int, int, float]] = []
+    for class_index, class_name in enumerate(ADTOF_CLASS_NAMES):
+        column = matrix[:, class_index]
+        threshold = ADTOF_PEAK_THRESHOLDS[class_name]
+        candidates: list[tuple[int, float]] = []
+        for frame, height in enumerate(column):
+            if height < threshold:
+                continue
+            previous = column[frame - 1] if frame else -np.inf
+            following = column[frame + 1] if frame + 1 < len(column) else -np.inf
+            if height >= previous and height > following:
+                candidates.append((frame, float(height)))
+
+        min_frames = max(1, int(math.ceil(ADTOF_MIN_INTER_ONSET_SECONDS[class_name] * fps)))
+        selected: list[tuple[int, float]] = []
+        # Non-maximum suppression by height makes a close doublet retain the
+        # strongest model evidence, while the final sort restores timeline
+        # order.  It is more robust than greedily retaining the first blip.
+        for frame, height in sorted(candidates, key=lambda item: (-item[1], item[0])):
+            if all(abs(frame - chosen_frame) >= min_frames for chosen_frame, _ in selected):
+                selected.append((frame, height))
+        peaks.extend((frame, class_index, height) for frame, height in selected)
+    return sorted(peaks)
+
+
+def _adtof_grid_times(beat_grid: BeatGridReference | None, first_s: float, last_s: float) -> list[float]:
+    """Build the project eighth-note grid covering the candidate peaks."""
+    if beat_grid is None or len(beat_grid.beat_times) < 2:
+        return []
+    beats = sorted({float(time) for time in beat_grid.beat_times if math.isfinite(float(time))})
+    intervals = [right - left for left, right in zip(beats, beats[1:]) if right > left]
+    if not intervals:
+        return []
+    period = sorted(intervals)[len(intervals) // 2]
+    if period <= 0:
+        return []
+    # `downbeat_offset_s` explicitly establishes the meter's phase even if a
+    # beat tracker omitted that exact time from its list.  The supplied beats
+    # otherwise stay authoritative, including any natural tempo variation.
+    if beat_grid.downbeat_offset_s is not None and math.isfinite(beat_grid.downbeat_offset_s):
+        downbeat = float(beat_grid.downbeat_offset_s)
+        if all(abs(time - downbeat) > period * 0.1 for time in beats):
+            beats.append(downbeat)
+            beats.sort()
+    grid: list[float] = []
+    for left, right in zip(beats, beats[1:]):
+        grid.extend((left, (left + right) / 2.0))
+    grid.append(beats[-1])
+    # Peaks can fall before/after a tracker-provided range by a tiny tail.
+    while grid and grid[0] > first_s:
+        grid.insert(0, grid[0] - period / 2.0)
+    while grid and grid[-1] < last_s:
+        grid.append(grid[-1] + period / 2.0)
+    return grid
+
+
+def postprocess_adtof_activations(
+    activations: Any, metadata: Mapping[str, Any], spec: AdtofSpec,
+) -> tuple[list[dict[str, Any]], list[tuple[float, float, int, int]]]:
+    """Peak-pick validated ADTOF outputs into vgt's drum event/MIDI shapes.
+
+    Times are raw frame times only until this function associates them with
+    vgt's project beat grid.  With no usable grid, real frame times are kept
+    rather than inventing one; this makes degraded analysis explicit while
+    preserving a valid, project-tempo-authored artifact.
+    """
+    if not isinstance(spec, AdtofSpec):
+        raise TranscriptionError("ADTOF post-processing requires an AdtofSpec")
+    try:
+        fps = float(metadata["fps"])
+    except (KeyError, TypeError, ValueError) as exc:
+        raise TranscriptionError("ADTOF activation metadata has an invalid fps") from exc
+    peaks = _adtof_peak_frames(activations, fps)
+    grid = _adtof_grid_times(spec.beat_grid, 0.0, max((frame / fps for frame, _, _ in peaks), default=0.0))
+
+    # A same-class pair can quantize to one grid slot.  Retain the larger
+    # activation, then combine different classes into DrumScript-compatible
+    # simultaneous `{time_sec, instruments}` events.
+    selected: dict[tuple[float, str], tuple[float, str]] = {}
+    for frame, class_index, height in peaks:
+        raw_time = frame / fps
+        time_sec = min(grid, key=lambda point: (abs(point - raw_time), point)) if grid else raw_time
+        instrument, _pitch = ADTOF_GM_INSTRUMENTS[ADTOF_CLASS_NAMES[class_index]]
+        key = (round(time_sec, 6), instrument)
+        previous = selected.get(key)
+        if previous is None or height > previous[0]:
+            selected[key] = (height, instrument)
+
+    grouped: dict[float, list[tuple[str, float]]] = {}
+    for (time_sec, _instrument), (height, instrument) in selected.items():
+        grouped.setdefault(time_sec, []).append((instrument, height))
+    events: list[dict[str, Any]] = []
+    midi_notes: list[tuple[float, float, int, int]] = []
+    for time_sec in sorted(grouped):
+        instruments = sorted(grouped[time_sec], key=lambda item: ADTOF_GM_INSTRUMENTS_INV[item[0]])
+        events.append({"time_sec": time_sec, "instruments": [instrument for instrument, _ in instruments]})
+        for instrument, height in instruments:
+            pitch = ADTOF_GM_INSTRUMENTS_INV[instrument]
+            velocity = max(1, min(127, int(round(1 + 126 * max(0.0, min(1.0, height))))))
+            midi_notes.append((time_sec, time_sec + ADTOF_NOTE_DURATION_SECONDS, pitch, velocity))
+    return events, midi_notes
+
+
+# Inverse lookup also fixes deterministic instrument ordering in simultaneous
+# events.  It intentionally contains only model-observable primary members.
+ADTOF_GM_INSTRUMENTS_INV: dict[str, int] = {instrument: pitch for instrument, pitch in ADTOF_GM_INSTRUMENTS.values()}
+
+
+class AdtofTranscriber:
+    """Real ADTOF backend: isolated inference followed by numpy-only vgt DSP."""
+
+    name = "adtof"
+
+    def __init__(self, activation_runner: AdtofActivationRunner | None = None) -> None:
+        self.activation_runner = activation_runner or AdtofActivationRunner()
+
+    def transcribe(
+        self, source: Path, destination_dir: Path, spec: TranscriptionSpec,
+        progress: Callable[[str], None] | None = None,
+    ) -> TranscriptionResult:
+        if not isinstance(spec, AdtofSpec):
+            raise TranscriptionError("AdtofTranscriber requires an AdtofSpec")
+        emit = progress or (lambda _message: None)
+        raw = self.activation_runner.run(source, spec, progress=emit)
+        events, notes = postprocess_adtof_activations(raw.activations, raw.metadata, spec)
+        destination_dir.mkdir(parents=True, exist_ok=True)
+        midi_path = destination_dir / "transcription.mid"
+        events_path = destination_dir / "transcription.json"
+        tempo_bpm = spec.midi_tempo or 120.0
+        _write_midi(midi_path, notes, tempo_bpm, channel=9, tempo_map=spec.tempo_map)
+        _validate_drumscript_midi(midi_path)
+        events_path.write_text(json.dumps(events), encoding="utf-8")
+        counts: dict[str, int] = {}
+        for event in events:
+            for instrument in event["instruments"]:
+                counts[instrument] = counts.get(instrument, 0) + 1
+        emit(f"transcribed (adtof): {len(events)} events")
+        return TranscriptionResult(
+            note_count=len(notes), pitch_range_midi=None, first_note_s=None, last_note_s=None,
+            midi_path=midi_path, events_path=events_path, instrument_counts=counts,
+            event_count=len(events), first_event_s=events[0]["time_sec"] if events else None,
+            last_event_s=events[-1]["time_sec"] if events else None,
+            backend_tempo=None, midi_tempo=spec.midi_tempo,
+        )
 
 
 def _sha256_file(path: Path) -> str:
