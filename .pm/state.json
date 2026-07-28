@@ -1,10 +1,10 @@
 {
   "current_issue": 218,
-  "session_id": "20bd7439-5da7-48e3-8e22-7b11ed4861d2",
-  "pid": 38518,
-  "process_started_at": "Wed Jul 29 00:08:22 2026",
+  "session_id": "4f53b6b0-f417-46e8-ac17-cd60f4c4b2d3",
+  "pid": 40089,
+  "process_started_at": "Wed Jul 29 00:16:31 2026",
   "agent": "codex",
-  "started_at": "2026-07-28T22:08:20.086615+00:00",
+  "started_at": "2026-07-28T22:16:29.458269+00:00",
   "scheduler_stalls": {},
   "budget": {
     "window_start": "2026-07-28T21:15:48.918262+00:00",
@@ -17,10 +17,10 @@
   "verification_followups": {
     "f0d8bfc9d2dc6da7a31609184e25c4d66d3986fd2340b33a83e98204fb86691e": "created"
   },
-  "role": "implement",
+  "role": "review",
   "branch": "issue-218-cover-drumscript-beat-grid-reconciliatio",
   "worktree_path": "/Users/marekkucharski/projects/.pm-worktrees/vgt/issue-218",
-  "pr_number": null,
+  "pr_number": 220,
   "followup_generation": {
     "fingerprint": "8caebab393f4e5df0ba868e26a551aecca0f3384997b8cffb6d692eeb0c33e27",
     "items": {
@@ -69,11 +69,11 @@
   "pending_transition": {
     "issue": 218,
     "target": "working",
-    "event": "agent.started",
+    "event": "agent.review_started",
     "detail": {
       "issue": 218,
       "agent": "codex",
-      "branch": "issue-218-cover-drumscript-beat-grid-reconciliatio"
+      "pr": 220
     },
     "cleanup": {}
   }
