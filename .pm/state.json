@@ -1,19 +1,11 @@
 {
   "current_issue": 191,
-  "session_id": "8e065ecc-aaaf-4e60-bd6f-ec74b3ec7de2",
-  "pid": 86392,
-  "process_started_at": "Tue Jul 28 12:00:52 2026",
+  "session_id": "f6d2608f-71c1-442f-b0a4-7c8eddb0038b",
+  "pid": 86802,
+  "process_started_at": "Tue Jul 28 12:03:17 2026",
   "agent": "claude",
-  "started_at": "2026-07-28T10:00:51.032754+00:00",
-  "scheduler_stalls": {
-    "deferred_passes": {
-      "budget": {
-        "first_seen_at": "2026-07-28T09:21:50.988586+00:00",
-        "last_seen_at": "2026-07-28T09:59:39.008173+00:00",
-        "consecutive_passes": 33
-      }
-    }
-  },
+  "started_at": "2026-07-28T10:03:15.845782+00:00",
+  "scheduler_stalls": {},
   "budget": {
     "window_start": "2026-07-28T07:22:59.910513+00:00",
     "seconds_used": 0.0,
@@ -23,10 +15,10 @@
   "verification_followups": {
     "f0d8bfc9d2dc6da7a31609184e25c4d66d3986fd2340b33a83e98204fb86691e": "created"
   },
-  "role": "implement",
+  "role": "review",
   "branch": "issue-191-correct-the-reference-transcription-back",
   "worktree_path": "/Users/marekkucharski/projects/.pm-worktrees/vgt/issue-191",
-  "pr_number": null,
+  "pr_number": 192,
   "followup_generation": {
     "fingerprint": "03ddd047aeef54213198b0c667b3cc710ef15f2b004e51cfcdc33daf78485f6a",
     "items": {
@@ -66,11 +58,11 @@
   "pending_transition": {
     "issue": 191,
     "target": "working",
-    "event": "agent.started",
+    "event": "agent.review_started",
     "detail": {
       "issue": 191,
       "agent": "claude",
-      "branch": "issue-191-correct-the-reference-transcription-back"
+      "pr": 192
     },
     "cleanup": {}
   }
