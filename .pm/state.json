@@ -1,10 +1,10 @@
 {
-  "current_issue": null,
-  "session_id": null,
-  "pid": null,
-  "process_started_at": null,
+  "current_issue": 201,
+  "session_id": "ea83f1c5-671c-443b-97ee-eebe4e65e0ef",
+  "pid": 14015,
+  "process_started_at": "Tue Jul 28 21:52:47 2026",
   "agent": "codex",
-  "started_at": "2026-07-28T19:47:57.630113+00:00",
+  "started_at": "2026-07-28T19:52:46.156372+00:00",
   "scheduler_stalls": {},
   "budget": {
     "window_start": "2026-07-28T16:13:40.657375+00:00",
@@ -17,9 +17,9 @@
   "verification_followups": {
     "f0d8bfc9d2dc6da7a31609184e25c4d66d3986fd2340b33a83e98204fb86691e": "created"
   },
-  "role": "review",
-  "branch": null,
-  "worktree_path": null,
+  "role": "implement",
+  "branch": "issue-201-adtof-backend-phase-2-adtof-activation-r",
+  "worktree_path": "/Users/marekkucharski/projects/.pm-worktrees/vgt/issue-201",
   "pr_number": null,
   "followup_generation": {
     "fingerprint": "eef3ed07ced05e409d8e46a7df750bd9186dc49d076ac58bb4bab5a96557ba52",
@@ -69,5 +69,16 @@
     "174": 2,
     "185": 1,
     "200": 1
+  },
+  "pending_transition": {
+    "issue": 201,
+    "target": "working",
+    "event": "agent.started",
+    "detail": {
+      "issue": 201,
+      "agent": "codex",
+      "branch": "issue-201-adtof-backend-phase-2-adtof-activation-r"
+    },
+    "cleanup": {}
   }
 }
