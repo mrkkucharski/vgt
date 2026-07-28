@@ -1,10 +1,10 @@
 {
   "current_issue": 203,
-  "session_id": "471ac24d-d622-46d9-b858-c3c74a2294f6",
-  "pid": 23438,
-  "process_started_at": "Tue Jul 28 22:42:24 2026",
+  "session_id": "9aa691a9-e61b-4a64-b655-5aada66e8584",
+  "pid": 24625,
+  "process_started_at": "Tue Jul 28 22:47:08 2026",
   "agent": "codex",
-  "started_at": "2026-07-28T20:42:23.246664+00:00",
+  "started_at": "2026-07-28T20:47:06.695646+00:00",
   "scheduler_stalls": {},
   "budget": {
     "window_start": "2026-07-28T16:13:40.657375+00:00",
@@ -17,7 +17,7 @@
   "verification_followups": {
     "f0d8bfc9d2dc6da7a31609184e25c4d66d3986fd2340b33a83e98204fb86691e": "created"
   },
-  "role": "fix",
+  "role": "review",
   "branch": "issue-203-adtof-backend-phase-4-fake-hardening-off",
   "worktree_path": "/Users/marekkucharski/projects/.pm-worktrees/vgt/issue-203",
   "pr_number": 211,
@@ -76,11 +76,11 @@
   "pending_transition": {
     "issue": 203,
     "target": "working",
-    "event": "agent.fix_started",
+    "event": "agent.review_started",
     "detail": {
       "issue": 203,
       "agent": "codex",
-      "fix_count": 1
+      "pr": 211
     },
     "cleanup": {}
   }
