@@ -9,6 +9,9 @@ import pytest
 from vgt.transcribe import (
     BasicPitchSpec,
     AdtofSpec,
+    ADTOF_PACKAGE_VERSION,
+    ADTOF_MODEL_VERSION,
+    ADTOF_WEIGHTS_VERSION,
     BasicPitchTranscriber,
     CleanupStage,
     DrumScriptSpec,
@@ -41,6 +44,7 @@ from vgt.transcribe import (
     _merge_fragments,
     _midi_to_hz,
     default_spec_for_target,
+    drum_transcription_profile,
     midi_artifact_name,
     missing_source_entry,
     notes_artifact_name,
@@ -368,8 +372,26 @@ def test_router_uses_the_drum_profile_backend_and_keeps_drumscript_default() -> 
     router = TargetTranscriberRouter(FakeTranscriber(), drumscript, drumscript_targets=("drums",), adtof=adtof)
 
     assert router.for_target("drums") is drumscript
+    assert drum_transcription_profile({"drums": "default"}).backend == "drumscript"
+    assert drum_transcription_profile({"drums": "drums-adtof"}).backend == "adtof"
     assert router.for_target("drums", {"drums": "drums-adtof"}) is adtof
-    assert isinstance(router.spec_for_target("drums", midi_tempo=120.0, modes={"drums": "drums-adtof"}), AdtofSpec)
+    spec = router.spec_for_target(
+        "drums", midi_tempo=120.0, modes={"drums": "drums-adtof"}
+    )
+    assert isinstance(spec, AdtofSpec)
+    assert spec.to_dict() == {
+        "backend": "adtof",
+        "package_pin": (
+            "adtof-pytorch @ git+https://github.com/xavriley/ADTOF-pytorch.git@"
+            "85c192e78f716ea0b111cc8a5ee4a8f6a3a4f8a9"
+        ),
+        "package_version": ADTOF_PACKAGE_VERSION,
+        "model_version": ADTOF_MODEL_VERSION,
+        "weights_version": ADTOF_WEIGHTS_VERSION,
+        "weights_sha256": "1bc986e596ec47ba0b44916f87cd4a39f0b2bec23596df3fb5d0e87749217320",
+        "midi_tempo": 120.0,
+        "beat_grid": None,
+    }
 
 
 def test_router_threads_modes_and_time_signature_through_to_the_spec() -> None:

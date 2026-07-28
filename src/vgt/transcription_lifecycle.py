@@ -23,7 +23,7 @@ from typing import Any, Callable
 import secrets
 
 from .analysis import reference_source_path
-from .drum_cleanup import DRUM_CLEANUP_PROFILE_NAMES, DRUM_CLEANUP_PROFILES
+from .drum_cleanup import DRUM_CLEANUP_PROFILES
 from .project import locate_project
 from .sidecar import (
     artifact_namespace_dir,
@@ -37,6 +37,8 @@ from .transcribe import (
     TranscriptionError,
     default_spec_for_target,
     backend_for_target_profile,
+    DRUM_TRANSCRIPTION_PROFILE_NAMES,
+    drum_transcription_profile,
     production_transcriber_router,
     resolve_target_source,
     target_input_hash,
@@ -194,14 +196,21 @@ def add_variant(
     tempo_map = tempo_map_reference(tempo_value if isinstance(tempo_value, dict) else None)
 
     if target == "drums":
-        if profile not in (*DRUM_CLEANUP_PROFILE_NAMES, "drums-adtof"):
+        if profile not in DRUM_TRANSCRIPTION_PROFILE_NAMES:
             raise VariantLifecycleError(
-                f"profile for 'drums' must be one of {(*DRUM_CLEANUP_PROFILE_NAMES, 'drums-adtof')}, got {profile!r}"
+                f"profile for 'drums' must be one of {DRUM_TRANSCRIPTION_PROFILE_NAMES}, got {profile!r}"
             )
+        drum_profile = drum_transcription_profile({target: profile})
         effective_profile = profile
         profile_definition_hash = None
-        resolved_settings = ({"backend": "adtof"} if profile == "drums-adtof"
-                             else {"cleanup_profile": profile, **DRUM_CLEANUP_PROFILES[profile].as_identity()})
+        resolved_settings = (
+            {"backend": drum_profile.backend}
+            if drum_profile.cleanup_profile is None
+            else {
+                "cleanup_profile": drum_profile.cleanup_profile,
+                **DRUM_CLEANUP_PROFILES[drum_profile.cleanup_profile].as_identity(),
+            }
+        )
         spec = default_spec_for_target(
             target, backend=backend_for_target_profile(target, {target: profile}), midi_tempo=midi_tempo,
             time_signature=time_signature, modes={target: profile}, tempo_map=tempo_map
