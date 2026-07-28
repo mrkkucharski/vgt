@@ -1,21 +1,23 @@
 {
   "current_issue": 215,
-  "session_id": "1dbfb40e-e48d-41cd-854a-d43e744c898a",
-  "pid": 35373,
-  "process_started_at": "Tue Jul 28 23:50:07 2026",
-  "agent": "claude",
-  "started_at": "2026-07-28T21:50:05.958293+00:00",
+  "session_id": "9e66a78e-504d-4c52-9f8c-8b2d78788805",
+  "pid": 36063,
+  "process_started_at": "Tue Jul 28 23:53:42 2026",
+  "agent": "codex",
+  "started_at": "2026-07-28T21:53:40.588262+00:00",
   "scheduler_stalls": {},
   "budget": {
     "window_start": "2026-07-28T21:15:48.918262+00:00",
-    "seconds_used": 0.0,
-    "dollars_used": 0.0,
-    "seconds_used_by_agent": {}
+    "seconds_used": 211.982172,
+    "dollars_used": 0.9451035000000001,
+    "seconds_used_by_agent": {
+      "claude": 211.982172
+    }
   },
   "verification_followups": {
     "f0d8bfc9d2dc6da7a31609184e25c4d66d3986fd2340b33a83e98204fb86691e": "created"
   },
-  "role": "review",
+  "role": "fix",
   "branch": "issue-215-add-explicit-tempo-map-correction-sync-f",
   "worktree_path": "/Users/marekkucharski/projects/.pm-worktrees/vgt/issue-215",
   "pr_number": 217,
@@ -61,16 +63,17 @@
     "200": 1,
     "201": 1,
     "202": 1,
-    "203": 1
+    "203": 1,
+    "215": 1
   },
   "pending_transition": {
     "issue": 215,
     "target": "working",
-    "event": "agent.review_started",
+    "event": "agent.fix_started",
     "detail": {
       "issue": 215,
-      "agent": "claude",
-      "pr": 217
+      "agent": "codex",
+      "fix_count": 1
     },
     "cleanup": {}
   }
