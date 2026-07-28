@@ -34,6 +34,25 @@ require opening REAPER, running a ReaScript against a live project, or manually
 checking REAPER output. Keep such work out of the autonomous issue queue and
 document any required user verification in the relevant user-facing guidance.
 
+## Do not rely on GitHub Actions / CI
+
+**GitHub Actions is non-functional on this account** (hosted-runner jobs fail
+instantly on a billing block — see issue #195, which is `status:blocked` pending
+a human billing fix). Until a human resolves it:
+
+- **Do not depend on CI to prove your work.** Run the full offline suite
+  **locally** (`pytest`, the goal contract in `tests/test_goal_contract.py`,
+  linters/type-checks) and paste the local results into the issue as evidence.
+  Never mark an issue ready-for-review on the assumption that "CI will catch it."
+- **Do not add, expand, or re-wire GitHub Actions workflows** as a way to
+  satisfy acceptance criteria, and do not treat a green/red Actions run as the
+  bar — there are no runs. Editing workflow YAML changes nothing while billing
+  is blocked.
+- Keep tests runnable and fast **offline** (no network, no hosted runner), so
+  local execution is the source of truth.
+- If an issue's acceptance genuinely requires a passing Actions run, it is
+  blocked on #195 — say so and stop, rather than working around it.
+
 ## Test project
 
 A real REAPER project fixture lives at **`test/Reaper Project/`** — use it for
