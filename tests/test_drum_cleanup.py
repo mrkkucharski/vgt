@@ -13,6 +13,7 @@ import pytest
 
 from vgt.drum_cleanup import (
     BeatGridReference,
+    CLEAN_DEDUP_MINIMUM_INTER_ONSET_BEATS,
     CLEAN_PROFILE_NAME,
     CLEAN_VELOCITY_DEFAULTS,
     DEFAULT_PROFILE_NAME,
@@ -38,6 +39,10 @@ def _half_second_grid() -> BeatGridReference:
 
 def test_velocity_defaults_cover_every_drumscript_instrument() -> None:
     assert set(CLEAN_VELOCITY_DEFAULTS) == set(DRUMSCRIPT_INSTRUMENTS)
+
+
+def test_dedup_intervals_cover_every_drumscript_instrument() -> None:
+    assert set(CLEAN_DEDUP_MINIMUM_INTER_ONSET_BEATS) == set(DRUMSCRIPT_INSTRUMENTS)
 
 
 def test_profile_registry_has_exactly_default_and_clean() -> None:
@@ -229,6 +234,56 @@ def test_coalescing_keeps_events_outside_the_window_separate() -> None:
     times = sorted(event.time_sec for event in cleaned)
     assert times[0] == pytest.approx(1.000)
     assert times[1] == pytest.approx(1.100)
+
+
+def test_dedup_collapses_a_same_instrument_burst_using_the_tempo_scaled_interval() -> None:
+    # At 120 BPM kick's 1/32-beat threshold is 15.625 ms.  The first two
+    # events are a detector burst; the third is far enough away to retain.
+    events = [
+        {"time_sec": 1.000, "instruments": ["kick"]},
+        {"time_sec": 1.010, "instruments": ["kick"]},
+        {"time_sec": 1.030, "instruments": ["kick"]},
+    ]
+
+    cleaned = apply_drum_cleanup(
+        events, profile=CLEAN, evidence_source=NullOnsetEvidenceSource(), beat_grid=_half_second_grid()
+    )
+
+    assert [event.raw_time_sec for event in cleaned] == pytest.approx([1.000, 1.030])
+
+
+def test_dedup_preserves_same_instrument_onsets_spaced_above_the_interval() -> None:
+    events = [
+        {"time_sec": 1.000, "instruments": ["hi_hat_closed"]},
+        {"time_sec": 1.020, "instruments": ["hi_hat_closed"]},
+    ]
+
+    cleaned = apply_drum_cleanup(
+        events, profile=CLEAN, evidence_source=NullOnsetEvidenceSource(), beat_grid=_half_second_grid()
+    )
+
+    assert [event.raw_time_sec for event in cleaned] == pytest.approx([1.000, 1.020])
+
+
+def test_dedup_never_merges_cross_instrument_coincidences() -> None:
+    events = [
+        {"time_sec": 1.000, "instruments": ["kick"]},
+        {"time_sec": 1.001, "instruments": ["hi_hat_closed"]},
+    ]
+
+    cleaned = apply_drum_cleanup(
+        events, profile=CLEAN, evidence_source=NullOnsetEvidenceSource(), beat_grid=_half_second_grid()
+    )
+
+    assert {event.instrument for event in cleaned} == {"kick", "hi_hat_closed"}
+
+
+def test_dedup_keeps_both_when_no_tempo_reference_is_available() -> None:
+    events = [{"time_sec": 1.000, "instruments": ["kick"]}, {"time_sec": 1.001, "instruments": ["kick"]}]
+
+    cleaned = apply_drum_cleanup(events, profile=CLEAN, evidence_source=NullOnsetEvidenceSource())
+
+    assert len(cleaned) == 2
 
 
 def test_apply_drum_cleanup_never_assumes_a_fixed_event_count_or_pattern() -> None:
