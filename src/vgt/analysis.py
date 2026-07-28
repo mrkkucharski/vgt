@@ -275,9 +275,14 @@ def _refresh_target(
     tempo_value = analysis["tempo"].get("value")
     midi_tempo = tempo_value.get("bpm") if isinstance(tempo_value, dict) else None
     time_signature = tempo_value.get("time_signature") if isinstance(tempo_value, dict) else None
+    beat_times = tempo_value.get("beat_times") if isinstance(tempo_value, dict) else None
+    downbeat_offset_s = tempo_value.get("downbeat_offset_seconds") if isinstance(tempo_value, dict) else None
     modes = analysis["transcription"].get("modes") or {}
     transcriber = router.for_target(target)
-    spec = router.spec_for_target(target, midi_tempo=midi_tempo, modes=modes, time_signature=time_signature)
+    spec = router.spec_for_target(
+        target, midi_tempo=midi_tempo, modes=modes, time_signature=time_signature,
+        beat_times=beat_times, downbeat_offset_s=downbeat_offset_s,
+    )
     profile = modes.get(target) or (variants.get(target_variant_id) or {}).get("requested_profile") or "default"
     effective_profile = (
         modes.get(target)
@@ -329,9 +334,14 @@ def _refresh_legacy_target(
     tempo_value = analysis["tempo"].get("value")
     midi_tempo = tempo_value.get("bpm") if isinstance(tempo_value, dict) else None
     time_signature = tempo_value.get("time_signature") if isinstance(tempo_value, dict) else None
+    beat_times = tempo_value.get("beat_times") if isinstance(tempo_value, dict) else None
+    downbeat_offset_s = tempo_value.get("downbeat_offset_seconds") if isinstance(tempo_value, dict) else None
     modes = analysis["transcription"].get("modes")
     transcriber = router.for_target(target)
-    spec = router.spec_for_target(target, midi_tempo=midi_tempo, modes=modes, time_signature=time_signature)
+    spec = router.spec_for_target(
+        target, midi_tempo=midi_tempo, modes=modes, time_signature=time_signature,
+        beat_times=beat_times, downbeat_offset_s=downbeat_offset_s,
+    )
     settings_hash = spec_hash(spec)
     resolved = resolve_target_source(project_path, target, analysis, reference_source=reference_source)
     if resolved is None:

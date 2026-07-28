@@ -18,7 +18,7 @@ from __future__ import annotations
 
 from dataclasses import asdict, dataclass, field, replace
 from pathlib import Path
-from typing import Any, Callable, Mapping, Protocol
+from typing import Any, Callable, Mapping, Protocol, Sequence
 import hashlib
 import json
 import math
@@ -30,6 +30,7 @@ import subprocess
 import tempfile
 
 from .drum_cleanup import (
+    BeatGridReference,
     DRUM_CLEANUP_PROFILES,
     DRUM_CLEANUP_PROFILE_NAMES,
     AudioOnsetEvidenceSource,
@@ -656,6 +657,7 @@ class DrumScriptSpec:
     # spec keeps its exact prior identity (see `to_dict`).
     cleanup_profile: str = "default"
     cleanup: tuple[CleanupStage, ...] = ()
+    beat_grid: BeatGridReference | None = None
 
     def to_dict(self) -> dict[str, Any]:
         """Serialize for `spec_hash`. Reproduces the pre-#177 five-field
@@ -672,6 +674,10 @@ class DrumScriptSpec:
         if self.cleanup_profile != "default":
             data["cleanup_profile"] = self.cleanup_profile
             data["cleanup"] = [{"name": stage.name, "params": stage.params} for stage in self.cleanup]
+            data["beat_grid"] = (
+                {"beat_times": list(self.beat_grid.beat_times), "downbeat_offset_s": self.beat_grid.downbeat_offset_s}
+                if self.beat_grid is not None else None
+            )
         return data
 
 
@@ -705,6 +711,8 @@ def default_spec_for_target(
     drumscript_runtime_version: str = DRUMSCRIPT_RUNTIME_VERSION,
     drumscript_classifier_mode: str = DRUMSCRIPT_CLASSIFIER_MODE,
     drumscript_time_signature: tuple[int, int] | None = None,
+    beat_times: Sequence[float] | None = None,
+    downbeat_offset_s: float | None = None,
 ) -> TranscriptionSpec:
     """The per-target default spec, resolved through `_INSTRUMENT_PROFILES`.
 
@@ -726,6 +734,10 @@ def default_spec_for_target(
             time_signature=drumscript_time_signature,
             cleanup_profile=cleanup_profile_name,
             cleanup=cleanup,
+            beat_grid=(
+                BeatGridReference(tuple(float(time) for time in beat_times), downbeat_offset_s)
+                if cleanup_profile.enabled and beat_times else None
+            ),
         )
     profile = _profile_for_target(target, modes)
     bar_seconds = _bar_duration_seconds(midi_tempo, time_signature)
@@ -982,7 +994,8 @@ class TranscriberRouter(Protocol):
     def for_target(self, target: str) -> Transcriber: ...
 
     def spec_for_target(
-        self, target: str, *, midi_tempo: float | None, modes: Mapping[str, str] | None = None, time_signature: str | None = None
+        self, target: str, *, midi_tempo: float | None, modes: Mapping[str, str] | None = None, time_signature: str | None = None,
+        beat_times: Sequence[float] | None = None, downbeat_offset_s: float | None = None,
     ) -> TranscriptionSpec: ...
 
 
@@ -1008,7 +1021,8 @@ class TargetTranscriberRouter:
         return self.drumscript if target in self.drumscript_targets else self.basic_pitch
 
     def spec_for_target(
-        self, target: str, *, midi_tempo: float | None, modes: Mapping[str, str] | None = None, time_signature: str | None = None
+        self, target: str, *, midi_tempo: float | None, modes: Mapping[str, str] | None = None, time_signature: str | None = None,
+        beat_times: Sequence[float] | None = None, downbeat_offset_s: float | None = None,
     ) -> TranscriptionSpec:
         backend = self.for_target(target).name
         if backend == "drumscript":
@@ -1021,6 +1035,8 @@ class TargetTranscriberRouter:
                 drumscript_runtime_version=self.drumscript_runtime_version,
                 drumscript_classifier_mode=self.drumscript_classifier_mode,
                 drumscript_time_signature=self.drumscript_time_signature,
+                beat_times=beat_times,
+                downbeat_offset_s=downbeat_offset_s,
             )
         return default_spec_for_target(
             target, backend=backend, midi_tempo=midi_tempo, modes=modes, time_signature=time_signature
@@ -1171,7 +1187,9 @@ class FakeTranscriber:
                 # path -- deterministic role-default velocities, no timing
                 # change, no suppression.
                 cleanup_profile = DRUM_CLEANUP_PROFILES[spec.cleanup_profile]
-                cleaned = apply_drum_cleanup(events, profile=cleanup_profile, evidence_source=NullOnsetEvidenceSource())
+                cleaned = apply_drum_cleanup(
+                    events, profile=cleanup_profile, evidence_source=NullOnsetEvidenceSource(), beat_grid=spec.beat_grid
+                )
                 notes = cleaned_events_to_midi_notes(cleaned, instrument_pitch=DRUMSCRIPT_INSTRUMENTS)
                 _write_midi(midi_path, notes, 120.0, channel=9)
                 json_events = cleaned_events_to_json(cleaned)
@@ -2059,7 +2077,7 @@ class DrumScriptTranscriber:
                     tempo_bpm = _midi_tempo_bpm(midi_source) or 120.0
                     cleanup_profile = DRUM_CLEANUP_PROFILES[spec.cleanup_profile]
                     cleaned = apply_drum_cleanup(
-                        raw_events, profile=cleanup_profile, evidence_source=AudioOnsetEvidenceSource(source)
+                        raw_events, profile=cleanup_profile, evidence_source=AudioOnsetEvidenceSource(source), beat_grid=spec.beat_grid
                     )
                     notes = cleaned_events_to_midi_notes(cleaned, instrument_pitch=DRUMSCRIPT_INSTRUMENTS)
                     _write_midi(midi_path, notes, tempo_bpm, channel=9)

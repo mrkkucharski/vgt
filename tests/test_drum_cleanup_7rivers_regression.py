@@ -73,7 +73,8 @@ def _load_ground_truth() -> dict[str, list[float]]:
     notes = json.loads((FIXTURES / "corrected_ground_truth.json").read_text())
     truth: dict[str, list[float]] = {}
     for note in notes:
-        truth.setdefault(note["instrument"], []).append(note["time_sec"])
+        for instrument in note["instruments"]:
+            truth.setdefault(instrument, []).append(note["time_sec"])
     return truth
 
 

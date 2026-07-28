@@ -306,6 +306,23 @@ def test_drumscript_clean_profile_has_a_distinct_settings_hash() -> None:
     assert guitar_spec.cleanup == ()
 
 
+def test_drumscript_clean_spec_carries_the_analysis_beat_grid_without_changing_default() -> None:
+    default_spec = default_spec_for_target(
+        "drums", backend="drumscript", beat_times=(0.0853, 0.58528), downbeat_offset_s=0.0853,
+    )
+    clean_spec = default_spec_for_target(
+        "drums", backend="drumscript", modes={"drums": "drums-clean"},
+        beat_times=(0.0853, 0.58528), downbeat_offset_s=0.0853,
+    )
+
+    assert default_spec.beat_grid is None
+    assert clean_spec.beat_grid is not None
+    assert clean_spec.beat_grid.beat_times == pytest.approx((0.0853, 0.58528))
+    assert clean_spec.beat_grid.downbeat_offset_s == pytest.approx(0.0853)
+    assert "beat_grid" not in default_spec.to_dict()
+    assert clean_spec.to_dict()["beat_grid"]["downbeat_offset_s"] == pytest.approx(0.0853)
+
+
 def test_drumscript_clean_profile_name_is_valid_for_the_drums_target() -> None:
     from vgt.transcribe import effective_profile_name_for_target, valid_profile_names_for_target, validate_profile_for_target
 
