@@ -293,10 +293,17 @@ error has wrapped past a whole subdivision.
 constant latency, and a rate error is not constant. That is why `default`
 sounded better than `drums-clean`.
 
-**Fix:** `vgt.drum_grid` reads each event's index off the backend's own step
-and re-emits it at that index on the analyzed beat grid, before either
-profile runs. For a constant grid the target positions come from the *fitted*
-tempo anchored at the analyzed downbeat, not from the raw `beat_times` array:
+**Fix:** `vgt.drum_grid` moves each event to the nearest line of the analyzed
+grid, at the subdivision the backend was using, before either profile runs.
+Counting subdivisions instead -- re-emitting the backend's own index -- is
+tempting and wrong: the two grids disagree about how many subdivisions have
+elapsed, so past the point where that disagreement exceeds half a slot every
+note lands one eighth out (visible on 7Rivers from bar 18). Against the stem's
+onsets, index mapping leaves 92 of 410 events more than 60 ms from any real
+hit; snapping leaves 6.
+
+For a constant grid the target lines come from the *fitted* tempo anchored at
+the analyzed downbeat, not from the raw `beat_times` array:
 individual detected beats are noisy (eight of 7Rivers' 355 sit more than 50 ms
 off the fitted line, one by 140 ms), and authoring onto the array copies each
 of those local errors into the MIDI -- the notes then follow the beat
@@ -314,10 +321,11 @@ so a future backend that emits true onsets is unaffected.
 Scored with `vgt.drum_midi_score` against `tests/fixtures/drums_7rivers/`,
 using the project's real (jittery) `beat_times`:
 
-| | median timing error | onset F1 @50 ms |
+| | median timing error | notes >60 ms from any stem onset |
 |---|---|---|
-| as shipped | −88.6 ms | 0.057 |
-| grid-reconciled | **+15.4 ms** | **0.447** |
+| as shipped | −88.6 ms | 196 / 410 |
+| index-mapped (rejected) | +12.8 ms | 92 / 410 |
+| snapped to the fitted grid | **+16.8 ms** | **6 / 410** |
 
 ### Cause #7: the reference MIDI item never spanned the source track
 

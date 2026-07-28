@@ -8,18 +8,24 @@ verbatim therefore starts the reference MIDI at the item edge instead of the
 first beat, and the 0.15% rate difference accumulates into a whole eighth
 note of drift by the end of a three-minute song.
 
-Both grids describe the same performance, so the fix is to read each event's
-*grid index* off the backend's step and re-emit it at that index on vgt's
-grid. Nothing musical is lost, because a fully quantized backend carries no
-micro-timing to preserve; and because the correction is index-based rather
-than nearest-line snapping, it stays correct once the accumulated drift grows
-past half a subdivision.
+Both grids describe the same performance, so the fix is to move each event to
+the nearest line of vgt's grid, at the subdivision the backend was using.
+Nothing musical is lost, because a fully quantized backend carries no
+micro-timing to preserve.
+
+Counting subdivisions instead -- re-emitting the backend's *index* on vgt's
+grid -- is tempting and wrong: the two grids disagree about how many
+subdivisions have elapsed (0.15% on 7Rivers is a whole eighth note across the
+song), so from the point where that disagreement passes half a subdivision
+every note lands one slot out. Measured against the stem's onsets, index
+mapping leaves 92 of 410 events more than 60 ms from any real hit; snapping
+leaves 6.
 
 Every step is guarded: a backend whose onsets are *not* on a uniform grid
-(a future unquantized backend, whose real-second onsets need no correction),
-a beat grid that starts after the events, a subdivision that disagrees with
-the project tempo, or a correction that would move a note by a whole beat all
-leave the events untouched rather than guessing.
+(a future unquantized backend, whose real-second onsets need no correction
+and whose feel snapping would destroy), a beat grid that starts after the
+events, or a subdivision that disagrees with the project tempo all leave the
+events untouched rather than guessing.
 """
 
 from __future__ import annotations
@@ -53,7 +59,7 @@ class GridReconciliation:
 
     def describe(self) -> str:
         return (
-            f"grid-aligned to the project beat grid "
+            f"snapped to the project beat grid "
             f"(backend step {self.step_seconds * 1000:.1f} ms, "
             f"1/{self.subdivisions_per_beat} beat, "
             f"median shift {self.median_shift_seconds * 1000:+.0f} ms, "
@@ -165,43 +171,44 @@ def reconcile_event_times(
     subdivisions = round(beat_period / step)
     if subdivisions < 1 or abs(beat_period / (subdivisions * step) - 1.0) > TEMPO_AGREEMENT_TOLERANCE:
         return unchanged, None
-    # Index identity only holds if the analyzed grid reaches back to where the
-    # backend started counting; a grid that begins mid-song would renumber
-    # every event.
+    # Snapping needs a grid under every event, so an analysis that only found
+    # beats from the middle of the song onwards is not usable.
     if beats[0] > min(times) + beat_period:
         return unchanged, None
 
     if beat_period_s and beat_period_s > 0:
-        # One fitted tempo from the analyzed downbeat: every index has a
-        # position, so there is nothing to extrapolate past either.
+        # One fitted tempo from the analyzed downbeat: defined everywhere, so
+        # events past the last detected beat are covered too.
         anchor = beat_grid.downbeat_offset_s if beat_grid.downbeat_offset_s is not None else beats[0]
         target_step = beat_period_s / subdivisions
-        position = lambda index: anchor + index * target_step  # noqa: E731
+        nearest = lambda time: anchor + round((time - anchor) / target_step) * target_step  # noqa: E731
     else:
         grid = _subdivided(beats, subdivisions)
         tail_step = (grid[-1] - grid[0]) / (len(grid) - 1)
-        position = lambda index: (  # noqa: E731
-            grid[index] if index < len(grid) else grid[-1] + (index - len(grid) + 1) * tail_step
-        )
 
+        def nearest(time: float) -> float:
+            index = min(range(len(grid)), key=lambda position: abs(grid[position] - time))
+            if index == len(grid) - 1 and time > grid[-1]:
+                return grid[-1] + round((time - grid[-1]) / tail_step) * tail_step
+            return grid[index]
+
+    target_step = beat_period / subdivisions
     shifted: list[dict[str, Any]] = []
     shifts: list[float] = []
     for event, time in zip(events, times):
-        aligned = position(round(time / step))
+        aligned = nearest(time)
+        # An event ahead of the first grid line snaps to the line before it,
+        # which can fall before the recording starts; there is no such
+        # position to author, so stay on the first line instead.
+        while aligned < 0.0:
+            aligned += target_step
         shifts.append(aligned - time)
         shifted.append({**event, "time_sec": aligned})
 
     ordered = sorted(shifts)
     midpoint = len(ordered) // 2
     median = ordered[midpoint] if len(ordered) % 2 else (ordered[midpoint - 1] + ordered[midpoint]) / 2.0
-    # A phase offset can legitimately be most of a beat, but it is the same
-    # for every event; a *spread* of more than a beat means the two grids
-    # disagree about how many subdivisions have passed, which is a miscount
-    # rather than a drift to correct. Either bound blown, leave the backend's
-    # events exactly as they came.
     max_shift = max(abs(shift) for shift in shifts)
-    if ordered[-1] - ordered[0] > beat_period or abs(median) > beat_period:
-        return unchanged, None
     return shifted, GridReconciliation(
         step_seconds=step,
         subdivisions_per_beat=subdivisions,

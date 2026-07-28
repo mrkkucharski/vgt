@@ -354,10 +354,10 @@ Before either profile runs, vgt reconciles DrumScript's timeline with the
 beat grid from tempo analysis. DrumScript quantizes its onsets onto a grid it
 fits itself, anchored at the very start of the stem and at its own tempo
 estimate, so its "absolute seconds" begin at the item edge rather than at the
-song's first beat and drift from there. vgt reads each event's position on
-that grid and re-emits it at the same position on the analyzed grid, which is
-what makes the reference MIDI line up with `[vgt] Click` from the first bar to
-the last. If tempo analysis has not run, or the two grids cannot be matched
+song's first beat and drift from there. vgt moves each event to the nearest
+line of the analyzed grid, at the subdivision the backend was using, which is
+what makes the reference MIDI line up with the beat from the first bar to the
+last. If tempo analysis has not run, or the two grids cannot be matched
 confidently, DrumScript's own times are used unchanged. Because the beat grid
 is an input to the result, re-running tempo analysis re-transcribes the drums
 rather than reusing MIDI aligned to the old grid.

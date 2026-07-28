@@ -56,8 +56,8 @@ def test_detect_uniform_step_declines_unquantized_and_tiny_inputs() -> None:
 def test_reconciliation_anchors_on_the_downbeat_and_cancels_backend_drift() -> None:
     """The two failures the user sees: a whole-track head start, and a rate
     error that grows until late notes sit a subdivision away from the beat."""
-    backend_step = 0.2485  # 0.6% fast, four times DrumScript's real drift
-    grid = _grid(bpm=120.0, downbeat=0.4, beats=200)
+    backend_step = 0.249615  # DrumScript's real 7Rivers grid
+    grid = _grid(PROJECT_BPM, PROJECT_DOWNBEAT_S, beats=200)
     events = _backend_eighths(backend_step, range(40))
 
     reconciled, report = reconcile_event_times(events, beat_grid=grid)
@@ -65,14 +65,36 @@ def test_reconciliation_anchors_on_the_downbeat_and_cancels_backend_drift() -> N
     assert report is not None
     assert report.step_seconds == pytest.approx(backend_step)
     assert report.subdivisions_per_beat == 2
-    # Index k of the backend grid becomes index k of the project's, so the
-    # first event moves onto the downbeat and the rest onto exact eighths.
+    # Every event lands on an exact eighth of the project's grid: the first on
+    # the downbeat, and the last with the accumulated drift taken back out.
     assert [event["time_sec"] for event in reconciled] == pytest.approx(
-        [0.4 + index * 0.25 for index in range(40)]
+        [PROJECT_DOWNBEAT_S + index * 30.0 / PROJECT_BPM for index in range(40)]
     )
     # The drift was progressive, so the correction has to be too.
     assert report.max_shift_seconds > abs(report.median_shift_seconds)
     assert [event["instruments"] for event in reconciled] == [["kick"]] * len(events)
+
+
+def test_a_backend_grid_that_slips_a_whole_slot_still_lands_on_the_played_beat() -> None:
+    """The failure this replaced index-counting to fix.
+
+    A backend quantizing to its own slightly-fast grid stays within half a
+    slot of each real hit, but its *count* of slots runs ahead -- here a whole
+    slot by two thirds of the way through. Re-emitting its index on the
+    project grid puts every later note one eighth late; each event has to be
+    matched to the project line it is actually nearest to.
+    """
+    downbeat, project_step, backend_step = 0.085333, 0.249992, 0.249615
+    played = [downbeat + index * project_step for index in range(640)]
+    # What the backend reports: each real hit rounded onto its own grid.
+    events = _events([round(time / backend_step) * backend_step for time in played])
+
+    reconciled, report = reconcile_event_times(
+        events, beat_grid=_grid(120.004, downbeat, beats=400), beat_period_s=2 * project_step
+    )
+
+    assert report is not None
+    assert [event["time_sec"] for event in reconciled] == pytest.approx(played, abs=1e-6)
 
 
 def test_a_fitted_period_ignores_a_single_mistracked_beat() -> None:
@@ -101,15 +123,16 @@ def test_a_fitted_period_ignores_a_single_mistracked_beat() -> None:
 def test_reconciliation_keeps_the_performance_tempo_rather_than_a_mean_step() -> None:
     """The grid is subdivided beat by beat, so a performance that slows down
     keeps its own timing instead of being flattened onto an average."""
-    beats = (0.0, 0.5, 1.0, 1.6, 2.4)  # last two beats are longer
+    beats = (0.0, 0.5, 1.0, 1.5, 2.0, 2.55, 3.1)  # the last two beats are longer
     grid = BeatGridReference(beat_times=beats, downbeat_offset_s=0.0)
-    events = _backend_eighths(0.3, range(8))
+    events = _backend_eighths(0.26, range(12))
 
     reconciled, report = reconcile_event_times(events, beat_grid=grid)
 
     assert report is not None and report.subdivisions_per_beat == 2
+    # The tail follows the slowdown instead of a mean step laid over the song.
     assert [event["time_sec"] for event in reconciled] == pytest.approx(
-        [0.0, 0.25, 0.5, 0.75, 1.0, 1.3, 1.6, 2.0]
+        [0.0, 0.25, 0.5, 0.75, 1.0, 1.25, 1.5, 1.75, 2.0, 2.275, 2.55, 2.825]
     )
 
 
@@ -152,14 +175,15 @@ def test_reconciliation_extrapolates_past_the_last_analyzed_beat() -> None:
     """Drums can outlast the beat tracker's coverage; those events keep the
     correction rather than silently reverting to the backend's timeline."""
     grid = _grid(bpm=120.0, downbeat=0.1, beats=6)  # covers 0.1 .. 2.6 s
-    events = _backend_eighths(0.24, range(16))  # runs to 3.6 s
+    events = _backend_eighths(0.2485, range(16))  # runs to 3.7 s
 
-    reconciled, report = reconcile_event_times(events, beat_grid=grid)
+    for period in (None, 0.5):
+        reconciled, report = reconcile_event_times(events, beat_grid=grid, beat_period_s=period)
 
-    assert report is not None
-    assert [event["time_sec"] for event in reconciled] == pytest.approx(
-        [0.1 + index * 0.25 for index in range(16)]
-    )
+        assert report is not None
+        assert [event["time_sec"] for event in reconciled] == pytest.approx(
+            [0.1 + index * 0.25 for index in range(16)]
+        )
 
 
 def test_7rivers_raw_drumscript_events_land_on_the_beat_after_reconciliation() -> None:

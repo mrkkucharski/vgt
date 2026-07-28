@@ -232,7 +232,7 @@ def test_events_are_authored_on_the_analyzed_beat_grid_not_drumscripts_own(
     assert _note_on_tick(result.midi_path.read_bytes(), 36) == pytest.approx(
         downbeat * 480 * 120.004 / 60.0, abs=1
     )
-    assert any("grid-aligned" in message for message in messages)
+    assert any("snapped to the project beat grid" in message for message in messages)
 
 
 def test_events_keep_drumscripts_timing_when_no_beat_grid_was_analyzed(
