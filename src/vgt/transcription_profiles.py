@@ -50,6 +50,7 @@ from .transcribe import (
     BasicPitchSpec,
     CleanupStage,
     InstrumentProfile,
+    TempoMapReference,
     TranscriptionError,
     VALID_TARGETS,
     _bar_duration_seconds,  # noqa: SLF001 -- reuses the same bars->seconds conversion `default_spec_for_target` applies
@@ -521,6 +522,7 @@ def spec_from_resolved_profile(
     serialization: str = BASIC_PITCH_SERIALIZATION,
     midi_tempo: float | None = None,
     time_signature: str | None = None,
+    tempo_map: TempoMapReference | None = None,
 ) -> BasicPitchSpec:
     """Build the `BasicPitchSpec` a resolved profile (builtin or
     project-local) describes -- the bridge `transcription_profiles.py`'s
@@ -545,5 +547,6 @@ def spec_from_resolved_profile(
         multiple_pitch_bends=detection["multiple_pitch_bends"],
         melodia_trick=detection["melodia_trick"],
         midi_tempo=midi_tempo,
+        tempo_map=tempo_map,
         cleanup=cleanup,
     )
