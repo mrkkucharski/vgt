@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import json
+from dataclasses import replace
+import hashlib
 from pathlib import Path
 from types import SimpleNamespace
 import subprocess
@@ -14,6 +16,8 @@ from vgt.transcribe import (
     ADTOF_CLASS_NAMES,
     ADTOF_PACKAGE_PIN,
     ADTOF_RUNTIME_VERSION,
+    ADTOF_LOCK_SHA256,
+    ADTOF_LOCK_FILENAME,
     ADTOF_TORCH_VERSION,
     AdtofActivationRunner,
     TranscriptionError,
@@ -30,7 +34,9 @@ def _spec():
 def _metadata(spec) -> dict[str, object]:
     return {
         "package_version": spec.package_version, "model_version": spec.model_version,
-        "weights_sha256": spec.weights_sha256, "device": "cpu", "sample_rate": 44100,
+        "weights_sha256": spec.weights_sha256, "runtime_version": "3.11",
+        "torch_version": spec.torch_version.removeprefix("torch=="), "lock_sha256": spec.lock_sha256,
+        "device": "cpu", "sample_rate": 44100,
         "n_fft": 2048, "hop_samples": 441, "fps": 100,
         "class_names": list(ADTOF_CLASS_NAMES), "gm_labels": [35, 38, 47, 42, 49],
     }
@@ -54,16 +60,27 @@ def _successful_run(spec):
 def test_argv_is_pinned_offline_and_runs_only_the_temp_helper(tmp_path: Path) -> None:
     source = tmp_path / "drums.wav"
     source.write_bytes(b"audio")
-    helper, output = tmp_path / "helper.py", tmp_path / "output.npz"
+    helper, output, lock = tmp_path / "helper.py", tmp_path / "output.npz", tmp_path / "requirements.lock"
 
-    argv = build_adtof_argv(source, output, _spec(), helper)
+    argv = build_adtof_argv(source, output, _spec(), helper, lock)
 
     assert argv == [
         "uv", "run", "--offline", "--isolated", "--no-project", "--python", "3.11",
-        "--with", ADTOF_PACKAGE_PIN, "--with", ADTOF_TORCH_VERSION, "python",
-        str(helper), str(source.resolve()), str(output),
+        "--with-requirements", str(lock), "python", str(helper), str(source.resolve()), str(output), ADTOF_LOCK_SHA256,
     ]
     assert ADTOF_RUNTIME_VERSION == "python==3.11"
+    assert ADTOF_TORCH_VERSION == "torch==2.13.0"
+
+
+def test_committed_lock_is_complete_and_matches_the_runtime_identity() -> None:
+    lock = Path(__file__).parents[1] / "src" / "vgt" / ADTOF_LOCK_FILENAME
+
+    assert hashlib.sha256(lock.read_bytes()).hexdigest() == ADTOF_LOCK_SHA256
+    contents = lock.read_text(encoding="utf-8")
+    assert ADTOF_PACKAGE_PIN in contents
+    assert "torch==2.13.0" in contents
+    for dependency in ("librosa==", "pretty-midi==", "numpy==", "scipy=="):
+        assert dependency in contents
 
 
 def test_runner_validates_child_dump_and_cache_reuses_it(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -75,7 +92,7 @@ def test_runner_validates_child_dump_and_cache_reuses_it(tmp_path: Path, monkeyp
     def fake_run(argv, *, cwd, **kwargs):
         nonlocal calls
         calls += 1
-        _write_dump(Path(argv[-1]), _spec())
+        _write_dump(Path(argv[-2]), _spec())
         return SimpleNamespace(returncode=0, stdout="", stderr="")
 
     monkeypatch.setattr(subprocess, "run", fake_run)
@@ -93,6 +110,17 @@ def test_runner_validates_child_dump_and_cache_reuses_it(tmp_path: Path, monkeyp
     assert first.cache_key != adtof_activation_cache_key(_spec(), "different-stem-hash")
 
 
+def test_cache_key_includes_the_locked_runtime_identity() -> None:
+    spec = _spec()
+
+    assert adtof_activation_cache_key(spec, "stem") != adtof_activation_cache_key(
+        replace(spec, lock_sha256="different-lock"), "stem"
+    )
+    assert adtof_activation_cache_key(spec, "stem") != adtof_activation_cache_key(
+        replace(spec, torch_version="torch==2.13.1"), "stem"
+    )
+
+
 @pytest.mark.parametrize(
     ("activations", "metadata", "message"),
     [
@@ -108,7 +136,7 @@ def test_runner_rejects_invalid_raw_activations(tmp_path: Path, monkeypatch: pyt
     monkeypatch.setattr("shutil.which", lambda _: "/usr/bin/uv")
 
     def fake_run(argv, *, cwd, **kwargs):
-        _write_dump(Path(argv[-1]), _spec(), activations, metadata)
+        _write_dump(Path(argv[-2]), _spec(), activations, metadata)
         return SimpleNamespace(returncode=0, stdout="", stderr="")
 
     monkeypatch.setattr(subprocess, "run", fake_run)

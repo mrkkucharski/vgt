@@ -89,9 +89,10 @@ ADTOF_WEIGHTS_SHA256 = "1bc986e596ec47ba0b44916f87cd4a39f0b2bec23596df3fb5d0e877
 # the env once instead of paying the ~35s cold `uvx` build on every run.
 BASIC_PITCH_CMD_ENV = "VGT_BASIC_PITCH_CMD"
 DRUMSCRIPT_CMD_ENV = "VGT_DRUMSCRIPT_CMD"
-ADTOF_CMD_ENV = "VGT_ADTOF_CMD"
 ADTOF_RUNTIME_VERSION = "python==3.11"
 ADTOF_TORCH_VERSION = "torch==2.13.0"
+ADTOF_LOCK_FILENAME = "adtof-requirements.lock"
+ADTOF_LOCK_SHA256 = "c1c0e70cd0ff9f3045536a49940d9a9e8ada6523bd17424c36fd4f40e5ebb3e2"
 ADTOF_TIMEOUT_SECONDS = 120
 ADTOF_CLASS_NAMES = ("bass_drum", "snare_drum", "tom_tom", "hi_hat", "cymbal")
 
@@ -748,6 +749,9 @@ class AdtofSpec:
     model_version: str
     weights_version: str
     weights_sha256: str
+    runtime_version: str
+    torch_version: str
+    lock_sha256: str
     midi_tempo: float | None
     beat_grid: BeatGridReference | None
     tempo_map: "TempoMapReference | None" = None
@@ -757,6 +761,8 @@ class AdtofSpec:
             "backend": self.backend, "package_pin": self.package_pin,
             "package_version": self.package_version, "model_version": self.model_version,
             "weights_version": self.weights_version, "weights_sha256": self.weights_sha256,
+            "runtime_version": self.runtime_version, "torch_version": self.torch_version,
+            "lock_sha256": self.lock_sha256,
             "midi_tempo": self.midi_tempo,
             "beat_grid": {"beat_times": list(self.beat_grid.beat_times), "downbeat_offset_s": self.beat_grid.downbeat_offset_s}
             if self.beat_grid else None,
@@ -886,7 +892,8 @@ def default_spec_for_target(
         return AdtofSpec(
             backend="adtof", package_pin=ADTOF_PACKAGE_PIN, package_version=ADTOF_PACKAGE_VERSION,
             model_version=ADTOF_MODEL_VERSION, weights_version=ADTOF_WEIGHTS_VERSION,
-            weights_sha256=ADTOF_WEIGHTS_SHA256, midi_tempo=midi_tempo,
+            weights_sha256=ADTOF_WEIGHTS_SHA256, runtime_version=ADTOF_RUNTIME_VERSION,
+            torch_version=ADTOF_TORCH_VERSION, lock_sha256=ADTOF_LOCK_SHA256, midi_tempo=midi_tempo,
             beat_grid=BeatGridReference(tuple(float(time) for time in beat_times), downbeat_offset_s) if beat_times else None,
             tempo_map=tempo_map,
         )
@@ -2374,6 +2381,9 @@ class AdtofActivationRunner:
         source = source.resolve()
         if not source.is_file():
             raise TranscriptionError("drum stem is not a readable file")
+        source_lock = Path(__file__).with_name(ADTOF_LOCK_FILENAME)
+        if _sha256_file(source_lock) != spec.lock_sha256:
+            raise TranscriptionError("ADTOF dependency lock does not match the pinned runtime identity")
         stem_hash = _sha256_file(source)
         cache_key = adtof_activation_cache_key(spec, stem_hash)
         cache_path = self.cache_dir / f"{cache_key}.npz" if self.cache_dir is not None else None
@@ -2391,18 +2401,20 @@ class AdtofActivationRunner:
         if shutil.which(argv_prefix[0]) is None:
             raise TranscriptionError(
                 f"{argv_prefix[0]!r} is not on PATH; install uv and pre-fetch the pinned ADTOF environment, "
-                f"or set {ADTOF_CMD_ENV} to a prebuilt isolated runner"
+                "including its committed dependency lock"
             )
         emit = progress or (lambda _message: None)
         emit(f"extracting raw activations (adtof): {source.name}")
         with tempfile.TemporaryDirectory(prefix="vgt-adtof-") as temporary:
             work_dir = Path(temporary)
             helper = work_dir / "adtof_inference.py"
+            lock = work_dir / ADTOF_LOCK_FILENAME
             output = work_dir / "activations.npz"
             try:
                 shutil.copyfile(Path(__file__).with_name("_adtof_subprocess.py"), helper)
+                shutil.copyfile(source_lock, lock)
                 completed = subprocess.run(
-                    build_adtof_argv(source, output, spec, helper), cwd=work_dir,
+                    build_adtof_argv(source, output, spec, helper, lock), cwd=work_dir,
                     capture_output=True, text=True, timeout=self.timeout_seconds, errors="replace",
                 )
             except subprocess.TimeoutExpired as exc:
@@ -2444,34 +2456,29 @@ def adtof_activation_cache_key(spec: AdtofSpec, stem_hash: str) -> str:
         "model_version": spec.model_version,
         "weights_version": spec.weights_version,
         "weights_sha256": spec.weights_sha256,
+        "runtime_version": spec.runtime_version,
+        "torch_version": spec.torch_version,
+        "lock_sha256": spec.lock_sha256,
         "stem_sha256": stem_hash,
     }
     return hashlib.sha256(json.dumps(identity, sort_keys=True, separators=(",", ":")).encode("utf-8")).hexdigest()
 
 
 def _adtof_base_command(spec: AdtofSpec) -> list[str]:
-    override = os.environ.get(ADTOF_CMD_ENV)
-    if override:
-        try:
-            parts = shlex.split(override)
-        except ValueError as exc:
-            raise TranscriptionError(f"{ADTOF_CMD_ENV} is not a valid shell command: {exc}") from exc
-        if parts:
-            return parts
     # ``--offline`` is intentional.  The package and bundled checkpoint must
-    # be pre-fetched; inference itself is never permitted to reach the network.
+    # be pre-fetched; the complete committed lock makes inference independent
+    # of whichever versions happen to be in a machine's uv cache.
     return [
         "uv", "run", "--offline", "--isolated", "--no-project",
-        "--python", ADTOF_RUNTIME_VERSION.removeprefix("python=="),
-        "--with", spec.package_pin, "--with", ADTOF_TORCH_VERSION, "python",
+        "--python", spec.runtime_version.removeprefix("python=="),
     ]
 
 
-def build_adtof_argv(source: Path, output: Path, spec: AdtofSpec, helper: Path) -> list[str]:
+def build_adtof_argv(source: Path, output: Path, spec: AdtofSpec, helper: Path, lock: Path) -> list[str]:
     """Build the pinned, network-disabled subprocess command without executing it."""
     if spec.backend != "adtof":
         raise TranscriptionError(f"AdtofActivationRunner cannot build argv for backend {spec.backend!r}")
-    return [*_adtof_base_command(spec), str(helper), str(source.resolve()), str(output)]
+    return [*_adtof_base_command(spec), "--with-requirements", str(lock), "python", str(helper), str(source.resolve()), str(output), spec.lock_sha256]
 
 
 def load_adtof_activation_dump(path: Path, spec: AdtofSpec) -> tuple[Any, dict[str, Any]]:
@@ -2501,6 +2508,9 @@ def load_adtof_activation_dump(path: Path, spec: AdtofSpec) -> tuple[Any, dict[s
         "package_version": spec.package_version,
         "model_version": spec.model_version,
         "weights_sha256": spec.weights_sha256,
+        "runtime_version": spec.runtime_version.removeprefix("python=="),
+        "torch_version": spec.torch_version.removeprefix("torch=="),
+        "lock_sha256": spec.lock_sha256,
         "device": "cpu",
         "sample_rate": 44100,
         "n_fft": 2048,

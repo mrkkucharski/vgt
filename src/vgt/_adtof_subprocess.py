@@ -11,6 +11,7 @@ import hashlib
 import importlib.metadata
 import json
 from pathlib import Path
+import sys
 
 import numpy as np
 import torch
@@ -29,9 +30,9 @@ def _sha256(path: Path) -> str:
 
 
 def main(argv: list[str]) -> None:
-    if len(argv) != 3:
-        raise SystemExit("usage: _adtof_subprocess.py INPUT.wav OUTPUT.npz")
-    source, output = (Path(value).resolve() for value in argv[1:])
+    if len(argv) != 4:
+        raise SystemExit("usage: _adtof_subprocess.py INPUT.wav OUTPUT.npz LOCK_SHA256")
+    source, output = (Path(value).resolve() for value in argv[1:3])
     if not source.is_file():
         raise SystemExit("input drum stem is not a readable file")
 
@@ -51,6 +52,9 @@ def main(argv: list[str]) -> None:
         "package_version": importlib.metadata.version("adtof-pytorch"),
         "model_version": "Frame_RNN",
         "weights_sha256": _sha256(weights),
+        "runtime_version": f"{sys.version_info.major}.{sys.version_info.minor}",
+        "torch_version": torch.__version__,
+        "lock_sha256": argv[3],
         "device": "cpu",
         "sample_rate": 44100,
         "n_fft": 2048,
