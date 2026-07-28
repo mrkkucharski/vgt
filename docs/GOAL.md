@@ -45,12 +45,14 @@ behavior, non-invasive tempo fallback, raw-detection cache reuse, exact
 discarded-artifact/cache cleanup, paid-work refusal without explicit
 non-interactive consent, no duplicate paid submission after
 checkpoint recovery, credential non-persistence, and preservation of user
-tracks plus a simulated `[work]` copy. It is part of the automatic
-`Tests` workflow, which runs on every push and pull request (and may also be
-manually dispatched). The Linux job runs the complete offline suite; a separate
-macOS installed-distribution smoke job remains covered by the same workflow.
-Both deliberately require no credentials, network access, model downloads, or
-live REAPER.
+tracks plus a simulated `[work]` copy. It is run locally as the source of truth
+for the offline acceptance suite. The retained `Tests` workflow is configured
+for push, pull-request, and manual-dispatch triggers, but hosted GitHub Actions
+is not operational for this hobby project because hosted runners are blocked by
+account billing. If hosted CI is restored, its Linux job runs the complete
+offline suite and its separate macOS job runs an installed-distribution smoke
+test. Both deliberately require no credentials, network access, model
+downloads, or live REAPER.
 
 ## Permanent invariants
 

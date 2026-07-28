@@ -38,12 +38,15 @@ Run the full offline suite:
 uv run pytest -q
 ```
 
-CI runs the same tests with mocked LALAL API v1 fixtures; it does not receive
+The local suite uses mocked LALAL API v1 fixtures; it does not receive
 credentials or make live LALAL requests.
 
-GitHub Actions runs this offline regression suite automatically for every push
-and pull request, as well as on manual dispatch. It uses Python 3.11 on Linux
-and Lua 5.4 only to execute mocked ReaScript fixtures. Every test gets isolated
+Run this offline regression suite locally as the source of truth. The retained
+GitHub Actions workflow is configured for push, pull-request, and
+manual-dispatch triggers. It uses Python 3.11 on Linux and Lua 5.4 only to
+execute mocked ReaScript fixtures. Hosted Actions is currently non-operational
+for this hobby project because hosted runners are blocked by account billing, so
+it is not relied upon for verification. Every test gets isolated
 pytest temporary paths; the runner fixes UTC, the C.UTF-8 locale, Python hash
 ordering, pytest plugin loading, BLAS/Numba worker counts, and the Lua
 executable. The suite covers the
@@ -55,7 +58,8 @@ requests, downloads model environments, starts REAPER, or requires human
 verification. `tests/test_analysis.py` mocks the expensive real-MP3 detector
 calls while testing orchestration and sidecar behavior; the focused
 tempo/key/section/chord detector tests retain their small local audio fixtures.
-The automatic Linux job runs the complete suite, including the executable
-`tests/test_goal_contract.py` acceptance contract. A separate macOS job builds
-the wheel and smoke-tests the documented installed-distribution path. Each job
-has a bounded timeout, and newer runs cancel superseded runs for the same ref.
+When hosted CI is restored, its Linux job runs the complete suite, including
+the executable `tests/test_goal_contract.py` acceptance contract. A separate
+macOS job builds the wheel and smoke-tests the documented
+installed-distribution path. Each job has a bounded timeout, and newer runs
+cancel superseded runs for the same ref.

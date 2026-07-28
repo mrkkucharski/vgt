@@ -36,9 +36,9 @@ document any required user verification in the relevant user-facing guidance.
 
 ## Do not rely on GitHub Actions / CI
 
-**GitHub Actions is non-functional on this account** (hosted-runner jobs fail
-instantly on a billing block — see issue #195, which is `status:blocked` pending
-a human billing fix). Until a human resolves it:
+**GitHub Actions is non-functional on this account**: hosted-runner jobs fail
+instantly on an account billing block. The owner has decided that this
+non-commercial hobby project will not rely on GitHub Actions; see issue #195.
 
 - **Do not depend on CI to prove your work.** Run the full offline suite
   **locally** (`pytest`, the goal contract in `tests/test_goal_contract.py`,
