@@ -1321,6 +1321,19 @@ def _varlen(value: int) -> bytes:
     return bytes(reversed(chunks))
 
 
+def _fitted_beat_period_s(spec: "DrumScriptSpec | AdtofSpec") -> float | None:
+    """The one beat period to author drum events against, or None.
+
+    Only a constant grid has one: `tempo_map_reference` returns a map exactly
+    when the tempo stage found the song *piecewise*, and there the detected
+    per-beat variation is the intended timeline. See `vgt.drum_grid` for why
+    the fitted period beats the individually noisy `beat_times` array.
+    """
+    if spec.tempo_map is not None or not spec.midi_tempo or spec.midi_tempo <= 0:
+        return None
+    return 60.0 / spec.midi_tempo
+
+
 def seconds_to_quarter_notes(seconds: float, tempo_bpm: float, tempo_map: TempoMapReference | None = None) -> float:
     """Map a reference-relative second to REAPER's project QN coordinate.
 
@@ -1420,7 +1433,9 @@ class FakeTranscriber:
             tempo_bpm = spec.midi_tempo or 120.0
             # Same seam as the real backend, so the offline suite exercises
             # grid reconciliation rather than a path that skips it.
-            events, _reconciliation = reconcile_event_times(events, beat_grid=spec.beat_grid)
+            events, _reconciliation = reconcile_event_times(
+                events, beat_grid=spec.beat_grid, beat_period_s=_fitted_beat_period_s(spec)
+            )
             if isinstance(spec, AdtofSpec) or spec.cleanup_profile == "default":
                 drum_notes = [
                     (event["time_sec"], event["time_sec"] + 0.1, DRUMSCRIPT_INSTRUMENTS[event["instruments"][0]], 100)
@@ -2382,7 +2397,9 @@ class DrumScriptTranscriber:
                 # beat tracker's grid, anchored at 0.0 and at its own tempo,
                 # so its "absolute seconds" start at the item edge instead of
                 # the first beat and drift from there (see `vgt.drum_grid`).
-                raw_events, reconciliation = reconcile_event_times(raw_events, beat_grid=spec.beat_grid)
+                raw_events, reconciliation = reconcile_event_times(
+                    raw_events, beat_grid=spec.beat_grid, beat_period_s=_fitted_beat_period_s(spec)
+                )
                 if reconciliation is not None:
                     emit(f"drum events {reconciliation.describe()}")
                 destination_dir.mkdir(parents=True, exist_ok=True)

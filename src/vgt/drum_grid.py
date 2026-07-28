@@ -115,9 +115,10 @@ def _grid_beats(beat_grid: BeatGridReference) -> tuple[float, ...]:
 def _subdivided(beats: Sequence[float], subdivisions: int) -> list[float]:
     """Beat times split into `subdivisions` equal parts each.
 
-    Subdividing each measured beat interval separately (rather than laying a
-    single mean step over the song) keeps the corrected onsets on the tempo
-    the performance actually had, drift included.
+    Used only when no fitted tempo is available (see `reconcile_event_times`):
+    each measured beat interval is subdivided separately, so a genuinely
+    varying tempo is followed -- at the cost of following the beat tracker's
+    per-beat noise too.
     """
     grid: list[float] = []
     for left, right in zip(beats, beats[1:]):
@@ -128,9 +129,22 @@ def _subdivided(beats: Sequence[float], subdivisions: int) -> list[float]:
 
 
 def reconcile_event_times(
-    events: Sequence[Mapping[str, Any]], *, beat_grid: BeatGridReference | None
+    events: Sequence[Mapping[str, Any]],
+    *,
+    beat_grid: BeatGridReference | None,
+    beat_period_s: float | None = None,
 ) -> tuple[list[dict[str, Any]], GridReconciliation | None]:
     """Move `events` onto `beat_grid`, or return them unchanged.
+
+    `beat_period_s` is the *fitted* beat period, passed when the tempo stage
+    concluded the song runs at one constant tempo. Prefer it: the detected
+    `beat_times` are individually noisy (on 7Rivers, eight of the 355 beats sit
+    more than 50 ms off the fitted line, one by 140 ms), and placing notes on
+    the raw array copies each of those local errors straight into the MIDI.
+    The fitted line anchored at the analyzed downbeat is both smoother and
+    closer to the audio, and it is the same grid REAPER's tempo map applies.
+    Without it -- a piecewise grid, where the variation is the point -- the
+    measured beats are subdivided as they came.
 
     Returns `(events, None)` -- copies, never the inputs -- whenever any
     precondition for a trustworthy correction is missing.
@@ -147,7 +161,7 @@ def reconcile_event_times(
     if step is None:
         return unchanged, None
 
-    beat_period = (beats[-1] - beats[0]) / (len(beats) - 1)
+    beat_period = beat_period_s if beat_period_s and beat_period_s > 0 else (beats[-1] - beats[0]) / (len(beats) - 1)
     subdivisions = round(beat_period / step)
     if subdivisions < 1 or abs(beat_period / (subdivisions * step) - 1.0) > TEMPO_AGREEMENT_TOLERANCE:
         return unchanged, None
@@ -157,13 +171,23 @@ def reconcile_event_times(
     if beats[0] > min(times) + beat_period:
         return unchanged, None
 
-    grid = _subdivided(beats, subdivisions)
-    tail_step = (grid[-1] - grid[0]) / (len(grid) - 1)
+    if beat_period_s and beat_period_s > 0:
+        # One fitted tempo from the analyzed downbeat: every index has a
+        # position, so there is nothing to extrapolate past either.
+        anchor = beat_grid.downbeat_offset_s if beat_grid.downbeat_offset_s is not None else beats[0]
+        target_step = beat_period_s / subdivisions
+        position = lambda index: anchor + index * target_step  # noqa: E731
+    else:
+        grid = _subdivided(beats, subdivisions)
+        tail_step = (grid[-1] - grid[0]) / (len(grid) - 1)
+        position = lambda index: (  # noqa: E731
+            grid[index] if index < len(grid) else grid[-1] + (index - len(grid) + 1) * tail_step
+        )
+
     shifted: list[dict[str, Any]] = []
     shifts: list[float] = []
     for event, time in zip(events, times):
-        index = round(time / step)
-        aligned = grid[index] if index < len(grid) else grid[-1] + (index - len(grid) + 1) * tail_step
+        aligned = position(round(time / step))
         shifts.append(aligned - time)
         shifted.append({**event, "time_sec": aligned})
 

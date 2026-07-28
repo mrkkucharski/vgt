@@ -75,6 +75,29 @@ def test_reconciliation_anchors_on_the_downbeat_and_cancels_backend_drift() -> N
     assert [event["instruments"] for event in reconciled] == [["kick"]] * len(events)
 
 
+def test_a_fitted_period_ignores_a_single_mistracked_beat() -> None:
+    """The detected `beat_times` are individually noisy -- on 7Rivers eight
+    beats sit >50 ms off the fitted line. Authoring onto the raw array copies
+    each of those local errors into the MIDI (the notes then follow the click's
+    own hiccup instead of the drummer), so a constant grid authors against the
+    fitted period instead."""
+    beats = [0.1 + index * 0.5 for index in range(40)]
+    beats[8] -= 0.07  # the beat tracker fired early on one beat
+    grid = BeatGridReference(beat_times=tuple(beats), downbeat_offset_s=0.1)
+    events = _backend_eighths(0.2496, range(32))
+
+    on_measured, _ = reconcile_event_times(events, beat_grid=grid)
+    on_fitted, report = reconcile_event_times(events, beat_grid=grid, beat_period_s=0.5)
+
+    assert report is not None
+    # Index 16 is that beat. The measured array drags the note off with it.
+    assert on_measured[16]["time_sec"] == pytest.approx(4.03)
+    assert on_fitted[16]["time_sec"] == pytest.approx(4.1)
+    assert [event["time_sec"] for event in on_fitted] == pytest.approx(
+        [0.1 + index * 0.25 for index in range(32)]
+    )
+
+
 def test_reconciliation_keeps_the_performance_tempo_rather_than_a_mean_step() -> None:
     """The grid is subdivided beat by beat, so a performance that slows down
     keeps its own timing instead of being flattened onto an average."""
@@ -154,7 +177,7 @@ def test_7rivers_raw_drumscript_events_land_on_the_beat_after_reconciliation() -
     truth = instrument_onsets(truth_notes)
     grid = _grid(PROJECT_BPM, PROJECT_DOWNBEAT_S, beats=400)
 
-    reconciled, report = reconcile_event_times(raw, beat_grid=grid)
+    reconciled, report = reconcile_event_times(raw, beat_grid=grid, beat_period_s=60.0 / PROJECT_BPM)
 
     assert report is not None
     assert report.step_seconds == pytest.approx(0.249615, abs=1e-5)

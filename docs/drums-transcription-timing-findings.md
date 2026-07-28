@@ -295,7 +295,15 @@ sounded better than `drums-clean`.
 
 **Fix:** `vgt.drum_grid` reads each event's index off the backend's own step
 and re-emits it at that index on the analyzed beat grid, before either
-profile runs; `beat_grid` is now part of every drums spec's identity, so
+profile runs. For a constant grid the target positions come from the *fitted*
+tempo anchored at the analyzed downbeat, not from the raw `beat_times` array:
+individual detected beats are noisy (eight of 7Rivers' 355 sit more than 50 ms
+off the fitted line, one by 140 ms), and authoring onto the array copies each
+of those local errors into the MIDI -- the notes then follow the beat
+tracker's hiccup instead of the drummer. Measured against stem onsets, the
+fitted line has 2 beats >50 ms out where the raw array has 8. A piecewise
+grid, where the variation is the intended timeline, still subdivides the
+measured beats. `beat_grid` is now part of every drums spec's identity, so
 re-analysing the tempo invalidates MIDI authored against the old grid. Index
 mapping rather than nearest-line snapping is what keeps the late notes right
 once drift exceeds half a subdivision. Every precondition is guarded (an
