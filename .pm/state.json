@@ -1,10 +1,10 @@
 {
-  "current_issue": 193,
-  "session_id": "de9f601d-decd-4080-a554-8f8676b23e38",
-  "pid": 95828,
-  "process_started_at": "Tue Jul 28 18:26:34 2026",
-  "agent": "codex",
-  "started_at": "2026-07-28T16:26:32.657527+00:00",
+  "current_issue": 195,
+  "session_id": "8fd02478-709b-40f2-913b-6684a17f9b6c",
+  "pid": 97341,
+  "process_started_at": "Tue Jul 28 18:35:46 2026",
+  "agent": "claude",
+  "started_at": "2026-07-28T16:35:44.786988+00:00",
   "scheduler_stalls": {},
   "budget": {
     "window_start": "2026-07-28T16:13:40.657375+00:00",
@@ -15,15 +15,27 @@
   "verification_followups": {
     "f0d8bfc9d2dc6da7a31609184e25c4d66d3986fd2340b33a83e98204fb86691e": "created"
   },
-  "role": "review",
-  "branch": "issue-193-drum-reference-midi-plays-2-compressed-a",
-  "worktree_path": "/Users/marekkucharski/projects/.pm-worktrees/vgt/issue-193",
-  "pr_number": 194,
+  "role": "implement",
+  "branch": "issue-195-restore-operational-automatic-tests-work",
+  "worktree_path": "/Users/marekkucharski/projects/.pm-worktrees/vgt/issue-195",
+  "pr_number": null,
   "followup_generation": {
-    "fingerprint": "03ddd047aeef54213198b0c667b3cc710ef15f2b004e51cfcdc33daf78485f6a",
+    "fingerprint": "eef3ed07ced05e409d8e46a7df750bd9186dc49d076ac58bb4bab5a96557ba52",
     "items": {
-      "daa5d94e8c7a68ffb68f1b9caa476ef99c72e6c4f4df2f303a36674ef2bad421": {
-        "title": "Correct the reference-transcription backend contract in GOAL.md",
+      "7242cda98f5eb478e7c6bcbb0d9c02ac6de0861853087c125ed2f0a8dd2c7fdb": {
+        "title": "Restore operational automatic Tests workflows",
+        "status": "created"
+      },
+      "8d491cd73a29b8a0f93926f27f1336feb3b60e323d0e09412a3672dea4008e6f": {
+        "title": "Make reference MIDI follow variable tempo grids",
+        "status": "created"
+      },
+      "44c2560c9764a49952435a2bc002ed2fb9d0ce7191a67607bee0b9f13d9d2b14": {
+        "title": "Add drum playback timing to the goal contract",
+        "status": "created"
+      },
+      "8a8f380ee2a216713269e868fdc24e62f3370ae0e5cd8591ee432838bc5cc99f": {
+        "title": "Correct DrumScript timing and velocity documentation",
         "status": "created"
       }
     }
@@ -56,13 +68,13 @@
     "185": 1
   },
   "pending_transition": {
-    "issue": 193,
+    "issue": 195,
     "target": "working",
-    "event": "agent.review_started",
+    "event": "agent.started",
     "detail": {
-      "issue": 193,
-      "agent": "codex",
-      "pr": 194
+      "issue": 195,
+      "agent": "claude",
+      "branch": "issue-195-restore-operational-automatic-tests-work"
     },
     "cleanup": {}
   }
