@@ -219,6 +219,76 @@ def test_audio_onset_evidence_source_is_a_safe_no_op_for_an_unreadable_file(tmp_
     assert evidence.available is False
 
 
+def _synthetic_envelope_with_one_dominant_transient() -> tuple[list[float], float, int, list[int], list[int]]:
+    """A deterministic onset-strength envelope shaped like the reported
+    7Rivers failure mode: mostly quiet background, many moderate (but
+    genuine) onsets spread across the whole file, and a couple of loud
+    transients (crashes/fills) tens of times louder than everything else --
+    the same "a few loud transients dominate the maximum" shape measured on
+    the real stem (~659 events, a handful of standout crashes). Returns
+    `(envelope, sr, hop_length, moderate_frames, dominant_frames)`."""
+    hop_length = 512
+    sr = 22050.0
+    length = 6000
+    # Small deterministic jitter, not a flat plateau, so a query centered on
+    # background alone never lands on an exact tie (which the ambiguous-peak
+    # check would -- correctly -- treat as "no evidence" regardless of
+    # normalization, rather than exercising the baseline/scale math at all).
+    envelope = [0.05 + (index % 3) * 0.001 for index in range(length)]
+    moderate_frames = list(range(100, 5900, 40))  # ~145 genuine, moderate onsets
+    for frame in moderate_frames:
+        envelope[frame] = 1.0
+    dominant_frames = [3005, 4505]  # off the moderate-onset stride so they never collide
+    for frame in dominant_frames:
+        envelope[frame] = 20.0
+    return envelope, sr, hop_length, moderate_frames, dominant_frames
+
+
+def test_local_prominence_normalization_does_not_collapse_with_one_dominant_transient() -> None:
+    """Issue #183 regression: a couple of loud transients must not drag
+    every other genuine, quieter onset's strength down toward zero the way
+    plain global-max normalization did."""
+    envelope, sr, hop_length, moderate_frames, dominant_frames = _synthetic_envelope_with_one_dominant_transient()
+    frame_time = hop_length / sr
+
+    source = AudioOnsetEvidenceSource(Path("unused.wav"), hop_length=hop_length)
+    source._prepare_envelope(envelope, sr)
+
+    for frame in moderate_frames:
+        evidence = source.evidence_near(frame * frame_time, 0.05)
+        assert evidence.available is True
+        # What the old `peak / global_envelope_max` formula would have given
+        # for this same moderate onset -- the exact collapse this issue fixes.
+        old_global_max_strength = envelope[frame] / max(envelope)
+        assert old_global_max_strength < CLEAN.suppression_strength_threshold
+        # The new local-prominence strength must clear both thresholds, i.e.
+        # neither suppressed nor treated as absent for alignment/velocity.
+        assert evidence.strength > CLEAN.suppression_strength_threshold
+        assert evidence.strength >= CLEAN.min_evidence_strength
+
+    for frame in dominant_frames:
+        dominant_evidence = source.evidence_near(frame * frame_time, 0.05)
+        assert dominant_evidence.strength == pytest.approx(1.0)
+
+
+def test_local_prominence_normalization_still_treats_true_silence_as_weak() -> None:
+    """The fix must not simply inflate every strength to 1.0 -- a frame with
+    no local excess over its own background must still score near zero."""
+    envelope, sr, hop_length, _moderate_frames, _dominant_frames = _synthetic_envelope_with_one_dominant_transient()
+    frame_time = hop_length / sr
+    quiet_frame = 20  # far from every spike, pure background level
+
+    source = AudioOnsetEvidenceSource(Path("unused.wav"), hop_length=hop_length)
+    source._prepare_envelope(envelope, sr)
+
+    evidence = source.evidence_near(quiet_frame * frame_time, 0.05)
+    # Background jitter this close together is itself ambiguous (no single
+    # confident peak) -- either "no evidence" or a strength at/below the
+    # suppression bar is the safe, conservative outcome; never a confident
+    # high strength.
+    assert evidence.available is False or evidence.strength <= CLEAN.suppression_strength_threshold
+
+
 def test_audio_onset_evidence_source_finds_a_strong_local_transient(tmp_path: Path) -> None:
     import numpy as np
     import soundfile as sf

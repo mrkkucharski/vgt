@@ -39,8 +39,8 @@ CLEAN_PROFILE_NAME = "drums-clean"
 CLEAN_SIMULTANEITY_WINDOW_S = 0.008  # coincident-onset coalescing window; observed evidence: intended-simultaneous notes differed by one MIDI tick (~2ms at 480 PPQN/120 BPM) -- this is a generous multiple of that, still well under a 16th note
 CLEAN_ALIGNMENT_WINDOW_S = 0.03  # bounded local search radius for audio-aware timing correction; never moves an onset further than this
 CLEAN_STATIC_OFFSET_S = 0.0  # explicit, opt-in-only static latency correction; 0.0 means "none" -- see issue #177's "no universal 7Rivers-derived latency offset" requirement
-CLEAN_MIN_EVIDENCE_STRENGTH = 0.35  # local evidence below this normalized strength is treated as absent, not weak
-CLEAN_SUPPRESSION_STRENGTH_THRESHOLD = 0.12  # only suppress an event when local evidence is this weak (reproducible, not a guess)
+CLEAN_MIN_EVIDENCE_STRENGTH = 0.30  # local evidence below this normalized strength is treated as absent, not weak -- retuned for issue #183's local-prominence normalization (see AudioOnsetEvidenceSource), under which even quiet-but-real hits typically score >=0.3 while true silence scores ~0.0
+CLEAN_SUPPRESSION_STRENGTH_THRESHOLD = 0.12  # only suppress an event when local evidence is this weak (reproducible, not a guess) -- unchanged: under the new normalization this still cleanly separates true silence (~0.0) from genuine hits
 CLEAN_VELOCITY_FLOOR = 30
 CLEAN_VELOCITY_CEILING = 120
 
@@ -193,12 +193,31 @@ class AudioOnsetEvidenceSource:
     audio (missing librosa, unreadable file, degenerate/silent signal)
     leaves this source returning "no evidence" for every lookup, which is
     this module's documented safe fallback -- not a special case backends
-    must additionally handle."""
+    must additionally handle.
+
+    Strength is a *local, relative prominence*, not a fraction of the
+    song-wide loudest transient (issue #183: a handful of loud crashes/fills
+    used to make every genuine but quieter hit score near zero). Each frame
+    is compared against its own rolling local baseline and local spread (a
+    classic adaptive onset threshold: local median plus a multiple of the
+    local median absolute deviation, e.g. Bello et al.'s spectral-flux
+    onset detection), so both a quiet verse's real hits (judged against that
+    verse's quiet floor) and a busy, densely-hit passage (judged against
+    that passage's own typical hit-to-hit variation, not a song-wide
+    constant) score on their own local terms -- robust to the few outlier
+    transients that dominated a plain global max, and to a fixed baseline
+    window being swamped by dense, evenly-loud hits.
+    """
+
+    _BASELINE_RADIUS_S = 0.5  # local ambient-loudness/spread window (seconds, each side)
+    _PROMINENCE_SCALE_MAD_MULTIPLE = 8.0  # multiple of local MAD treated as "a clear hit's excess"
 
     def __init__(self, source: Path, *, hop_length: int = 512) -> None:
         self._source = source
         self._hop_length = hop_length
         self._envelope = None
+        self._baseline = None
+        self._prominence_scale = None
         self._sr: float | None = None
         self._load()
 
@@ -212,7 +231,25 @@ class AudioOnsetEvidenceSource:
             return
         if envelope is None or len(envelope) == 0 or not float(max(envelope)) > 0:
             return
+        self._prepare_envelope(envelope, sr)
+
+    def _prepare_envelope(self, envelope: Any, sr: float) -> None:
+        """Precompute the rolling local baseline and local prominence scale
+        (one value per frame) for `envelope`. Split out from `_load` so
+        deterministic tests can inject a synthetic envelope directly,
+        without a real audio file."""
+        import numpy as np
+
+        frame_time = self._hop_length / float(sr)
+        radius = max(1, int(round(self._BASELINE_RADIUS_S / frame_time)))
+        envelope_array = np.asarray(envelope, dtype=float)
+        padded = np.pad(envelope_array, radius, mode="edge")
+        windows = np.lib.stride_tricks.sliding_window_view(padded, 2 * radius + 1)
+        baseline = np.median(windows, axis=1)
+        local_mad = np.median(np.abs(windows - baseline[:, None]), axis=1)
         self._envelope = envelope
+        self._baseline = baseline
+        self._prominence_scale = np.maximum(self._PROMINENCE_SCALE_MAD_MULTIPLE * local_mad, 1e-9)
         self._sr = float(sr)
 
     def evidence_near(self, time_sec: float, window_s: float) -> OnsetEvidence:
@@ -226,15 +263,16 @@ class AudioOnsetEvidenceSource:
         if hi <= lo:
             return OnsetEvidence(time_sec=None, strength=None)
         window = self._envelope[lo:hi]
-        envelope_max = float(max(self._envelope))
         peak_offset = max(range(len(window)), key=lambda index: window[index])
         peak_value = float(window[peak_offset])
         sorted_values = sorted((float(value) for value in window), reverse=True)
         if len(sorted_values) > 1 and sorted_values[0] > 0 and (sorted_values[1] / sorted_values[0]) > 0.9:
             # Two comparably strong local peaks in the same window: ambiguous.
             return OnsetEvidence(time_sec=None, strength=None)
-        strength = _clamp(peak_value / envelope_max, 0.0, 1.0)
-        return OnsetEvidence(time_sec=(lo + peak_offset) * frame_time, strength=strength)
+        peak_index = lo + peak_offset
+        prominence = peak_value - float(self._baseline[peak_index])
+        strength = _clamp(prominence / float(self._prominence_scale[peak_index]), 0.0, 1.0)
+        return OnsetEvidence(time_sec=peak_index * frame_time, strength=strength)
 
 
 @dataclass(frozen=True)

@@ -62,7 +62,7 @@ when its own evidence is absent or ambiguous:
    0.03s`, ±30ms): looks for a local audio onset-strength peak near each
    group's time. Only moves the event when a peak is found, is unambiguous
    (no comparably strong second peak in the same window), and its strength
-   is at least `CLEAN_MIN_EVIDENCE_STRENGTH = 0.35`. The result is clamped
+   is at least `CLEAN_MIN_EVIDENCE_STRENGTH = 0.30`. The result is clamped
    to stay within the window and never below `time_sec = 0.0` (source-start
    safe). An optional static offset (`CLEAN_STATIC_OFFSET_S`) is applied
    before the search and is part of this profile's identity — it defaults
@@ -107,7 +107,15 @@ reads through an `OnsetEvidenceSource`:
   librosa onset-strength envelope of the drum stem. Never raises — any
   failure to load or analyze the audio (missing file, degenerate/silent
   signal) leaves it reporting "no evidence" for every lookup, which is this
-  module's normal, tested no-op path, not a special case.
+  module's normal, tested no-op path, not a special case. Strength is a
+  *local, relative prominence* (issue #183), a classic adaptive onset
+  threshold: each frame is compared to its own rolling local median (a
+  0.5s-radius baseline) and scaled by a multiple of that same window's local
+  median absolute deviation — not a fraction of the single loudest transient
+  in the whole file, which used to make every quieter but genuine hit score
+  near zero once one loud crash or fill was present, and not a song-wide
+  scale, which a dense, evenly-loud passage (e.g. continuous hi-hats) would
+  otherwise wash out.
 - `TableOnsetEvidenceSource` (tests): deterministic, precomputed
   `(time, strength)` candidates, used to exercise strong, weak, and
   ambiguous evidence without decoding real audio.
