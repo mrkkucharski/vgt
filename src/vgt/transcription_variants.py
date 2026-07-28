@@ -318,6 +318,7 @@ def _transcribed_drumscript_variant(
         # DrumScript's MIDI tempo is detected from its own output, unlike
         # Basic Pitch's, which is an input setting -- see
         # `vgt.transcribe.transcribed_entry`'s identical distinction.
+        "backend_tempo": result.backend_tempo,
         "midi_tempo": result.midi_tempo,
         "status": "transcribed",
         "midi_file": variant_midi_name(target, request.variant_id),
