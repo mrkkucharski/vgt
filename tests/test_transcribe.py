@@ -8,6 +8,10 @@ import pytest
 
 from vgt.transcribe import (
     BasicPitchSpec,
+    AdtofSpec,
+    ADTOF_PACKAGE_VERSION,
+    ADTOF_MODEL_VERSION,
+    ADTOF_WEIGHTS_VERSION,
     BasicPitchTranscriber,
     CleanupStage,
     DrumScriptSpec,
@@ -25,6 +29,7 @@ from vgt.transcribe import (
     GUITAR_MIN_NOTE_DURATION_AFTER_CAP_S,
     VALID_TARGETS,
     FakeTranscriber,
+    FakeAdtofTranscriber,
     ParsedNote,
     TargetTranscriberRouter,
     TranscriptionError,
@@ -39,6 +44,7 @@ from vgt.transcribe import (
     _merge_fragments,
     _midi_to_hz,
     default_spec_for_target,
+    drum_transcription_profile,
     midi_artifact_name,
     missing_source_entry,
     notes_artifact_name,
@@ -329,8 +335,9 @@ def test_drumscript_clean_spec_carries_the_analysis_beat_grid_without_changing_d
 def test_drumscript_clean_profile_name_is_valid_for_the_drums_target() -> None:
     from vgt.transcribe import effective_profile_name_for_target, valid_profile_names_for_target, validate_profile_for_target
 
-    assert valid_profile_names_for_target("drums") == ("default", "drums-clean")
+    assert valid_profile_names_for_target("drums") == ("default", "drums-clean", "drums-adtof")
     assert validate_profile_for_target("drums", "drums-clean") == "drums-clean"
+    assert validate_profile_for_target("drums", "drums-adtof") == "drums-adtof"
     with pytest.raises(TranscriptionError):
         validate_profile_for_target("drums", "not-a-real-profile")
 
@@ -356,6 +363,37 @@ def test_router_routes_only_drums_to_an_injected_drum_backend() -> None:
     assert isinstance(router.spec_for_target("guitar", midi_tempo=120.0), BasicPitchSpec)
 
 
+def test_router_uses_the_drum_profile_backend_and_keeps_drumscript_default() -> None:
+    class FakeDrumScript(FakeTranscriber):
+        name = "drumscript"
+
+    drumscript = FakeDrumScript()
+    adtof = FakeAdtofTranscriber()
+    router = TargetTranscriberRouter(FakeTranscriber(), drumscript, drumscript_targets=("drums",), adtof=adtof)
+
+    assert router.for_target("drums") is drumscript
+    assert drum_transcription_profile({"drums": "default"}).backend == "drumscript"
+    assert drum_transcription_profile({"drums": "drums-adtof"}).backend == "adtof"
+    assert router.for_target("drums", {"drums": "drums-adtof"}) is adtof
+    spec = router.spec_for_target(
+        "drums", midi_tempo=120.0, modes={"drums": "drums-adtof"}
+    )
+    assert isinstance(spec, AdtofSpec)
+    assert spec.to_dict() == {
+        "backend": "adtof",
+        "package_pin": (
+            "adtof-pytorch @ git+https://github.com/xavriley/ADTOF-pytorch.git@"
+            "85c192e78f716ea0b111cc8a5ee4a8f6a3a4f8a9"
+        ),
+        "package_version": ADTOF_PACKAGE_VERSION,
+        "model_version": ADTOF_MODEL_VERSION,
+        "weights_version": ADTOF_WEIGHTS_VERSION,
+        "weights_sha256": "1bc986e596ec47ba0b44916f87cd4a39f0b2bec23596df3fb5d0e87749217320",
+        "midi_tempo": 120.0,
+        "beat_grid": None,
+    }
+
+
 def test_router_threads_modes_and_time_signature_through_to_the_spec() -> None:
     router = TargetTranscriberRouter(FakeTranscriber(), FakeTranscriber())
 
@@ -376,6 +414,8 @@ def test_production_router_sends_drums_to_drumscript_and_everything_else_to_basi
             assert router.for_target(target).name == "basic-pitch"
             assert isinstance(router.for_target(target), BasicPitchTranscriber)
     assert isinstance(router.spec_for_target("drums", midi_tempo=120.0), DrumScriptSpec)
+    assert router.for_target("drums", {"drums": "drums-adtof"}).name == "adtof"
+    assert isinstance(router.spec_for_target("drums", midi_tempo=120.0, modes={"drums": "drums-adtof"}), AdtofSpec)
     assert isinstance(router.spec_for_target("guitar", midi_tempo=120.0), BasicPitchSpec)
 
 

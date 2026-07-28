@@ -77,6 +77,11 @@ DRUMSCRIPT_PACKAGE_PIN = "drumscript==0.1.6"
 # runtime.
 DRUMSCRIPT_RUNTIME_VERSION = "python==3.12"
 DRUMSCRIPT_CLASSIFIER_MODE = "standard-polyphonic"
+ADTOF_PACKAGE_PIN = "adtof-pytorch @ git+https://github.com/xavriley/ADTOF-pytorch.git@85c192e78f716ea0b111cc8a5ee4a8f6a3a4f8a9"
+ADTOF_PACKAGE_VERSION = "0.1.0"
+ADTOF_MODEL_VERSION = "Frame_RNN"
+ADTOF_WEIGHTS_VERSION = "adtof_frame_rnn_pytorch_weights.pth (bundled converted checkpoint)"
+ADTOF_WEIGHTS_SHA256 = "1bc986e596ec47ba0b44916f87cd4a39f0b2bec23596df3fb5d0e87749217320"
 
 # Overrides the whole `uvx ...` invocation with a pre-installed binary, e.g.
 # `uv tool install --python 3.11 --with "setuptools<81" "basic-pitch[onnx]==0.4.0"`
@@ -393,6 +398,30 @@ _INSTRUMENT_PROFILES: dict[str, InstrumentProfile] = {
 }
 VALID_PROFILE_NAMES: tuple[str, ...] = tuple(_INSTRUMENT_PROFILES)
 
+
+@dataclass(frozen=True)
+class DrumTranscriptionProfile:
+    """A built-in drums profile and the backend it selects.
+
+    DrumScript's cleanup recipes predate the general profile registry.  This
+    adapter preserves their serialized spec shape while making backend choice
+    a property of the resolved profile rather than of the target name.
+    """
+
+    name: str
+    backend: str
+    cleanup_profile: str | None = None
+
+
+_DRUM_TRANSCRIPTION_PROFILES: dict[str, DrumTranscriptionProfile] = {
+    name: DrumTranscriptionProfile(name=name, backend="drumscript", cleanup_profile=name)
+    for name in DRUM_CLEANUP_PROFILE_NAMES
+}
+_DRUM_TRANSCRIPTION_PROFILES["drums-adtof"] = DrumTranscriptionProfile(
+    name="drums-adtof", backend="adtof"
+)
+DRUM_TRANSCRIPTION_PROFILE_NAMES: tuple[str, ...] = tuple(_DRUM_TRANSCRIPTION_PROFILES)
+
 # The canonical, load-bearing cleanup stage order (see
 # `_GUITAR_ACOUSTIC_FULL_CLEANUP`'s docstring above and
 # docs/transcription-variants-plan.md's "cleanup order" section). A project
@@ -481,7 +510,7 @@ _PROFILE_NAMES_BY_TARGET["guitar"] = (
     "guitar-acoustic-strict-chords",
 )
 _PROFILE_NAMES_BY_TARGET["bass"] = ("default", "bass", "bass-monophonic")
-_PROFILE_NAMES_BY_TARGET["drums"] = DRUM_CLEANUP_PROFILE_NAMES
+_PROFILE_NAMES_BY_TARGET["drums"] = DRUM_TRANSCRIPTION_PROFILE_NAMES
 
 
 def validate_profile_name(profile: str) -> str:
@@ -506,13 +535,18 @@ def validate_profile_for_target(target: str, profile: str) -> str:
     return profile
 
 
-def _drum_cleanup_profile_name(modes: Mapping[str, str] | None) -> str:
-    """Resolve `drums`'s selected `vgt.drum_cleanup` profile from `modes`,
-    mirroring `_profile_for_target`'s missing/stale-selection fallback: an
-    absent or unrecognised selection safely uses "default" -- DrumScript's
-    untouched raw output -- rather than raising."""
+def drum_transcription_profile(modes: Mapping[str, str] | None) -> DrumTranscriptionProfile:
+    """Resolve drums' selected profile, with the historical default fallback."""
     name = modes.get("drums") if isinstance(modes, Mapping) else None
-    return name if name in DRUM_CLEANUP_PROFILE_NAMES else "default"
+    return _DRUM_TRANSCRIPTION_PROFILES.get(name, _DRUM_TRANSCRIPTION_PROFILES["default"])
+
+
+def backend_for_target_profile(target: str, modes: Mapping[str, str] | None) -> str:
+    """Resolve a backend from the selected profile, never from target alone."""
+    validate_target(target)
+    if target == "drums":
+        return drum_transcription_profile(modes).backend
+    return "basic-pitch"
 
 
 def _profile_for_target(target: str, modes: Mapping[str, str] | None) -> InstrumentProfile:
@@ -534,12 +568,11 @@ def effective_profile_name_for_target(target: str, modes: Mapping[str, str] | No
     This deliberately shares the missing/stale-mode fallback path with
     :func:`default_spec_for_target`, so read-only callers can describe the
     effective configuration without reimplementing profile selection.
-    `drums` is not in `_INSTRUMENT_PROFILES` (it selects a `vgt.drum_cleanup`
-    recipe, not a Basic Pitch `InstrumentProfile`) so it resolves through
-    `_drum_cleanup_profile_name` instead.
+    `drums` is not in `_INSTRUMENT_PROFILES`; it resolves through its small
+    backend-bearing drum-profile registry instead.
     """
     if target == "drums":
-        return _drum_cleanup_profile_name(modes)
+        return drum_transcription_profile(modes).name
     return _profile_for_target(target, modes).name
 
 
@@ -700,7 +733,35 @@ class DrumScriptSpec:
         return data
 
 
-TranscriptionSpec = BasicPitchSpec | DrumScriptSpec
+@dataclass(frozen=True)
+class AdtofSpec:
+    """Pinned Phase-0 ADTOF identity. Phase 1 intentionally has no Torch runner."""
+
+    backend: str
+    package_pin: str
+    package_version: str
+    model_version: str
+    weights_version: str
+    weights_sha256: str
+    midi_tempo: float | None
+    beat_grid: BeatGridReference | None
+    tempo_map: "TempoMapReference | None" = None
+
+    def to_dict(self) -> dict[str, Any]:
+        data: dict[str, Any] = {
+            "backend": self.backend, "package_pin": self.package_pin,
+            "package_version": self.package_version, "model_version": self.model_version,
+            "weights_version": self.weights_version, "weights_sha256": self.weights_sha256,
+            "midi_tempo": self.midi_tempo,
+            "beat_grid": {"beat_times": list(self.beat_grid.beat_times), "downbeat_offset_s": self.beat_grid.downbeat_offset_s}
+            if self.beat_grid else None,
+        }
+        if self.tempo_map is not None:
+            data["tempo_map"] = self.tempo_map.to_dict()
+        return data
+
+
+TranscriptionSpec = BasicPitchSpec | DrumScriptSpec | AdtofSpec
 
 
 @dataclass(frozen=True)
@@ -786,7 +847,9 @@ def default_spec_for_target(
     """
     validate_target(target)
     if backend == "drumscript":
-        cleanup_profile_name = _drum_cleanup_profile_name(modes)
+        cleanup_profile_name = drum_transcription_profile(modes).cleanup_profile
+        if cleanup_profile_name is None:
+            raise TranscriptionError("the selected drums profile does not use DrumScript")
         cleanup_profile = DRUM_CLEANUP_PROFILES[cleanup_profile_name]
         cleanup = (CleanupStage("drums-clean", cleanup_profile.as_identity()),) if cleanup_profile.enabled else ()
         return DrumScriptSpec(
@@ -803,6 +866,14 @@ def default_spec_for_target(
                 BeatGridReference(tuple(float(time) for time in beat_times), downbeat_offset_s)
                 if cleanup_profile.enabled and beat_times else None
             ),
+        )
+    if backend == "adtof":
+        return AdtofSpec(
+            backend="adtof", package_pin=ADTOF_PACKAGE_PIN, package_version=ADTOF_PACKAGE_VERSION,
+            model_version=ADTOF_MODEL_VERSION, weights_version=ADTOF_WEIGHTS_VERSION,
+            weights_sha256=ADTOF_WEIGHTS_SHA256, midi_tempo=midi_tempo,
+            beat_grid=BeatGridReference(tuple(float(time) for time in beat_times), downbeat_offset_s) if beat_times else None,
+            tempo_map=tempo_map,
         )
     profile = _profile_for_target(target, modes)
     bar_seconds = _bar_duration_seconds(midi_tempo, time_signature)
@@ -878,6 +949,15 @@ def _settings_dict(spec: TranscriptionSpec) -> dict[str, Any]:
             "time_signature": list(spec.time_signature) if spec.time_signature else None,
             "midi_tempo": spec.midi_tempo,
         }
+    if isinstance(spec, AdtofSpec):
+        return {
+            "model_version": spec.model_version, "weights_sha256": spec.weights_sha256,
+            "midi_tempo": spec.midi_tempo,
+            "beat_grid": (
+                {"beat_times": list(spec.beat_grid.beat_times), "downbeat_offset_s": spec.beat_grid.downbeat_offset_s}
+                if spec.beat_grid else None
+            ),
+        }
     return {
         "onset_threshold": spec.onset_threshold,
         "frame_threshold": spec.frame_threshold,
@@ -941,23 +1021,23 @@ def transcribed_entry(
         "status": "transcribed",
         "midi_file": midi_artifact_name(target),
         "notes_file": notes_artifact_name(target) if isinstance(spec, BasicPitchSpec) else None,
-        "events_file": events_artifact_name(target) if isinstance(spec, DrumScriptSpec) else None,
+        "events_file": events_artifact_name(target) if isinstance(spec, (DrumScriptSpec, AdtofSpec)) else None,
         "note_count": result.note_count if isinstance(spec, BasicPitchSpec) else None,
-        "event_count": result.event_count if isinstance(spec, DrumScriptSpec) else None,
-        "instrument_counts": result.instrument_counts if isinstance(spec, DrumScriptSpec) else None,
+        "event_count": result.event_count if isinstance(spec, (DrumScriptSpec, AdtofSpec)) else None,
+        "instrument_counts": result.instrument_counts if isinstance(spec, (DrumScriptSpec, AdtofSpec)) else None,
         # GM percussion note numbers select kit instruments; they are not a
         # musical pitch range and must never be presented as one.
         "pitch_range_midi": list(result.pitch_range_midi) if isinstance(spec, BasicPitchSpec) and result.pitch_range_midi else None,
         "first_note_s": result.first_note_s if isinstance(spec, BasicPitchSpec) else None,
         "last_note_s": result.last_note_s if isinstance(spec, BasicPitchSpec) else None,
-        "first_event_s": result.first_event_s if isinstance(spec, DrumScriptSpec) else None,
-        "last_event_s": result.last_event_s if isinstance(spec, DrumScriptSpec) else None,
-        "backend_tempo": result.backend_tempo if isinstance(spec, DrumScriptSpec) else None,
-        "midi_tempo": result.midi_tempo if isinstance(spec, DrumScriptSpec) else spec.midi_tempo,
+        "first_event_s": result.first_event_s if isinstance(spec, (DrumScriptSpec, AdtofSpec)) else None,
+        "last_event_s": result.last_event_s if isinstance(spec, (DrumScriptSpec, AdtofSpec)) else None,
+        "backend_tempo": result.backend_tempo if isinstance(spec, (DrumScriptSpec, AdtofSpec)) else None,
+        "midi_tempo": result.midi_tempo if isinstance(spec, (DrumScriptSpec, AdtofSpec)) else spec.midi_tempo,
         # DrumScript does not expose calibrated confidence.  Keeping this
         # explicit prevents downstream consumers from mistaking velocity for
         # a confidence score.
-        "confidence": None if isinstance(spec, DrumScriptSpec) else result.confidence,
+        "confidence": None if isinstance(spec, (DrumScriptSpec, AdtofSpec)) else result.confidence,
         "settings": _settings_dict(spec),
         "transcribed_at": transcribed_at,
         "error": None,
@@ -1058,7 +1138,7 @@ class TranscriberRouter(Protocol):
     backend from a target name itself.
     """
 
-    def for_target(self, target: str) -> Transcriber: ...
+    def for_target(self, target: str, modes: Mapping[str, str] | None = None) -> Transcriber: ...
 
     def spec_for_target(
         self, target: str, *, midi_tempo: float | None, modes: Mapping[str, str] | None = None, time_signature: str | None = None,
@@ -1083,17 +1163,23 @@ class TargetTranscriberRouter:
     drumscript_runtime_version: str = DRUMSCRIPT_RUNTIME_VERSION
     drumscript_classifier_mode: str = DRUMSCRIPT_CLASSIFIER_MODE
     drumscript_time_signature: tuple[int, int] | None = None
+    adtof: Transcriber | None = None
 
-    def for_target(self, target: str) -> Transcriber:
+    def for_target(self, target: str, modes: Mapping[str, str] | None = None) -> Transcriber:
         validate_target(target)
-        return self.drumscript if target in self.drumscript_targets else self.basic_pitch
+        backend = backend_for_target_profile(target, modes)
+        if backend == "adtof":
+            if self.adtof is None:
+                raise TranscriptionError("ADTOF is not available in this router")
+            return self.adtof
+        return self.drumscript if backend == "drumscript" else self.basic_pitch
 
     def spec_for_target(
         self, target: str, *, midi_tempo: float | None, modes: Mapping[str, str] | None = None, time_signature: str | None = None,
         beat_times: Sequence[float] | None = None, downbeat_offset_s: float | None = None,
         tempo_map: TempoMapReference | None = None,
     ) -> TranscriptionSpec:
-        backend = self.for_target(target).name
+        backend = backend_for_target_profile(target, modes)
         if backend == "drumscript":
             return default_spec_for_target(
                 target,
@@ -1119,6 +1205,7 @@ def production_transcriber_router() -> TranscriberRouter:
     return TargetTranscriberRouter(
         basic_pitch=basic_pitch,
         drumscript=DrumScriptTranscriber(),
+        adtof=FakeAdtofTranscriber(),
         drumscript_targets=("drums",),
     )
 
@@ -1259,7 +1346,7 @@ class FakeTranscriber:
         emit(f"transcribing (fake): {source.name}")
         destination_dir.mkdir(parents=True, exist_ok=True)
 
-        if isinstance(spec, DrumScriptSpec):
+        if isinstance(spec, (DrumScriptSpec, AdtofSpec)):
             instruments = tuple(DRUMSCRIPT_INSTRUMENTS)
             event_count = 4
             events = [
@@ -1269,7 +1356,7 @@ class FakeTranscriber:
             midi_path = destination_dir / "transcription.mid"
             events_path = destination_dir / "transcription.json"
             tempo_bpm = spec.midi_tempo or 120.0
-            if spec.cleanup_profile == "default":
+            if isinstance(spec, AdtofSpec) or spec.cleanup_profile == "default":
                 drum_notes = [
                     (event["time_sec"], event["time_sec"] + 0.1, DRUMSCRIPT_INSTRUMENTS[event["instruments"][0]], 100)
                     for event in events
@@ -1330,7 +1417,7 @@ class FakeTranscriber:
         pre-cleanup so a caller can derive several cleanup variants from one
         fake "inference" (see transcription_variants.py). DrumScript has no
         raw/derived split (see `RawDetectionResult`'s docstring)."""
-        if isinstance(spec, DrumScriptSpec):
+        if isinstance(spec, (DrumScriptSpec, AdtofSpec)):
             raise TranscriptionError("FakeTranscriber.detect_raw does not support DrumScriptSpec; drums have no raw/derived split")
         emit = progress or (lambda _message: None)
         emit(f"transcribing (fake): {source.name}")
@@ -1350,6 +1437,20 @@ class FakeTranscriber:
         return RawDetectionResult(
             notes=parse_notes_csv(notes_path), raw_midi_path=midi_path, raw_notes_path=notes_path, midi_tempo=spec.midi_tempo
         )
+
+
+class FakeAdtofTranscriber(FakeTranscriber):
+    """Offline Phase-1 ADTOF stand-in; deliberately never imports Torch."""
+
+    name = "adtof"
+
+    def transcribe(
+        self, source: Path, destination_dir: Path, spec: TranscriptionSpec,
+        progress: Callable[[str], None] | None = None,
+    ) -> TranscriptionResult:
+        if not isinstance(spec, AdtofSpec):
+            raise TranscriptionError("FakeAdtofTranscriber requires an AdtofSpec")
+        return super().transcribe(source, destination_dir, spec, progress)
 
 
 def _basic_pitch_base_command(package_pin: str) -> list[str]:

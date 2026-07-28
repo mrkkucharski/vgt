@@ -51,6 +51,7 @@ import shutil
 
 from .transcribe import (
     BasicPitchSpec,
+    AdtofSpec,
     DrumScriptSpec,
     ParsedNote,
     Transcriber,
@@ -204,7 +205,7 @@ def _base_variant_fields(request: VariantRequest, target: str) -> dict[str, Any]
         "source_role": target,
         "settings_hash": spec_hash(spec),
         "resolved_settings": request.resolved_settings,
-        "midi_tempo": spec.midi_tempo if isinstance(spec, BasicPitchSpec) else None,
+        "midi_tempo": spec.midi_tempo,
     }
 
 
@@ -510,7 +511,7 @@ def reconcile_variants(
 
     groups: dict[str, list[VariantRequest]] = {}
     for request in requests:
-        if isinstance(request.spec, DrumScriptSpec):
+        if isinstance(request.spec, (DrumScriptSpec, AdtofSpec)):
             record, count = _reconcile_drumscript_variant(
                 request,
                 target=target,

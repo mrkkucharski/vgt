@@ -16,7 +16,7 @@ import pytest
 
 from vgt.cli import main
 from vgt.sidecar import read_sidecar, write_sidecar
-from vgt.transcribe import FakeTranscriber, TargetTranscriberRouter
+from vgt.transcribe import FakeAdtofTranscriber, FakeTranscriber, TargetTranscriberRouter
 
 FIXTURE_DIR = Path(__file__).parents[1] / "test" / "Reaper Project"
 REFERENCE_GUID = "{75418143-1F31-B548-B7D2-96815CB0297D}"
@@ -66,7 +66,7 @@ def _fake_router(monkeypatch: pytest.MonkeyPatch) -> None:
     fake = FakeTranscriber()
     monkeypatch.setattr(
         "vgt.transcription_lifecycle.production_transcriber_router",
-        lambda: TargetTranscriberRouter(basic_pitch=fake, drumscript=fake, drumscript_targets=("drums",)),
+        lambda: TargetTranscriberRouter(basic_pitch=fake, drumscript=fake, drumscript_targets=("drums",), adtof=FakeAdtofTranscriber()),
     )
 
 
@@ -177,6 +177,17 @@ def test_variant_add_target_drums_profile_drums_clean_writes_channel_10_midi(tmp
     )
     midi_path = namespace_dir / "transcription" / "drums" / f"{clean_id}.mid"
     assert not _midi_has_non_percussion_notes(midi_path.read_bytes())
+
+
+def test_variant_add_drums_adtof_coexists_with_drumscript(tmp_path: Path, capsys) -> None:
+    project = _init_project_with_drums(tmp_path)
+    assert main(["transcription", "variant", "add", "drums", "--name", "raw", "--profile", "default", str(project)]) == 0
+    raw = json.loads(capsys.readouterr().out)
+    assert main(["transcription", "variant", "add", "drums", "--name", "adtof", "--profile", "drums-adtof", str(project)]) == 0
+    adtof = json.loads(capsys.readouterr().out)
+    assert adtof["backend"] == "adtof"
+    assert adtof["settings_hash"] != raw["settings_hash"]
+    assert {variant["label"] for variant in _variants(project, "drums")["variants"].values()} == {"raw", "adtof"}
 
 
 def test_variant_add_target_drums_rejects_an_unknown_profile(tmp_path: Path, capsys) -> None:

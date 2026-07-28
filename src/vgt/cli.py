@@ -9,14 +9,22 @@ import sys
 from typing import Any
 
 from .analysis import AnalysisError, add_transcription_targets, analyze, forget_transcription_targets, set_transcription_modes
-from .drum_cleanup import CLEAN_PROFILE_NAME, DRUM_CLEANUP_PROFILE_NAMES, DRUM_CLEANUP_PROFILES
+from .drum_cleanup import DRUM_CLEANUP_PROFILES
 from .lalal import LalalError, LalalSeparator
 from .project import ProjectError, locate_project, read_project
 from .reascripts import ReaScriptInstallError, confirm_overwrite, default_destination, install_reascripts
 from .separation import GUITAR_TYPES, OPTIONAL_STEMS, SeparationError, declared_guitar_type, separate, separation_preview
 from .sidecar import atomic_update_sidecar
 from .status import StatusError, build_status, format_status
-from .transcribe import VALID_PROFILE_NAMES, VALID_TARGETS, TranscriptionError, validate_profile_for_target, validate_target
+from .transcribe import (
+    DRUM_TRANSCRIPTION_PROFILE_NAMES,
+    VALID_PROFILE_NAMES,
+    VALID_TARGETS,
+    TranscriptionError,
+    drum_transcription_profile,
+    validate_profile_for_target,
+    validate_target,
+)
 from .transcription_lifecycle import (
     add_variant,
     discard_variant,
@@ -237,7 +245,7 @@ def _dispatch_transcription(args: argparse.Namespace, project: Path) -> int:
         if args.profile_command == "list":
             for name in VALID_PROFILE_NAMES:
                 print(f"{name} (builtin)")
-            for name in DRUM_CLEANUP_PROFILE_NAMES:
+            for name in DRUM_TRANSCRIPTION_PROFILE_NAMES:
                 if name not in VALID_PROFILE_NAMES:
                     print(f"{name} (builtin, drums)")
             for name in project_profiles:
@@ -249,13 +257,20 @@ def _dispatch_transcription(args: argparse.Namespace, project: Path) -> int:
             # latter (and explicitly rejects a 'drums' target), so it is
             # reported directly instead. "default" stays on the generic path
             # below since it is shared with every other target.
-            if args.name == CLEAN_PROFILE_NAME:
-                profile = DRUM_CLEANUP_PROFILES[CLEAN_PROFILE_NAME]
+            if args.name in DRUM_TRANSCRIPTION_PROFILE_NAMES and args.name != "default":
+                drum_profile = drum_transcription_profile({"drums": args.name})
+                if drum_profile.cleanup_profile is None:
+                    print(json.dumps({
+                        "name": drum_profile.name, "target": "drums", "backend": drum_profile.backend,
+                        "is_builtin": True, "profile_definition_hash": None,
+                    }, indent=2))
+                    return 0
+                profile = DRUM_CLEANUP_PROFILES[drum_profile.cleanup_profile]
                 print(json.dumps(
                     {
                         "name": profile.name,
                         "target": "drums",
-                        "backend": "drumscript",
+                        "backend": drum_profile.backend,
                         "is_builtin": True,
                         "profile_definition_hash": None,
                         **profile.as_identity(),

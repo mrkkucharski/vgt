@@ -279,7 +279,7 @@ def _refresh_target(
     beat_times = tempo_value.get("beat_times") if isinstance(tempo_value, dict) else None
     downbeat_offset_s = tempo_value.get("downbeat_offset_seconds") if isinstance(tempo_value, dict) else None
     modes = analysis["transcription"].get("modes") or {}
-    transcriber = router.for_target(target)
+    transcriber = router.for_target(target, modes)
     spec = router.spec_for_target(
         target, midi_tempo=midi_tempo, modes=modes, time_signature=time_signature,
         beat_times=beat_times, downbeat_offset_s=downbeat_offset_s,
@@ -339,7 +339,7 @@ def _refresh_legacy_target(
     beat_times = tempo_value.get("beat_times") if isinstance(tempo_value, dict) else None
     downbeat_offset_s = tempo_value.get("downbeat_offset_seconds") if isinstance(tempo_value, dict) else None
     modes = analysis["transcription"].get("modes")
-    transcriber = router.for_target(target)
+    transcriber = router.for_target(target, modes)
     spec = router.spec_for_target(
         target, midi_tempo=midi_tempo, modes=modes, time_signature=time_signature,
         beat_times=beat_times, downbeat_offset_s=downbeat_offset_s,
