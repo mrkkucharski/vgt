@@ -22,6 +22,7 @@ import copy
 import hashlib
 import json
 import logging
+import math
 import shutil
 
 from . import __version__
@@ -384,6 +385,61 @@ def _refresh_legacy_target(
         transcribed_at=datetime.now(UTC).isoformat().replace("+00:00", "Z"),
     )
 
+
+def _tempo_map_beat_times(tempo_value: dict[str, Any], source: Path) -> list[float] | None:
+    """Expand a synchronized REAPER step map into reference-relative beats.
+
+    The dedicated ReaScript action intentionally stores map markers rather
+    than copying the detector's beat array.  Re-detecting here would make
+    later chord analysis disagree with the human-verified map, so derive its
+    beat grid directly when the map is valid and the source duration is known.
+    """
+    if tempo_value.get("source") != "reaper-tempo-map" or tempo_value.get("mode") not in {"constant", "piecewise"}:
+        return None
+    try:
+        bpm = float(tempo_value["bpm"])
+        import soundfile
+        duration = float(soundfile.info(source).duration)
+    except (ImportError, KeyError, TypeError, ValueError, OSError, RuntimeError):
+        return None
+    if not math.isfinite(bpm) or bpm <= 0 or not math.isfinite(duration) or duration <= 0:
+        return None
+    markers: list[tuple[float, float]] = []
+    for span in tempo_value.get("spans") or []:
+        if not isinstance(span, dict):
+            return None
+        try:
+            start, marker_bpm = float(span["start_seconds"]), float(span["bpm"])
+        except (KeyError, TypeError, ValueError):
+            return None
+        if not math.isfinite(start) or not math.isfinite(marker_bpm) or start <= 0 or marker_bpm <= 0:
+            return None
+        markers.append((start, marker_bpm))
+    markers.sort()
+    if len({start for start, _ in markers}) != len(markers):
+        return None
+
+    beats: list[float] = []
+    marker_index = 0
+    time = 0.0
+    while time <= duration + 1e-9:
+        beats.append(round(time, 6))
+        next_marker = markers[marker_index][0] if marker_index < len(markers) else math.inf
+        next_beat = time + 60.0 / bpm
+        if next_marker < next_beat - 1e-9:
+            time = next_marker
+            bpm = markers[marker_index][1]
+            marker_index += 1
+        else:
+            time = next_beat
+            while marker_index < len(markers) and markers[marker_index][0] <= time + 1e-9:
+                bpm = markers[marker_index][1]
+                marker_index += 1
+        if len(beats) > 1_000_000:  # corrupt maps must not exhaust the CLI
+            return None
+    return beats if len(beats) >= 2 else None
+
+
 def _tempo_beat_times(tempo_value: dict[str, Any] | None, source: Path) -> list[float]:
     """Beat timestamps backing the chords stage's grid alignment: reused from
     the tempo stage's persisted value when present, otherwise (e.g. after a
@@ -393,6 +449,10 @@ def _tempo_beat_times(tempo_value: dict[str, Any] | None, source: Path) -> list[
     agree on one shared grid."""
     if tempo_value and tempo_value.get("beat_times"):
         return tempo_value["beat_times"]
+    if tempo_value:
+        synchronized_beats = _tempo_map_beat_times(tempo_value, source)
+        if synchronized_beats is not None:
+            return synchronized_beats
     try:
         beat_times, _beat_positions, _backend = detect_beats(source)
     except TempoDetectionError as exc:

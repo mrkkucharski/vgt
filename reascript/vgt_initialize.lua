@@ -1279,7 +1279,15 @@ local function apply()
       -- changed since the interrupted run; same non-invasive fallback.
     end
 
-    if recovered then
+    if analysis.tempo.human_verified == true then
+      -- A dedicated sync action may adopt a user-owned live map as analysis
+      -- evidence. That never transfers map ownership to vgt: subsequent
+      -- applies must remain read-only with respect to tempo markers.
+      tempo_map_applied = false
+      tempo_map_fingerprint = ""
+      tempo_data_fp = ""
+      offer_beats_track(insert_at + 1, tempo, reference_start, reference_end, managed_tracks)
+    elseif recovered then
       -- Already resolved above; nothing further to do for tempo this run.
     elseif tempo.downbeat_detected ~= true then
       -- A beat-only result has no trustworthy bar phase. Keep the detected

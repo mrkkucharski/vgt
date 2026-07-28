@@ -126,7 +126,7 @@ def test_upgrade_keeps_v1_fields_and_adds_v2_analysis_skeleton() -> None:
 
     upgraded = upgrade(v1)
 
-    assert upgraded["schema_version"] == 15
+    assert upgraded["schema_version"] == 16
     assert upgraded["managed_region_ids"] == []
     assert upgraded["managed_track_guids"] == ["{AAAA}", "{BBBB}"]
     assert upgraded["config"] == {"reference_track_guid": REFERENCE_GUID}
@@ -141,7 +141,7 @@ def test_upgrade_keeps_v1_fields_and_adds_v2_analysis_skeleton() -> None:
             "analyzed_at": None,
             "verified_at": None,
         }
-        if stage in ("key", "chords", "sections"):
+        if stage in ("tempo", "key", "chords", "sections"):
             expected["detected"] = None
             expected["detected_input_hash"] = None
             expected["detected_settings_hash"] = None
@@ -179,7 +179,7 @@ def test_upgrade_marks_legacy_librosa_tempo_as_unknown_bar_phase() -> None:
         "backend": "librosa", "bpm": 120.0, "downbeat_offset_seconds": 0.25,
     }}}})
 
-    assert upgraded["schema_version"] == 15
+    assert upgraded["schema_version"] == 16
     assert upgraded["analysis"]["tempo"]["value"]["downbeat_detected"] is False
 
 
@@ -218,7 +218,7 @@ def test_upgrade_adds_v10_transcription_block_to_a_v8_sidecar() -> None:
 
     upgraded = upgrade(v8)
 
-    assert upgraded["schema_version"] == 15
+    assert upgraded["schema_version"] == 16
     assert upgraded["analysis"]["transcription"] == {"requested_targets": ["guitar"], "modes": {}, "targets": {}, "detection_cache": {}}
     # Unrelated v8 fields survive the upgrade untouched.
     assert upgraded["analysis"]["stems"]["artifact_namespace"] == "abc12345"
@@ -435,7 +435,7 @@ def test_analyze_writes_v2_sidecar_with_skeleton_and_provenance(tmp_path: Path) 
 
     result = analyze(project)
 
-    assert result["schema_version"] == 15
+    assert result["schema_version"] == 16
     assert result["managed_track_guids"] == ["{AAAA}", "{BBBB}"]  # phase 0 fields intact
     for stage in ANALYSIS_STAGES:
         if stage == "transcription":
@@ -694,6 +694,25 @@ def test_chords_fall_back_to_freshly_detected_beats_when_tempo_correction_omits_
         assert segment["end_seconds"] in beat_times
 
 
+def test_synchronized_reaper_tempo_map_derives_the_chord_grid(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    """A verified REAPER map, unlike an old hand-written BPM correction,
+    remains the source of truth for later chord alignment."""
+    source = tmp_path / "reference.wav"
+    source.write_bytes(b"placeholder")
+
+    class Info:
+        duration = 4.0
+
+    import soundfile
+    monkeypatch.setattr(soundfile, "info", lambda _: Info())
+    beats = analysis_module._tempo_map_beat_times(
+        {"source": "reaper-tempo-map", "mode": "piecewise", "bpm": 120, "spans": [{"start_seconds": 1.5, "bpm": 60}]},
+        source,
+    )
+
+    assert beats == [0.0, 0.5, 1.0, 1.5, 2.5, 3.5]
+
+
 def test_key_and_chord_corrections_survive_rerun(tmp_path: Path) -> None:
     project = _project_copy(tmp_path)
     _write_v1_sidecar(project)
@@ -919,7 +938,7 @@ def test_cli_analyze_preserves_local_results_when_lalal_is_unavailable(
     captured = capsys.readouterr()
     assert captured.out == ""
     sidecar = read_sidecar(project)
-    assert sidecar["schema_version"] == 15
+    assert sidecar["schema_version"] == 16
     assert sidecar["analysis"]["tempo"]["value"] is not None
     assert "stem separation unavailable; continuing with available sources" in captured.err
 

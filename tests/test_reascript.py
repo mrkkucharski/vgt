@@ -11,6 +11,7 @@ TRANSCRIPTION_VERIFY_SCRIPT = Path(__file__).parents[1] / "scripts" / "verify_tr
 SYNC_VERIFY_SCRIPT = Path(__file__).parents[1] / "scripts" / "verify_phase1_sync.py"
 APPLY_SCRIPT = Path(__file__).parents[1] / "reascript" / "vgt_initialize.lua"
 SYNC_SCRIPT = Path(__file__).parents[1] / "reascript" / "vgt_sync.lua"
+TEMPO_SYNC_SCRIPT = Path(__file__).parents[1] / "reascript" / "vgt_sync_tempo_map.lua"
 LUA = os.environ.get("VGT_TEST_LUA", "lua")
 
 
@@ -21,6 +22,51 @@ def test_apply_uses_reaper_api_and_never_edits_rpp_text() -> None:
     assert "reaper.AddMediaItemToTrack" in script
     assert "(managed[reaper.GetTrackGUID(track)] or track_is_marked_managed(track)) and starts_with_vgt(track)" in script
     assert "GetSetProjectInfo_String" not in script
+
+
+def test_tempo_map_sync_is_a_separate_confirmation_gated_read_only_action() -> None:
+    script = TEMPO_SYNC_SCRIPT.read_text()
+    assert 'ShowMessageBox' in script
+    assert 'CountTempoTimeSigMarkers' in script
+    assert 'GetTempoTimeSigMarker' in script
+    assert 'SetTempoTimeSigMarker' not in script
+    assert 'DeleteTempoTimeSigMarker' not in script
+    assert 'vgt_sync.lua' in script
+
+
+def test_tempo_map_sync_persists_only_reference_relative_variable_grid(tmp_path: Path) -> None:
+    project = tmp_path / "song.RPP"
+    project.write_text("")
+    sidecar = tmp_path / "song.vgt"
+    sidecar.write_text(json.dumps({
+        "schema_version": 16, "generation": 4,
+        "config": {"reference_track_guid": "{REF}"},
+        "analysis": {"tempo": {"value": {"bpm": 120}, "detected": {"bpm": 120, "beat_times": [0, 1]}, "human_verified": False}},
+    }))
+    lua = "\n".join([
+        "local track={guid='{REF}', items={{position=10,length=8}}}",
+        "local markers={{time=0,bpm=99,num=3,den=4},{time=8,bpm=110,num=4,den=4},{time=10,bpm=120,num=4,den=4},{time=13,bpm=90,num=4,den=4},{time=18,bpm=140,num=4,den=4},{time=21,bpm=-1,num=4,den=4,linear=true}}",
+        "reaper={}",
+        "function reaper.EnumProjects() return true,arg[1] end",
+        "function reaper.ShowMessageBox(_,_,kind) if kind==4 then return 6 end end",
+        "function reaper.ShowConsoleMsg() end",
+        "function reaper.CountTracks() return 1 end; function reaper.GetTrack(_,_) return track end; function reaper.GetTrackGUID(t) return t.guid end",
+        "function reaper.CountTrackMediaItems() return 1 end; function reaper.GetTrackMediaItem() return track.items[1] end",
+        "function reaper.GetMediaItemInfo_Value(item,key) return key=='D_POSITION' and item.position or item.length end",
+        "function reaper.CountTempoTimeSigMarkers() return #markers end",
+        "function reaper.GetTempoTimeSigMarker(_,i) local m=markers[i+1]; return true,m.time,0,0,m.bpm,m.num,m.den,m.linear or false end",
+        TEMPO_SYNC_SCRIPT.read_text(),
+    ])
+    subprocess.run([LUA, "-", str(project)], input=lua, text=True, check=True, capture_output=True)
+    synced = json.loads(sidecar.read_text())
+    tempo = synced["analysis"]["tempo"]
+    assert tempo["human_verified"] is True
+    assert tempo["detected"] == {"bpm": 120, "beat_times": [0, 1]}
+    assert tempo["value"] == {
+        "bpm": 120, "time_signature": "4/4", "mode": "piecewise", "source": "reaper-tempo-map",
+        "spans": [{"start_seconds": 3, "bpm": 90, "time_signature": "4/4"}],
+    }
+    assert synced["generation"] == 5
 
 
 def test_apply_asks_for_a_reference_track_and_names_the_folder_after_it() -> None:

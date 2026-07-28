@@ -171,6 +171,10 @@ Schema versions:
       `detected` with its existing input/settings hashes, so a later REAPER
       correction can freeze the effective value while analysis keeps the
       machine baseline current.
+ 16 -- The `tempo` stage gains that detected/value split too.  The dedicated
+      REAPER tempo-map sync action writes only `value` and marks it
+      human-verified; `detected` retains the audio-derived tempo and beat
+      grid as a separately refreshable baseline.
 
 Every stage entry has the same shape:
   {
@@ -220,14 +224,14 @@ import uuid
 from . import transcription_profiles
 from .transcribe import effective_profile_name_for_target
 
-SCHEMA_VERSION = 15
+SCHEMA_VERSION = 16
 STEMS_LEASE_TIMEOUT = timedelta(minutes=30)
 
 ANALYSIS_STAGES = ("tempo", "key", "sections", "chords", "transcription")
 
 # Stages that carry the detected/value split (#19): a human correction to
 # `value` never overwrites the pristine machine detection kept in `detected`.
-DETECTED_SPLIT_STAGES = ("key", "sections", "chords")
+DETECTED_SPLIT_STAGES = ("tempo", "key", "sections", "chords")
 
 # `transcription` (like `stems`) owns a per-target index instead of the
 # generic value/input_hash/settings_hash shape every other stage in
