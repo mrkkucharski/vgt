@@ -1,10 +1,10 @@
 {
-  "current_issue": 203,
-  "session_id": "9aa691a9-e61b-4a64-b655-5aada66e8584",
-  "pid": 24625,
-  "process_started_at": "Tue Jul 28 22:47:08 2026",
-  "agent": "codex",
-  "started_at": "2026-07-28T20:47:06.695646+00:00",
+  "current_issue": 198,
+  "session_id": "8838161c-0f56-4961-b696-35b5549883f7",
+  "pid": 26291,
+  "process_started_at": "Tue Jul 28 22:53:03 2026",
+  "agent": "claude",
+  "started_at": "2026-07-28T20:53:01.819577+00:00",
   "scheduler_stalls": {},
   "budget": {
     "window_start": "2026-07-28T16:13:40.657375+00:00",
@@ -17,10 +17,10 @@
   "verification_followups": {
     "f0d8bfc9d2dc6da7a31609184e25c4d66d3986fd2340b33a83e98204fb86691e": "created"
   },
-  "role": "review",
-  "branch": "issue-203-adtof-backend-phase-4-fake-hardening-off",
-  "worktree_path": "/Users/marekkucharski/projects/.pm-worktrees/vgt/issue-203",
-  "pr_number": 211,
+  "role": "implement",
+  "branch": "issue-198-correct-drumscript-timing-and-velocity-d",
+  "worktree_path": "/Users/marekkucharski/projects/.pm-worktrees/vgt/issue-198",
+  "pr_number": null,
   "followup_generation": {
     "fingerprint": "eef3ed07ced05e409d8e46a7df750bd9186dc49d076ac58bb4bab5a96557ba52",
     "items": {
@@ -74,13 +74,13 @@
     "203": 1
   },
   "pending_transition": {
-    "issue": 203,
+    "issue": 198,
     "target": "working",
-    "event": "agent.review_started",
+    "event": "agent.started",
     "detail": {
-      "issue": 203,
-      "agent": "codex",
-      "pr": 211
+      "issue": 198,
+      "agent": "claude",
+      "branch": "issue-198-correct-drumscript-timing-and-velocity-d"
     },
     "cleanup": {}
   }
