@@ -39,6 +39,13 @@ DrumScript's raw onsets are a **median +45 ms late** vs the real hits, and
 (human) notes have a `default` note within 50 ms; for `drums-clean` it is
 only **20%**.
 
+> **Superseded for the raw-onset number.** These were measured on note
+> positions in the RPP while cause #3 (the 60 BPM authoring) was still
+> compressing playback ~2×, which mixes the rate bug into the per-onset
+> figure. Measured on the event JSON after #193, DrumScript's onsets are
+> **early, not late**, and drift — see
+> "[Follow-up: the residual offset is DrumScript's own grid](#follow-up-2026-07-28-the-residual-offset-is-drumscripts-own-grid)".
+
 **Density (notes per 2 bars, human truth ≈ 16):**
 
 - `default` runs **~2× too many** almost everywhere (34–55 vs 16), because
@@ -255,3 +262,66 @@ correct timeline. Only once the timeline is correct do the finer fixes matter:
 residual per-onset jitter onto the beat, and **#4** removes the over-detection.
 The earlier ordering demoted #3 as a cosmetic relabel; that was based on an
 unreproducible observation and is corrected here.
+
+## Follow-up (2026-07-28): the residual offset is DrumScript's own grid
+
+Measured after #193 landed, on the same project. Two separate defects were
+left, one in the transcription and one in the REAPER placement; both are
+fixed on this branch.
+
+### Cause #6: DrumScript quantizes onto its own zero-anchored grid
+
+Read straight out of the artifact (`vgt/<ns>/transcription/drums/*.json`),
+with no REAPER involved:
+
+| | value |
+|---|---|
+| Project grid (analysis) | 120.004 BPM, downbeat **0.085333 s**, eighth 0.249992 s |
+| DrumScript event grid | anchored at **exactly 0.0**, step **0.249615 s** (= 120.185 BPM) |
+| First real drum hit (stem audio, and the corrected MIDI) | **0.0727 s** |
+| First event DrumScript reports | **0.0** |
+
+All 410 distinct event times in the `default` variant are multiples of
+0.249615 s to within 1.4 ms: DrumScript does not emit the onsets it detected,
+it emits the grid it fitted to them. The error against the performance is
+therefore `≈ 85 ms + 0.15% × t` — the notes start at the item edge instead of
+the first beat, and by t = 160 s they are ~0.33 s (more than one eighth)
+ahead. Late in the song this *looks* close to the grid again only because the
+error has wrapped past a whole subdivision.
+
+`drums-clean` could not fix this: `_systematic_audio_offset` estimates one
+constant latency, and a rate error is not constant. That is why `default`
+sounded better than `drums-clean`.
+
+**Fix:** `vgt.drum_grid` reads each event's index off the backend's own step
+and re-emits it at that index on the analyzed beat grid, before either
+profile runs; `beat_grid` is now part of every drums spec's identity, so
+re-analysing the tempo invalidates MIDI authored against the old grid. Index
+mapping rather than nearest-line snapping is what keeps the late notes right
+once drift exceeds half a subdivision. Every precondition is guarded (an
+unquantized backend, a grid that starts mid-song, a disagreeing subdivision,
+or a correction that varies by more than a beat all leave the events alone),
+so a future backend that emits true onsets is unaffected.
+
+Scored with `vgt.drum_midi_score` against `tests/fixtures/drums_7rivers/`,
+using the project's real (jittery) `beat_times`:
+
+| | median timing error | onset F1 @50 ms |
+|---|---|---|
+| as shipped | −88.6 ms | 0.057 |
+| grid-reconciled | **+15.4 ms** | **0.447** |
+
+### Cause #7: the reference MIDI item never spanned the source track
+
+`add_reference_midi_variant` set the item's `D_LENGTH` from
+`GetMediaSourceLength(source)`. For a **MIDI** source that value is in
+*quarter notes*, not the seconds it returns for a WAV, and it stops at the
+file's end-of-track marker (right after the last note) rather than at the end
+of the song. In the real project the three `[vgt] Guitar Ref` items were
+`LENGTH 355` — 355 QN read as 355 seconds, twice the 178.55 s song — and
+since items carry `LOOP 1`, the guitar reference silently repeated. The drums
+item, whose transcription ends earlier, stopped short instead.
+
+**Fix:** the item spans the reference track (`reference_end - reference_start`,
+like `[vgt] Key` and the stems) with `B_LOOPSRC = 0`, so a transcription that
+ends before the song stays short instead of repeating.

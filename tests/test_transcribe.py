@@ -286,8 +286,9 @@ def test_drumscript_default_spec_is_byte_identical_to_before_drums_clean() -> No
     """Issue #177's compatibility contract: an unselected/absent `modes`
     entry for drums must produce exactly the pre-#177 spec identity plus
     `midi_tempo` (added by issue #193, since it now changes the authored
-    MIDI's tempo), so every existing default drums variant's `settings_hash`
-    still only depends on `cleanup_profile` selection and the project tempo."""
+    MIDI's tempo) and `beat_grid` (both profiles now author onto the analyzed
+    grid), so a default drums variant's `settings_hash` depends only on
+    `cleanup_profile` selection, the project tempo, and that grid."""
     unset = default_spec_for_target("drums", backend="drumscript")
     explicit_default = default_spec_for_target("drums", backend="drumscript", modes={"drums": "default"})
     stale = default_spec_for_target("drums", backend="drumscript", modes={"drums": "not-a-real-profile"})
@@ -301,6 +302,7 @@ def test_drumscript_default_spec_is_byte_identical_to_before_drums_clean() -> No
         "classifier_mode": "standard-polyphonic",
         "time_signature": None,
         "midi_tempo": None,
+        "beat_grid": None,
     }
     assert spec_hash(unset) == spec_hash(explicit_default) == spec_hash(stale)
 
@@ -318,7 +320,10 @@ def test_drumscript_clean_profile_has_a_distinct_settings_hash() -> None:
     assert guitar_spec.cleanup == ()
 
 
-def test_drumscript_clean_spec_carries_the_analysis_beat_grid_without_changing_default() -> None:
+def test_every_drumscript_profile_carries_the_analysis_beat_grid_in_its_identity() -> None:
+    """Both profiles author onto the analyzed grid, so both must carry it --
+    and a re-analysis that moves the grid must change the settings hash rather
+    than silently reusing MIDI aligned to the old one."""
     default_spec = default_spec_for_target(
         "drums", backend="drumscript", beat_times=(0.0853, 0.58528), downbeat_offset_s=0.0853,
     )
@@ -326,13 +331,17 @@ def test_drumscript_clean_spec_carries_the_analysis_beat_grid_without_changing_d
         "drums", backend="drumscript", modes={"drums": "drums-clean"},
         beat_times=(0.0853, 0.58528), downbeat_offset_s=0.0853,
     )
+    moved_grid = default_spec_for_target(
+        "drums", backend="drumscript", beat_times=(0.2, 0.7), downbeat_offset_s=0.2,
+    )
 
-    assert default_spec.beat_grid is None
-    assert clean_spec.beat_grid is not None
-    assert clean_spec.beat_grid.beat_times == pytest.approx((0.0853, 0.58528))
-    assert clean_spec.beat_grid.downbeat_offset_s == pytest.approx(0.0853)
-    assert "beat_grid" not in default_spec.to_dict()
-    assert clean_spec.to_dict()["beat_grid"]["downbeat_offset_s"] == pytest.approx(0.0853)
+    for spec in (default_spec, clean_spec):
+        assert spec.beat_grid is not None
+        assert spec.beat_grid.beat_times == pytest.approx((0.0853, 0.58528))
+        assert spec.beat_grid.downbeat_offset_s == pytest.approx(0.0853)
+        assert spec.to_dict()["beat_grid"]["downbeat_offset_s"] == pytest.approx(0.0853)
+    assert spec_hash(moved_grid) != spec_hash(default_spec)
+    assert spec_hash(default_spec) != spec_hash(clean_spec)
 
 
 def test_drumscript_clean_profile_name_is_valid_for_the_drums_target() -> None:

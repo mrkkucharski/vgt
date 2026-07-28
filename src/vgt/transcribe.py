@@ -39,6 +39,7 @@ from .drum_cleanup import (
     cleaned_events_to_json,
     cleaned_events_to_midi_notes,
 )
+from .drum_grid import reconcile_event_times
 
 # Valid target names: the separation artifact names, plus the untouched mix
 # ("original"). A target is always a single named source, never a merged set.
@@ -743,14 +744,17 @@ class DrumScriptSpec:
     # spec keeps its exact prior identity (see `to_dict`).
     cleanup_profile: str = "default"
     cleanup: tuple[CleanupStage, ...] = ()
+    # The analyzed beat grid. Every profile needs it: `drums-clean` uses it to
+    # estimate its systematic latency, and both profiles now author onto it
+    # (see `vgt.drum_grid`), so it is a genuine input to the artifact and is
+    # hashed as one.
     beat_grid: BeatGridReference | None = None
 
     def to_dict(self) -> dict[str, Any]:
-        """Serialize for `spec_hash`. Reproduces the pre-#177 five-field
-        shape (plus `midi_tempo`, #193) when `cleanup_profile` is "default",
-        so `settings_hash` is byte-identical to before this issue for every
-        existing drums variant except for the added `midi_tempo` key --
-        `drums-clean`'s hash is the other deliberate change."""
+        """Serialize for `spec_hash`. The `default` profile keeps the pre-#177
+        five-field shape (plus `midi_tempo`, #193) apart from `beat_grid`,
+        which every profile now carries -- a re-analysis that moves the grid
+        must invalidate the MIDI authored against the old one."""
         data: dict[str, Any] = {
             "backend": self.backend,
             "package_pin": self.package_pin,
@@ -758,16 +762,16 @@ class DrumScriptSpec:
             "classifier_mode": self.classifier_mode,
             "time_signature": list(self.time_signature) if self.time_signature else None,
             "midi_tempo": self.midi_tempo,
+            "beat_grid": (
+                {"beat_times": list(self.beat_grid.beat_times), "downbeat_offset_s": self.beat_grid.downbeat_offset_s}
+                if self.beat_grid is not None else None
+            ),
         }
         if self.tempo_map is not None:
             data["tempo_map"] = self.tempo_map.to_dict()
         if self.cleanup_profile != "default":
             data["cleanup_profile"] = self.cleanup_profile
             data["cleanup"] = [{"name": stage.name, "params": stage.params} for stage in self.cleanup]
-            data["beat_grid"] = (
-                {"beat_times": list(self.beat_grid.beat_times), "downbeat_offset_s": self.beat_grid.downbeat_offset_s}
-                if self.beat_grid is not None else None
-            )
         return data
 
 
@@ -920,7 +924,7 @@ def default_spec_for_target(
             cleanup=cleanup,
             beat_grid=(
                 BeatGridReference(tuple(float(time) for time in beat_times), downbeat_offset_s)
-                if cleanup_profile.enabled and beat_times else None
+                if beat_times else None
             ),
         )
     if backend == "adtof":
@@ -1414,6 +1418,9 @@ class FakeTranscriber:
             midi_path = destination_dir / "transcription.mid"
             events_path = destination_dir / "transcription.json"
             tempo_bpm = spec.midi_tempo or 120.0
+            # Same seam as the real backend, so the offline suite exercises
+            # grid reconciliation rather than a path that skips it.
+            events, _reconciliation = reconcile_event_times(events, beat_grid=spec.beat_grid)
             if isinstance(spec, AdtofSpec) or spec.cleanup_profile == "default":
                 drum_notes = [
                     (event["time_sec"], event["time_sec"] + 0.1, DRUMSCRIPT_INSTRUMENTS[event["instruments"][0]], 100)
@@ -2371,6 +2378,13 @@ class DrumScriptTranscriber:
                 _validate_drumscript_midi(midi_source)
                 raw_events = parse_drumscript_events(events_source)
                 _validate_event_times(raw_events, _source_duration_seconds(source))
+                # Before either profile: DrumScript quantizes onto its own
+                # beat tracker's grid, anchored at 0.0 and at its own tempo,
+                # so its "absolute seconds" start at the item edge instead of
+                # the first beat and drift from there (see `vgt.drum_grid`).
+                raw_events, reconciliation = reconcile_event_times(raw_events, beat_grid=spec.beat_grid)
+                if reconciliation is not None:
+                    emit(f"drum events {reconciliation.describe()}")
                 destination_dir.mkdir(parents=True, exist_ok=True)
                 midi_path = destination_dir / "transcription.mid"
                 events_path = destination_dir / "transcription.json"
@@ -2398,7 +2412,11 @@ class DrumScriptTranscriber:
                         for instrument in event["instruments"]
                     ]
                     _write_midi(midi_path, notes, tempo_bpm, channel=9, tempo_map=spec.tempo_map)
-                    shutil.copy2(events_source, events_path)
+                    # Serialized from the events the MIDI was authored from,
+                    # not byte-copied from DrumScript's file: after grid
+                    # reconciliation the two would otherwise disagree, and
+                    # every consumer scores the JSON against the MIDI.
+                    events_path.write_text(json.dumps(raw_events), encoding="utf-8")
                     final_events = raw_events
                 else:
                     cleanup_profile = DRUM_CLEANUP_PROFILES[spec.cleanup_profile]

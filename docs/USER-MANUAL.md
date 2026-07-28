@@ -60,7 +60,7 @@ vgt creates a `[vgt] <reference name>` container and may add:
 | `[vgt] Click` | Tempo-click artifact exists | Muted audio track; unmute temporarily to check the beat grid. |
 | Vocals, Instrumental, Bass, Drums, Guitar, Backing | Standard separation | Unmuted, time-based audio tracks. |
 | Strings, Keys / Piano | Explicitly requested | Unmuted, time-based optional stem tracks. |
-| `[vgt] <Target> Ref — <Label> (MIDI)` | A retained transcription variant was transcribed | Unmuted, time-based MIDI item directly beneath the stem it was transcribed from, in default/neutral track colour; every retained variant is a peer, ordered only for stable presentation, with none marked preferred. It has no sound without an instrument; muting it would only dim the notes meant to be read. |
+| `[vgt] <Target> Ref — <Label> (MIDI)` | A retained transcription variant was transcribed | Unmuted, time-based MIDI item directly beneath the stem it was transcribed from, in default/neutral track colour; every retained variant is a peer, ordered only for stable presentation, with none marked preferred. The item spans the reference track, whether or not the transcription's last note reaches the end of the song, and never loops to fill it. It has no sound without an instrument; muting it would only dim the notes meant to be read. |
 | `[vgt]` section regions | Section analysis | Movable and renamable section markers. |
 
 Chords and Beats are unmuted so labels stay visible, but contain no audible
@@ -345,10 +345,24 @@ Two limitations to know before reading the output:
 
 `default` re-authors DrumScript's raw events (onset time, instrument, and
 velocity recovered from DrumScript's own MIDI) at the project tempo; it does
-not filter, align, or reclassify anything DrumScript detected. When a note's
+not filter or reclassify anything DrumScript detected. When a note's
 velocity can't be matched back to DrumScript's MIDI closely enough to trust,
 it falls back to a fixed velocity of 100 for that note only, not for the
-whole take. An opt-in **`drums-clean`** profile is also available:
+whole take.
+
+Before either profile runs, vgt reconciles DrumScript's timeline with the
+beat grid from tempo analysis. DrumScript quantizes its onsets onto a grid it
+fits itself, anchored at the very start of the stem and at its own tempo
+estimate, so its "absolute seconds" begin at the item edge rather than at the
+song's first beat and drift from there. vgt reads each event's position on
+that grid and re-emits it at the same position on the analyzed grid, which is
+what makes the reference MIDI line up with `[vgt] Click` from the first bar to
+the last. If tempo analysis has not run, or the two grids cannot be matched
+confidently, DrumScript's own times are used unchanged. Because the beat grid
+is an input to the result, re-running tempo analysis re-transcribes the drums
+rather than reusing MIDI aligned to the old grid.
+
+An opt-in **`drums-clean`** profile is also available:
 
 ```sh
 vgt analyze --mode drums=drums-clean "Song.RPP"

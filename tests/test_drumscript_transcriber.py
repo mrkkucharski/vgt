@@ -9,10 +9,12 @@ from __future__ import annotations
 from dataclasses import replace
 from pathlib import Path
 from types import SimpleNamespace
+import json
 import subprocess
 
 import pytest
 
+from vgt.drum_cleanup import BeatGridReference
 from vgt.transcribe import (
     DRUMSCRIPT_CMD_ENV,
     DRUMSCRIPT_PACKAGE_PIN,
@@ -59,7 +61,6 @@ def _run_writing(events, midi: bytes = _midi(), stdout: str = "useful stdout"):
         out = Path(cwd) / "nested"
         out.mkdir()
         (out / "detected.mid").write_bytes(midi)
-        import json
         (out / "events.json").write_text(json.dumps(events), encoding="utf-8")
         return SimpleNamespace(returncode=0, stdout=stdout, stderr="useful stderr")
     return fake_run
@@ -195,6 +196,57 @@ def test_default_profile_reauthors_midi_at_the_project_tempo_not_drumscripts(
     # which would play back at half the real elapsed time under a 120 BPM
     # project grid).
     assert tick == pytest.approx(150.0 * 960, abs=1)
+
+
+def test_events_are_authored_on_the_analyzed_beat_grid_not_drumscripts_own(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """DrumScript quantizes onto a grid anchored at 0.0 at its own tempo, so
+    on 7Rivers the reference MIDI began at the item edge instead of the
+    0.0853 s downbeat and ran 0.15% fast from there. Both the MIDI and the
+    event JSON must come out on the project's grid, and must agree.
+    """
+    source = tmp_path / "drums.wav"
+    source.write_bytes(b"not decoded by this unit test")
+    downbeat, project_beat, backend_step = 0.085333, 0.499983, 0.249615
+    events = [{"time_sec": index * backend_step, "instruments": ["kick"]} for index in range(12)]
+    monkeypatch.setattr("shutil.which", lambda _cmd: "/usr/bin/uvx")
+    monkeypatch.setattr(subprocess, "run", _run_writing(events, _midi(notes=(36,))))
+    monkeypatch.setattr("vgt.transcribe._source_duration_seconds", lambda _source: 10.0)
+    spec = _spec(
+        midi_tempo=120.004,
+        beat_grid=BeatGridReference(
+            beat_times=tuple(downbeat + index * project_beat for index in range(40)), downbeat_offset_s=downbeat
+        ),
+    )
+    messages: list[str] = []
+
+    result = DrumScriptTranscriber().transcribe(source, tmp_path / "destination", spec, messages.append)
+
+    expected = [downbeat + index * project_beat / 2 for index in range(12)]
+    assert [event["time_sec"] for event in json.loads(result.events_path.read_text())] == pytest.approx(expected)
+    assert result.first_event_s == pytest.approx(downbeat)
+    assert result.last_event_s == pytest.approx(expected[-1])
+    # The JSON is what the MIDI was authored from, so the first note-on sits
+    # on the downbeat rather than at tick 0 (480 ticks/beat at 120.004 BPM).
+    assert _note_on_tick(result.midi_path.read_bytes(), 36) == pytest.approx(
+        downbeat * 480 * 120.004 / 60.0, abs=1
+    )
+    assert any("grid-aligned" in message for message in messages)
+
+
+def test_events_keep_drumscripts_timing_when_no_beat_grid_was_analyzed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A project analyzed without a tempo grid has nothing to align to; the
+    backend's own times must then survive untouched."""
+    events = [{"time_sec": index * 0.249615, "instruments": ["kick"]} for index in range(12)]
+
+    result = _transcribe(tmp_path, monkeypatch, events, _midi(notes=(36,)))
+
+    assert [event["time_sec"] for event in json.loads(result.events_path.read_text())] == pytest.approx(
+        [event["time_sec"] for event in events]
+    )
 
 
 def test_default_profile_preserves_drumscripts_velocity_when_reauthoring(

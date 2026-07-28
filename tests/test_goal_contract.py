@@ -411,7 +411,15 @@ for _, track in ipairs(tracks) do
       assert(#track.items == 1 and track.items[1].position == 10.25 and track.items[1].length == 0.75
         and track.items[1].notes == 'Dm' and track.items[1].take.name == 'Dm' and track.items[1].C_LOCK == nil, 'chord annotations')
     elseif expected_sources[track.name] then
-      assert(#track.items == 1 and track.items[1].position == 10 and track.items[1].length == 1,
+      -- An audio item is as long as its source; a reference MIDI instead
+      -- spans the whole reference track (10..14) however early its last note
+      -- falls, and must not loop its transcription to fill that span.
+      local expected_length = 1
+      if track.name:match('%(MIDI%)$') then
+        expected_length = 4
+        assert(track.items[1].B_LOOPSRC == 0, 'reference MIDI must not loop: ' .. track.name)
+      end
+      assert(#track.items == 1 and track.items[1].position == 10 and track.items[1].length == expected_length,
         'source item placement: ' .. track.name)
       local source_path, expected_source = track.items[1].take.source.path, expected_sources[track.name]
       assert(source_path:match('/vgt/') and source_path:sub(-#expected_source) == expected_source,
@@ -1118,9 +1126,13 @@ for _, track in ipairs(tracks) do
   end
 end
 """)
+    # The item spans the reference track (10..14), *not* the 150.1 the MIDI
+    # source reports: for a MIDI source that number is quarter notes rather
+    # than seconds, and it stops at the last note. Timing is proven by the
+    # authored QN above, not by the item's length.
     assert item_report.split("|")[:2] == [
-        "[vgt] Drums Ref — default (MIDI):10:150.1",
-        "[vgt] Drums Ref — clean (MIDI):10:150.1",
+        "[vgt] Drums Ref — default (MIDI):10:4",
+        "[vgt] Drums Ref — clean (MIDI):10:4",
     ]
     applied_sidecar = read_sidecar(project)
     assert _user_snapshot(
