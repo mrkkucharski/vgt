@@ -57,6 +57,7 @@ from .transcribe import (
     resolve_target_source,
     spec_hash,
     target_input_hash,
+    tempo_map_reference,
     transcribed_entry,
     validate_profile_for_target,
     validate_target,
@@ -282,6 +283,7 @@ def _refresh_target(
     spec = router.spec_for_target(
         target, midi_tempo=midi_tempo, modes=modes, time_signature=time_signature,
         beat_times=beat_times, downbeat_offset_s=downbeat_offset_s,
+        tempo_map=tempo_map_reference(tempo_value if isinstance(tempo_value, dict) else None),
     )
     profile = modes.get(target) or (variants.get(target_variant_id) or {}).get("requested_profile") or "default"
     effective_profile = (
@@ -341,6 +343,7 @@ def _refresh_legacy_target(
     spec = router.spec_for_target(
         target, midi_tempo=midi_tempo, modes=modes, time_signature=time_signature,
         beat_times=beat_times, downbeat_offset_s=downbeat_offset_s,
+        tempo_map=tempo_map_reference(tempo_value if isinstance(tempo_value, dict) else None),
     )
     settings_hash = spec_hash(spec)
     resolved = resolve_target_source(project_path, target, analysis, reference_source=reference_source)

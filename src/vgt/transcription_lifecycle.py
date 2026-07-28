@@ -39,6 +39,7 @@ from .transcribe import (
     production_transcriber_router,
     resolve_target_source,
     target_input_hash,
+    tempo_map_reference,
     validate_target,
 )
 from .transcription_profiles import (
@@ -189,6 +190,7 @@ def add_variant(
     tempo_value = analysis["tempo"].get("value")
     midi_tempo = tempo_value.get("bpm") if isinstance(tempo_value, dict) else None
     time_signature = tempo_value.get("time_signature") if isinstance(tempo_value, dict) else None
+    tempo_map = tempo_map_reference(tempo_value if isinstance(tempo_value, dict) else None)
 
     if target == "drums":
         if profile not in DRUM_CLEANUP_PROFILE_NAMES:
@@ -200,7 +202,7 @@ def add_variant(
         profile_definition_hash = None
         resolved_settings = {"cleanup_profile": profile, **DRUM_CLEANUP_PROFILES[profile].as_identity()}
         spec = default_spec_for_target(
-            target, backend="drumscript", midi_tempo=midi_tempo, time_signature=time_signature, modes={target: profile}
+            target, backend="drumscript", midi_tempo=midi_tempo, time_signature=time_signature, modes={target: profile}, tempo_map=tempo_map
         )
     else:
         try:
@@ -210,7 +212,7 @@ def add_variant(
         effective_profile = resolved.name
         profile_definition_hash = resolved.profile_definition_hash
         resolved_settings = resolved_settings_snapshot(resolved)
-        spec = spec_from_resolved_profile(resolved, midi_tempo=midi_tempo, time_signature=time_signature)
+        spec = spec_from_resolved_profile(resolved, midi_tempo=midi_tempo, time_signature=time_signature, tempo_map=tempo_map)
 
     namespace = ensure_artifact_namespace(sidecar, project_path)
 
