@@ -389,6 +389,9 @@ def test_router_uses_the_drum_profile_backend_and_keeps_drumscript_default() -> 
         "model_version": ADTOF_MODEL_VERSION,
         "weights_version": ADTOF_WEIGHTS_VERSION,
         "weights_sha256": "1bc986e596ec47ba0b44916f87cd4a39f0b2bec23596df3fb5d0e87749217320",
+        "runtime_version": "python==3.11",
+        "torch_version": "torch==2.13.0",
+        "lock_sha256": "c1c0e70cd0ff9f3045536a49940d9a9e8ada6523bd17424c36fd4f40e5ebb3e2",
         "midi_tempo": 120.0,
         "beat_grid": None,
     }

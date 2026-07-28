@@ -50,6 +50,7 @@ packages = ["src/vgt"]
 
 [tool.hatch.build.targets.wheel.force-include]
 "reascript" = "vgt/reascript"
+"src/vgt/adtof-requirements.lock" = "vgt/adtof-requirements.lock"
 
 [tool.hatch.build.targets.sdist]
 include = ["src/vgt", "reascript", "README.md", "pyproject.toml"]

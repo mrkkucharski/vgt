@@ -89,6 +89,12 @@ ADTOF_WEIGHTS_SHA256 = "1bc986e596ec47ba0b44916f87cd4a39f0b2bec23596df3fb5d0e877
 # the env once instead of paying the ~35s cold `uvx` build on every run.
 BASIC_PITCH_CMD_ENV = "VGT_BASIC_PITCH_CMD"
 DRUMSCRIPT_CMD_ENV = "VGT_DRUMSCRIPT_CMD"
+ADTOF_RUNTIME_VERSION = "python==3.11"
+ADTOF_TORCH_VERSION = "torch==2.13.0"
+ADTOF_LOCK_FILENAME = "adtof-requirements.lock"
+ADTOF_LOCK_SHA256 = "c1c0e70cd0ff9f3045536a49940d9a9e8ada6523bd17424c36fd4f40e5ebb3e2"
+ADTOF_TIMEOUT_SECONDS = 120
+ADTOF_CLASS_NAMES = ("bass_drum", "snare_drum", "tom_tom", "hi_hat", "cymbal")
 
 # DrumScript's public event labels and their General MIDI percussion notes.
 # Keep this deliberately small and explicit: accepting a new upstream label is
@@ -743,6 +749,9 @@ class AdtofSpec:
     model_version: str
     weights_version: str
     weights_sha256: str
+    runtime_version: str
+    torch_version: str
+    lock_sha256: str
     midi_tempo: float | None
     beat_grid: BeatGridReference | None
     tempo_map: "TempoMapReference | None" = None
@@ -752,6 +761,8 @@ class AdtofSpec:
             "backend": self.backend, "package_pin": self.package_pin,
             "package_version": self.package_version, "model_version": self.model_version,
             "weights_version": self.weights_version, "weights_sha256": self.weights_sha256,
+            "runtime_version": self.runtime_version, "torch_version": self.torch_version,
+            "lock_sha256": self.lock_sha256,
             "midi_tempo": self.midi_tempo,
             "beat_grid": {"beat_times": list(self.beat_grid.beat_times), "downbeat_offset_s": self.beat_grid.downbeat_offset_s}
             if self.beat_grid else None,
@@ -759,6 +770,16 @@ class AdtofSpec:
         if self.tempo_map is not None:
             data["tempo_map"] = self.tempo_map.to_dict()
         return data
+
+
+@dataclass(frozen=True)
+class AdtofActivationResult:
+    """Validated raw ADTOF output for Phase 3's vgt-owned post-processing."""
+
+    activations: Any
+    metadata: dict[str, Any]
+    cache_key: str
+    cache_hit: bool
 
 
 TranscriptionSpec = BasicPitchSpec | DrumScriptSpec | AdtofSpec
@@ -871,7 +892,8 @@ def default_spec_for_target(
         return AdtofSpec(
             backend="adtof", package_pin=ADTOF_PACKAGE_PIN, package_version=ADTOF_PACKAGE_VERSION,
             model_version=ADTOF_MODEL_VERSION, weights_version=ADTOF_WEIGHTS_VERSION,
-            weights_sha256=ADTOF_WEIGHTS_SHA256, midi_tempo=midi_tempo,
+            weights_sha256=ADTOF_WEIGHTS_SHA256, runtime_version=ADTOF_RUNTIME_VERSION,
+            torch_version=ADTOF_TORCH_VERSION, lock_sha256=ADTOF_LOCK_SHA256, midi_tempo=midi_tempo,
             beat_grid=BeatGridReference(tuple(float(time) for time in beat_times), downbeat_offset_s) if beat_times else None,
             tempo_map=tempo_map,
         )
@@ -2335,6 +2357,176 @@ class DrumScriptTranscriber:
             backend_tempo=_drumscript_backend_tempo(completed),
             midi_tempo=_midi_tempo_bpm(midi_path),
         )
+
+
+class AdtofActivationRunner:
+    """Run pinned ADTOF inference without importing Torch into vgt.
+
+    The only durable artifact this class can create is an explicitly supplied
+    cache entry.  The executable helper, model output, and any accidental
+    upstream artifacts live under one ``TemporaryDirectory`` and are removed
+    before this method returns.  Cache entries are validated both before being
+    written and every time they are read.
+    """
+
+    def __init__(self, cache_dir: Path | None = None, *, timeout_seconds: int = ADTOF_TIMEOUT_SECONDS) -> None:
+        self.cache_dir = cache_dir
+        self.timeout_seconds = timeout_seconds
+
+    def run(
+        self, source: Path, spec: AdtofSpec, progress: Callable[[str], None] | None = None,
+    ) -> AdtofActivationResult:
+        if not isinstance(spec, AdtofSpec):
+            raise TranscriptionError("AdtofActivationRunner requires an AdtofSpec")
+        source = source.resolve()
+        if not source.is_file():
+            raise TranscriptionError("drum stem is not a readable file")
+        source_lock = Path(__file__).with_name(ADTOF_LOCK_FILENAME)
+        if _sha256_file(source_lock) != spec.lock_sha256:
+            raise TranscriptionError("ADTOF dependency lock does not match the pinned runtime identity")
+        stem_hash = _sha256_file(source)
+        cache_key = adtof_activation_cache_key(spec, stem_hash)
+        cache_path = self.cache_dir / f"{cache_key}.npz" if self.cache_dir is not None else None
+        if cache_path is not None and cache_path.is_file():
+            try:
+                activations, metadata = load_adtof_activation_dump(cache_path, spec)
+            except TranscriptionError:
+                # A partial/corrupt cache entry must never be consumed.  It is
+                # safe to replace this exact content-addressed file.
+                cache_path.unlink(missing_ok=True)
+            else:
+                return AdtofActivationResult(activations, metadata, cache_key, cache_hit=True)
+
+        argv_prefix = _adtof_base_command(spec)
+        if shutil.which(argv_prefix[0]) is None:
+            raise TranscriptionError(
+                f"{argv_prefix[0]!r} is not on PATH; install uv and pre-fetch the pinned ADTOF environment, "
+                "including its committed dependency lock"
+            )
+        emit = progress or (lambda _message: None)
+        emit(f"extracting raw activations (adtof): {source.name}")
+        with tempfile.TemporaryDirectory(prefix="vgt-adtof-") as temporary:
+            work_dir = Path(temporary)
+            helper = work_dir / "adtof_inference.py"
+            lock = work_dir / ADTOF_LOCK_FILENAME
+            output = work_dir / "activations.npz"
+            try:
+                shutil.copyfile(Path(__file__).with_name("_adtof_subprocess.py"), helper)
+                shutil.copyfile(source_lock, lock)
+                completed = subprocess.run(
+                    build_adtof_argv(source, output, spec, helper, lock), cwd=work_dir,
+                    capture_output=True, text=True, timeout=self.timeout_seconds, errors="replace",
+                )
+            except subprocess.TimeoutExpired as exc:
+                raise TranscriptionError(f"ADTOF inference timed out after {exc.timeout}s") from exc
+            except OSError as exc:
+                raise TranscriptionError(f"failed to run {argv_prefix[0]!r}: {exc}") from exc
+            if completed.returncode != 0:
+                context = _adtof_process_context(completed, work_dir)
+                raise TranscriptionError(
+                    "ADTOF inference failed (the pinned package, model, or bundled weights may be missing) "
+                    f"with status {completed.returncode}: {context}"
+                )
+            try:
+                activations, metadata = load_adtof_activation_dump(output, spec)
+                if cache_path is not None:
+                    cache_path.parent.mkdir(parents=True, exist_ok=True)
+                    # Copying the already validated NPZ preserves its metadata
+                    # exactly and keeps cache materialization out of the child.
+                    shutil.copy2(output, cache_path)
+            except (OSError, TranscriptionError) as exc:
+                raise TranscriptionError(_without_temporary_path(str(exc), work_dir)) from exc
+
+        return AdtofActivationResult(activations, metadata, cache_key, cache_hit=False)
+
+
+def _sha256_file(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for block in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(block)
+    return digest.hexdigest()
+
+
+def adtof_activation_cache_key(spec: AdtofSpec, stem_hash: str) -> str:
+    """Stable cache identity for raw inference, independent of Phase 3 tuning."""
+    identity = {
+        "package_pin": spec.package_pin,
+        "package_version": spec.package_version,
+        "model_version": spec.model_version,
+        "weights_version": spec.weights_version,
+        "weights_sha256": spec.weights_sha256,
+        "runtime_version": spec.runtime_version,
+        "torch_version": spec.torch_version,
+        "lock_sha256": spec.lock_sha256,
+        "stem_sha256": stem_hash,
+    }
+    return hashlib.sha256(json.dumps(identity, sort_keys=True, separators=(",", ":")).encode("utf-8")).hexdigest()
+
+
+def _adtof_base_command(spec: AdtofSpec) -> list[str]:
+    # ``--offline`` is intentional.  The package and bundled checkpoint must
+    # be pre-fetched; the complete committed lock makes inference independent
+    # of whichever versions happen to be in a machine's uv cache.
+    return [
+        "uv", "run", "--offline", "--isolated", "--no-project",
+        "--python", spec.runtime_version.removeprefix("python=="),
+    ]
+
+
+def build_adtof_argv(source: Path, output: Path, spec: AdtofSpec, helper: Path, lock: Path) -> list[str]:
+    """Build the pinned, network-disabled subprocess command without executing it."""
+    if spec.backend != "adtof":
+        raise TranscriptionError(f"AdtofActivationRunner cannot build argv for backend {spec.backend!r}")
+    return [*_adtof_base_command(spec), "--with-requirements", str(lock), "python", str(helper), str(source.resolve()), str(output), spec.lock_sha256]
+
+
+def load_adtof_activation_dump(path: Path, spec: AdtofSpec) -> tuple[Any, dict[str, Any]]:
+    """Load and strictly validate a raw activation NPZ emitted by the child."""
+    try:
+        import numpy as np
+        with np.load(path, allow_pickle=False) as dump:
+            if set(dump.files) != {"activations", "metadata"}:
+                raise TranscriptionError("ADTOF activation dump must contain only activations and metadata")
+            activations = dump["activations"]
+            raw_metadata = dump["metadata"]
+    except (OSError, ValueError) as exc:
+        raise TranscriptionError("could not read ADTOF activation dump") from exc
+    try:
+        metadata = json.loads(str(raw_metadata.item()))
+    except (AttributeError, TypeError, json.JSONDecodeError) as exc:
+        raise TranscriptionError("ADTOF activation dump has invalid metadata") from exc
+    if not isinstance(metadata, dict):
+        raise TranscriptionError("ADTOF activation metadata must be an object")
+    if activations.dtype != np.float32 or activations.ndim != 2 or activations.shape[0] < 1:
+        raise TranscriptionError("ADTOF activations must be a non-empty float32 [n_frames, n_classes] matrix")
+    if activations.shape[1] != len(ADTOF_CLASS_NAMES):
+        raise TranscriptionError(f"ADTOF activations have {activations.shape[1]} classes; expected {len(ADTOF_CLASS_NAMES)}")
+    if not np.isfinite(activations).all():
+        raise TranscriptionError("ADTOF activations contain non-finite values")
+    expected = {
+        "package_version": spec.package_version,
+        "model_version": spec.model_version,
+        "weights_sha256": spec.weights_sha256,
+        "runtime_version": spec.runtime_version.removeprefix("python=="),
+        "torch_version": spec.torch_version.removeprefix("torch=="),
+        "lock_sha256": spec.lock_sha256,
+        "device": "cpu",
+        "sample_rate": 44100,
+        "n_fft": 2048,
+        "hop_samples": 441,
+        "fps": 100,
+        "class_names": list(ADTOF_CLASS_NAMES),
+    }
+    for name, value in expected.items():
+        if metadata.get(name) != value:
+            raise TranscriptionError(f"ADTOF activation metadata has unexpected {name}")
+    return activations, metadata
+
+
+def _adtof_process_context(completed: Any, work_dir: Path) -> str:
+    context = " | ".join(part for part in (_stderr_tail(completed.stderr), _stderr_tail(completed.stdout)) if part)
+    return _without_temporary_path(context or "no output captured", work_dir)
 
 
 def _drumscript_base_command(spec: DrumScriptSpec) -> list[str]:
