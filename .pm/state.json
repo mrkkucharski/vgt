@@ -1,10 +1,10 @@
 {
   "current_issue": 202,
-  "session_id": "8ae687be-a01b-4d31-8ed3-49d35122b9e4",
-  "pid": 19119,
-  "process_started_at": "Tue Jul 28 22:23:25 2026",
+  "session_id": "abf6bb34-1062-42b8-b0f5-4651c74fa2c3",
+  "pid": 20312,
+  "process_started_at": "Tue Jul 28 22:28:15 2026",
   "agent": "codex",
-  "started_at": "2026-07-28T20:23:23.311886+00:00",
+  "started_at": "2026-07-28T20:28:13.752047+00:00",
   "scheduler_stalls": {},
   "budget": {
     "window_start": "2026-07-28T16:13:40.657375+00:00",
@@ -17,7 +17,7 @@
   "verification_followups": {
     "f0d8bfc9d2dc6da7a31609184e25c4d66d3986fd2340b33a83e98204fb86691e": "created"
   },
-  "role": "fix",
+  "role": "review",
   "branch": "issue-202-adtof-backend-phase-3-vgt-post-processin",
   "worktree_path": "/Users/marekkucharski/projects/.pm-worktrees/vgt/issue-202",
   "pr_number": 210,
@@ -75,11 +75,11 @@
   "pending_transition": {
     "issue": 202,
     "target": "working",
-    "event": "agent.fix_started",
+    "event": "agent.review_started",
     "detail": {
       "issue": 202,
       "agent": "codex",
-      "fix_count": 1
+      "pr": 210
     },
     "cleanup": {}
   }
