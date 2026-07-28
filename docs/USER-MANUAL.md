@@ -487,7 +487,7 @@ a draft to read, not an editing surface. `vgt_working_copy.lua` makes a
 **user-owned** copy you can edit freely, side by side with the vgt references,
 that no later apply or sync will ever touch.
 
-Install it with `vgt install-reascripts` (it ships alongside the other two
+Install it with `vgt install-reascripts` (it ships alongside the other three
 actions) and run it from REAPER's Action List. It offers two choices:
 
 - **Create working copy from selected tracks** — select the track(s) you want

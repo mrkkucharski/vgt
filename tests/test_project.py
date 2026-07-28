@@ -50,6 +50,20 @@ def test_sync_command_points_to_the_sync_reascript(capsys: pytest.CaptureFixture
     err = capsys.readouterr().err
     assert "reascript/vgt_sync.lua" in err
     assert "human-verified" in err
+    assert "key" in err
+    assert "reascript/vgt_sync_tempo_map.lua" in err
+    assert "confirmation-gated" in err
+
+
+def test_sync_help_names_key_sync_and_separate_tempo_map_action(capsys: pytest.CaptureFixture[str]) -> None:
+    with pytest.raises(SystemExit, match="0"):
+        main(["sync", "--help"])
+
+    out = capsys.readouterr().out
+    assert "chord, section, and key" in out
+    assert "vgt_sync_tempo_map.lua" in out
+    assert "confirmation-" in out
+    assert "gated" in out
 
 
 def _write_rpp(tmp_path: Path, *, items: list[str]) -> Path:

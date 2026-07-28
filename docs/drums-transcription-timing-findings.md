@@ -1,12 +1,29 @@
 # Drums transcription: timing & density findings (7Rivers)
 
-Status: diagnostic evidence for why the shipped drums reference MIDI is
-mistimed and has wrong note counts. Measured against the real `7Rivers`
-project on 2026-07-27, with a follow-up round on 2026-07-28. It records what
-was done, what the outcomes actually are, the root causes, and a prioritized
-improvement plan; the fixes themselves live in the commits each cause names.
-Causes #3, #6 and #7 are fixed. Timing is no longer the open problem — note
-*density* is (causes #2 and #4).
+Status: historical diagnostic evidence from the real `7Rivers` project
+(2026-07-27–28), reconciled with the delivered implementation. The measurements
+below preserve the evidence that motivated the fixes, but do not describe the
+current shipped timing path.
+
+## Current status (delivered versus remaining)
+
+- **Delivered:** issue #193 authors both drum profiles on the project tempo;
+  issue #183 replaced global-max onset evidence with local prominence; issue
+  #185 added conservative, tempo-scaled same-instrument retrigger
+  deduplication; and the later grid/item fixes (#6 and #7 below) reconcile
+  eligible DrumScript events to the analyzed grid and make reference MIDI span
+  the source track. These are bounded cleanup and authoring behavior, not a
+  claim that transcription is ground truth.
+- **Superseded historical measurements:** the original late/onset-strength and
+  2×-compression findings record pre-fix behavior. They remain below for
+  provenance and are explicitly marked where the old mechanism is discussed.
+- **Remaining backend-quality limitation:** DrumScript can still over-detect
+  or hallucinate notes, especially in sparse or quiet passages. The cleanup is
+  intentionally conservative, so it does not promise to remove every bad
+  backend event.
+- **Human-owned check:** listening to real stems and inspecting results in live
+  REAPER require the maintainer's ears and project; they are non-blocking
+  manual checks, not autonomous acceptance criteria.
 
 ## What was compared
 
@@ -60,19 +77,20 @@ only **20%**.
 
 ## Root causes
 
-### 1. Two independent timelines; vgt's good grid is never applied to the drum MIDI
+### 1. Historical: two independent timelines before grid reconciliation
 
 vgt already computes an accurate 120 BPM beat grid (the analysis path) that
-lines up with the audio. **DrumScript never sees that grid.** It runs its
+lines up with the audio. Before the delivered reconciliation, **DrumScript
+never saw that grid.** It runs its
 own onset detection and its own internal beat tracker on the stem, emits
 absolute-second onset times, and vgt imports those times as-is. Nothing in
 the pipeline snaps drum onsets to vgt's beat grid or to the audio. So the
 click can be perfectly aligned while the MIDI is 40–50 ms off — they come
 from two unrelated estimators.
 
-### 2. The `drums-clean` audio evidence is mis-normalized — this is the biggest, most fixable bug
+### 2. Historical: `drums-clean` audio evidence used global-max normalization
 
-`AudioOnsetEvidenceSource.evidence_near` scores every onset as
+Before issue #183, `AudioOnsetEvidenceSource.evidence_near` scored every onset as
 `local_peak / global_envelope_max` (`src/vgt/drum_cleanup.py:236`).
 Reproduced on the real stem:
 
@@ -90,13 +108,17 @@ Reproduced on the real stem:
     fires, so those notes keep DrumScript's raw (late/jittery) time. →
     **timing never actually corrected.**
 
-The strength number is meaningless as an absolute quantity: it measures "how
+The old strength number was meaningless as an absolute quantity: it measures "how
 loud is this hit compared to the single loudest transient in the whole song,"
 not "is there an onset here." A quiet-but-real hi-hat and true silence both
 score ≈ 0. So the suppression stage cannot tell a real quiet hit from a
 non-event, and it removes both. Merely re-normalizing by the 95th percentile
 instead of the max already cuts the sub-0.12 fraction from 62% to 41% — and a
 proper local/relative prominence measure would do much better.
+
+**Delivered by #183:** evidence now uses local prominence relative to a rolling
+baseline/spread, with thresholds retuned for that scale. The figures in this
+section are therefore historical pre-fix measurements, not current behavior.
 
 ### 3. The drum MIDI is authored at DrumScript's half tempo (60 BPM) — this DOES compress playback ~2× and is the dominant timing bug
 
@@ -175,13 +197,15 @@ own 120 BPM grid. **This is a vgt-only fix; DrumScript needs no change.**
 
 Independently of cleanup, `default` emits ~2× the real note count, driven by
 repeated hi-hat retriggers and kick doubles, plus notes in sections that are
-actually silent. This is a backend-quality ceiling, not something the
-current conservative cleanup is allowed to touch (it only removes on strong
-negative evidence, which — per cause #2 — it can't measure).
+actually silent. This remains a backend-quality ceiling. Issue #185 delivered
+conservative, tempo-scaled same-instrument retrigger deduplication, and #183
+made negative audio evidence meaningful; neither intentionally turns the
+cleanup into an aggressive note-selection model, so false positives can
+remain.
 
-## Direct answers to the questions asked
+## Historical answers to the original questions
 
-- **Why is timing off when the click/beats align with the drums?** There are
+- **Why was timing off when the click/beats aligned with the drums?** There were
   **two** effects, and the larger one is global. (a) **Gross:** the drum MIDI is
   authored at DrumScript's half tempo (60 BPM) and REAPER plays it on the
   project's 120 BPM grid, so it plays back **~2× compressed** and drifts
@@ -191,13 +215,13 @@ negative evidence, which — per cause #2 — it can't measure).
   onsets come from *different* estimators (vgt's accurate, audio-aligned grid vs
   DrumScript's jittery onset detector) and vgt never reconciles them.
   `drums-clean` was meant to nudge onsets to audio peaks, but its evidence signal
-  is broken (cause #2), so for 73% of notes it does nothing. Fix (a) first (it
-  restores the correct timeline); (b) then moves the residual jitter onto the beat.
+  then used the broken mechanism in cause #2. The delivered authoring, local
+  evidence, and grid fixes supersede this timing diagnosis.
 
 - **Why too many notes in some places and missing notes in others (latest
   attempt)?** Two stacked effects. DrumScript over-detects to begin with
   (~2×, cause #4). Then `drums-clean`'s suppression, driven by the
-  mis-normalized evidence (cause #2), deletes ~50% of events by a threshold
+  then-mis-normalized evidence (cause #2), deleted ~50% of events by a threshold
   that has no stable relationship to whether a hit is real — so wherever the
   local audio happens to sit below the global-max-normalized bar it strips
   the bar down to a few notes (the "missing measures"), and wherever a loud
@@ -205,9 +229,9 @@ negative evidence, which — per cause #2 — it can't measure).
   (the "too many notes"). The boundary between the two is an artifact of loud
   vs quiet passages, not of musical correctness.
 
-## Planned improvements (prioritized)
+## Historical improvement plan (now delivered where noted)
 
-1. **Fix the onset-evidence normalization (highest impact, smallest change).**
+1. **Delivered by #183 — fix the onset-evidence normalization.**
    Replace global-max normalization with a *local, relative* prominence:
    e.g. peak height relative to a rolling local median/baseline of the
    envelope, or a percentile-scaled (95th–99th) normalization, so "is there
@@ -218,7 +242,7 @@ negative evidence, which — per cause #2 — it can't measure).
    majority of real hits. Every constant is already part of the profile
    identity hash, so retuning is cache-safe and leaves `default` untouched.
 
-2. **Snap onsets to vgt's own beat grid / audio peaks, not just a ±30 ms
+2. **Delivered by the grid reconciliation — snap onsets to vgt's own beat grid / audio peaks, not just a ±30 ms
    nudge.** Feed the analysis-stage beat grid (and downbeat offset) into
    cleanup so alignment has a musical reference, and widen/condition the
    search so a systematic offset (here ~+45 ms) is corrected rather than
@@ -226,7 +250,7 @@ negative evidence, which — per cause #2 — it can't measure).
    (the profile already supports `CLEAN_STATIC_OFFSET_S`) informed by the
    grid rather than left at 0.
 
-3. **(HIGHEST priority — gross timing fix) Author the drum MIDI at the project
+3. **Delivered by #193 — author the drum MIDI at the project
    tempo, not DrumScript's.** The drum MIDI is authored at DrumScript's 60 BPM
    while the project is 120, and REAPER plays it on the project grid
    (`IGNTEMPO 0`), so it plays **~2× compressed** and drifts (cause #3, now
@@ -241,7 +265,7 @@ negative evidence, which — per cause #2 — it can't measure).
    DrumScript change. Validate that the events JSON carries velocity so the
    re-authored `default` reproduces the same notes, only re-timed.
 
-4. **Tame over-detection before suppression.** A conservative de-dup of
+4. **Delivered by #185 — tame over-detection before suppression.** A conservative de-dup of
    near-coincident same-instrument retriggers (a minimum inter-onset interval
    per instrument, tempo-scaled) would cut the ~2× hi-hat/kick inflation
    without needing per-note audio evidence — complementary to, and safer
@@ -271,11 +295,12 @@ longer the bottleneck** — the reference MIDI now sits within ~17 ms of the
 played hits for the whole song. Item #2 as written (widen the ±30 ms nudge to
 correct a systematic offset) is **obsolete**: there is no systematic offset
 left to correct, and `drums-clean`'s alignment stage now receives events that
-are already on the grid. What remains, in order, is **#1 (evidence
-normalization)** and **#4 (tame over-detection)** — both about *which notes
-exist*, which is now the whole of the visible problem: DrumScript still emits
-roughly twice the real note count, so a passage reads as wrong even though
-every note it does emit is on the beat.
+are already on the grid. The normalization and conservative retrigger-
+deduplication work in #1 and #4 are now delivered. What remains is the bounded
+backend-quality limitation: DrumScript can still emit too many notes, so a
+passage can read as wrong even when the notes it emits are on the beat. Assess
+real-audio listening in REAPER as a human-owned, non-blocking check rather
+than an automated acceptance gate.
 
 ## Follow-up (2026-07-28): the residual offset is DrumScript's own grid
 
