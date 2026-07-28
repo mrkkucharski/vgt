@@ -1,0 +1,69 @@
+{
+  "capture": "ADTOF Phase 0 feasibility spike; raw model activations before peak picking",
+  "source": {
+    "path": "media/6a7745be/stems/drums.wav",
+    "sha256": "6469ee45b8ee3233062031b3a5e447c593a34e2b7612addaa4267fce77bb31d7",
+    "sample_rate": 48000,
+    "channels": 2,
+    "frames": 8570880,
+    "duration_s": 178.56
+  },
+  "engine": {
+    "vcs_url": "https://github.com/xavriley/ADTOF-pytorch.git",
+    "commit": "85c192e78f716ea0b111cc8a5ee4a8f6a3a4f8a9",
+    "package_version": "0.1.0",
+    "torch_version": "2.13.0",
+    "python_version": "3.11.15",
+    "device": "cpu",
+    "weights_resource": "adtof_pytorch/data/adtof_frame_rnn_pytorch_weights.pth",
+    "weights_sha256": "1bc986e596ec47ba0b44916f87cd4a39f0b2bec23596df3fb5d0e87749217320"
+  },
+  "activation_contract": {
+    "array_key": "activations",
+    "shape": [
+      17857,
+      5
+    ],
+    "dtype": "float32",
+    "sha256": "892f972d4af7aa30214daca4b7380ff72d9213bc9dab652215b0eb514c9dccf2",
+    "model_sample_rate": 44100,
+    "n_fft": 2048,
+    "hop_samples": 441,
+    "fps": 100,
+    "center": true,
+    "class_names": [
+      "bass_drum",
+      "snare_drum",
+      "tom_tom",
+      "hi_hat",
+      "cymbal"
+    ],
+    "gm_labels": [
+      35,
+      38,
+      47,
+      42,
+      49
+    ],
+    "upstream_peak_thresholds": [
+      0.22,
+      0.24,
+      0.32,
+      0.22,
+      0.3
+    ]
+  },
+  "measurement": {
+    "first_run_s": 21.245631374884397,
+    "second_run_s": 1.2649646250065416,
+    "second_run_max_abs_diff": 0.0,
+    "second_run_bitwise_identical": true,
+    "local_peak_counts_at_upstream_thresholds": [
+      167,
+      146,
+      7,
+      402,
+      0
+    ]
+  }
+}

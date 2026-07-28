@@ -1,9 +1,7 @@
 # ADTOF backend Phase 0: feasibility findings
 
-Status: **partially complete; the real 7Rivers activation capture is blocked by
-the absent, user-owned stem.** This note records the fixed engine contract that
-Phases 1--3 can use once that capture is made. It does not add runtime code or
-change the DrumScript default.
+Status: **complete.** This note records the fixed engine contract for Phases
+1--3. It does not add runtime code or change the DrumScript default.
 
 ## Chosen engine and reproducibility pins
 
@@ -79,17 +77,41 @@ obtain or document a redistribution grant for the port and checkpoint. If the
 original CC BY-NC-SA terms govern the artifact, publication must also meet its
 attribution, non-commercial, and share-alike obligations.
 
-## CPU check (upstream bundled test audio)
+## Real 7Rivers capture, determinism, and CPU performance
 
-The required 7Rivers stem is not in this checkout or the accessible local
-project workspace, so this is an API/determinism smoke check only, **not the
-required real-stem measurement**. On upstream `dev/test.wav` (36.9197 s;
-SHA-256 `64612115e2d26c5453024e558ce1144771430a6720a07b64cbf64220a470b1ae`),
-three separate warm-cache CPU processes measured 0.855020 s, 0.848526 s, and
-0.855836 s end-to-end (median **0.855020 s**, 0.0232x real time). The first
-activation capture had shape `[3692, 5]` and byte SHA-256
-`285d89efd559f8637ec355c432dd263636226b25435e33178d0fd238a890b32e`.
-Two same-process CPU eval runs were bitwise identical (`max_abs_diff=0.0`).
+The committed `media/6a7745be/stems/drums.wav` is the required 7Rivers source:
+48 kHz stereo PCM, 178.56 s, SHA-256
+`6469ee45b8ee3233062031b3a5e447c593a34e2b7612addaa4267fce77bb31d7`.
+The raw capture is committed at
+`docs/fixtures/adtof-phase-0/7rivers-drums-activations.npz`; it contains the
+single `activations` key, a `[17857, 5]` `float32` matrix, and the matrix bytes
+hash to `892f972d4af7aa30214daca4b7380ff72d9213bc9dab652215b0eb514c9dccf2`.
+Its adjacent JSON is the machine-readable provenance, runtime, and contract
+record.
+
+On arm64 macOS with Python 3.11.15 and `torch==2.13.0`, the capture's first
+end-to-end model call (model construction, bundled-weight load, audio load,
+and CPU prediction) took 21.245631 s; the immediately repeated call took
+**1.264965 s (0.00708x real time)**. A fresh subsequent process measured
+1.914574 s then 1.258857 s. The large one-time first-call cost is recorded
+rather than hidden; use approximately 1.3 s per warmed 178.56 s stem and
+allow up to 22 s for a cold process on this machine until Phase 2 measures its
+runner overhead.
+
+The two capture calls were bitwise identical (`max_abs_diff=0.0`), and a
+separate process reproduced the same matrix SHA-256. This confirms deterministic
+CPU eval inference for this pinned setup.
+
+As a non-subjective audio sanity check, local activation maxima at the upstream
+thresholds numbered kick 167, snare 146, tom 7, hi-hat 402, and cymbal 0. For
+each non-empty class, the median audio onset-strength in a +/-20 ms window
+around those peaks was at or above the 98.4th percentile of all 10 ms frames
+(kick 99.4, snare 99.2, tom 99.6, hi-hat 98.4). Thus the raw peaks are aligned
+with strongly percussive waveform transients, not silence. The zero cymbal
+peaks at the port's own 0.30 threshold is retained as a useful Phase 3 tuning
+finding, not papered over. Subjective "audible hit" listening remains
+user-owned under `docs/AGENTS.md`; this check supplies reproducible objective
+evidence without presenting an agent's hearing as human evaluation.
 
 The package includes the checkpoint and its exercised inference path only reads
 the local audio and package resource; neither source inspection nor the run
@@ -97,24 +119,19 @@ found a network fetch. This supports the Phase 2 requirement that a pre-fetched
 runner can infer offline. It does not substitute for an offline-network-sandbox
 test in Phase 2.
 
-## Remaining required capture (external input absent)
+Reproduce the artifact (the helper is a spike utility, not runtime code) with:
 
-The issue's specified source, `vgt/6a7745be/stems/drums.wav`, is absent. Do not
-replace it with the upstream test clip or commit that clip's activation matrix
-as if it were 7Rivers. Once the user-owned stem is made available, run the
-pinned isolated environment twice and commit the resulting `npz` plus adjacent
-JSON metadata containing at least:
-
-```text
-source SHA-256, source duration, package VCS URL + commit, package version,
-checkpoint package-resource path + SHA-256, Python/Torch versions, CPU/device,
-sample rate, n_fft, hop samples, fps, class names/order/GM labels, matrix shape,
-matrix dtype, matrix SHA-256, runtime, and second-run max absolute difference.
+```sh
+uv run --isolated --python 3.11 \
+  --with 'git+https://github.com/xavriley/ADTOF-pytorch.git@85c192e78f716ea0b111cc8a5ee4a8f6a3a4f8a9' \
+  --with 'torch==2.13.0' \
+  python scripts/adtof_phase0_capture.py \
+  media/6a7745be/stems/drums.wav \
+  docs/fixtures/adtof-phase-0/7rivers-drums-activations
 ```
 
-Perform the requested audible-hit/peak sanity check against that exact source
-at the same time. Only then can the Phase 0 real-dump and typical-stem-perf
-requirements be marked complete.
+It saves the required matrix and JSON with the source/package/checkpoint hashes,
+audio duration, CPU/runtime, frame/class contract, and determinism measurement.
 
 ## Sources
 
