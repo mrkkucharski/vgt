@@ -47,13 +47,10 @@ discarded-artifact/cache cleanup, paid-work refusal without explicit
 non-interactive consent, no duplicate paid submission after
 checkpoint recovery, credential non-persistence, and preservation of user
 tracks plus a simulated `[work]` copy. It is run locally as the source of truth
-for the offline acceptance suite. The retained `Tests` workflow is configured
-for push, pull-request, and manual-dispatch triggers, but hosted GitHub Actions
-is not operational for this hobby project because hosted runners are blocked by
-account billing. If hosted CI is restored, its Linux job runs the complete
-offline suite and its separate macOS job runs an installed-distribution smoke
-test. Both deliberately require no credentials, network access, model
-downloads, or live REAPER.
+for the offline acceptance suite. Hosted GitHub Actions is intentionally not
+part of this hobby project's verification path because hosted runners are
+billing-blocked; run the complete suite locally instead. It deliberately
+requires no credentials, network access, model downloads, or live REAPER.
 
 ## Permanent invariants
 
