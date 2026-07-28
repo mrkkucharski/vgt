@@ -1,13 +1,14 @@
 # `drums-clean`: opt-in conservative cleanup for DrumScript output (issue #177)
 
 `default` and `drums-clean` are peers, not a before/after pair. `default` is
-DrumScript's raw output — unfiltered, unaligned, and unreclassified by this
-issue, and still what every project gets unless `drums-clean` is explicitly
-selected. (Its MIDI is no longer a byte-copy of DrumScript's own file: issue
-#193 re-authors it at the project tempo rather than DrumScript's self-detected
-tempo, recovering each note's velocity from DrumScript's MIDI in the process.
-The event data itself — which onsets, which instruments — is untouched.)
-`drums-clean` applies `vgt.drum_cleanup`'s conservative,
+DrumScript's raw output — unfiltered and unreclassified by this issue, and
+still what every project gets unless `drums-clean` is explicitly selected.
+(Its MIDI is no longer a byte-copy of DrumScript's own file: issue #193
+re-authors it at the project tempo rather than DrumScript's self-detected
+tempo, recovering each note's velocity from DrumScript's MIDI in the process,
+and both profiles now receive events snapped onto the analyzed beat grid —
+see `vgt.drum_grid`. The event data itself — which onsets, which instruments —
+is untouched.) `drums-clean` applies `vgt.drum_cleanup`'s conservative,
 bounded post-processing pass to the same raw events. Retain both variants
 (`vgt transcription variant add drums --profile default` /
 `--profile drums-clean`) and compare them for any given song rather than

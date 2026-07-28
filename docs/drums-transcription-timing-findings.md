@@ -2,9 +2,11 @@
 
 Status: diagnostic evidence for why the shipped drums reference MIDI is
 mistimed and has wrong note counts. Measured against the real `7Rivers`
-project on 2026-07-27. This document does not change any code; it records
-what was done, what the outcomes actually are, the root causes, and a
-prioritized improvement plan.
+project on 2026-07-27, with a follow-up round on 2026-07-28. It records what
+was done, what the outcomes actually are, the root causes, and a prioritized
+improvement plan; the fixes themselves live in the commits each cause names.
+Causes #3, #6 and #7 are fixed. Timing is no longer the open problem — note
+*density* is (causes #2 and #4).
 
 ## What was compared
 
@@ -262,6 +264,18 @@ correct timeline. Only once the timeline is correct do the finer fixes matter:
 residual per-onset jitter onto the beat, and **#4** removes the over-detection.
 The earlier ordering demoted #3 as a cosmetic relabel; that was based on an
 unreproducible observation and is corrected here.
+
+Ordering rationale (revised again 2026-07-28, after the follow-up below):
+**#3 and the grid reconciliation in cause #6 are delivered, and timing is no
+longer the bottleneck** — the reference MIDI now sits within ~17 ms of the
+played hits for the whole song. Item #2 as written (widen the ±30 ms nudge to
+correct a systematic offset) is **obsolete**: there is no systematic offset
+left to correct, and `drums-clean`'s alignment stage now receives events that
+are already on the grid. What remains, in order, is **#1 (evidence
+normalization)** and **#4 (tame over-detection)** — both about *which notes
+exist*, which is now the whole of the visible problem: DrumScript still emits
+roughly twice the real note count, so a passage reads as wrong even though
+every note it does emit is on the beat.
 
 ## Follow-up (2026-07-28): the residual offset is DrumScript's own grid
 

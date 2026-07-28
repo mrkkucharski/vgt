@@ -17,6 +17,11 @@ Add a **second, opt-in** automatic drum transcription (ADT) backend for the
   MIDI/JSON authoring in vgt's own pipeline** (per the recommendation doc's
   primary option). This maximises vgt's control over timing — the exact thing
   DrumScript gets wrong (see `docs/drums-transcription-timing-findings.md`).
+  Note the baseline has since moved: vgt now snaps DrumScript's events onto
+  the analyzed grid before authoring (cause #6 in that document), so the bar
+  an ADTOF variant has to clear is the *grid-snapped* DrumScript output, not
+  the off-grid output the recommendation was written against. What DrumScript
+  still gets wrong is which onsets exist at all — it over-detects roughly 2x.
 - **Both coexist as retained variants of the same target.** The variant system
   already supports several candidates per target (immutable ids, editable
   labels, none preferred); an ADTOF variant is just another candidate a user
