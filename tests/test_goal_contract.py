@@ -29,6 +29,7 @@ ROOT = Path(__file__).parents[1]
 FIXTURE_DIR = ROOT / "test" / "Reaper Project"
 APPLY_SCRIPT = ROOT / "reascript" / "vgt_initialize.lua"
 SYNC_SCRIPT = ROOT / "reascript" / "vgt_sync.lua"
+TEMPO_SYNC_SCRIPT = ROOT / "reascript" / "vgt_sync_tempo_map.lua"
 LUA = __import__("os").environ.get("VGT_TEST_LUA", "lua")
 REFERENCE_GUID = "{75418143-1F31-B548-B7D2-96815CB0297D}"
 
@@ -357,6 +358,13 @@ io.write(count .. '#' .. detail)
 def _run_sync(project: Path, state: str) -> str:
     module = SYNC_SCRIPT.read_text(encoding="utf-8").split("local ok, error_message = xpcall", 1)[0]
     state, _ = _run(project, state, module, "sync()")
+    return state
+
+
+def _run_tempo_map_sync(project: Path, state: str) -> str:
+    """Drive the separately-confirmed action in the offline REAPER harness."""
+    module = TEMPO_SYNC_SCRIPT.read_text(encoding="utf-8").split("local ok,err=xpcall", 1)[0]
+    state, _ = _run(project, state, module, "reaper.ShowMessageBox=function(_,_,kind) return kind == 4 and 6 or 0 end; sync_tempo_map()")
     return state
 
 
@@ -1171,6 +1179,44 @@ table.insert(tracks, {guid='work-drums', name='[work] Drums Ref — default (MID
     assert refreshed_default["settings_hash"] != before_hash
     assert after != before
     assert _midi_note_on_qns(namespace / refreshed_default["midi_file"]) == pytest.approx([250.0])
+
+
+def test_goal_contract_tempo_map_sync_drives_variable_grid_without_touching_user_map(
+    tmp_path: Path, deterministic_detectors: None,
+) -> None:
+    project = _copy_project(tmp_path)
+    state = _lua_state(project).replace(
+        "markers={{time=0,bpm=100,num=4,den=4}}",
+        "markers={{time=0,bpm=100,num=4,den=4},{time=10,bpm=120,num=4,den=4},{time=13,bpm=90,num=4,den=4},{time=18,bpm=160,num=4,den=4}}",
+    )
+    state, _ = _run_apply(project, state)
+    initialized = read_sidecar(project)
+    before = _user_snapshot(
+        project, state, managed_tracks=initialized["managed_track_guids"], managed_regions=initialized["managed_region_ids"],
+    )
+    analyze(project, stages=("tempo",))
+
+    state = _run_tempo_map_sync(project, state)
+    synced = read_sidecar(project)
+    tempo = synced["analysis"]["tempo"]
+    assert tempo["human_verified"] is True
+    assert tempo["detected"]["bpm"] == 120.0
+    assert tempo["value"]["spans"] == [{"start_seconds": 3, "bpm": 90, "time_signature": "4/4"}]
+
+    separate(project, CountingSeparator(), guitar_type="electric")
+    drumscript = TempoSkewedDrumScriptFake()
+    router = TargetTranscriberRouter(basic_pitch=CountingTranscriber(), drumscript=drumscript, drumscript_targets=("drums",))
+    variant = add_variant(project, "drums", label="map", profile="default", router=router)
+    namespace = artifact_namespace_dir(project, read_sidecar(project)["analysis"]["stems"]["artifact_namespace"])
+    # 3 seconds at 120 BPM (6 QN), then 147 seconds at 90 BPM (220.5 QN).
+    assert _midi_note_on_qns(namespace / variant["midi_file"]) == pytest.approx([226.5])
+
+    # Sync itself has no REAPER marker mutator, and a following apply treats
+    # this map as human-owned rather than refreshing it.
+    state, report = _run_apply(project, state)
+    assert report.split("#")[-1] == "0"
+    applied = read_sidecar(project)
+    assert _user_snapshot(project, state, managed_tracks=applied["managed_track_guids"], managed_regions=applied["managed_region_ids"]) == before
 
 
 def test_goal_contract_sync_survives_a_concurrent_analyze_commit(tmp_path: Path, deterministic_detectors: None) -> None:

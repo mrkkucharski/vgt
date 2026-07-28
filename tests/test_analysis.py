@@ -126,7 +126,7 @@ def test_upgrade_keeps_v1_fields_and_adds_v2_analysis_skeleton() -> None:
 
     upgraded = upgrade(v1)
 
-    assert upgraded["schema_version"] == 15
+    assert upgraded["schema_version"] == 16
     assert upgraded["managed_region_ids"] == []
     assert upgraded["managed_track_guids"] == ["{AAAA}", "{BBBB}"]
     assert upgraded["config"] == {"reference_track_guid": REFERENCE_GUID}
@@ -141,7 +141,7 @@ def test_upgrade_keeps_v1_fields_and_adds_v2_analysis_skeleton() -> None:
             "analyzed_at": None,
             "verified_at": None,
         }
-        if stage in ("key", "chords", "sections"):
+        if stage in ("tempo", "key", "chords", "sections"):
             expected["detected"] = None
             expected["detected_input_hash"] = None
             expected["detected_settings_hash"] = None
@@ -179,7 +179,7 @@ def test_upgrade_marks_legacy_librosa_tempo_as_unknown_bar_phase() -> None:
         "backend": "librosa", "bpm": 120.0, "downbeat_offset_seconds": 0.25,
     }}}})
 
-    assert upgraded["schema_version"] == 15
+    assert upgraded["schema_version"] == 16
     assert upgraded["analysis"]["tempo"]["value"]["downbeat_detected"] is False
 
 
@@ -218,7 +218,7 @@ def test_upgrade_adds_v10_transcription_block_to_a_v8_sidecar() -> None:
 
     upgraded = upgrade(v8)
 
-    assert upgraded["schema_version"] == 15
+    assert upgraded["schema_version"] == 16
     assert upgraded["analysis"]["transcription"] == {"requested_targets": ["guitar"], "modes": {}, "targets": {}, "detection_cache": {}}
     # Unrelated v8 fields survive the upgrade untouched.
     assert upgraded["analysis"]["stems"]["artifact_namespace"] == "abc12345"
@@ -435,7 +435,7 @@ def test_analyze_writes_v2_sidecar_with_skeleton_and_provenance(tmp_path: Path) 
 
     result = analyze(project)
 
-    assert result["schema_version"] == 15
+    assert result["schema_version"] == 16
     assert result["managed_track_guids"] == ["{AAAA}", "{BBBB}"]  # phase 0 fields intact
     for stage in ANALYSIS_STAGES:
         if stage == "transcription":
@@ -919,7 +919,7 @@ def test_cli_analyze_preserves_local_results_when_lalal_is_unavailable(
     captured = capsys.readouterr()
     assert captured.out == ""
     sidecar = read_sidecar(project)
-    assert sidecar["schema_version"] == 15
+    assert sidecar["schema_version"] == 16
     assert sidecar["analysis"]["tempo"]["value"] is not None
     assert "stem separation unavailable; continuing with available sources" in captured.err
 

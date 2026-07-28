@@ -17,9 +17,11 @@ checklist.
 
    The actions are installed to
    `~/Library/Application Support/REAPER/Scripts/vgt`. In REAPER's Action
-   List, use `ReaScript: Load` to register all three installed Lua files once:
+   List, use `ReaScript: Load` to register all four installed Lua files once:
    `vgt_initialize.lua` initializes and applies vgt-managed objects,
-   `vgt_sync.lua` saves chord and section corrections, and
+   `vgt_sync.lua` saves chord, section, and key corrections;
+   `vgt_sync_tempo_map.lua` is the separate, confirmation-gated action for
+   adopting a REAPER tempo-map correction; and
    `vgt_working_copy.lua` creates protected user-owned `[work]` copies of
    generated reference MIDI. This step does not require retaining a source
    checkout. `--dry-run` previews paths without changing them and
@@ -37,8 +39,10 @@ checklist.
    needs no confirmation; guitar is requested by default.
 5. Run `vgt_initialize.lua` again to apply analysis and import available stems
    and reference MIDI tracks.
-6. Correct chords and sections in REAPER, then run `vgt_sync.lua` from the
-   Action List.
+6. Correct chords, sections, or key in REAPER, then run `vgt_sync.lua` from
+   the Action List. If you deliberately corrected the tempo map for this
+   reference, run the separate `vgt_sync_tempo_map.lua` action and confirm its
+   prompt.
 7. Inspect persisted state with `vgt status "Song.RPP"` or `--json`.
 
 `vgt [project.rpp]` and `vgt inspect [project.rpp]` are read-only. Without a
@@ -106,8 +110,22 @@ values as human-verified. Re-applying before sync discards unsynchronized edits
 to vgt-managed objects.
 
 `vgt_sync.lua` rejects a missing, ambiguous, or invalid key label without
-changing the sidecar. Tempo still has no REAPER correction action; to override
-it, edit its sidecar deliberately and keep a copy first.
+changing the sidecar. It never reads tempo markers. To adopt a tempo correction,
+run `vgt_sync_tempo_map.lua` and explicitly confirm: it reads the live
+tempo/time-signature markers over the selected reference item only, stores a
+constant or piecewise reference-relative grid as human-verified, and never
+writes, claims, or changes the project map. Markers outside the reference are
+ignored; empty, invalid, or linear-ramped maps are rejected. Later transcription
+uses the synchronized grid. Re-run `vgt analyze --force` only to refresh the
+separate machine-detected baseline; to return the effective tempo to machine
+detection, deliberately replace `analysis.tempo.value` with
+`analysis.tempo.detected` and set `human_verified` to `false` in the sidecar,
+then run `vgt_initialize.lua`. This reset is intentionally manual so vgt never
+silently discards a verified correction.
+
+Live REAPER verification remains human-owned: after synchronizing, inspect the
+map and generated reference MIDI in your project and confirm that neither user
+tracks nor the map itself changed.
 
 ## Stem separation and cost controls
 
