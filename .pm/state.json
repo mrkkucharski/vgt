@@ -1,10 +1,10 @@
 {
   "current_issue": 214,
-  "session_id": "6d9a7b4a-2098-4b48-b9c3-373b2cbf51e4",
-  "pid": 31060,
-  "process_started_at": "Tue Jul 28 23:29:07 2026",
-  "agent": "codex",
-  "started_at": "2026-07-28T21:29:05.780807+00:00",
+  "session_id": "2813dd49-e39e-409a-9d5f-5dea2fc113a1",
+  "pid": 32752,
+  "process_started_at": "Tue Jul 28 23:37:15 2026",
+  "agent": "claude",
+  "started_at": "2026-07-28T21:37:13.949719+00:00",
   "scheduler_stalls": {},
   "budget": {
     "window_start": "2026-07-28T21:15:48.918262+00:00",
@@ -15,10 +15,10 @@
   "verification_followups": {
     "f0d8bfc9d2dc6da7a31609184e25c4d66d3986fd2340b33a83e98204fb86691e": "created"
   },
-  "role": "implement",
+  "role": "review",
   "branch": "issue-214-add-reaper-native-key-correction-and-det",
   "worktree_path": "/Users/marekkucharski/projects/.pm-worktrees/vgt/issue-214",
-  "pr_number": null,
+  "pr_number": 216,
   "followup_generation": {
     "fingerprint": "2474753fd47a740fbd36af7d48833ec181634770b32bcb6456bbc034edff94f7",
     "items": {
@@ -66,11 +66,11 @@
   "pending_transition": {
     "issue": 214,
     "target": "working",
-    "event": "agent.started",
+    "event": "agent.review_started",
     "detail": {
       "issue": 214,
-      "agent": "codex",
-      "branch": "issue-214-add-reaper-native-key-correction-and-det"
+      "agent": "claude",
+      "pr": 216
     },
     "cleanup": {}
   }
