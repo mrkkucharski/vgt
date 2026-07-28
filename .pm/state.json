@@ -1,13 +1,13 @@
 {
-  "current_issue": 191,
-  "session_id": "f6d2608f-71c1-442f-b0a4-7c8eddb0038b",
-  "pid": 86802,
-  "process_started_at": "Tue Jul 28 12:03:17 2026",
+  "current_issue": 193,
+  "session_id": "8213d7f8-e8b7-40fd-b05a-572c4be6292f",
+  "pid": 94424,
+  "process_started_at": "Tue Jul 28 18:13:46 2026",
   "agent": "claude",
-  "started_at": "2026-07-28T10:03:15.845782+00:00",
+  "started_at": "2026-07-28T16:13:44.456017+00:00",
   "scheduler_stalls": {},
   "budget": {
-    "window_start": "2026-07-28T07:22:59.910513+00:00",
+    "window_start": "2026-07-28T16:13:40.657375+00:00",
     "seconds_used": 0.0,
     "dollars_used": 0.0,
     "seconds_used_by_agent": {}
@@ -15,10 +15,10 @@
   "verification_followups": {
     "f0d8bfc9d2dc6da7a31609184e25c4d66d3986fd2340b33a83e98204fb86691e": "created"
   },
-  "role": "review",
-  "branch": "issue-191-correct-the-reference-transcription-back",
-  "worktree_path": "/Users/marekkucharski/projects/.pm-worktrees/vgt/issue-191",
-  "pr_number": 192,
+  "role": "implement",
+  "branch": "issue-193-drum-reference-midi-plays-2-compressed-a",
+  "worktree_path": "/Users/marekkucharski/projects/.pm-worktrees/vgt/issue-193",
+  "pr_number": null,
   "followup_generation": {
     "fingerprint": "03ddd047aeef54213198b0c667b3cc710ef15f2b004e51cfcdc33daf78485f6a",
     "items": {
@@ -56,13 +56,13 @@
     "185": 1
   },
   "pending_transition": {
-    "issue": 191,
+    "issue": 193,
     "target": "working",
-    "event": "agent.review_started",
+    "event": "agent.started",
     "detail": {
-      "issue": 191,
+      "issue": 193,
       "agent": "claude",
-      "pr": 192
+      "branch": "issue-193-drum-reference-midi-plays-2-compressed-a"
     },
     "cleanup": {}
   }
