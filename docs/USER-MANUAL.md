@@ -333,11 +333,19 @@ Two limitations to know before reading the output:
   instrument labels, and internal debug features, but no probability that can
   be honestly shown as a confidence percentage. `vgt status` and the JSON
   sidecar report `"confidence": null`.
-- **Fixed velocity.** The exported MIDI uses a constant velocity (100) for
-  every note, so it does not preserve playing dynamics.
+- **DrumScript's own tempo detection is not used.** DrumScript's beat tracker
+  can make gross octave errors (e.g. detecting half the real tempo), so vgt
+  never authors the drum MIDI timeline at DrumScript's self-detected tempo.
+  vgt re-authors every drum note at the project's own tempo from DrumScript's
+  real-second onsets instead, the same way it does for every other target —
+  DrumScript supplies onset/instrument detections, not the final timeline.
 
-`default` (shown above) is DrumScript's raw output, untouched. An opt-in
-**`drums-clean`** profile is also available:
+`default` re-authors DrumScript's raw events (onset time, instrument, and
+velocity recovered from DrumScript's own MIDI) at the project tempo; it does
+not filter, align, or reclassify anything DrumScript detected. When a note's
+velocity can't be matched back to DrumScript's MIDI closely enough to trust,
+it falls back to a fixed velocity of 100 for that note only, not for the
+whole take. An opt-in **`drums-clean`** profile is also available:
 
 ```sh
 vgt analyze --mode drums=drums-clean "Song.RPP"
@@ -484,7 +492,14 @@ user should, in a real REAPER session:
 
 - listen to `[vgt] Drums Ref (MIDI)` against the `[vgt] Drums` audio stem with
   a drum-kit instrument loaded, and judge whether the detected kicks, snares,
-  and cymbals line up with what is audible;
+  and cymbals line up with what is audible. The reference should span the
+  full stem and stay aligned throughout — a whole-take drift where the
+  reference runs increasingly ahead of or behind the audio (the DrumScript
+  half-tempo authoring bug, issue #193) is fixed and should not recur. What
+  can still legitimately vary note-to-note is onset/detection quality: a
+  missed hit, an extra hit, a misclassified instrument, or a few tens of
+  milliseconds of per-note timing looseness, all inherent to DrumScript's
+  detection rather than a vgt timeline bug;
 - check that the reference track sits directly below `[vgt] Drums` and stays
   aligned after `apply`/`sync`;
 - treat any transcription, but especially drums, as a draft reference to
