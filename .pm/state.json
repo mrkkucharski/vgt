@@ -1,47 +1,37 @@
 {
-  "current_issue": 185,
-  "session_id": "aa40b84d-3e53-4a10-b138-5457f68937b9",
-  "pid": 75789,
-  "process_started_at": "Tue Jul 28 08:08:21 2026",
+  "current_issue": 191,
+  "session_id": "8e065ecc-aaaf-4e60-bd6f-ec74b3ec7de2",
+  "pid": 86392,
+  "process_started_at": "Tue Jul 28 12:00:52 2026",
   "agent": "claude",
-  "started_at": "2026-07-28T06:08:19.763237+00:00",
+  "started_at": "2026-07-28T10:00:51.032754+00:00",
   "scheduler_stalls": {
-    "malformed_responses": {
-      "followup_issues": {
-        "first_seen_at": "2026-07-27T11:14:22.717435+00:00",
-        "last_seen_at": "2026-07-27T11:24:08.714549+00:00",
-        "consecutive_passes": 2
-      }
-    },
-    "blocked_issues": {
-      "187": {
-        "first_seen_at": "2026-07-27T22:08:37.725495+00:00",
-        "last_seen_at": "2026-07-28T06:07:06.847220+00:00",
-        "consecutive_passes": 414,
-        "title": "Author drum MIDI at the project's detected tempo (not DrumScript's mis-detected tempo)"
+    "deferred_passes": {
+      "budget": {
+        "first_seen_at": "2026-07-28T09:21:50.988586+00:00",
+        "last_seen_at": "2026-07-28T09:59:39.008173+00:00",
+        "consecutive_passes": 33
       }
     }
   },
   "budget": {
-    "window_start": "2026-07-28T02:22:27.119069+00:00",
-    "seconds_used": 209.684001,
-    "dollars_used": 0.9528224999999999,
-    "seconds_used_by_agent": {
-      "claude": 209.684001
-    }
+    "window_start": "2026-07-28T07:22:59.910513+00:00",
+    "seconds_used": 0.0,
+    "dollars_used": 0.0,
+    "seconds_used_by_agent": {}
   },
   "verification_followups": {
     "f0d8bfc9d2dc6da7a31609184e25c4d66d3986fd2340b33a83e98204fb86691e": "created"
   },
-  "role": "review",
-  "branch": "issue-185-drums-clean-conservative-de-duplication",
-  "worktree_path": "/Users/marekkucharski/projects/.pm-worktrees/vgt/issue-185",
-  "pr_number": 190,
+  "role": "implement",
+  "branch": "issue-191-correct-the-reference-transcription-back",
+  "worktree_path": "/Users/marekkucharski/projects/.pm-worktrees/vgt/issue-191",
+  "pr_number": null,
   "followup_generation": {
-    "fingerprint": "fbea9b2e785aa0658e1c7e8448235eb91893fcd6925ed6740c4cf98dd212c31b",
+    "fingerprint": "03ddd047aeef54213198b0c667b3cc710ef15f2b004e51cfcdc33daf78485f6a",
     "items": {
-      "32a076df519c13568be5113a4fd8857e6088a66c6a26f407025a944db4322947": {
-        "title": "Fix failing tests/test_tests_workflow.py \u2014 restore the GitHub Actions Tests workflow file",
+      "daa5d94e8c7a68ffb68f1b9caa476ef99c72e6c4f4df2f303a36674ef2bad421": {
+        "title": "Correct the reference-transcription backend contract in GOAL.md",
         "status": "created"
       }
     }
@@ -74,13 +64,13 @@
     "185": 1
   },
   "pending_transition": {
-    "issue": 185,
+    "issue": 191,
     "target": "working",
-    "event": "agent.review_started",
+    "event": "agent.started",
     "detail": {
-      "issue": 185,
+      "issue": 191,
       "agent": "claude",
-      "pr": 190
+      "branch": "issue-191-correct-the-reference-transcription-back"
     },
     "cleanup": {}
   }
