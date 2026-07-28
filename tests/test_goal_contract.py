@@ -406,7 +406,7 @@ for _, track in ipairs(tracks) do
     elseif track.name == '[vgt] Key' then
       assert(#track.items == 1 and track.items[1].position == 10 and track.items[1].length == 4
         and track.items[1].notes == 'E minor' and track.items[1].take.name == 'E minor'
-        and track.items[1].C_LOCK == 1, 'key annotation')
+        and track.items[1].C_LOCK == nil, 'key annotation')
     elseif track.name == '[vgt] Chords' then
       assert(#track.items == 1 and track.items[1].position == 10.25 and track.items[1].length == 0.75
         and track.items[1].notes == 'Dm' and track.items[1].take.name == 'Dm' and track.items[1].C_LOCK == nil, 'chord annotations')
@@ -484,6 +484,7 @@ def test_goal_contract_is_offline_non_destructive_and_idempotent(tmp_path: Path,
     state, _ = _run(project, state, sync_module, """
 for _, track in ipairs(tracks) do
   if track.name == '[vgt] Chords' then track.items = {{position=10.25,length=0.75,take={name='Dm'}}} end
+  if track.name == '[vgt] Key' then track.items[1].take.name = 'E minor' end
 end
 for _, region in ipairs(regions) do
   if region.id == %d then region.start=10.25; region.finish=11; region.name='[vgt] Bridge' end
@@ -493,12 +494,15 @@ sync()
     synced = read_sidecar(project)
     assert synced["analysis"]["chords"]["value"]["segments"][0]["chord"] == "Dm"
     assert synced["analysis"]["sections"]["value"][0]["label"] == "Bridge"
+    assert synced["analysis"]["key"]["value"] == {"root": "E", "scale": "minor"}
+    assert synced["analysis"]["key"]["human_verified"] is True
     detected_chords = synced["analysis"]["chords"]["detected"]
     detected_sections = synced["analysis"]["sections"]["detected"]
+    detected_key = synced["analysis"]["key"]["detected"]
 
     # Forced free re-analysis refreshes detected baselines but preserves human sync edits;
     # paid splits and the target MIDI cache must not run again.
-    analyze(project, force=True, stages=("sections", "chords"))
+    analyze(project, force=True, stages=("key", "sections", "chords"))
     analyze(project, stages=("transcription",), transcription_targets=("guitar",), transcriber=transcriber)
     separate(project, separator, guitar_type="electric")
     reconciled = read_sidecar(project)
@@ -506,13 +510,12 @@ sync()
     assert reconciled["analysis"]["sections"]["value"][0]["label"] == "Bridge"
     assert reconciled["analysis"]["chords"]["detected"] == detected_chords
     assert reconciled["analysis"]["sections"]["detected"] == detected_sections
+    assert reconciled["analysis"]["key"]["value"] == {"root": "E", "scale": "minor"}
+    assert reconciled["analysis"]["key"]["detected"] == detected_key
     assert (separator.calls, transcriber.calls) == (5, 1)
 
-    # The display is rebuilt from effective `key.value`, so a deliberate
-    # sidecar override replaces the old label without adding another track.
-    reconciled["analysis"]["key"]["value"] = {"root": "E", "scale": "minor", "backend": "human"}
-    reconciled["analysis"]["key"]["human_verified"] = True
-    project.with_suffix(".vgt").write_text(json.dumps(reconciled), encoding="utf-8")
+    # The display is rebuilt from the synchronized effective key without
+    # adding another track.
     state, second_apply = _run_apply(project, state)
     names, user_items, region_count, vgt_count, tempo_writes = second_apply.split("#")
     assert user_items == "2" and region_count == "3" and tempo_writes == "0"
@@ -521,7 +524,7 @@ sync()
     # rather than re-prompting or drifting onto another candidate (issue #136).
     assert read_sidecar(project)["config"]["reference_track_guid"] == REFERENCE_GUID
     state, key_snapshot = _run_apply_key_snapshot(project, state)
-    assert key_snapshot == "1#0:E minor:1"
+    assert key_snapshot == "1#0:E minor:nil"
     _assert_managed_contract(project, state)
     final_sidecar = read_sidecar(project)
     assert _user_snapshot(

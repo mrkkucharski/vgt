@@ -166,6 +166,11 @@ Schema versions:
       deletes an artifact. Repeating the upgrade over an already-migrated
       sidecar is a no-op: the field is simply absent on every subsequent
       read.
+ 15 -- The `key` stage gains the same `detected`/`value` split as chords and
+      sections. This is a lossless migration: existing `value` is copied to
+      `detected` with its existing input/settings hashes, so a later REAPER
+      correction can freeze the effective value while analysis keeps the
+      machine baseline current.
 
 Every stage entry has the same shape:
   {
@@ -180,7 +185,7 @@ A human correction is applied by setting "value" and "human_verified": true;
 `refresh_stage` then leaves it untouched on every later re-run regardless of
 whether the input or settings hash changed.
 
-The `chords` and `sections` stages additionally carry:
+The `key`, `chords`, and `sections` stages additionally carry:
   {
     "detected": <machine-detected value, independent of human corrections>,
     "detected_input_hash": str | null,    # hash `detected` was last computed against
@@ -215,14 +220,14 @@ import uuid
 from . import transcription_profiles
 from .transcribe import effective_profile_name_for_target
 
-SCHEMA_VERSION = 14
+SCHEMA_VERSION = 15
 STEMS_LEASE_TIMEOUT = timedelta(minutes=30)
 
 ANALYSIS_STAGES = ("tempo", "key", "sections", "chords", "transcription")
 
 # Stages that carry the detected/value split (#19): a human correction to
 # `value` never overwrites the pristine machine detection kept in `detected`.
-DETECTED_SPLIT_STAGES = ("sections", "chords")
+DETECTED_SPLIT_STAGES = ("key", "sections", "chords")
 
 # `transcription` (like `stems`) owns a per-target index instead of the
 # generic value/input_hash/settings_hash shape every other stage in

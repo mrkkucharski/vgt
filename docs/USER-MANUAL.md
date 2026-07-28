@@ -55,7 +55,7 @@ vgt creates a `[vgt] <reference name>` container and may add:
 | --- | --- | --- |
 | `[vgt] <reference name>` | Initialization | Folder when it has children; otherwise a plain track. |
 | `[vgt] Chords` | Chord analysis | Unmuted but silent text-item track; chord items are unlocked for editing. |
-| `[vgt] Key` | Valid key analysis | Unmuted but silent text-item track with one locked item showing the effective root and scale, including a deliberate sidecar override. It is display-only. |
+| `[vgt] Key` | Valid key analysis | Unmuted, silent text-item track with one editable take name showing the effective root and scale. Use the strict `E minor` format (a pitch class followed by `major` or `minor`). |
 | `[vgt] Beats` | Existing/human-edited tempo map, or detected beats with unknown bar phase | Unmuted, silent text-item track; beat items are locked. |
 | `[vgt] Click` | Tempo-click artifact exists | Muted audio track; unmute temporarily to check the beat grid. |
 | Vocals, Instrumental, Bass, Drums, Guitar, Backing | Standard separation | Unmuted, time-based audio tracks. |
@@ -95,16 +95,19 @@ instead of anchoring a tempo map to an arbitrary beat. It never overwrites
 another map or a human-edited vgt map, and refreshes a vgt map only when it can
 prove that the map is still untouched.
 
-To correct chords, edit `[vgt] Chords` items: rename the take, move/resize,
+To correct the key, rename the sole `[vgt] Key` item's take using exactly a
+pitch class and mode, for example `E minor` or `F# major`. Flats are accepted
+and normalized to their sharp pitch class; the mode must be lowercase `major`
+or `minor`. Keep exactly one key item. To correct chords, edit `[vgt] Chords` items: rename the take, move/resize,
 split, delete, or add items with a take name. Rename or move only vgt-created
 section regions. Then run `vgt_sync.lua` from REAPER's Action List. Sync preserves the
 machine-detected chord/section baselines while saving the effective edited
 values as human-verified. Re-applying before sync discards unsynchronized edits
 to vgt-managed objects.
 
-Tempo and key do not yet have a REAPER correction action. To override either,
-edit its sidecar `value` deliberately and set `human_verified` to `true`; keep
-a copy of the sidecar first.
+`vgt_sync.lua` rejects a missing, ambiguous, or invalid key label without
+changing the sidecar. Tempo still has no REAPER correction action; to override
+it, edit its sidecar deliberately and keep a copy first.
 
 ## Stem separation and cost controls
 

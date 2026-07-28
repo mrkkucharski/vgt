@@ -360,7 +360,7 @@ def test_beats_and_chords_tracks_are_both_unmuted() -> None:
     assert 'add_locked_track(reaper.CountTracks(0), CHORDS_NAME, false, "chords")' in script
 
 
-def test_key_display_uses_the_effective_value_as_a_locked_unmuted_label() -> None:
+def test_key_display_uses_the_effective_value_as_an_editable_unmuted_label() -> None:
     script = APPLY_SCRIPT.read_text()
     helpers_end = script.index("local function remove_previous_managed_regions()")
     lua_program = "\n".join(
@@ -370,12 +370,12 @@ def test_key_display_uses_the_effective_value_as_a_locked_unmuted_label() -> Non
             "local managed_tracks = {}",
             "add_key_track(0, {root = 'E', scale = 'minor'}, 10, 14, managed_tracks)",
             "local track, item = __tracks[1], __items[1]",
-            "io.write(track.name, ':', track.mute, ':', item.notes, ':', item.values.C_LOCK, ':', item.values.D_POSITION, ':', item.values.D_LENGTH, ':', #managed_tracks)",
+            "io.write(track.name, ':', track.mute, ':', item.notes, ':', tostring(item.values.C_LOCK or 0), ':', item.values.D_POSITION, ':', item.values.D_LENGTH, ':', #managed_tracks)",
         ]
     )
     result = subprocess.run([LUA, "-", "song.RPP"], input=lua_program, text=True, capture_output=True)
     assert result.returncode == 0, result.stderr
-    assert result.stdout == "[vgt] Key:0:E minor:1:10:4:1"
+    assert result.stdout == "[vgt] Key:0:E minor:0:10:4:1"
 
 
 def test_key_display_requires_a_complete_key_value() -> None:
@@ -1567,7 +1567,7 @@ _G.__messages = messages
 
     result = _run_lua_module(SYNC_SCRIPT.read_text(), rpp, lua_mock + "\nsync()\nio.write(__messages[1])")
     assert result.returncode == 0, result.stderr
-    assert "synced 2 chord item(s) and 2 section region(s)" in result.stdout
+    assert "synced 2 chord item(s), 2 section region(s), and 0 key correction(s)" in result.stdout
 
     data = json.loads(sidecar.read_text())
 
@@ -1628,7 +1628,30 @@ _G.__messages = messages
     full_program = "\n".join([lua_mock, SYNC_SCRIPT.read_text(), "io.write(__messages[1] or '')"])
     result = subprocess.run([LUA, "-", str(rpp)], input=full_program, text=True, capture_output=True)
     assert result.returncode == 0, result.stderr
-    assert "No [vgt] Chords track found" in result.stdout
+    assert "No managed [vgt] Chords or [vgt] Key track found" in result.stdout
+
+
+def test_key_sync_requires_one_strict_label_and_normalizes_flats() -> None:
+    """The key parser is intentionally narrow: it is the validation boundary
+    before sync starts its atomic sidecar transaction."""
+    script = SYNC_SCRIPT.read_text()
+    helpers_end = script.index("local function sync()")
+    lua_program = "\n".join([
+        "reaper = {}",
+        "function reaper.CountTrackMediaItems(track) return #track.items end",
+        "function reaper.GetTrackMediaItem(track, index) return track.items[index + 1] end",
+        "function reaper.GetActiveTake(item) return item.take end",
+        "function reaper.GetTakeName(take) return take.name end",
+        script[:helpers_end],
+        "local valid = key_track_as_value({items = {{take = {name = 'Db minor'}}}})",
+        "local invalid_ok = pcall(key_track_as_value, {items = {{take = {name = 'D flat minor'}}}})",
+        "local ambiguous_ok = pcall(key_track_as_value, {items = {{take = {name = 'D minor'}}, {take = {name = 'E minor'}}}})",
+        "local missing_ok = pcall(key_track_as_value, {items = {}})",
+        "io.write(valid.root .. ':' .. valid.scale .. ':' .. tostring(invalid_ok) .. ':' .. tostring(ambiguous_ok) .. ':' .. tostring(missing_ok))",
+    ])
+    result = subprocess.run([LUA, "-", "song.RPP"], input=lua_program, text=True, capture_output=True)
+    assert result.returncode == 0, result.stderr
+    assert result.stdout == "C#:minor:false:false:false"
 
 
 def test_write_settings_merges_a_concurrent_analyze_commit_via_generation_retry(tmp_path: Path) -> None:

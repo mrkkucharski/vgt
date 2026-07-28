@@ -157,10 +157,11 @@ def _refresh_stage_with_detected(
     compute: Callable[..., Any],
     force: bool = False,
     analyzed_at: str | None = None,
+    render_baseline_artifact: bool = False,
 ) -> dict[str, Any]:
     """Like `sidecar.refresh_stage`, but tracks `detected` -- the pristine
     machine-detection baseline -- independently of `value`. Used for the
-    `chords` and `sections` stages (`sidecar.DETECTED_SPLIT_STAGES`).
+    `key`, `chords`, and `sections` stages (`sidecar.DETECTED_SPLIT_STAGES`).
 
     Before a human verifies `value`, the two are recomputed together (there
     is only one detector call; `detected` is just the pristine copy of its
@@ -192,7 +193,9 @@ def _refresh_stage_with_detected(
         return stage
     return {
         **stage,
-        "detected": compute(render_artifact=False),
+        # Only sections writes a presentation artifact during detection.
+        # Key and chords have no `render_artifact` argument.
+        "detected": compute(render_artifact=False) if render_baseline_artifact else compute(),
         "detected_input_hash": input_hash,
         "detected_settings_hash": settings_hash,
     }
@@ -633,14 +636,16 @@ def analyze(
                 kwargs["sources"] = chord_source_paths
             return _DETECTORS[stage](project_path, source, stage_settings, analysis, namespace, **kwargs)
 
-        analysis[stage] = refresh(
-            analysis[stage],
-            input_hash=stage_input_hash,
-            settings_hash=settings_hash,
-            compute=compute_stage,
-            force=force,
-            analyzed_at=datetime.now(UTC).isoformat().replace("+00:00", "Z"),
-        )
+        refresh_kwargs = {
+            "input_hash": stage_input_hash,
+            "settings_hash": settings_hash,
+            "compute": compute_stage,
+            "force": force,
+            "analyzed_at": datetime.now(UTC).isoformat().replace("+00:00", "Z"),
+        }
+        if stage in DETECTED_SPLIT_STAGES:
+            refresh_kwargs["render_baseline_artifact"] = stage == "sections"
+        analysis[stage] = refresh(analysis[stage], **refresh_kwargs)
         # A later detector or the paid separation stage may fail.  Each local
         # success therefore becomes durable immediately, not only at the end
         # of a full analysis run.
