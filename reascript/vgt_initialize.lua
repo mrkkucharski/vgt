@@ -827,16 +827,17 @@ local function offer_beats_track(index, tempo, reference_start, reference_end, m
   managed_tracks[#managed_tracks + 1] = beats
 end
 
--- Key is an analysis display, not a REAPER key-correction surface.  Like
--- Beats it is a silent, unmuted label track, but its one item is locked so a
--- deliberate sidecar override remains the sole correction path.
+-- Key is a silent, unmuted label track. Its single take name is the
+-- correction surface read by vgt_sync.lua: `<pitch class> <major|minor>`,
+-- for example `E minor`.
 local function add_key_track(index, key, reference_start, reference_end, managed_tracks)
   if type(key) ~= "table" then return end
   local root, scale = key.root, key.scale
   if type(root) ~= "string" or root == "" or type(scale) ~= "string" or scale == "" then return end
   if reference_end <= reference_start then return end
   local key_track = add_locked_track(index, KEY_NAME, false, "key")
-  add_labeled_item(key_track, reference_start, reference_end, root .. " " .. scale)
+  -- Unlike beat labels, this item is intentionally unlocked for correction.
+  add_labeled_item(key_track, reference_start, reference_end, root .. " " .. scale, false)
   managed_tracks[#managed_tracks + 1] = key_track
 end
 

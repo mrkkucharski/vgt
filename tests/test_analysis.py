@@ -126,7 +126,7 @@ def test_upgrade_keeps_v1_fields_and_adds_v2_analysis_skeleton() -> None:
 
     upgraded = upgrade(v1)
 
-    assert upgraded["schema_version"] == 14
+    assert upgraded["schema_version"] == 15
     assert upgraded["managed_region_ids"] == []
     assert upgraded["managed_track_guids"] == ["{AAAA}", "{BBBB}"]
     assert upgraded["config"] == {"reference_track_guid": REFERENCE_GUID}
@@ -141,7 +141,7 @@ def test_upgrade_keeps_v1_fields_and_adds_v2_analysis_skeleton() -> None:
             "analyzed_at": None,
             "verified_at": None,
         }
-        if stage in ("chords", "sections"):
+        if stage in ("key", "chords", "sections"):
             expected["detected"] = None
             expected["detected_input_hash"] = None
             expected["detected_settings_hash"] = None
@@ -179,7 +179,7 @@ def test_upgrade_marks_legacy_librosa_tempo_as_unknown_bar_phase() -> None:
         "backend": "librosa", "bpm": 120.0, "downbeat_offset_seconds": 0.25,
     }}}})
 
-    assert upgraded["schema_version"] == 14
+    assert upgraded["schema_version"] == 15
     assert upgraded["analysis"]["tempo"]["value"]["downbeat_detected"] is False
 
 
@@ -218,7 +218,7 @@ def test_upgrade_adds_v10_transcription_block_to_a_v8_sidecar() -> None:
 
     upgraded = upgrade(v8)
 
-    assert upgraded["schema_version"] == 14
+    assert upgraded["schema_version"] == 15
     assert upgraded["analysis"]["transcription"] == {"requested_targets": ["guitar"], "modes": {}, "targets": {}, "detection_cache": {}}
     # Unrelated v8 fields survive the upgrade untouched.
     assert upgraded["analysis"]["stems"]["artifact_namespace"] == "abc12345"
@@ -435,7 +435,7 @@ def test_analyze_writes_v2_sidecar_with_skeleton_and_provenance(tmp_path: Path) 
 
     result = analyze(project)
 
-    assert result["schema_version"] == 14
+    assert result["schema_version"] == 15
     assert result["managed_track_guids"] == ["{AAAA}", "{BBBB}"]  # phase 0 fields intact
     for stage in ANALYSIS_STAGES:
         if stage == "transcription":
@@ -738,6 +738,30 @@ def test_key_and_chord_corrections_survive_rerun(tmp_path: Path) -> None:
     assert result["analysis"]["chords"]["detected"] == corrected_chords
 
 
+def test_key_migration_and_baseline_refresh_preserve_human_value(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Schema 15 backfills legacy key evidence, then keeps it live without
+    replacing the REAPER-synchronized effective correction."""
+    legacy = upgrade({"schema_version": 14, "analysis": {"key": {
+        "value": {"root": "D", "scale": "major"}, "input_hash": "audio", "settings_hash": "settings",
+        "human_verified": False,
+    }}})
+    assert legacy["analysis"]["key"]["detected"] == {"root": "D", "scale": "major"}
+    assert legacy["analysis"]["key"]["detected_input_hash"] == "audio"
+
+    project = _project_copy(tmp_path)
+    _write_v1_sidecar(project)
+    analyze(project, stages=("key",))
+    sidecar = read_sidecar(project)
+    sidecar["analysis"]["key"]["value"] = {"root": "E", "scale": "minor"}
+    sidecar["analysis"]["key"]["human_verified"] = True
+    write_sidecar(project, sidecar)
+    monkeypatch.setitem(analysis_module._DETECTORS, "key", lambda *_args, **_kwargs: {"root": "F", "scale": "major"})
+
+    refreshed = analyze(project, stages=("key",), force=True)
+    assert refreshed["analysis"]["key"]["value"] == {"root": "E", "scale": "minor"}
+    assert refreshed["analysis"]["key"]["detected"] == {"root": "F", "scale": "major"}
+
+
 def test_analyze_style_chord_correction_preserves_original_detected(tmp_path: Path) -> None:
     """Mirrors what `vgt_sync.lua` does for chords: overwrite only
     `value.segments` and set `human_verified`, leaving `detected` (and every
@@ -895,7 +919,7 @@ def test_cli_analyze_preserves_local_results_when_lalal_is_unavailable(
     captured = capsys.readouterr()
     assert captured.out == ""
     sidecar = read_sidecar(project)
-    assert sidecar["schema_version"] == 14
+    assert sidecar["schema_version"] == 15
     assert sidecar["analysis"]["tempo"]["value"] is not None
     assert "stem separation unavailable; continuing with available sources" in captured.err
 
