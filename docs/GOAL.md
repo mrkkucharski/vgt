@@ -22,7 +22,8 @@ analyzes it, optionally creates practice stems, and adds a clearly owned
   candidates with immutable IDs and editable labels, ordered only for stable
   presentation -- none is preferred, active, best, or selected; cleanup-only
   guitar variants share raw Basic Pitch detection. DrumScript transcribes
-  `drums`; Basic Pitch transcribes every other supported target (guitar,
+  `drums` by default; an opt-in ADTOF profile can be retained beside it as a
+  separate drums variant. Basic Pitch transcribes every other supported target (guitar,
   bass, vocals, piano, strings, instrumental, backing, and original mix).
   Generated variants are draft
   references, not chord-analysis inputs or ground truth; `[work]` copies are

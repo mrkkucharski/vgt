@@ -11,6 +11,7 @@ import json
 from pathlib import Path
 import shutil
 import subprocess
+import sys
 from typing import Any, Callable
 
 import pytest
@@ -20,7 +21,7 @@ from vgt.analysis import analyze
 from vgt.cli import main
 from vgt.separation import FakeSeparator, separate
 from vgt.sidecar import artifact_namespace_dir, read_sidecar, update_analysis
-from vgt.transcribe import DrumScriptSpec, FakeTranscriber, TargetTranscriberRouter, TranscriptionResult, _write_midi
+from vgt.transcribe import DrumScriptSpec, FakeAdtofTranscriber, FakeTranscriber, TargetTranscriberRouter, TranscriptionResult, _write_midi
 from vgt.transcription_lifecycle import add_variant, discard_variant, purge_discarded
 
 
@@ -977,6 +978,49 @@ end
         managed_tracks=final_sidecar["managed_track_guids"],
         managed_regions=final_sidecar["managed_region_ids"],
     ) == work_snapshot
+
+
+def test_goal_contract_retains_and_discards_adtof_beside_drumscript_offline(
+    tmp_path: Path, deterministic_detectors: None,
+) -> None:
+    """The opt-in backend is a peer lifecycle, not a replacement or fallback."""
+    assert not any(name == "torch" or name.startswith("torch.") for name in sys.modules)
+    project = _copy_project(tmp_path)
+    state = _lua_state(project)
+    state, _ = _run_apply(project, state)
+    separate(project, CountingSeparator(), guitar_type="electric")
+
+    drumscript = CountingTranscriber()
+    router = TargetTranscriberRouter(
+        basic_pitch=CountingTranscriber(), drumscript=drumscript,
+        drumscript_targets=("drums",), adtof=FakeAdtofTranscriber(),
+    )
+    baseline = add_variant(project, "drums", label="baseline", profile="default", router=router)
+    sidecar = read_sidecar(project)
+    namespace = artifact_namespace_dir(project, sidecar["analysis"]["stems"]["artifact_namespace"])
+    baseline_path = namespace / baseline["midi_file"]
+    baseline_bytes = baseline_path.read_bytes()
+
+    # `add` reconciles immediately.  Retaining the alternative must neither
+    # re-run nor alter DrumScript's existing artifact/identity.
+    alternative = add_variant(project, "drums", label="adtof", profile="drums-adtof", router=router)
+    record = read_sidecar(project)["analysis"]["transcription"]["targets"]["drums"]
+    assert drumscript.calls == 1
+    assert {variant["backend"] for variant in record["variants"].values()} == {"drumscript", "adtof"}
+    assert baseline_path.read_bytes() == baseline_bytes
+    assert (namespace / alternative["midi_file"]).is_file()
+
+    state, applied = _run_apply(project, state)
+    names = applied.split("#", 1)[0].split("|")
+    assert names.count("[vgt] Drums Ref — baseline (MIDI)") == 1
+    assert names.count("[vgt] Drums Ref — adtof (MIDI)") == 1
+
+    discard_variant(project, "drums", "adtof")
+    final = read_sidecar(project)["analysis"]["transcription"]["targets"]["drums"]
+    assert [variant["label"] for variant in final["variants"].values()] == ["baseline"]
+    assert baseline_path.read_bytes() == baseline_bytes
+    assert not (namespace / alternative["midi_file"]).exists()
+    assert not any(name == "torch" or name.startswith("torch.") for name in sys.modules)
 
 
 def _midi_note_on_qns(path: Path) -> list[float]:
