@@ -58,18 +58,21 @@ when its own evidence is absent or ambiguous:
    merged into one aligned onset time. Generous relative to the ~2ms
    one-tick drift the observed evidence measured at 120 BPM/480 PPQN, still
    well under a 16th note at any reasonable tempo.
-2. **Bounded audio-aware timing alignment** (`CLEAN_ALIGNMENT_WINDOW_S =
-   0.03s`, ±30ms): looks for a local audio onset-strength peak near each
-   group's time. Only moves the event when a peak is found, is unambiguous
-   (no comparably strong second peak in the same window), and its strength
-   is at least `CLEAN_MIN_EVIDENCE_STRENGTH = 0.30`. The result is clamped
-   to stay within the window and never below `time_sec = 0.0` (source-start
-   safe). An optional static offset (`CLEAN_STATIC_OFFSET_S`) is applied
-   before the search and is part of this profile's identity — it defaults
-   to `0.0`, so no implicit universal correction (like the -14ms measured on
-   one section of one reference track) is ever applied. A future profile
-   could set this explicitly for a project that has its own measured,
-   stable offset.
+2. **Grid-guided, audio-aware timing alignment**: when the analysis stage
+   supplies its detected beat grid and downbeat anchor, cleanup first looks
+   up strong audio peaks in a wider `CLEAN_SYSTEMATIC_ALIGNMENT_WINDOW_S =
+   0.08s` window. Only peaks within `CLEAN_GRID_REFERENCE_WINDOW_S = 0.08s`
+   of an eighth-note grid line contribute; their median raw-to-audio
+   difference is a song-specific systematic latency correction. That moves a
+   consistent detector lag beyond ±30ms without treating a fill as a beat.
+   Cleanup then does its normal `CLEAN_ALIGNMENT_WINDOW_S = 0.03s` (±30ms)
+   local search around the corrected time and moves only to a strong,
+   unambiguous audio peak (`CLEAN_MIN_EVIDENCE_STRENGTH = 0.30`). It never
+   writes a note directly to the grid, so the peak retains natural feel; with
+   no usable grid/evidence, this stage safely falls back to the prior local
+   behavior. The result is source-start safe. An optional static offset
+   (`CLEAN_STATIC_OFFSET_S`) is applied before estimation and remains part of
+   the profile identity for a separately measured stable latency.
 3. **Velocity shaping**: when local evidence is available and confident (per
    stage 2's threshold), velocity is linearly mapped from evidence strength
    into `[CLEAN_VELOCITY_FLOOR, CLEAN_VELOCITY_CEILING] = [30, 120]`.

@@ -12,6 +12,7 @@ from pathlib import Path
 import pytest
 
 from vgt.drum_cleanup import (
+    BeatGridReference,
     CLEAN_PROFILE_NAME,
     CLEAN_VELOCITY_DEFAULTS,
     DEFAULT_PROFILE_NAME,
@@ -26,8 +27,13 @@ from vgt.drum_cleanup import (
     cleaned_events_to_midi_notes,
 )
 from vgt.transcribe import DRUMSCRIPT_INSTRUMENTS
+from vgt.drum_midi_score import score_onsets
 
 CLEAN = DRUM_CLEANUP_PROFILES[CLEAN_PROFILE_NAME]
+
+
+def _half_second_grid() -> BeatGridReference:
+    return BeatGridReference(beat_times=tuple(index * 0.5 for index in range(12)), downbeat_offset_s=0.0)
 
 
 def test_velocity_defaults_cover_every_drumscript_instrument() -> None:
@@ -108,6 +114,45 @@ def test_alignment_is_source_start_safe_even_with_a_negative_static_offset() -> 
     cleaned = apply_drum_cleanup(events, profile=profile, evidence_source=NullOnsetEvidenceSource())
 
     assert cleaned[0].time_sec >= 0.0
+
+
+def test_grid_guided_systematic_offset_corrects_a_constant_late_detector() -> None:
+    """The grid selects reliable beat-near audio peaks; audio remains the target."""
+    raw_times = (0.045, 0.545, 1.045, 1.545)
+    events = [{"time_sec": time, "instruments": ["kick"]} for time in raw_times]
+    evidence_source = TableOnsetEvidenceSource(candidates=tuple((time - 0.045, 0.9) for time in raw_times))
+
+    cleaned = apply_drum_cleanup(events, profile=CLEAN, evidence_source=evidence_source, beat_grid=_half_second_grid())
+
+    assert [event.time_sec for event in cleaned] == pytest.approx([0.0, 0.5, 1.0, 1.5])
+    assert [event.timing_adjustment_s for event in cleaned] == pytest.approx([-0.045] * 4)
+
+    # The shipped #182 scorer sees the systematic +45ms matched-note error
+    # disappear on this deterministic equivalent of the corrected fixture.
+    truth = {"kick": [0.0, 0.5, 1.0, 1.5]}
+    before = score_onsets(truth, {"kick": list(raw_times)})
+    after = score_onsets(truth, {"kick": [event.time_sec for event in cleaned]})
+    assert before["timing"]["global"]["median_signed_error_ms"] == pytest.approx(45.0)
+    assert after["timing"]["global"]["median_signed_error_ms"] == pytest.approx(0.0)
+
+
+def test_grid_guided_systematic_offset_does_not_degrade_aligned_onsets() -> None:
+    events = [{"time_sec": time, "instruments": ["snare"]} for time in (0.0, 0.5, 1.0, 1.5)]
+    evidence_source = TableOnsetEvidenceSource(candidates=tuple((event["time_sec"], 0.9) for event in events))
+
+    cleaned = apply_drum_cleanup(events, profile=CLEAN, evidence_source=evidence_source, beat_grid=_half_second_grid())
+
+    assert [event.time_sec for event in cleaned] == pytest.approx([event["time_sec"] for event in events])
+    assert [event.timing_adjustment_s for event in cleaned] == pytest.approx([0.0] * len(events))
+
+
+def test_grid_guided_systematic_offset_remains_source_start_safe() -> None:
+    events = [{"time_sec": 0.02, "instruments": ["kick"]}, {"time_sec": 0.52, "instruments": ["kick"]}]
+    evidence_source = TableOnsetEvidenceSource(candidates=((0.0, 0.9), (0.5, 0.9)))
+
+    cleaned = apply_drum_cleanup(events, profile=CLEAN, evidence_source=evidence_source, beat_grid=_half_second_grid())
+
+    assert all(event.time_sec >= 0.0 for event in cleaned)
 
 
 def test_zero_and_near_zero_timestamps_stay_non_negative() -> None:

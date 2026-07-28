@@ -37,7 +37,9 @@ CLEAN_PROFILE_NAME = "drums-clean"
 # and docs/drums-clean-profile.md: each of these is a fixed, documented,
 # hash-identity-bearing constant, not a value tuned to one reference track.
 CLEAN_SIMULTANEITY_WINDOW_S = 0.008  # coincident-onset coalescing window; observed evidence: intended-simultaneous notes differed by one MIDI tick (~2ms at 480 PPQN/120 BPM) -- this is a generous multiple of that, still well under a 16th note
-CLEAN_ALIGNMENT_WINDOW_S = 0.03  # bounded local search radius for audio-aware timing correction; never moves an onset further than this
+CLEAN_ALIGNMENT_WINDOW_S = 0.03  # bounded local search radius for the final audio-aware timing correction
+CLEAN_SYSTEMATIC_ALIGNMENT_WINDOW_S = 0.08  # wider evidence search used only to measure a consistent latency before final local alignment
+CLEAN_GRID_REFERENCE_WINDOW_S = 0.08  # only grid-near audio peaks contribute to the latency estimate; fills remain governed by audio alone
 CLEAN_STATIC_OFFSET_S = 0.0  # explicit, opt-in-only static latency correction; 0.0 means "none" -- see issue #177's "no universal 7Rivers-derived latency offset" requirement
 CLEAN_MIN_EVIDENCE_STRENGTH = 0.30  # local evidence below this normalized strength is treated as absent, not weak -- retuned for issue #183's local-prominence normalization (see AudioOnsetEvidenceSource), under which even quiet-but-real hits typically score >=0.3 while true silence scores ~0.0
 CLEAN_SUPPRESSION_STRENGTH_THRESHOLD = 0.12  # only suppress an event when local evidence is this weak (reproducible, not a guess) -- unchanged: under the new normalization this still cleanly separates true silence (~0.0) from genuine hits
@@ -81,6 +83,8 @@ class DrumCleanupProfile:
     enabled: bool
     simultaneity_window_s: float
     alignment_window_s: float
+    systematic_alignment_window_s: float
+    grid_reference_window_s: float
     static_offset_s: float
     min_evidence_strength: float
     suppression_strength_threshold: float
@@ -96,6 +100,8 @@ class DrumCleanupProfile:
             "enabled": self.enabled,
             "simultaneity_window_s": self.simultaneity_window_s,
             "alignment_window_s": self.alignment_window_s,
+            "systematic_alignment_window_s": self.systematic_alignment_window_s,
+            "grid_reference_window_s": self.grid_reference_window_s,
             "static_offset_s": self.static_offset_s,
             "min_evidence_strength": self.min_evidence_strength,
             "suppression_strength_threshold": self.suppression_strength_threshold,
@@ -111,6 +117,8 @@ DRUM_CLEANUP_PROFILES: dict[str, DrumCleanupProfile] = {
         enabled=False,
         simultaneity_window_s=0.0,
         alignment_window_s=0.0,
+        systematic_alignment_window_s=0.0,
+        grid_reference_window_s=0.0,
         static_offset_s=0.0,
         min_evidence_strength=1.0,
         suppression_strength_threshold=0.0,
@@ -123,6 +131,8 @@ DRUM_CLEANUP_PROFILES: dict[str, DrumCleanupProfile] = {
         enabled=True,
         simultaneity_window_s=CLEAN_SIMULTANEITY_WINDOW_S,
         alignment_window_s=CLEAN_ALIGNMENT_WINDOW_S,
+        systematic_alignment_window_s=CLEAN_SYSTEMATIC_ALIGNMENT_WINDOW_S,
+        grid_reference_window_s=CLEAN_GRID_REFERENCE_WINDOW_S,
         static_offset_s=CLEAN_STATIC_OFFSET_S,
         min_evidence_strength=CLEAN_MIN_EVIDENCE_STRENGTH,
         suppression_strength_threshold=CLEAN_SUPPRESSION_STRENGTH_THRESHOLD,
@@ -151,6 +161,34 @@ class OnsetEvidence:
 
 class OnsetEvidenceSource(Protocol):
     def evidence_near(self, time_sec: float, window_s: float) -> OnsetEvidence: ...
+
+
+@dataclass(frozen=True)
+class BeatGridReference:
+    """Analysis-stage beat timestamps plus the detected bar anchor.
+
+    Cleanup uses the grid only to identify reliable, musical samples for a
+    *global latency estimate*. It never writes a note directly to a grid line:
+    the final target is still a nearby audio onset, preserving performed feel.
+    """
+
+    beat_times: tuple[float, ...]
+    downbeat_offset_s: float | None
+
+    def eighth_note_times(self) -> tuple[float, ...]:
+        beats = [time for time in self.beat_times if time >= 0.0]
+        if self.downbeat_offset_s is not None and self.downbeat_offset_s >= 0.0:
+            # Keep an explicitly detected bar anchor even if a retained or
+            # hand-corrected beat array happens not to include that first beat.
+            beats.append(self.downbeat_offset_s)
+        beats = tuple(sorted(set(beats)))
+        if len(beats) < 2:
+            return beats
+        eighths: list[float] = []
+        for left, right in zip(beats, beats[1:]):
+            eighths.extend((left, (left + right) / 2.0))
+        eighths.append(beats[-1])
+        return tuple(eighths)
 
 
 class NullOnsetEvidenceSource:
@@ -311,11 +349,47 @@ def _coalesce_groups(
     return groups
 
 
+def _nearest_distance(time_sec: float, candidates: Sequence[float]) -> float | None:
+    return min((abs(time_sec - candidate) for candidate in candidates), default=None)
+
+
+def _systematic_audio_offset(
+    anchors: Sequence[float], *, profile: DrumCleanupProfile, evidence_source: OnsetEvidenceSource,
+    beat_grid: BeatGridReference | None,
+) -> float:
+    """Return the median raw-to-audio latency for unambiguous grid-near hits.
+
+    A median makes a handful of fills, ghost notes, or detector mistakes unable
+    to turn a song-wide correction into a large move. Without both a usable
+    grid and strong audio evidence this deliberately returns zero.
+    """
+    if beat_grid is None:
+        return 0.0
+    eighths = beat_grid.eighth_note_times()
+    if not eighths:
+        return 0.0
+    offsets: list[float] = []
+    for anchor in anchors:
+        candidate = max(0.0, anchor + profile.static_offset_s)
+        evidence = evidence_source.evidence_near(candidate, profile.systematic_alignment_window_s)
+        if not evidence.available or evidence.strength < profile.min_evidence_strength:
+            continue
+        distance = _nearest_distance(evidence.time_sec, eighths)
+        if distance is not None and distance <= profile.grid_reference_window_s:
+            offsets.append(evidence.time_sec - candidate)
+    if not offsets:
+        return 0.0
+    offsets.sort()
+    midpoint = len(offsets) // 2
+    return offsets[midpoint] if len(offsets) % 2 else (offsets[midpoint - 1] + offsets[midpoint]) / 2.0
+
+
 def apply_drum_cleanup(
     events: Sequence[Mapping[str, Any]],
     *,
     profile: DrumCleanupProfile,
     evidence_source: OnsetEvidenceSource,
+    beat_grid: BeatGridReference | None = None,
 ) -> list[CleanedEvent]:
     """Run the four canonical, ordered `drums-clean` stages over raw
     DrumScript `events` and return one `CleanedEvent` per (group, instrument)
@@ -341,9 +415,14 @@ def apply_drum_cleanup(
     if not profile.enabled:
         raise ValueError(f"profile {profile.name!r} has cleanup disabled; use the raw DrumScript event path instead")
 
+    groups = _coalesce_groups(events, profile.simultaneity_window_s)
+    systematic_offset = _systematic_audio_offset(
+        [anchor_time for anchor_time, _group in groups], profile=profile,
+        evidence_source=evidence_source, beat_grid=beat_grid,
+    )
     cleaned: list[CleanedEvent] = []
-    for anchor_time, group in _coalesce_groups(events, profile.simultaneity_window_s):
-        candidate_time = max(0.0, anchor_time + profile.static_offset_s)
+    for anchor_time, group in groups:
+        candidate_time = max(0.0, anchor_time + profile.static_offset_s + systematic_offset)
         evidence = evidence_source.evidence_near(candidate_time, profile.alignment_window_s)
         if evidence.available and evidence.strength >= profile.min_evidence_strength:
             bounded_time = _clamp(evidence.time_sec, candidate_time - profile.alignment_window_s, candidate_time + profile.alignment_window_s)
