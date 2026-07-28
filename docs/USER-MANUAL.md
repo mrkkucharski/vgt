@@ -115,8 +115,9 @@ run `vgt_sync_tempo_map.lua` and explicitly confirm: it reads the live
 tempo/time-signature markers over the selected reference item only, stores a
 constant or piecewise reference-relative grid as human-verified, and never
 writes, claims, or changes the project map. Markers outside the reference are
-ignored; empty, invalid, or linear-ramped maps are rejected. Later transcription
-uses the synchronized grid. Re-run `vgt analyze --force` only to refresh the
+ignored; empty, invalid, or linear-ramped maps within the reference are rejected.
+Later transcription and chord analysis use the synchronized grid. Re-run
+`vgt analyze --force` only to refresh the
 separate machine-detected baseline; to return the effective tempo to machine
 detection, deliberately replace `analysis.tempo.value` with
 `analysis.tempo.detected` and set `human_verified` to `false` in the sidecar,

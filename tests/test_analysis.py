@@ -694,6 +694,25 @@ def test_chords_fall_back_to_freshly_detected_beats_when_tempo_correction_omits_
         assert segment["end_seconds"] in beat_times
 
 
+def test_synchronized_reaper_tempo_map_derives_the_chord_grid(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    """A verified REAPER map, unlike an old hand-written BPM correction,
+    remains the source of truth for later chord alignment."""
+    source = tmp_path / "reference.wav"
+    source.write_bytes(b"placeholder")
+
+    class Info:
+        duration = 4.0
+
+    import soundfile
+    monkeypatch.setattr(soundfile, "info", lambda _: Info())
+    beats = analysis_module._tempo_map_beat_times(
+        {"source": "reaper-tempo-map", "mode": "piecewise", "bpm": 120, "spans": [{"start_seconds": 1.5, "bpm": 60}]},
+        source,
+    )
+
+    assert beats == [0.0, 0.5, 1.0, 1.5, 2.5, 3.5]
+
+
 def test_key_and_chord_corrections_survive_rerun(tmp_path: Path) -> None:
     project = _project_copy(tmp_path)
     _write_v1_sidecar(project)

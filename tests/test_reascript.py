@@ -45,7 +45,7 @@ def test_tempo_map_sync_persists_only_reference_relative_variable_grid(tmp_path:
     }))
     lua = "\n".join([
         "local track={guid='{REF}', items={{position=10,length=8}}}",
-        "local markers={{time=0,bpm=99,num=3,den=4},{time=8,bpm=110,num=4,den=4},{time=10,bpm=120,num=4,den=4},{time=13,bpm=90,num=4,den=4},{time=18,bpm=140,num=4,den=4},{time=21,bpm=160,num=4,den=4}}",
+        "local markers={{time=0,bpm=99,num=3,den=4},{time=8,bpm=110,num=4,den=4},{time=10,bpm=120,num=4,den=4},{time=13,bpm=90,num=4,den=4},{time=18,bpm=140,num=4,den=4},{time=21,bpm=-1,num=4,den=4,linear=true}}",
         "reaper={}",
         "function reaper.EnumProjects() return true,arg[1] end",
         "function reaper.ShowMessageBox(_,_,kind) if kind==4 then return 6 end end",
@@ -54,7 +54,7 @@ def test_tempo_map_sync_persists_only_reference_relative_variable_grid(tmp_path:
         "function reaper.CountTrackMediaItems() return 1 end; function reaper.GetTrackMediaItem() return track.items[1] end",
         "function reaper.GetMediaItemInfo_Value(item,key) return key=='D_POSITION' and item.position or item.length end",
         "function reaper.CountTempoTimeSigMarkers() return #markers end",
-        "function reaper.GetTempoTimeSigMarker(_,i) local m=markers[i+1]; return true,m.time,0,0,m.bpm,m.num,m.den,false end",
+        "function reaper.GetTempoTimeSigMarker(_,i) local m=markers[i+1]; return true,m.time,0,0,m.bpm,m.num,m.den,m.linear or false end",
         TEMPO_SYNC_SCRIPT.read_text(),
     ])
     subprocess.run([LUA, "-", str(project)], input=lua, text=True, check=True, capture_output=True)

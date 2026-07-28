@@ -63,13 +63,28 @@ local function live_tempo_value(start_time, end_time)
   if count<1 then error('the project has no explicit tempo/time-signature markers to adopt.') end
   local base
   local spans={}
+  local function validate(marker)
+    if not finite_positive(marker.bpm) or not finite_positive(marker.num) or not finite_positive(marker.den) then error('the reference tempo map contains an invalid marker.') end
+    if marker.linear then error('the reference tempo map contains a linear ramp, which vgt cannot faithfully synchronize.') end
+  end
   for i=0,count-1 do
     local ok,time,_,_,bpm,num,den,linear=reaper.GetTempoTimeSigMarker(0,i)
-    if not ok or not finite(time) or not finite_positive(bpm) or not finite_positive(num) or not finite_positive(den) then error('the project tempo map contains an invalid marker.') end
-    if linear then error('the project tempo map contains a linear ramp, which vgt cannot faithfully synchronize.') end
-    if time<=start_time then base={time=time,bpm=bpm,num=num,den=den} elseif time<end_time then spans[#spans+1]={start_seconds=math.floor((time-start_time)*1e6+0.5)/1e6,bpm=bpm,num=num,den=den} end
+    -- Only the last marker at/before the reference and markers inside it can
+    -- affect this reference-relative grid.  An unrelated marker after the
+    -- item (including a ramp) must not prevent adoption of the selected map.
+    if not ok or not finite(time) then error('the project tempo map contains an invalid marker.') end
+    if time<=start_time then
+      -- Earlier markers are superseded by this candidate and do not affect
+      -- the selected reference, so only validate the final base below.
+      base={time=time,bpm=bpm,num=num,den=den,linear=linear}
+    elseif time<end_time then
+      local marker={time=time,bpm=bpm,num=num,den=den,linear=linear}
+      validate(marker)
+      spans[#spans+1]={start_seconds=math.floor((time-start_time)*1e6+0.5)/1e6,bpm=bpm,num=num,den=den}
+    end
   end
   if not base then error('the reference begins before the first tempo marker; add an explicit marker at or before it.') end
+  validate(base)
   local signature=string.format('%d/%d',base.num,base.den)
   for _,span in ipairs(spans) do
     span.time_signature=string.format('%d/%d',span.num,span.den); span.num=nil; span.den=nil
