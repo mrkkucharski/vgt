@@ -91,6 +91,15 @@ proper local/relative prominence measure would do much better.
 
 ### 3. The drum MIDI is authored at DrumScript's half tempo (60 BPM) — this DOES compress playback ~2× and is the dominant timing bug
 
+**Fixed by issue #193:** `DrumScriptSpec` now carries `midi_tempo` (the
+project's detected tempo), and `DrumScriptTranscriber.transcribe` authors
+both the `default` and `drums-clean` MIDI at `spec.midi_tempo` instead of
+DrumScript's own 60 BPM detection — `default` no longer byte-copies
+DrumScript's MIDI; it re-authors from `raw_events`' real-second onsets,
+recovering velocity from DrumScript's MIDI since its event JSON doesn't
+carry it. The rest of this section is kept as the diagnostic record of the
+bug that motivated the fix.
+
 **This section previously claimed the tempo label was harmless. That was
 wrong, and this is the corrected, evidence-backed position (re-verified against
 the real `7Rivers.RPP` on 2026-07-28).** The 60 BPM declaration causes a

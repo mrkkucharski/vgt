@@ -651,6 +651,13 @@ class DrumScriptSpec:
     runtime_version: str
     classifier_mode: str
     time_signature: tuple[int, int] | None
+    # The project's detected tempo (issue #193): DrumScript's own beat
+    # tracker is unreliable (it made a half-tempo octave error on 7Rivers,
+    # authoring at 60 BPM against a 120 BPM project), so vgt overrides the
+    # authored MIDI's tempo with the project's at its own boundary rather
+    # than trusting DrumScript's. `None` only for specs built before this
+    # field existed (never true for a freshly constructed spec).
+    midi_tempo: float | None
     # `drums-clean` (issue #177): which built-in `vgt.drum_cleanup` recipe to
     # apply to DrumScript's raw events before writing MIDI/JSON. Defaults to
     # "default" -- DrumScript's raw output, untouched -- so every existing
@@ -661,15 +668,17 @@ class DrumScriptSpec:
 
     def to_dict(self) -> dict[str, Any]:
         """Serialize for `spec_hash`. Reproduces the pre-#177 five-field
-        shape exactly when `cleanup_profile` is "default", so `settings_hash`
-        is byte-identical to before this issue for every existing drums
-        variant -- `drums-clean`'s hash is the one deliberate change."""
+        shape (plus `midi_tempo`, #193) when `cleanup_profile` is "default",
+        so `settings_hash` is byte-identical to before this issue for every
+        existing drums variant except for the added `midi_tempo` key --
+        `drums-clean`'s hash is the other deliberate change."""
         data: dict[str, Any] = {
             "backend": self.backend,
             "package_pin": self.package_pin,
             "runtime_version": self.runtime_version,
             "classifier_mode": self.classifier_mode,
             "time_signature": list(self.time_signature) if self.time_signature else None,
+            "midi_tempo": self.midi_tempo,
         }
         if self.cleanup_profile != "default":
             data["cleanup_profile"] = self.cleanup_profile
@@ -732,6 +741,7 @@ def default_spec_for_target(
             runtime_version=drumscript_runtime_version,
             classifier_mode=drumscript_classifier_mode,
             time_signature=drumscript_time_signature,
+            midi_tempo=midi_tempo,
             cleanup_profile=cleanup_profile_name,
             cleanup=cleanup,
             beat_grid=(
@@ -810,6 +820,7 @@ def _settings_dict(spec: TranscriptionSpec) -> dict[str, Any]:
             "runtime_version": spec.runtime_version,
             "classifier_mode": spec.classifier_mode,
             "time_signature": list(spec.time_signature) if spec.time_signature else None,
+            "midi_tempo": spec.midi_tempo,
         }
     return {
         "onset_threshold": spec.onset_threshold,
@@ -846,7 +857,7 @@ def missing_source_entry(spec: TranscriptionSpec, source_role: str) -> dict[str,
         "first_event_s": None,
         "last_event_s": None,
         "backend_tempo": None,
-        "midi_tempo": spec.midi_tempo if isinstance(spec, BasicPitchSpec) else None,
+        "midi_tempo": spec.midi_tempo,
         "confidence": None,
         "settings": _settings_dict(spec),
         "transcribed_at": None,
@@ -922,7 +933,7 @@ def error_entry(spec: TranscriptionSpec, *, source_role: str, input_hash: str | 
         "first_event_s": None,
         "last_event_s": None,
         "backend_tempo": None,
-        "midi_tempo": spec.midi_tempo if isinstance(spec, BasicPitchSpec) else None,
+        "midi_tempo": spec.midi_tempo,
         "confidence": None,
         "settings": _settings_dict(spec),
         "transcribed_at": None,
@@ -1173,12 +1184,13 @@ class FakeTranscriber:
             ]
             midi_path = destination_dir / "transcription.mid"
             events_path = destination_dir / "transcription.json"
+            tempo_bpm = spec.midi_tempo or 120.0
             if spec.cleanup_profile == "default":
                 drum_notes = [
                     (event["time_sec"], event["time_sec"] + 0.1, DRUMSCRIPT_INSTRUMENTS[event["instruments"][0]], 100)
                     for event in events
                 ]
-                _write_midi(midi_path, drum_notes, 120.0, channel=9)
+                _write_midi(midi_path, drum_notes, tempo_bpm, channel=9)
                 events_path.write_text(json.dumps(events), encoding="utf-8")
                 final_events = events
             else:
@@ -1191,7 +1203,7 @@ class FakeTranscriber:
                     events, profile=cleanup_profile, evidence_source=NullOnsetEvidenceSource(), beat_grid=spec.beat_grid
                 )
                 notes = cleaned_events_to_midi_notes(cleaned, instrument_pitch=DRUMSCRIPT_INSTRUMENTS)
-                _write_midi(midi_path, notes, 120.0, channel=9)
+                _write_midi(midi_path, notes, tempo_bpm, channel=9)
                 json_events = cleaned_events_to_json(cleaned)
                 events_path.write_text(json.dumps(json_events), encoding="utf-8")
                 final_events = [event for event in json_events if not event["cleanup"]["suppressed"]]
@@ -1201,7 +1213,7 @@ class FakeTranscriber:
                 note_count=len(final_events), pitch_range_midi=None, first_note_s=None, last_note_s=None,
                 midi_path=midi_path, events_path=events_path, instrument_counts=counts,
                 event_count=len(final_events), first_event_s=final_events[0]["time_sec"] if final_events else None,
-                last_event_s=final_events[-1]["time_sec"] if final_events else None, midi_tempo=120.0,
+                last_event_s=final_events[-1]["time_sec"] if final_events else None, midi_tempo=tempo_bpm,
             )
 
         notes = _fake_notes(source, spec)
@@ -2069,12 +2081,33 @@ class DrumScriptTranscriber:
                 destination_dir.mkdir(parents=True, exist_ok=True)
                 midi_path = destination_dir / "transcription.mid"
                 events_path = destination_dir / "transcription.json"
+                tempo_bpm = spec.midi_tempo or 120.0
                 if spec.cleanup_profile == "default":
-                    shutil.copy2(midi_source, midi_path)
+                    # Re-author at the project tempo rather than byte-copying
+                    # DrumScript's MIDI (issue #193): DrumScript's own tempo
+                    # detection is unreliable (a half-tempo octave error on
+                    # 7Rivers authored 60 BPM against a 120 BPM project), and
+                    # REAPER replays every drum item on the project tempo
+                    # grid, so a note authored at DrumScript's tempo lands at
+                    # the wrong real second. The event JSON's onsets are
+                    # already correct real seconds; only velocity has to be
+                    # recovered from DrumScript's MIDI, since its event JSON
+                    # doesn't carry it (see `parse_drumscript_events`).
+                    velocities = _read_percussion_note_velocities(midi_source)
+                    notes = [
+                        (
+                            event["time_sec"],
+                            event["time_sec"] + 0.1,
+                            DRUMSCRIPT_INSTRUMENTS[instrument],
+                            _velocity_near(velocities, DRUMSCRIPT_INSTRUMENTS[instrument], event["time_sec"]),
+                        )
+                        for event in raw_events
+                        for instrument in event["instruments"]
+                    ]
+                    _write_midi(midi_path, notes, tempo_bpm, channel=9)
                     shutil.copy2(events_source, events_path)
                     final_events = raw_events
                 else:
-                    tempo_bpm = _midi_tempo_bpm(midi_source) or 120.0
                     cleanup_profile = DRUM_CLEANUP_PROFILES[spec.cleanup_profile]
                     cleaned = apply_drum_cleanup(
                         raw_events, profile=cleanup_profile, evidence_source=AudioOnsetEvidenceSource(source), beat_grid=spec.beat_grid
@@ -2189,6 +2222,80 @@ def _midi_tempo_bpm(path: Path) -> float | None:
         return None
     microseconds_per_beat = int.from_bytes(data[index + 3:index + 6], "big")
     return 60_000_000 / microseconds_per_beat if microseconds_per_beat else None
+
+
+_DEFAULT_DRUM_VELOCITY = 100
+
+
+def _read_percussion_note_velocities(path: Path) -> dict[int, list[tuple[float, int]]]:
+    """Map GM percussion pitch -> that pitch's `(onset_s, velocity)` note-ons,
+    decoded using `path`'s own embedded tempo.
+
+    DrumScript's event JSON carries real-second onsets but no velocity (see
+    `parse_drumscript_events`); re-authoring the `default` MIDI at the
+    project tempo (issue #193) would otherwise silently drop DrumScript's
+    velocities, so this reads them back out of its own raw MIDI to carry
+    them forward via `_velocity_near`.
+    """
+    tempo_bpm = _midi_tempo_bpm(path) or 120.0
+    data = path.read_bytes()
+    header_length = int.from_bytes(data[4:8], "big")
+    ticks_per_beat = int.from_bytes(data[12:14], "big") or 480
+    seconds_per_tick = 60.0 / (tempo_bpm * ticks_per_beat)
+    by_pitch: dict[int, list[tuple[float, int]]] = {}
+    index = 8 + header_length
+    while index + 8 <= len(data):
+        if data[index:index + 4] != b"MTrk":
+            break
+        length = int.from_bytes(data[index + 4:index + 8], "big")
+        track_end = index + 8 + length
+        index += 8
+        tick = 0
+        running_status: int | None = None
+        while index < track_end:
+            delta, index = _read_varlen(data, index)
+            tick += delta
+            if index >= track_end:
+                break
+            status = data[index]
+            if status < 0x80:
+                if running_status is None:
+                    break
+                status = running_status
+            else:
+                index += 1
+            if status == 0xFF:
+                index += 1
+                payload_length, index = _read_varlen(data, index)
+                index += payload_length
+                running_status = None
+            elif status in (0xF0, 0xF7):
+                payload_length, index = _read_varlen(data, index)
+                index += payload_length
+                running_status = None
+            elif 0x80 <= status <= 0xEF:
+                running_status = status
+                data_length = 1 if (status & 0xF0) in (0xC0, 0xD0) else 2
+                if (status & 0xF0) == 0x90 and (status & 0x0F) == 9 and data[index + 1] > 0:
+                    onset_s = tick * seconds_per_tick
+                    by_pitch.setdefault(data[index], []).append((onset_s, data[index + 1]))
+                index += data_length
+            else:
+                break
+            if index > track_end:
+                break
+        index = track_end
+    return by_pitch
+
+
+def _velocity_near(by_pitch: dict[int, list[tuple[float, int]]], pitch: int, time_sec: float, *, tolerance_s: float = 0.05) -> int:
+    """The velocity of the closest same-pitch note-on within `tolerance_s`,
+    or `_DEFAULT_DRUM_VELOCITY` when none is close enough to trust."""
+    candidates = by_pitch.get(pitch)
+    if not candidates:
+        return _DEFAULT_DRUM_VELOCITY
+    onset_s, velocity = min(candidates, key=lambda item: abs(item[0] - time_sec))
+    return velocity if abs(onset_s - time_sec) <= tolerance_s else _DEFAULT_DRUM_VELOCITY
 
 
 _DRUMSCRIPT_TEMPO = re.compile(
