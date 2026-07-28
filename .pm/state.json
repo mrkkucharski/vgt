@@ -1,10 +1,10 @@
 {
   "current_issue": 185,
-  "session_id": "3e31a488-5356-413a-95eb-8f39b7b65180",
-  "pid": 75304,
-  "process_started_at": "Tue Jul 28 08:03:38 2026",
+  "session_id": "aa40b84d-3e53-4a10-b138-5457f68937b9",
+  "pid": 75789,
+  "process_started_at": "Tue Jul 28 08:08:21 2026",
   "agent": "claude",
-  "started_at": "2026-07-28T06:03:37.079894+00:00",
+  "started_at": "2026-07-28T06:08:19.763237+00:00",
   "scheduler_stalls": {
     "malformed_responses": {
       "followup_issues": {
@@ -16,8 +16,8 @@
     "blocked_issues": {
       "187": {
         "first_seen_at": "2026-07-27T22:08:37.725495+00:00",
-        "last_seen_at": "2026-07-28T06:02:25.412943+00:00",
-        "consecutive_passes": 410,
+        "last_seen_at": "2026-07-28T06:07:06.847220+00:00",
+        "consecutive_passes": 414,
         "title": "Author drum MIDI at the project's detected tempo (not DrumScript's mis-detected tempo)"
       }
     }
@@ -33,7 +33,7 @@
   "verification_followups": {
     "f0d8bfc9d2dc6da7a31609184e25c4d66d3986fd2340b33a83e98204fb86691e": "created"
   },
-  "role": "fix",
+  "role": "review",
   "branch": "issue-185-drums-clean-conservative-de-duplication",
   "worktree_path": "/Users/marekkucharski/projects/.pm-worktrees/vgt/issue-185",
   "pr_number": 190,
@@ -76,11 +76,11 @@
   "pending_transition": {
     "issue": 185,
     "target": "working",
-    "event": "agent.fix_started",
+    "event": "agent.review_started",
     "detail": {
       "issue": 185,
       "agent": "claude",
-      "fix_count": 1
+      "pr": 190
     },
     "cleanup": {}
   }
