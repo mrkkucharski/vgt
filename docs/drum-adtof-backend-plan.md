@@ -131,10 +131,12 @@ Same as DrumScript, so the lifecycle needs no special-casing:
 
 ## Risks / open questions (resolved by Phase 0)
 
-- **License.** ADTOF (and any "ADTOF-pytorch" port) must be license-checked
-  before adoption — the upstream ADTOF is copyleft-leaning research code; a
-  distributable, pay-nothing tool needs a compatible license and a clean model
-  weights source. **This gates the whole effort** and is the first task.
+- **License (compliance check, not a gate).** vgt is a **non-commercial hobby
+  project**, so copyleft (AGPL/GPL) code and **research / non-commercial-only**
+  model weights — common for ADT engines — are acceptable, not disqualifying.
+  What remains is ordinary hygiene: confirm the exact package/weights license,
+  keep upstream notices, and honor copyleft terms if the repo is ever published.
+  This no longer blocks the effort; it is a routine step in Phase 0.
 - **Exact package + model + weights.** "ADTOF-pytorch" must be pinned to a
   concrete PyPI/VCS package and model version, with a reproducible weights
   provenance (bundled or cached, hashed). Recorded in `AdtofSpec` so variant
@@ -154,11 +156,13 @@ Same as DrumScript, so the lifecycle needs no special-casing:
 
 ## Delivery phases (tracked as separate issues, ordered by "blocked by")
 
-0. **Feasibility spike & license/version decision** — verify license
-   compatibility (gating), pin the package + model + weights provenance, confirm
-   the raw-activation API and class/frame contract, and dump a real activation
-   matrix on the `7Rivers` drum stem. Output: a go/no-go + the pins the later
-   phases hard-code. *(Blocks everything.)*
+0. **Feasibility spike & version decision** — pin the package + model + weights
+   provenance, confirm the raw-activation API and class/frame contract, dump a
+   real activation matrix on the `7Rivers` drum stem, and do a routine license
+   check (compliance only — non-commercial hobby use, so copyleft/non-commercial
+   licenses are fine). Output: the pins the later phases hard-code. *(Blocks the
+   later phases only because they depend on its pins, not on a licensing
+   go/no-go.)*
 1. **Backend-selection seam + `AdtofSpec` + built-in `drums-adtof` profile
    (fake-backed).** Make backend selection profile-driven; register the ADTOF
    spec and profile; wire a `FakeAdtofTranscriber` so the variant flow works
