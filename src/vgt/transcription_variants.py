@@ -129,6 +129,10 @@ def detection_identity(target: str, input_hash: str, spec: BasicPitchSpec) -> di
         # what determines the raw artifact even though it never changes note
         # timings themselves (see the plan's "MIDI tempo metadata" note).
         "midi_tempo": spec.midi_tempo,
+        # The raw MIDI is later materialized into a project-relative MIDI
+        # artifact.  A changed REAPER marker timeline must therefore get a
+        # fresh detection-cache identity as well as a fresh derived variant.
+        "tempo_map": spec.tempo_map.to_dict() if spec.tempo_map is not None else None,
     }
 
 

@@ -614,6 +614,11 @@ class BasicPitchSpec:
     multiple_pitch_bends: bool
     melodia_trick: bool
     midi_tempo: float | None  # from the tempo stage's detected BPM
+    # The effective project tempo markers, expressed in reference-relative
+    # seconds.  MIDI stores quarter-note positions, so this is required to
+    # place real-second detector events correctly on a non-constant project
+    # tempo map.
+    tempo_map: "TempoMapReference | None" = None
     # Post-transcription cleanup this target's profile requests (see
     # `_apply_cleanup_stages`); empty for every target without a pipeline, so
     # their `settings_hash` reflects "disabled". Every stage's tuning
@@ -631,6 +636,8 @@ class BasicPitchSpec:
         module's guitar-acoustic profile docstring).
         """
         data = asdict(self)
+        if data["tempo_map"] is None:
+            del data["tempo_map"]
         if not data["cleanup"]:
             del data["cleanup"]
             data.update(_LEGACY_EMPTY_CLEANUP_FIELDS)
@@ -658,6 +665,7 @@ class DrumScriptSpec:
     # than trusting DrumScript's. `None` only for specs built before this
     # field existed (never true for a freshly constructed spec).
     midi_tempo: float | None
+    tempo_map: "TempoMapReference | None" = None
     # `drums-clean` (issue #177): which built-in `vgt.drum_cleanup` recipe to
     # apply to DrumScript's raw events before writing MIDI/JSON. Defaults to
     # "default" -- DrumScript's raw output, untouched -- so every existing
@@ -680,6 +688,8 @@ class DrumScriptSpec:
             "time_signature": list(self.time_signature) if self.time_signature else None,
             "midi_tempo": self.midi_tempo,
         }
+        if self.tempo_map is not None:
+            data["tempo_map"] = self.tempo_map.to_dict()
         if self.cleanup_profile != "default":
             data["cleanup_profile"] = self.cleanup_profile
             data["cleanup"] = [{"name": stage.name, "params": stage.params} for stage in self.cleanup]
@@ -691,6 +701,49 @@ class DrumScriptSpec:
 
 
 TranscriptionSpec = BasicPitchSpec | DrumScriptSpec
+
+
+@dataclass(frozen=True)
+class TempoMapReference:
+    """The detected tempo markers vgt applies to REAPER, relative to the
+    reference item's start.  ``spans`` mirrors ``tempo.value.spans``: each
+    marker changes the BPM from its start onwards.  Keeping this value in the
+    spec makes the MIDI coordinate system part of artifact identity."""
+
+    bpm: float
+    spans: tuple[tuple[float, float], ...] = ()
+
+    def to_dict(self) -> dict[str, Any]:
+        return {"bpm": self.bpm, "spans": [{"start_seconds": start, "bpm": bpm} for start, bpm in self.spans]}
+
+
+def tempo_map_reference(tempo_value: Mapping[str, Any] | None) -> TempoMapReference | None:
+    """Build the authoring timeline from a persisted tempo-stage value.
+
+    Constant grids intentionally return ``None``: their established
+    seconds-to-ticks conversion at ``midi_tempo`` remains byte-for-byte the
+    coordinate rule.  A piecewise grid carries every marker that the
+    ReaScript applies, including the base BPM at project time zero.
+    """
+    if not isinstance(tempo_value, Mapping) or tempo_value.get("mode") != "piecewise":
+        return None
+    try:
+        bpm = float(tempo_value["bpm"])
+    except (KeyError, TypeError, ValueError):
+        return None
+    if bpm <= 0:
+        return None
+    spans: list[tuple[float, float]] = []
+    for span in tempo_value.get("spans") or []:
+        if not isinstance(span, Mapping):
+            continue
+        try:
+            start, span_bpm = float(span["start_seconds"]), float(span["bpm"])
+        except (KeyError, TypeError, ValueError):
+            continue
+        if start >= 0 and span_bpm > 0:
+            spans.append((start, span_bpm))
+    return TempoMapReference(bpm=bpm, spans=tuple(sorted(set(spans))))
 
 
 def _bar_duration_seconds(bpm: float | None, time_signature: str | None) -> float | None:
@@ -722,6 +775,7 @@ def default_spec_for_target(
     drumscript_time_signature: tuple[int, int] | None = None,
     beat_times: Sequence[float] | None = None,
     downbeat_offset_s: float | None = None,
+    tempo_map: TempoMapReference | None = None,
 ) -> TranscriptionSpec:
     """The per-target default spec, resolved through `_INSTRUMENT_PROFILES`.
 
@@ -742,6 +796,7 @@ def default_spec_for_target(
             classifier_mode=drumscript_classifier_mode,
             time_signature=drumscript_time_signature,
             midi_tempo=midi_tempo,
+            tempo_map=tempo_map,
             cleanup_profile=cleanup_profile_name,
             cleanup=cleanup,
             beat_grid=(
@@ -764,6 +819,7 @@ def default_spec_for_target(
         multiple_pitch_bends=profile.multiple_pitch_bends,
         melodia_trick=profile.melodia_trick,
         midi_tempo=midi_tempo,
+        tempo_map=tempo_map,
         cleanup=_instantiate_cleanup(profile.cleanup, sustain_clamp_s=sustain_clamp_s),
     )
 
@@ -1007,6 +1063,7 @@ class TranscriberRouter(Protocol):
     def spec_for_target(
         self, target: str, *, midi_tempo: float | None, modes: Mapping[str, str] | None = None, time_signature: str | None = None,
         beat_times: Sequence[float] | None = None, downbeat_offset_s: float | None = None,
+        tempo_map: TempoMapReference | None = None,
     ) -> TranscriptionSpec: ...
 
 
@@ -1034,6 +1091,7 @@ class TargetTranscriberRouter:
     def spec_for_target(
         self, target: str, *, midi_tempo: float | None, modes: Mapping[str, str] | None = None, time_signature: str | None = None,
         beat_times: Sequence[float] | None = None, downbeat_offset_s: float | None = None,
+        tempo_map: TempoMapReference | None = None,
     ) -> TranscriptionSpec:
         backend = self.for_target(target).name
         if backend == "drumscript":
@@ -1048,9 +1106,10 @@ class TargetTranscriberRouter:
                 drumscript_time_signature=self.drumscript_time_signature,
                 beat_times=beat_times,
                 downbeat_offset_s=downbeat_offset_s,
+                tempo_map=tempo_map,
             )
         return default_spec_for_target(
-            target, backend=backend, midi_tempo=midi_tempo, modes=modes, time_signature=time_signature
+            target, backend=backend, midi_tempo=midi_tempo, modes=modes, time_signature=time_signature, tempo_map=tempo_map
         )
 
 
@@ -1113,18 +1172,43 @@ def _varlen(value: int) -> bytes:
     return bytes(reversed(chunks))
 
 
-def _write_midi(path: Path, notes: list[tuple[float, float, int, int]], tempo_bpm: float, *, channel: int = 0) -> None:
+def seconds_to_quarter_notes(seconds: float, tempo_bpm: float, tempo_map: TempoMapReference | None = None) -> float:
+    """Map a reference-relative second to REAPER's project QN coordinate.
+
+    REAPER's tempo markers are step changes (not MIDI tempo events from the
+    imported file), so integrate each effective BPM segment exactly.  With no
+    map this deliberately retains #193's constant-tempo conversion.
+    """
+    if tempo_map is None:
+        return seconds * tempo_bpm / 60.0
+    qn = 0.0
+    cursor = 0.0
+    bpm = tempo_map.bpm
+    for marker_time, marker_bpm in tempo_map.spans:
+        if marker_time <= cursor:
+            bpm = marker_bpm
+            continue
+        if seconds <= marker_time:
+            return qn + (seconds - cursor) * bpm / 60.0
+        qn += (marker_time - cursor) * bpm / 60.0
+        cursor, bpm = marker_time, marker_bpm
+    return qn + (seconds - cursor) * bpm / 60.0
+
+
+def _write_midi(
+    path: Path, notes: list[tuple[float, float, int, int]], tempo_bpm: float, *, channel: int = 0,
+    tempo_map: TempoMapReference | None = None,
+) -> None:
     """Write a minimal, valid single-track Standard MIDI File (format 0)
     containing `notes`, with no external MIDI library (none is a vgt
     dependency, and this issue must add none)."""
     ticks_per_beat = 480
-    ticks_per_second = ticks_per_beat * tempo_bpm / 60.0
     tempo_uspb = int(round(60_000_000 / tempo_bpm)) if tempo_bpm else 500_000
 
     raw_events: list[tuple[int, bytes]] = []
     for start_s, end_s, pitch, velocity in notes:
-        start_tick = int(round(start_s * ticks_per_second))
-        end_tick = max(start_tick + 1, int(round(end_s * ticks_per_second)))
+        start_tick = int(round(seconds_to_quarter_notes(start_s, tempo_bpm, tempo_map) * ticks_per_beat))
+        end_tick = max(start_tick + 1, int(round(seconds_to_quarter_notes(end_s, tempo_bpm, tempo_map) * ticks_per_beat)))
         raw_events.append((start_tick, bytes([0x90 | channel, pitch & 0x7F, velocity & 0x7F])))
         raw_events.append((end_tick, bytes([0x80 | channel, pitch & 0x7F, 0])))
     raw_events.sort(key=lambda item: item[0])
@@ -1190,7 +1274,7 @@ class FakeTranscriber:
                     (event["time_sec"], event["time_sec"] + 0.1, DRUMSCRIPT_INSTRUMENTS[event["instruments"][0]], 100)
                     for event in events
                 ]
-                _write_midi(midi_path, drum_notes, tempo_bpm, channel=9)
+                _write_midi(midi_path, drum_notes, tempo_bpm, channel=9, tempo_map=spec.tempo_map)
                 events_path.write_text(json.dumps(events), encoding="utf-8")
                 final_events = events
             else:
@@ -1203,7 +1287,7 @@ class FakeTranscriber:
                     events, profile=cleanup_profile, evidence_source=NullOnsetEvidenceSource(), beat_grid=spec.beat_grid
                 )
                 notes = cleaned_events_to_midi_notes(cleaned, instrument_pitch=DRUMSCRIPT_INSTRUMENTS)
-                _write_midi(midi_path, notes, tempo_bpm, channel=9)
+                _write_midi(midi_path, notes, tempo_bpm, channel=9, tempo_map=spec.tempo_map)
                 json_events = cleaned_events_to_json(cleaned)
                 events_path.write_text(json.dumps(json_events), encoding="utf-8")
                 final_events = [event for event in json_events if not event["cleanup"]["suppressed"]]
@@ -1221,7 +1305,7 @@ class FakeTranscriber:
         notes_path = destination_dir / "transcription.csv"
         tempo_bpm = spec.midi_tempo if isinstance(spec, BasicPitchSpec) else None
         tempo_bpm = tempo_bpm or 120.0
-        _write_midi(midi_path, notes, tempo_bpm)
+        _write_midi(midi_path, notes, tempo_bpm, tempo_map=spec.tempo_map)
         _write_notes_csv(notes_path, notes, source, spec)
 
         pitches = [pitch for _start, _end, pitch, _velocity in notes]
@@ -1256,7 +1340,7 @@ class FakeTranscriber:
         midi_path = destination_dir / "transcription.mid"
         notes_path = destination_dir / "transcription.csv"
         tempo_bpm = spec.midi_tempo or 120.0
-        _write_midi(midi_path, raw_notes, tempo_bpm)
+        _write_midi(midi_path, raw_notes, tempo_bpm, tempo_map=spec.tempo_map)
         _write_notes_csv(notes_path, raw_notes, source, spec)
         # Re-parse from the file just written, rather than re-deriving
         # `ParsedNote`s from the in-memory tuples, so the returned notes
@@ -1894,7 +1978,7 @@ def derive_variant_artifacts(
     midi_path.parent.mkdir(parents=True, exist_ok=True)
     _write_parsed_notes_csv(notes_path, notes)
     midi_notes = [(note.start_s, note.end_s, note.pitch_midi, note.velocity) for note in notes]
-    _write_midi(midi_path, midi_notes, spec.midi_tempo or 120.0)
+    _write_midi(midi_path, midi_notes, spec.midi_tempo or 120.0, tempo_map=spec.tempo_map)
     note_count, pitch_range_midi, first_note_s, last_note_s = _summarize_notes(notes)
     max_note_duration_s, max_simultaneous_voices = _note_comparison_metrics(notes)
     return TranscriptionResult(
@@ -1992,14 +2076,22 @@ class BasicPitchTranscriber:
             raise TranscriptionError("BasicPitchTranscriber requires a BasicPitchSpec")
         raw = self.detect_raw(source, destination_dir, spec, progress)
         notes = raw.notes
+        notes_changed = False
 
         if spec.cleanup:
             cleaned = _apply_cleanup_stages(notes, spec, source=source)
             if cleaned != notes:
                 _write_parsed_notes_csv(raw.raw_notes_path, cleaned)
-                midi_notes = [(note.start_s, note.end_s, note.pitch_midi, note.velocity) for note in cleaned]
-                _write_midi(raw.raw_midi_path, midi_notes, spec.midi_tempo or 120.0)
                 notes = cleaned
+                notes_changed = True
+
+        # Basic Pitch writes its MIDI using one tempo metadata value.  For a
+        # variable project map its CSV remains the authoritative real-second
+        # event list, so re-author the MIDI from it.  Constant-map direct
+        # calls retain Basic Pitch's original file byte-for-byte.
+        if notes_changed or spec.tempo_map is not None:
+            midi_notes = [(note.start_s, note.end_s, note.pitch_midi, note.velocity) for note in notes]
+            _write_midi(raw.raw_midi_path, midi_notes, spec.midi_tempo or 120.0, tempo_map=spec.tempo_map)
 
         note_count, pitch_range_midi, first_note_s, last_note_s = _summarize_notes(notes)
         max_note_duration_s, max_simultaneous_voices = _note_comparison_metrics(notes)
@@ -2104,7 +2196,7 @@ class DrumScriptTranscriber:
                         for event in raw_events
                         for instrument in event["instruments"]
                     ]
-                    _write_midi(midi_path, notes, tempo_bpm, channel=9)
+                    _write_midi(midi_path, notes, tempo_bpm, channel=9, tempo_map=spec.tempo_map)
                     shutil.copy2(events_source, events_path)
                     final_events = raw_events
                 else:
@@ -2113,7 +2205,7 @@ class DrumScriptTranscriber:
                         raw_events, profile=cleanup_profile, evidence_source=AudioOnsetEvidenceSource(source), beat_grid=spec.beat_grid
                     )
                     notes = cleaned_events_to_midi_notes(cleaned, instrument_pitch=DRUMSCRIPT_INSTRUMENTS)
-                    _write_midi(midi_path, notes, tempo_bpm, channel=9)
+                    _write_midi(midi_path, notes, tempo_bpm, channel=9, tempo_map=spec.tempo_map)
                     json_events = cleaned_events_to_json(cleaned)
                     events_path.write_text(json.dumps(json_events), encoding="utf-8")
                     final_events = [event for event in json_events if not event["cleanup"]["suppressed"]]
