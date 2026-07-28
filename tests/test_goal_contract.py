@@ -21,7 +21,17 @@ from vgt.analysis import analyze
 from vgt.cli import main
 from vgt.separation import FakeSeparator, separate
 from vgt.sidecar import artifact_namespace_dir, read_sidecar, update_analysis
-from vgt.transcribe import DrumScriptSpec, FakeAdtofTranscriber, FakeTranscriber, TargetTranscriberRouter, TranscriptionResult, _write_midi
+from vgt.transcribe import (
+    DRUMSCRIPT_INSTRUMENTS,
+    DrumScriptSpec,
+    FakeAdtofTranscriber,
+    FakeTranscriber,
+    TargetTranscriberRouter,
+    TranscriptionResult,
+    _fitted_beat_period_s,
+    _write_midi,
+)
+from vgt.drum_grid import reconcile_event_times
 from vgt.transcription_lifecycle import add_variant, discard_variant, purge_discarded
 
 
@@ -62,17 +72,23 @@ class CountingTranscriber(FakeTranscriber):
 
 
 class TempoSkewedDrumScriptFake(FakeTranscriber):
-    """A DrumScript-shaped result with the 60-vs-120 BPM failure signature.
+    """A long DrumScript grid with the observed 7Rivers failure signature.
 
-    The backend reports its own half-tempo estimate, but the MIDI vgt retains
-    must be newly authored from the event's real-second timestamp against the
-    project's detected timeline.
+    The backend rounds played eighths onto its own zero-anchored clock.  Its
+    small rate error eventually makes backend slot numbering run ahead of the
+    project even though every reported onset is nearest to the played project
+    line.  This fake keeps the goal contract offline while using FakeTranscriber's
+    production-shaped reconciliation seam rather than pre-authoring MIDI.
     """
 
     name = "drumscript"
     backend_tempo = 60.1
+    project_downbeat_s = 0.085333
+    project_step_s = 30.0 / 120.004
+    backend_step_s = 0.249615
+    event_count = 640
     event_time_s = 150.0
-    source_interval_s = 150.1
+    source_interval_s = 160.0
 
     def __init__(self) -> None:
         super().__init__()
@@ -89,25 +105,46 @@ class TempoSkewedDrumScriptFake(FakeTranscriber):
         destination_dir.mkdir(parents=True, exist_ok=True)
         midi_path = destination_dir / "transcription.mid"
         events_path = destination_dir / "transcription.json"
+        if spec.beat_grid is None:
+            # Other goal-contract coverage intentionally models a synchronized
+            # tempo map without a detected beat list. Keep that independent
+            # scenario small; the long grid is specific to this regression.
+            events = [{"time_sec": self.event_time_s, "instruments": ["kick"]}]
+            note_ends = [self.source_interval_s]
+        else:
+            # These are played project-grid times observed by a backend that
+            # quantizes them to its own clock.  At the tail its index differs
+            # from the project index by a whole eighth -- precisely the
+            # regression that nearest-line matching fixes.
+            played = [self.project_downbeat_s + index * self.project_step_s for index in range(self.event_count)]
+            raw_events = [
+                {"time_sec": round(time / self.backend_step_s) * self.backend_step_s, "instruments": ["kick"]}
+                for time in played
+            ]
+            events, report = reconcile_event_times(
+                raw_events, beat_grid=spec.beat_grid, beat_period_s=_fitted_beat_period_s(spec)
+            )
+            assert report is not None, "the contract fake requires a usable analyzed grid"
+            note_ends = [event["time_sec"] + 0.1 for event in events]
         _write_midi(
             midi_path,
-            [(self.event_time_s, self.source_interval_s, 36, 100)],
+            [(event["time_sec"], end, DRUMSCRIPT_INSTRUMENTS["kick"], 100) for event, end in zip(events, note_ends)],
             spec.midi_tempo or 120.0,
             channel=9,
             tempo_map=spec.tempo_map,
         )
-        events_path.write_text(json.dumps([{"time_sec": self.event_time_s, "instruments": ["kick"]}]), encoding="utf-8")
+        events_path.write_text(json.dumps(events), encoding="utf-8")
         return TranscriptionResult(
-            note_count=1,
+            note_count=len(events),
             pitch_range_midi=None,
             first_note_s=None,
             last_note_s=None,
             midi_path=midi_path,
             events_path=events_path,
-            instrument_counts={"kick": 1},
-            event_count=1,
-            first_event_s=self.event_time_s,
-            last_event_s=self.event_time_s,
+            instrument_counts={"kick": len(events)},
+            event_count=len(events),
+            first_event_s=events[0]["time_sec"],
+            last_event_s=events[-1]["time_sec"],
             backend_tempo=self.backend_tempo,
             midi_tempo=spec.midi_tempo,
         )
@@ -1084,12 +1121,13 @@ def _run_apply_with_midi_source_length(project: Path, state: str, source_length:
 def test_goal_contract_keeps_drumscript_variants_on_the_project_timeline(
     tmp_path: Path, deterministic_detectors: None,
 ) -> None:
-    """Exercise #193 through the variant lifecycle and real apply script.
+    """Exercise #193/#218 through lifecycle and the real apply script.
 
-    This deliberately models DrumScript's observed half-tempo report.  A
-    focused backend test cannot prove that a retained variant is still
-    project-authored, imported at its full interval, and invalidated when the
-    project grid changes.
+    Unlike the older single-event contract, this passes a long zero-anchored,
+    slightly skewed DrumScript event grid through reconciliation.  A focused
+    backend test cannot prove that retained variants preserve those corrected
+    events, are imported safely, and invalidate when their effective grid
+    changes.
     """
     project = _copy_project(tmp_path)
     # An untouched fixture map would make apply preserve its user-owned 100
@@ -1100,7 +1138,12 @@ def test_goal_contract_keeps_drumscript_variants_on_the_project_timeline(
     state, _ = _run_apply(project, state)
     analyze(project, stages=("tempo",))
     update_analysis(project, lambda current: current["tempo"].__setitem__("value", {
-        **current["tempo"]["value"], "mode": "piecewise", "spans": [{"start_seconds": 0.0, "bpm": 120.0}],
+        **current["tempo"]["value"],
+        "mode": "piecewise",
+        "bpm": 120.004,
+        "spans": [{"start_seconds": 0.0, "bpm": 120.004}],
+        "beat_times": [TempoSkewedDrumScriptFake.project_downbeat_s + index * (2 * TempoSkewedDrumScriptFake.project_step_s) for index in range(400)],
+        "downbeat_offset_seconds": TempoSkewedDrumScriptFake.project_downbeat_s,
     }))
     separate(project, CountingSeparator(), guitar_type="electric")
 
@@ -1112,15 +1155,37 @@ def test_goal_contract_keeps_drumscript_variants_on_the_project_timeline(
     variants = sidecar["analysis"]["transcription"]["targets"]["drums"]["variants"]
     namespace = artifact_namespace_dir(project, sidecar["analysis"]["stems"]["artifact_namespace"])
 
-    # Both retained artifacts must reflect the project grid, rather than the
-    # fake backend's approximately-60 BPM MIDI. The 150-second hit is QN 300
-    # at the 120 BPM project tempo, and remains explicitly auditable as a
-    # backend tempo mismatch in the variant record.
+    # Both retained artifacts must contain the nearest fitted project-grid
+    # lines, rather than backend slot indices. At the tail the backend clock
+    # has advanced a whole eighth: index mapping would put it one slot late.
+    # This reads the persisted event artifact, proving the variant lifecycle
+    # retained the reconciled result rather than merely testing the fake.
     assert drumscript.calls == 2
+    expected_times = [
+        TempoSkewedDrumScriptFake.project_downbeat_s + index * TempoSkewedDrumScriptFake.project_step_s
+        for index in range(TempoSkewedDrumScriptFake.event_count)
+    ]
     for variant in (default, clean):
         assert variant["backend_tempo"] == pytest.approx(60.1)
-        assert variant["midi_tempo"] == 120.0
-        assert _midi_note_on_qns(namespace / variant["midi_file"]) == pytest.approx([300.0])
+        assert variant["midi_tempo"] == pytest.approx(120.004)
+        persisted_events = json.loads((namespace / variant["events_file"]).read_text(encoding="utf-8"))
+        assert [event["time_sec"] for event in persisted_events] == pytest.approx(expected_times, abs=1e-6)
+        assert _midi_note_on_qns(namespace / variant["midi_file"]) == pytest.approx(
+            [time * 120.004 / 60.0 for time in expected_times], abs=1 / 480
+        )
+    tail = TempoSkewedDrumScriptFake.event_count - 1
+    # The raw tail rounds to backend slot 640, while its event position is
+    # nearest project line 639.  Backend-index mapping would be a whole
+    # subdivision late, despite drift already exceeding half a subdivision.
+    raw_tail = round(expected_times[tail] / TempoSkewedDrumScriptFake.backend_step_s) * TempoSkewedDrumScriptFake.backend_step_s
+    backend_slot = round(raw_tail / TempoSkewedDrumScriptFake.backend_step_s)
+    assert backend_slot == tail + 1
+    assert expected_times[tail] != pytest.approx(
+        TempoSkewedDrumScriptFake.project_downbeat_s + backend_slot * TempoSkewedDrumScriptFake.project_step_s
+    )
+    assert abs(
+        tail * TempoSkewedDrumScriptFake.backend_step_s - expected_times[tail]
+    ) > TempoSkewedDrumScriptFake.project_step_s / 2
 
     state, first_apply = _run_apply_with_midi_source_length(project, state, drumscript.source_interval_s)
     names = first_apply.split("#", 1)[0].split("|")
@@ -1134,7 +1199,7 @@ for _, track in ipairs(tracks) do
   end
 end
 """)
-    # The item spans the reference track (10..14), *not* the 150.1 the MIDI
+    # The item spans the reference track (10..14), *not* the long MIDI
     # source reports: for a MIDI source that number is quarter notes rather
     # than seconds, and it stops at the last note. Timing is proven by the
     # authored QN above, not by the item's length.
@@ -1177,11 +1242,12 @@ table.insert(tracks, {guid='work-drums', name='[work] Drums Ref — default (MID
     # 120-BPM-only bytes as current. The first retained variant is the
     # compatibility target refreshed by analyze's existing lifecycle rule.
     before = (namespace / default["midi_file"]).read_bytes()
+    before_qns = _midi_note_on_qns(namespace / default["midi_file"])
     before_hash = variants[next(iter(variants))]["settings_hash"]
     update_analysis(project, lambda current: current["tempo"].__setitem__("value", {
         **current["tempo"]["value"], "spans": [
-            {"start_seconds": 0.0, "bpm": 120.0}, {"start_seconds": 100.0, "bpm": 60.0},
-        ],
+            {"start_seconds": 0.0, "bpm": 120.004}, {"start_seconds": 100.0, "bpm": 60.0},
+        ], "beat_times": [0.1 + index * 0.501 for index in range(400)], "downbeat_offset_seconds": 0.1,
     }))
     analyze(project, stages=("transcription",), transcriber_router=router, variant_compatibility=True)
     refreshed = read_sidecar(project)["analysis"]["transcription"]["targets"]["drums"]["variants"]
@@ -1190,7 +1256,7 @@ table.insert(tracks, {guid='work-drums', name='[work] Drums Ref — default (MID
     assert drumscript.calls == 3
     assert refreshed_default["settings_hash"] != before_hash
     assert after != before
-    assert _midi_note_on_qns(namespace / refreshed_default["midi_file"]) == pytest.approx([250.0])
+    assert _midi_note_on_qns(namespace / refreshed_default["midi_file"]) != before_qns
 
 
 def test_goal_contract_tempo_map_sync_drives_variable_grid_without_touching_user_map(
