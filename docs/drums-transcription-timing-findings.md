@@ -89,51 +89,69 @@ non-event, and it removes both. Merely re-normalizing by the 95th percentile
 instead of the max already cuts the sub-0.12 fraction from 62% to 41% — and a
 proper local/relative prominence measure would do much better.
 
-### 3. The drum MIDI declares DrumScript's half tempo (60 BPM) — but this does NOT compress playback; it is a MIDI-editor-grid issue at most
+### 3. The drum MIDI is authored at DrumScript's half tempo (60 BPM) — this DOES compress playback ~2× and is the dominant timing bug
 
-**This section has been corrected twice. Final position, grounded in the
-maintainer's REAPER observation:** there is **no ~2× time compression** of the
-drum MIDI. An intermediate draft claimed one; that was wrong.
+**This section previously claimed the tempo label was harmless. That was
+wrong, and this is the corrected, evidence-backed position (re-verified against
+the real `7Rivers.RPP` on 2026-07-28).** The 60 BPM declaration causes a
+genuine **~2× playback compression**: the drum MIDI plays back at double speed,
+finishing at roughly the midpoint of the song, with every note progressively
+earlier than the audio it transcribes. This — not per-onset jitter — is why the
+`[vgt] Drums Ref — drums-clean (MIDI)` item is visibly **much shorter** than the
+`[vgt] Drums` stem and why the notes are off the beat.
 
-Facts that are certain:
+**Why it happens (mechanism, fully traced in the RPP):**
 
-- DrumScript reported `backend_tempo = 60.1` (half of 120.004) and both drum
-  `.mid` artifacts declare **60.09 BPM**. vgt authors the drum MIDI at that
-  tempo (`_write_midi(..., _midi_tempo_bpm(midi_source))` for `drums-clean`; a
-  byte-copy of DrumScript's 60 BPM file for `default`), whereas every other
-  target authors at the project's tempo via `spec.midi_tempo`. So the drum
-  MIDI's *declared* tempo differs from the project's.
+- DrumScript's beat tracker made a classic **half-tempo octave error**: it
+  reported `backend_tempo ≈ 60.09` for a stem whose true tempo is `120.004`
+  (exactly ½). Both drum `.mid` artifacts declare **60.09 BPM**; the sidecar
+  records `midi_tempo = 60.09` for every drums variant vs `120.004` for guitar.
+- vgt authors the drum MIDI at *that* tempo:
+  `_write_midi(..., _midi_tempo_bpm(midi_source) or 120.0)` for `drums-clean`
+  (`src/vgt/transcribe.py:2077`, `:2083`), and a **byte-copy** of DrumScript's
+  60 BPM file for `default` (`:2073`–`:2074`). Every other target authors at the
+  project tempo via `spec.midi_tempo` (`:1210`, `:1246`) — which is exactly why
+  guitar is correct and drums are not. `DrumScriptSpec` has **no `midi_tempo`
+  field** (`:641`), so the DrumScript path never learns the project's tempo.
+- At 60 BPM, "1 beat = 1 second", so a hit at real audio second *T* is written
+  at **QN = T** (not `2T`, which is what 120 BPM would give).
+- REAPER imports the items to **follow the project tempo map**: every drum MIDI
+  item carries `IGNTEMPO 0 120 4 4` (first field `0` = *use project tempo*, not
+  the item's stored tempo). So a note stored at QN *Q* plays at
+  `item_start + Q × 0.5 s` (0.5 s/QN at 120 BPM). The `BEAT 0` flag governs how
+  the item's *position/length* react to tempo changes; it does **not** make the
+  note content time-based — the QN content is always mapped through the project
+  grid.
+- Therefore a drum note authored at QN = *T* plays at `4 + 0.5T`, while its real
+  audio hit is at `4 + T`. It fires at **half the elapsed offset** — 2×
+  compressed, and the error grows with *T* (a progressive drift, not a fixed
+  offset).
 
-What the maintainer confirmed in REAPER, which settles the consequence:
+**Direct measurement from the RPP (proves it):**
 
-- The vgt-imported drum MIDI **spans the full song and stays aligned with the
-  drum stem** — it does not finish at the midpoint. REAPER imports these items
-  time-based (`BEAT 0`) and preserves each note's absolute time, so the 60-BPM
-  declaration does **not** re-time playback. Playback timing is therefore
-  **not** compressed by the tempo label.
-- My earlier "2× compression" reasoning was an artifact of two mistakes: (a) I
-  converted the RPP's PPQ ticks to seconds using the *project* 120 BPM for a
-  *time-based* item, which halved the numbers in my parse but not in REAPER's
-  playback; and (b) I compared a `[work]` MIDI copy — which the maintainer had
-  **trimmed to measures 3–30 (~57 s)** — against the *full-song* raw detection
-  (`drums.json`, 0–160 s), making a trimmed excerpt look "packed."
+| Track | Authored tempo | Last note-on (QN) | Plays at (proj. 120 BPM) | Real audio time | Aligned? |
+|---|---|---:|---:|---:|:--:|
+| `[vgt] Guitar Ref — clean` | 120 BPM | 352.35 | 4 + 176.2 = **180 s** | ~180 s | yes |
+| `[vgt] Drums Ref — drums-clean` | **60 BPM** | 144.00 | 4 + 72 = **76 s** | 4 + 144 = **148 s** | **no, 2× early** |
 
-So the tempo label is **not** a playback-timing cause. Its only real effect is
-that the MIDI editor's bar/beat ruler (and any quantize/notation) reads at half
-tempo — a nuisance for editing, not for listening. For a practice *reference*
-that is played, not quantized, this is low value.
+The guitar MIDI (authored at 120 BPM → QN = 2T) maps straight back to real
+seconds under the 120 grid and spans the full song. The drum MIDI (authored at
+60 BPM → QN = T) is squeezed into the first half.
 
-The real timing complaint ("notes not on the beat") is the **local per-onset
-error** (cause #1's broken alignment plus DrumScript's own onset jitter),
-addressed by fixing the evidence normalization and then snapping onsets to the
-grid — not by touching the tempo. Note also that DrumScript has **no
-tempo-input flag** (`main.py` auto-detects; only `--ts` exists, for the PDF
-score), so there is no backend lever here regardless.
+**Correcting the earlier reversal:** the intermediate "no compression"
+conclusion rested on a REAPER observation that the drum MIDI "spans the full
+song and stays aligned." That observation could not be reproduced from the
+committed project — every drum MIDI item ends near QN 144 (~72 s of playback),
+well short of the ~178 s stem — and the `IGNTEMPO 0` flag on every item
+contradicts the "imported time-based, absolute time preserved" claim. The open
+question this section used to pose ("fixed local offset or progressive drift?")
+is answered: it is a **progressive rate drift**, i.e. a genuine tempo bug.
 
-Open confirmation (only the maintainer can answer): do the notes sit *slightly*
-off the beat consistently across the whole 57 s (a fixed local offset), or do
-they progressively slide relative to the audio (which would reopen a genuine
-rate/tempo problem)? Everything above assumes the former.
+DrumScript has **no tempo-input flag** (`main.py` auto-detects; only `--ts`
+exists, for the PDF score), but no backend lever is needed: vgt already knows
+the correct project tempo and already holds the events in real seconds (the
+events JSON, 0–160 s, is correct), so vgt can and should author the MIDI on its
+own 120 BPM grid. **This is a vgt-only fix; DrumScript needs no change.**
 
 ### 4. DrumScript over-detects and hallucinates in quiet passages
 
@@ -145,15 +163,18 @@ negative evidence, which — per cause #2 — it can't measure).
 
 ## Direct answers to the questions asked
 
-- **Why is timing off when the click/beats align with the drums?** It is a
-  **local per-onset error**, not a global tempo/compression problem (the
-  maintainer confirmed the drum MIDI spans the full song and stays aligned — see
-  cause #3). The beat grid and the drum onsets come from *different* estimators
-  (vgt's accurate, audio-aligned grid vs DrumScript's own onset detector, which
-  is jittery and sits tens of ms off the grid), and vgt never reconciles them.
+- **Why is timing off when the click/beats align with the drums?** There are
+  **two** effects, and the larger one is global. (a) **Gross:** the drum MIDI is
+  authored at DrumScript's half tempo (60 BPM) and REAPER plays it on the
+  project's 120 BPM grid, so it plays back **~2× compressed** and drifts
+  progressively earlier than the audio — the dominant "not on the beat" and
+  "much shorter" symptom (cause #3). (b) **Residual:** even after the tempo is
+  fixed, a **local per-onset error** remains, because the beat grid and the drum
+  onsets come from *different* estimators (vgt's accurate, audio-aligned grid vs
+  DrumScript's jittery onset detector) and vgt never reconciles them.
   `drums-clean` was meant to nudge onsets to audio peaks, but its evidence signal
-  is broken (cause #2), so for 73% of notes it does nothing — leaving DrumScript's
-  raw, off-grid placement in place.
+  is broken (cause #2), so for 73% of notes it does nothing. Fix (a) first (it
+  restores the correct timeline); (b) then moves the residual jitter onto the beat.
 
 - **Why too many notes in some places and missing notes in others (latest
   attempt)?** Two stacked effects. DrumScript over-detects to begin with
@@ -187,18 +208,20 @@ negative evidence, which — per cause #2 — it can't measure).
    (the profile already supports `CLEAN_STATIC_OFFSET_S`) informed by the
    grid rather than left at 0.
 
-3. **(Optional, low priority) Relabel the drum MIDI's tempo to the project's.**
-   The drum MIDI declares DrumScript's 60 BPM while the project is 120. Per the
-   maintainer this does **not** compress playback (the item is imported
-   time-based and stays aligned), so this is *not* a timing fix — it only makes
-   the MIDI editor's bar/beat ruler and quantize read correctly. Carry
-   `spec.midi_tempo` into `DrumScriptSpec` and pass it to `_write_midi` (as
-   `BasicPitchTranscriber` already does), rescaling ticks so absolute note times
-   are preserved. Do only if the half-tempo editor grid becomes a practical
-   annoyance; it does not affect the reference when played. **Deferred pending
-   the maintainer's local-offset-vs-drift confirmation in cause #3** — if the
-   notes turn out to *drift* across the song, this becomes a real rate fix and
-   gets re-prioritized.
+3. **(HIGHEST priority — gross timing fix) Author the drum MIDI at the project
+   tempo, not DrumScript's.** The drum MIDI is authored at DrumScript's 60 BPM
+   while the project is 120, and REAPER plays it on the project grid
+   (`IGNTEMPO 0`), so it plays **~2× compressed** and drifts (cause #3, now
+   confirmed). This is a genuine rate bug, not a cosmetic relabel. Carry
+   `spec.midi_tempo` (the project's detected tempo) into `DrumScriptSpec` and use
+   it in `_write_midi` for **both** the `drums-clean` branch and the `default`
+   branch — the latter must stop byte-copying DrumScript's 60 BPM file and
+   re-author from `raw_events` (real-second onsets it already has) at the project
+   tempo, exactly as `BasicPitchTranscriber` does. Because the events carry
+   correct real seconds, authoring at 120 BPM (QN = 2 × seconds) maps back to
+   real seconds under the project grid → full length, on the beat. vgt-only; no
+   DrumScript change. Validate that the events JSON carries velocity so the
+   re-authored `default` reproduces the same notes, only re-timed.
 
 4. **Tame over-detection before suppression.** A conservative de-dup of
    near-coincident same-instrument retriggers (a minimum inter-onset interval
@@ -214,11 +237,12 @@ negative evidence, which — per cause #2 — it can't measure).
    span — so any scoring against it must restrict the candidate to the same
    window, or the full-song candidate's later notes read as false positives.
 
-Ordering rationale (revised): **#1 (evidence normalization) is the top real
-timing/notes win** — it restores the suppressed notes and lets alignment run.
-#5 (the scorer) is the delivered measurement backbone. #2 then moves the residual
-per-onset error onto the beat; #4 removes the over-detection. #3 (tempo relabel)
-is **demoted to optional/low** and deferred pending the maintainer's
-local-offset-vs-drift confirmation — it is not a playback-timing fix. The GitHub
-issues were re-ordered accordingly (the tempo issue is on hold, not high
-priority).
+Ordering rationale (revised 2026-07-28): **#3 (author at project tempo) is now
+the top priority** — it fixes the gross ~2× playback compression that dominates
+the "off the beat / much shorter" symptom and puts every drum note back on the
+correct timeline. Only once the timeline is correct do the finer fixes matter:
+**#1 (evidence normalization)** restores suppressed notes and lets alignment run,
+**#5 (the scorer)** is the delivered measurement backbone, **#2** moves the
+residual per-onset jitter onto the beat, and **#4** removes the over-detection.
+The earlier ordering demoted #3 as a cosmetic relabel; that was based on an
+unreproducible observation and is corrected here.
