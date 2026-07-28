@@ -48,13 +48,11 @@ def _parser() -> argparse.ArgumentParser:
     inspect.add_argument("project", nargs="?", help="Path to a .RPP project (defaults to cwd's only .RPP).")
     apply = subparsers.add_parser("apply", help="Prepare the open project through the bundled ReaScript action.")
     apply.add_argument("project", nargs="?", help="Path to a .RPP project (defaults to cwd's only .RPP).")
-    sync = subparsers.add_parser(
-        "sync",
-        help=(
-            "Read manual REAPER edits -- [vgt] Chords track items and [vgt] section regions -- back into the "
-            ".vgt sidecar as human-verified, in one action."
-        ),
+    sync_guidance = (
+        "Read manual REAPER chord, section, and key edits back into the .vgt sidecar as human-verified. "
+        "For a tempo-map correction, use the separate confirmation-gated vgt_sync_tempo_map.lua action."
     )
+    sync = subparsers.add_parser("sync", help=sync_guidance, description=sync_guidance)
     sync.add_argument("project", nargs="?", help="Path to a .RPP project (defaults to cwd's only .RPP).")
     analyze_parser = subparsers.add_parser(
         "analyze", help="Detect tempo/key/sections/chords for the reference track and persist them to the .vgt sidecar."
@@ -501,7 +499,8 @@ def main(argv: list[str] | None = None) -> int:
         actions = {
             "sync": (
                 "vgt_sync.lua",
-                "reads the [vgt] Chords track's items and [vgt]-owned section regions back into the .vgt sidecar as human-verified",
+                "reads [vgt] Chords items, [vgt]-owned section regions, and the [vgt] key item back into the .vgt sidecar as human-verified; "
+                "for a tempo-map correction, run the separate confirmation-gated reascript/vgt_sync_tempo_map.lua action",
             ),
         }
         script, description = actions.get(

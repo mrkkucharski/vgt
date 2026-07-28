@@ -12,7 +12,10 @@ analyzes it, optionally creates practice stems, and adds a clearly owned
   maintain an idempotent `[vgt]` area through REAPER.
 - **Phase 1 — reference analysis:** detect tempo/beat grid, key, sections, and
   beat-aligned major/minor chords; show the results in REAPER; and preserve
-  human chord/section corrections through `vgt sync`.
+  human chord, section, and key corrections through `vgt sync`. A separate,
+  confirmation-gated ReaScript synchronizes a deliberate REAPER tempo-map
+  correction as a reference-relative grid; ordinary sync never reads tempo
+  markers.
 - **Supporting capability — stem separation:** LALAL.AI v1 separates the
   standard vocals/instrumental/bass/drums/guitar/backing set, with optional
   strings and piano. It is a delivered capability, not a numbered phase.
@@ -61,8 +64,10 @@ requires no credentials, network access, model downloads, or live REAPER.
 - **Live REAPER mutation:** project changes use REAPER's API, never RPP text
   editing.
 - **Analysis outside REAPER:** CPU-heavy DSP/ML stays in the Python CLI.
-- **Correctable:** human-synchronized chord and section edits survive future
-  runs; machine detections remain available as a baseline.
+- **Correctable:** human-synchronized chord, section, and key edits survive
+  future runs; machine detections remain available as a baseline. A deliberate
+  tempo-map correction is synchronized only by the separate
+  confirmation-gated action, never by ordinary correction sync.
 - **Separate ownership and evidence:** generated variants can be reconciled or
   discarded and are peers -- ordered only for stable presentation, never
   preferred, active, best, or selected -- while `[work]` copies remain
