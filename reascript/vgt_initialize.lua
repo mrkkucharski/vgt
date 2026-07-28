@@ -955,7 +955,7 @@ local function transcription_definition(target)
   return definition
 end
 
-local function add_reference_midi_variant(index, target, variant_id, variant, reference_start, managed_tracks, artifact_namespace, allow_legacy_path, legacy_track_name)
+local function add_reference_midi_variant(index, target, variant_id, variant, reference_start, reference_end, managed_tracks, artifact_namespace, allow_legacy_path, legacy_track_name)
   if type(variant) ~= "table" or variant.status ~= "transcribed" then return index, false end
   local definition = transcription_definition(target)
   if not definition then return index, true end
@@ -979,7 +979,16 @@ local function add_reference_midi_variant(index, target, variant_id, variant, re
   local midi_track = add_locked_track(index, name, false, "variant:" .. target .. ":" .. variant_id)
   local item = reaper.AddMediaItemToTrack(midi_track)
   reaper.SetMediaItemInfo_Value(item, "D_POSITION", reference_start)
-  reaper.SetMediaItemInfo_Value(item, "D_LENGTH", reaper.GetMediaSourceLength(source))
+  -- Span the reference track, exactly like Key and the stems. A MIDI source's
+  -- GetMediaSourceLength is *quarter notes*, not the seconds it returns for a
+  -- WAV, and it stops at the last note rather than at the end of the song, so
+  -- it is the wrong number twice over; it stays only as a last resort for a
+  -- caller that has no reference span to give.
+  local length = (tonumber(reference_end) or 0) - reference_start
+  if length <= 0 then length = reaper.GetMediaSourceLength(source) end
+  reaper.SetMediaItemInfo_Value(item, "D_LENGTH", length)
+  -- Transcriptions that end before the song must not repeat to fill the item.
+  reaper.SetMediaItemInfo_Value(item, "B_LOOPSRC", 0)
   reaper.SetMediaItemInfo_Value(item, "C_BEATATTACHMODE", 0)
   local take = reaper.AddTakeToMediaItem(item)
   reaper.SetMediaItemTake_Source(take, source)
@@ -989,7 +998,7 @@ end
 
 -- Retained variants are imported only in explicit variant_order. A malformed
 -- duplicate in that order still creates one generated track, never two.
-local function add_reference_midi_tracks(index, target, transcription, reference_start, managed_tracks, artifact_namespace)
+local function add_reference_midi_tracks(index, target, transcription, reference_start, reference_end, managed_tracks, artifact_namespace)
   local record = type(transcription) == "table" and transcription.targets and transcription.targets[target] or nil
   if type(record) ~= "table" then return index, false end
   local imported = false
@@ -1003,7 +1012,7 @@ local function add_reference_midi_tracks(index, target, transcription, reference
         local allow_legacy_path = record.status ~= nil and type(variant) == "table"
           and variant.midi_file == "transcription/" .. target .. ".mid"
         local next_index, attempted = add_reference_midi_variant(index, target, variant_id, variant,
-          reference_start, managed_tracks, artifact_namespace, allow_legacy_path, allow_legacy_path)
+          reference_start, reference_end, managed_tracks, artifact_namespace, allow_legacy_path, allow_legacy_path)
         index = next_index
         imported = imported or attempted
       end
@@ -1015,7 +1024,7 @@ local function add_reference_midi_tracks(index, target, transcription, reference
   local legacy = {}
   for key, value in pairs(record) do legacy[key] = value end
   legacy.label = "default"
-  return add_reference_midi_variant(index, target, "legacy", legacy, reference_start,
+  return add_reference_midi_variant(index, target, "legacy", legacy, reference_start, reference_end,
     managed_tracks, artifact_namespace, true, true)
 end
 
@@ -1023,13 +1032,18 @@ end
 -- namespace.  The API gets an absolute local path, but saving the project is
 -- what causes REAPER to serialize it project-relative; the live verifier
 -- checks that persisted behavior separately.
-local function add_stem_tracks(index, stems, transcription, reference_start, managed_tracks)
-  -- Keep the helper callable by older local automation snippets that passed
-  -- only stems/reference_start/managed_tracks.
+local function add_stem_tracks(index, stems, transcription, reference_start, reference_end, managed_tracks)
+  -- Keep the helper callable by older local automation snippets: those pass
+  -- no reference_end, or only stems/reference_start/managed_tracks.
+  if managed_tracks == nil and type(reference_end) == "table" then
+    managed_tracks = reference_end
+    reference_end = nil
+  end
   if managed_tracks == nil then
     managed_tracks = reference_start
     reference_start = transcription
     transcription = nil
+    reference_end = nil
   end
   local artifacts = type(stems) == "table" and stems.artifacts or nil
   local artifact_namespace = type(stems) == "table" and stems.artifact_namespace or nil
@@ -1055,7 +1069,7 @@ local function add_stem_tracks(index, stems, transcription, reference_start, man
           managed_tracks[#managed_tracks + 1] = stem_track
           index = index + 1
           imported_stems[definition.artifact] = true
-          index = add_reference_midi_tracks(index, definition.artifact, transcription, reference_start, managed_tracks, artifact_namespace)
+          index = add_reference_midi_tracks(index, definition.artifact, transcription, reference_start, reference_end, managed_tracks, artifact_namespace)
         end
       end
     end
@@ -1064,7 +1078,7 @@ local function add_stem_tracks(index, stems, transcription, reference_start, man
   -- Keep them anyway, after the stem block, in Python's target-table order.
   for _, definition in ipairs(TRANSCRIPTION_TARGETS) do
     if not imported_stems[definition.target] then
-      index = add_reference_midi_tracks(index, definition.target, transcription, reference_start, managed_tracks, artifact_namespace)
+      index = add_reference_midi_tracks(index, definition.target, transcription, reference_start, reference_end, managed_tracks, artifact_namespace)
     end
   end
 end
@@ -1366,7 +1380,7 @@ local function apply()
     managed_tracks[#managed_tracks + 1] = chords_track
   end
 
-  add_stem_tracks(reaper.CountTracks(0), analysis and analysis.stems, analysis and analysis.transcription, reference_start, managed_tracks)
+  add_stem_tracks(reaper.CountTracks(0), analysis and analysis.stems, analysis and analysis.transcription, reference_start, reference_end, managed_tracks)
 
   local managed_region_ids = add_sections(analysis and analysis.sections and analysis.sections.value, reference_start) or {}
 

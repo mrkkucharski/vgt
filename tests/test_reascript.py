@@ -648,6 +648,54 @@ def test_add_stem_tracks_skips_missing_or_outside_namespace_artifacts_with_a_war
     assert "skipping stem vocals: sidecar file is outside the expected stem namespace" in result.stderr
 
 
+def test_reference_midi_spans_the_reference_track_and_never_loops(tmp_path: Path) -> None:
+    """A MIDI source reports its length in quarter notes, not seconds, and it
+    ends at its last note -- so taking the item's length from it made the
+    reference stop mid-song (or, when the QN count exceeded the song, run past
+    the end and repeat). The item spans the reference track instead, like Key
+    and the stems, with looping off so a short transcription stays short.
+    """
+    rpp = tmp_path / "song.RPP"
+    namespace = tmp_path / "vgt" / "song-abc123"
+    (namespace / "stems").mkdir(parents=True)
+    (namespace / "transcription").mkdir()
+    (namespace / "stems" / "guitar.wav").write_bytes(b"RIFF....WAVEfmt ")
+    (namespace / "transcription" / "guitar.mid").write_bytes(b"MThd")
+    script = APPLY_SCRIPT.read_text()
+    helpers_end = script.index("local function remove_previous_managed_regions()")
+    lua_program = "\n".join([
+        _click_track_lua_mock(rpp), script[:helpers_end], "local managed_tracks = {}",
+        "add_stem_tracks(0, {artifact_namespace = 'song-abc123', artifacts = {guitar = {file = 'vgt/song-abc123/stems/guitar.wav', size_bytes = 16, duration_seconds = 2.5}}},"
+        " {targets = {guitar = {status = 'transcribed', midi_file = 'transcription/guitar.mid'}}}, 4, 182.55, managed_tracks)",
+        "for i, track in ipairs(__tracks) do local item = __items[i];"
+        " io.write(track.name, ':', item.values.D_POSITION, ':', item.values.D_LENGTH, ':', tostring(item.values.B_LOOPSRC), ';') end",
+    ])
+    result = subprocess.run([LUA, "-", str(rpp)], input=lua_program, text=True, capture_output=True, check=True)
+
+    # The stem is audio: its length still comes from the source (mocked 2.5).
+    assert result.stdout == "[vgt] Guitar:4:2.5:nil;[vgt] Guitar Ref (MIDI):4:178.55:0;"
+
+
+def test_reference_midi_falls_back_to_the_source_length_without_a_reference_span(tmp_path: Path) -> None:
+    """Older local automation calls `add_stem_tracks` with no reference end;
+    they keep working rather than producing a zero-length item."""
+    rpp = tmp_path / "song.RPP"
+    namespace = tmp_path / "vgt" / "song-abc123"
+    (namespace / "transcription").mkdir(parents=True)
+    (namespace / "transcription" / "guitar.mid").write_bytes(b"MThd")
+    script = APPLY_SCRIPT.read_text()
+    helpers_end = script.index("local function remove_previous_managed_regions()")
+    lua_program = "\n".join([
+        _click_track_lua_mock(rpp), script[:helpers_end], "local managed_tracks = {}",
+        "add_stem_tracks(0, {artifact_namespace = 'song-abc123', artifacts = {}},"
+        " {targets = {guitar = {status = 'transcribed', midi_file = 'transcription/guitar.mid'}}}, 4, managed_tracks)",
+        "io.write(__tracks[1].name, ':', __items[1].values.D_POSITION, ':', __items[1].values.D_LENGTH)",
+    ])
+    result = subprocess.run([LUA, "-", str(rpp)], input=lua_program, text=True, capture_output=True, check=True)
+
+    assert result.stdout == "[vgt] Guitar Ref (MIDI):4:2.5"
+
+
 def test_transcription_tracks_follow_their_stems_and_are_unmuted_time_based(tmp_path: Path) -> None:
     rpp = tmp_path / "song.RPP"
     namespace = tmp_path / "vgt" / "song-abc123"
@@ -1132,7 +1180,7 @@ def test_drum_transcription_rejects_any_path_except_its_recorded_namespace_file(
 
 def test_transcription_import_source_and_opt_in_verifier_are_present() -> None:
     script = APPLY_SCRIPT.read_text()
-    assert "local function add_reference_midi_tracks(index, target, transcription, reference_start, managed_tracks, artifact_namespace)" in script
+    assert "local function add_reference_midi_tracks(index, target, transcription, reference_start, reference_end, managed_tracks, artifact_namespace)" in script
     assert "local function add_reference_midi_variant(index, target, variant_id" in script
     assert "variant.status ~= \"transcribed\"" in script
     assert '" Ref — " .. label .. " (MIDI)"' in script
