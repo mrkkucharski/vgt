@@ -1,43 +1,33 @@
 {
-  "current_issue": 198,
-  "session_id": "1c7c6165-ad84-4550-ac24-5e437292e6ee",
-  "pid": 26656,
-  "process_started_at": "Tue Jul 28 22:56:40 2026",
+  "current_issue": 214,
+  "session_id": "6d9a7b4a-2098-4b48-b9c3-373b2cbf51e4",
+  "pid": 31060,
+  "process_started_at": "Tue Jul 28 23:29:07 2026",
   "agent": "codex",
-  "started_at": "2026-07-28T20:56:38.499858+00:00",
+  "started_at": "2026-07-28T21:29:05.780807+00:00",
   "scheduler_stalls": {},
   "budget": {
-    "window_start": "2026-07-28T16:13:40.657375+00:00",
-    "seconds_used": 922.082844,
+    "window_start": "2026-07-28T21:15:48.918262+00:00",
+    "seconds_used": 0.0,
     "dollars_used": 0.0,
-    "seconds_used_by_agent": {
-      "codex": 922.082844
-    }
+    "seconds_used_by_agent": {}
   },
   "verification_followups": {
     "f0d8bfc9d2dc6da7a31609184e25c4d66d3986fd2340b33a83e98204fb86691e": "created"
   },
-  "role": "review",
-  "branch": "issue-198-correct-drumscript-timing-and-velocity-d",
-  "worktree_path": "/Users/marekkucharski/projects/.pm-worktrees/vgt/issue-198",
-  "pr_number": 212,
+  "role": "implement",
+  "branch": "issue-214-add-reaper-native-key-correction-and-det",
+  "worktree_path": "/Users/marekkucharski/projects/.pm-worktrees/vgt/issue-214",
+  "pr_number": null,
   "followup_generation": {
-    "fingerprint": "eef3ed07ced05e409d8e46a7df750bd9186dc49d076ac58bb4bab5a96557ba52",
+    "fingerprint": "2474753fd47a740fbd36af7d48833ec181634770b32bcb6456bbc034edff94f7",
     "items": {
-      "7242cda98f5eb478e7c6bcbb0d9c02ac6de0861853087c125ed2f0a8dd2c7fdb": {
-        "title": "Restore operational automatic Tests workflows",
+      "d3125e20ac4a456a4b9250d33ff664ce39657fa26c8e555a82bf615378edb037": {
+        "title": "Add REAPER-native key correction and detected-baseline preservation",
         "status": "created"
       },
-      "8d491cd73a29b8a0f93926f27f1336feb3b60e323d0e09412a3672dea4008e6f": {
-        "title": "Make reference MIDI follow variable tempo grids",
-        "status": "created"
-      },
-      "44c2560c9764a49952435a2bc002ed2fb9d0ce7191a67607bee0b9f13d9d2b14": {
-        "title": "Add drum playback timing to the goal contract",
-        "status": "created"
-      },
-      "8a8f380ee2a216713269e868fdc24e62f3370ae0e5cd8591ee432838bc5cc99f": {
-        "title": "Correct DrumScript timing and velocity documentation",
+      "5e679c316c23205676f974fd4fe436ef798f7a1bb45c3210b1ca274679566e9e": {
+        "title": "Add explicit tempo-map correction sync from REAPER",
         "status": "created"
       }
     }
@@ -74,13 +64,13 @@
     "203": 1
   },
   "pending_transition": {
-    "issue": 198,
+    "issue": 214,
     "target": "working",
-    "event": "agent.review_started",
+    "event": "agent.started",
     "detail": {
-      "issue": 198,
+      "issue": 214,
       "agent": "codex",
-      "pr": 212
+      "branch": "issue-214-add-reaper-native-key-correction-and-det"
     },
     "cleanup": {}
   }
