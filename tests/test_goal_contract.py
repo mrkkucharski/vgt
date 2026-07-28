@@ -11,7 +11,7 @@ import json
 from pathlib import Path
 import shutil
 import subprocess
-from typing import Any
+from typing import Any, Callable
 
 import pytest
 
@@ -19,8 +19,8 @@ from vgt import analysis as analysis_module
 from vgt.analysis import analyze
 from vgt.cli import main
 from vgt.separation import FakeSeparator, separate
-from vgt.sidecar import artifact_namespace_dir, read_sidecar
-from vgt.transcribe import FakeTranscriber, TargetTranscriberRouter
+from vgt.sidecar import artifact_namespace_dir, read_sidecar, update_analysis
+from vgt.transcribe import DrumScriptSpec, FakeTranscriber, TargetTranscriberRouter, TranscriptionResult, _write_midi
 from vgt.transcription_lifecycle import add_variant, discard_variant, purge_discarded
 
 
@@ -57,6 +57,58 @@ class CountingTranscriber(FakeTranscriber):
         """Expose raw Basic Pitch work separately from legacy transcribe()."""
         self.raw_calls = getattr(self, "raw_calls", 0) + 1
         return super().detect_raw(*args, **kwargs)
+
+
+class TempoSkewedDrumScriptFake(FakeTranscriber):
+    """A DrumScript-shaped result with the 60-vs-120 BPM failure signature.
+
+    The backend reports its own half-tempo estimate, but the MIDI vgt retains
+    must be newly authored from the event's real-second timestamp against the
+    project's detected timeline.
+    """
+
+    name = "drumscript"
+    backend_tempo = 60.1
+    event_time_s = 150.0
+    source_interval_s = 150.1
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.calls = 0
+
+    def transcribe(
+        self,
+        source: Path,
+        destination_dir: Path,
+        spec: DrumScriptSpec,
+        progress: Callable[[str], None] | None = None,
+    ) -> TranscriptionResult:
+        self.calls += 1
+        destination_dir.mkdir(parents=True, exist_ok=True)
+        midi_path = destination_dir / "transcription.mid"
+        events_path = destination_dir / "transcription.json"
+        _write_midi(
+            midi_path,
+            [(self.event_time_s, self.source_interval_s, 36, 100)],
+            spec.midi_tempo or 120.0,
+            channel=9,
+            tempo_map=spec.tempo_map,
+        )
+        events_path.write_text(json.dumps([{"time_sec": self.event_time_s, "instruments": ["kick"]}]), encoding="utf-8")
+        return TranscriptionResult(
+            note_count=1,
+            pitch_range_midi=None,
+            first_note_s=None,
+            last_note_s=None,
+            midi_path=midi_path,
+            events_path=events_path,
+            instrument_counts={"kick": 1},
+            event_count=1,
+            first_event_s=self.event_time_s,
+            last_event_s=self.event_time_s,
+            backend_tempo=self.backend_tempo,
+            midi_tempo=spec.midi_tempo,
+        )
 
 
 class OfflineLalalLedger:
@@ -214,7 +266,7 @@ function reaper.AddTakeToMediaItem(i) i.take={{}}; return i.take end
 function reaper.GetSetMediaItemTakeInfo_String(t,_,value) t.name=value end
 function reaper.SetMediaItemTake_Source(t,s) t.source=s end
 function reaper.PCM_Source_CreateFromFile(path) return {{path=path}} end
-function reaper.GetMediaSourceLength(_) return 1 end
+function reaper.GetMediaSourceLength(_) return _G.midi_source_length or 1 end
 function reaper.CountProjectMarkers() return #regions end
 function reaper.EnumProjectMarkers3(_,i) local r=regions[i+1]; return true,true,r.start,r.finish,r.name,r.id,0 end
 function reaper.DeleteProjectMarker(_,id) for i,r in ipairs(regions) do if r.id==id then table.remove(regions,i); return end end end
@@ -925,6 +977,153 @@ end
         managed_tracks=final_sidecar["managed_track_guids"],
         managed_regions=final_sidecar["managed_region_ids"],
     ) == work_snapshot
+
+
+def _midi_note_on_qns(path: Path) -> list[float]:
+    """Decode note-on ticks without coupling this contract to the writer."""
+    data = path.read_bytes()
+    ticks_per_quarter = int.from_bytes(data[12:14], "big")
+    index = 8 + int.from_bytes(data[4:8], "big")
+    track_end = index + 8 + int.from_bytes(data[index + 4:index + 8], "big")
+    index += 8
+    tick, qns = 0, []
+    while index < track_end:
+        delta = 0
+        while True:
+            byte = data[index]
+            index += 1
+            delta = (delta << 7) | (byte & 0x7F)
+            if not byte & 0x80:
+                break
+        tick += delta
+        status = data[index]
+        index += 1
+        if status == 0xFF:
+            index += 1
+            length = data[index]
+            index += 1 + length
+        elif 0x80 <= status <= 0x9F:
+            _note, velocity = data[index:index + 2]
+            index += 2
+            if 0x90 <= status <= 0x9F and velocity:
+                qns.append(tick / ticks_per_quarter)
+        else:
+            raise AssertionError(f"unexpected MIDI event {status:#x}")
+    return qns
+
+
+def _run_apply_with_midi_source_length(project: Path, state: str, source_length: float) -> tuple[str, str]:
+    """Run apply with the fixture's MIDI source reporting its real interval."""
+    module = APPLY_SCRIPT.read_text(encoding="utf-8").split("local ok, error_message = xpcall", 1)[0]
+    return _run(project, state, module, f"_G.midi_source_length = {source_length}; apply(); report()")
+
+
+def test_goal_contract_keeps_drumscript_variants_on_the_project_timeline(
+    tmp_path: Path, deterministic_detectors: None,
+) -> None:
+    """Exercise #193 through the variant lifecycle and real apply script.
+
+    This deliberately models DrumScript's observed half-tempo report.  A
+    focused backend test cannot prove that a retained variant is still
+    project-authored, imported at its full interval, and invalidated when the
+    project grid changes.
+    """
+    project = _copy_project(tmp_path)
+    # An untouched fixture map would make apply preserve its user-owned 100
+    # BPM marker. This contract needs the analysis grid itself to become the
+    # live project grid, just as a newly prepared project does.
+    state = _lua_state(project).replace("markers={{time=0,bpm=100,num=4,den=4}}", "markers={}")
+    original_user_state = _user_snapshot(project, state)
+    state, _ = _run_apply(project, state)
+    analyze(project, stages=("tempo",))
+    update_analysis(project, lambda current: current["tempo"].__setitem__("value", {
+        **current["tempo"]["value"], "mode": "piecewise", "spans": [{"start_seconds": 0.0, "bpm": 120.0}],
+    }))
+    separate(project, CountingSeparator(), guitar_type="electric")
+
+    drumscript = TempoSkewedDrumScriptFake()
+    router = TargetTranscriberRouter(basic_pitch=CountingTranscriber(), drumscript=drumscript, drumscript_targets=("drums",))
+    default = add_variant(project, "drums", label="default", profile="default", router=router)
+    clean = add_variant(project, "drums", label="clean", profile="drums-clean", router=router)
+    sidecar = read_sidecar(project)
+    variants = sidecar["analysis"]["transcription"]["targets"]["drums"]["variants"]
+    namespace = artifact_namespace_dir(project, sidecar["analysis"]["stems"]["artifact_namespace"])
+
+    # Both retained artifacts must reflect the project grid, rather than the
+    # fake backend's approximately-60 BPM MIDI. The 150-second hit is QN 300
+    # at the 120 BPM project tempo, and remains explicitly auditable as a
+    # backend tempo mismatch in the variant record.
+    assert drumscript.calls == 2
+    for variant in (default, clean):
+        assert variant["backend_tempo"] == pytest.approx(60.1)
+        assert variant["midi_tempo"] == 120.0
+        assert _midi_note_on_qns(namespace / variant["midi_file"]) == pytest.approx([300.0])
+
+    state, first_apply = _run_apply_with_midi_source_length(project, state, drumscript.source_interval_s)
+    names = first_apply.split("#", 1)[0].split("|")
+    assert names.count("[vgt] Drums Ref — default (MIDI)") == 1
+    assert names.count("[vgt] Drums Ref — clean (MIDI)") == 1
+    _, item_report = _run(project, state, "", """
+for _, track in ipairs(tracks) do
+  if track.name == '[vgt] Drums Ref — default (MIDI)' or track.name == '[vgt] Drums Ref — clean (MIDI)' then
+    local item = track.items[1]
+    io.write(track.name .. ':' .. item.position .. ':' .. item.length .. '|')
+  end
+end
+""")
+    assert item_report.split("|")[:2] == [
+        "[vgt] Drums Ref — default (MIDI):10:150.1",
+        "[vgt] Drums Ref — clean (MIDI):10:150.1",
+    ]
+    applied_sidecar = read_sidecar(project)
+    assert _user_snapshot(
+        project, state,
+        managed_tracks=applied_sidecar["managed_track_guids"],
+        managed_regions=applied_sidecar["managed_region_ids"],
+    ) == original_user_state
+
+    state, _ = _run(project, state, "", """
+table.insert(tracks, {guid='work-drums', name='[work] Drums Ref — default (MIDI)', B_MUTE=0,
+  items={{position=10,length=150.1,C_LOCK=0,take={name='edited by user',source=''}}}})
+""")
+    work_snapshot = _user_snapshot(
+        project, state,
+        managed_tracks=applied_sidecar["managed_track_guids"],
+        managed_regions=applied_sidecar["managed_region_ids"],
+    )
+    state, second_apply = _run_apply_with_midi_source_length(project, state, drumscript.source_interval_s)
+    second_names = second_apply.split("#", 1)[0].split("|")
+    assert second_names.count("[vgt] Drums Ref — default (MIDI)") == 1
+    assert second_names.count("[vgt] Drums Ref — clean (MIDI)") == 1
+    assert second_names.count("[work] Drums Ref — default (MIDI)") == 1
+    state, reapplied = _run_apply_with_midi_source_length(project, state, drumscript.source_interval_s)
+    assert reapplied.split("#", 1)[0].split("|") == second_names
+    final_sidecar = read_sidecar(project)
+    assert _user_snapshot(
+        project, state,
+        managed_tracks=final_sidecar["managed_track_guids"],
+        managed_regions=final_sidecar["managed_region_ids"],
+    ) == work_snapshot
+
+    # Changing the detected project grid changes the variant spec identity;
+    # analyze must re-author the affected MIDI instead of accepting the old
+    # 120-BPM-only bytes as current. The first retained variant is the
+    # compatibility target refreshed by analyze's existing lifecycle rule.
+    before = (namespace / default["midi_file"]).read_bytes()
+    before_hash = variants[next(iter(variants))]["settings_hash"]
+    update_analysis(project, lambda current: current["tempo"].__setitem__("value", {
+        **current["tempo"]["value"], "spans": [
+            {"start_seconds": 0.0, "bpm": 120.0}, {"start_seconds": 100.0, "bpm": 60.0},
+        ],
+    }))
+    analyze(project, stages=("transcription",), transcriber_router=router, variant_compatibility=True)
+    refreshed = read_sidecar(project)["analysis"]["transcription"]["targets"]["drums"]["variants"]
+    refreshed_default = refreshed[next(iter(refreshed))]
+    after = (namespace / refreshed_default["midi_file"]).read_bytes()
+    assert drumscript.calls == 3
+    assert refreshed_default["settings_hash"] != before_hash
+    assert after != before
+    assert _midi_note_on_qns(namespace / refreshed_default["midi_file"]) == pytest.approx([250.0])
 
 
 def test_goal_contract_sync_survives_a_concurrent_analyze_commit(tmp_path: Path, deterministic_detectors: None) -> None:
