@@ -22,8 +22,9 @@ analyzes it, optionally creates practice stems, and adds a clearly owned
   candidates with immutable IDs and editable labels, ordered only for stable
   presentation -- none is preferred, active, best, or selected; cleanup-only
   guitar variants share raw Basic Pitch detection. DrumScript transcribes
-  every other supported target (guitar, bass, vocals, piano, strings,
-  instrumental, backing, and original mix). Generated variants are draft
+  `drums`; Basic Pitch transcribes every other supported target (guitar,
+  bass, vocals, piano, strings, instrumental, backing, and original mix).
+  Generated variants are draft
   references, not chord-analysis inputs or ground truth; `[work]` copies are
   the separate user-owned editing boundary. Guitar is the default target;
   further targets can be kept independently. This is a delivered capability,
