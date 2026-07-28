@@ -6,6 +6,7 @@ import json
 from pathlib import Path
 
 import numpy as np
+import pytest
 
 from vgt.drum_cleanup import BeatGridReference
 from vgt.drum_evaluation import instrument_onsets
@@ -15,6 +16,8 @@ from vgt.transcribe import (
     AdtofSpec,
     AdtofTranscriber,
     ADTOF_GM_INSTRUMENTS,
+    ADTOF_NOTE_DURATION_SECONDS,
+    FakeAdtofTranscriber,
     _midi_has_non_percussion_notes,
     default_spec_for_target,
     postprocess_adtof_activations,
@@ -53,7 +56,10 @@ def test_postprocessor_peak_picks_and_quantizes_to_project_eighth_grid() -> None
         {"time_sec": 1.0, "instruments": ["crash"]},
     ]
     assert [note[2] for note in notes] == [36, 38, 42, 49]
-    assert all(1 <= note[3] <= 127 for note in notes)
+    # Velocity is derived from the retained activation height, then bounded
+    # into the MIDI range; the suppressed 0.7 kick cannot affect it.
+    assert [note[3] for note in notes] == [114, 77, 102, 51]
+    assert all(note[1] - note[0] == pytest.approx(ADTOF_NOTE_DURATION_SECONDS) for note in notes)
 
 
 def test_grid_association_uses_the_downbeat_when_beat_times_omit_it() -> None:
@@ -96,6 +102,21 @@ def test_class_mapping_has_only_gm_percussion_primary_members() -> None:
         "tom_tom": ("mid_tom", 45), "hi_hat": ("hi_hat_closed", 42),
         "cymbal": ("crash", 49),
     }
+
+
+def test_fake_adtof_authors_only_the_real_backends_five_class_contract(tmp_path: Path) -> None:
+    """The offline seam must not accidentally inherit DrumScript's labels."""
+    source = tmp_path / "drums.wav"
+    source.write_bytes(b"deterministic fake drum stem")
+    result = FakeAdtofTranscriber().transcribe(source, tmp_path / "output", _spec())
+
+    events = json.loads(result.events_path.read_text(encoding="utf-8"))  # type: ignore[union-attr]
+    emitted = {instrument for event in events for instrument in event["instruments"]}
+    assert emitted <= {instrument for instrument, _pitch in ADTOF_GM_INSTRUMENTS.values()}
+    assert result.event_count == result.note_count == 4
+    assert result.backend_tempo is None
+    assert result.midi_tempo == 120.0
+    assert _midi_has_non_percussion_notes(result.midi_path.read_bytes()) is False
 
 
 def test_phase0_capture_beats_the_committed_drumscript_baseline_in_the_scored_window() -> None:

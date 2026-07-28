@@ -1,8 +1,7 @@
 # Plan: alternative drum ADT backend (ADTOF-pytorch + vgt-owned post-processing)
 
-Status: plan / design. Grounds the work in the existing transcription
-architecture and the engine recommendation in
-`docs/drum_adt_recommendation.pdf`. No code changes are made by this document.
+Status: delivered. Grounds the work in the existing transcription architecture
+and the engine recommendation in `docs/drum_adt_recommendation.pdf`.
 
 ## Goal
 
@@ -156,27 +155,27 @@ Same as DrumScript, so the lifecycle needs no special-casing:
 
 ## Delivery phases (tracked as separate issues, ordered by "blocked by")
 
-0. **Feasibility spike & version decision** — pin the package + model + weights
+0. **Feasibility spike & version decision** — delivered: pin the package + model + weights
    provenance, confirm the raw-activation API and class/frame contract, dump a
    real activation matrix on the `7Rivers` drum stem, and do a routine license
    check (compliance only — non-commercial hobby use, so copyleft/non-commercial
    licenses are fine). Output: the pins the later phases hard-code. *(Blocks the
    later phases only because they depend on its pins, not on a licensing
    go/no-go.)*
-1. **Backend-selection seam + `AdtofSpec` + built-in `drums-adtof` profile
-   (fake-backed).** Make backend selection profile-driven; register the ADTOF
+1. **Backend-selection seam + `AdtofSpec` + built-in `drums-adtof` profile** — delivered
+   (fake-backed). Make backend selection profile-driven; register the ADTOF
    spec and profile; wire a `FakeAdtofTranscriber` so the variant flow works
    end-to-end with no real model yet. Existing DrumScript variant hashes
    unchanged. *(Blocked by 0.)*
-2. **ADTOF activation runner** — isolated, pinned subprocess that runs the model
+2. **ADTOF activation runner** — delivered: isolated, pinned subprocess that runs the model
    and emits validated raw activations (+ frame-rate/class metadata) into a temp
    dir; error handling, timeout, and cache keying by (package/model version,
    stem hash). *(Blocked by 0.)*
-3. **vgt post-processing → grid-aligned MIDI/JSON at project tempo** — peak
+3. **vgt post-processing → grid-aligned MIDI/JSON at project tempo** — delivered: peak
    picking, beat-grid association (using `beat_times`/`downbeat_offset_s`),
    velocity estimation, class→GM mapping, and authoring via `_write_midi`.
    Produces the DrumScript-identical output contract. *(Blocked by 1 and 2.)*
-4. **Fake backend hardening, offline tests, goal-contract coverage, and docs** —
+4. **Fake backend hardening, offline tests, goal-contract coverage, and docs** — delivered:
    unit tests for post-processing, an ADTOF variant lifecycle exercised offline
    via the fake in the goal contract, and user-manual/docs updates describing
    the opt-in alternative and how to compare it against the DrumScript baseline.

@@ -1498,7 +1498,15 @@ class FakeTranscriber:
 
 
 class FakeAdtofTranscriber(FakeTranscriber):
-    """Offline Phase-1 ADTOF stand-in; deliberately never imports Torch."""
+    """Offline ADTOF stand-in with the same output contract as the real path.
+
+    It intentionally fabricates final, post-processed events rather than
+    activations: the focused post-processing tests cover the DSP itself, while
+    this seam keeps lifecycle tests entirely local (and, importantly, free of
+    a Torch import).  Do not delegate to :class:`FakeTranscriber` here: that
+    fake models DrumScript's larger instrument vocabulary, whereas ADTOF can
+    only emit its five documented class-to-GM primary members.
+    """
 
     name = "adtof"
 
@@ -1508,7 +1516,41 @@ class FakeAdtofTranscriber(FakeTranscriber):
     ) -> TranscriptionResult:
         if not isinstance(spec, AdtofSpec):
             raise TranscriptionError("FakeAdtofTranscriber requires an AdtofSpec")
-        return super().transcribe(source, destination_dir, spec, progress)
+        emit = progress or (lambda _message: None)
+        emit(f"transcribing (fake-adtof): {source.name}")
+        destination_dir.mkdir(parents=True, exist_ok=True)
+
+        instruments = tuple(instrument for instrument, _pitch in ADTOF_GM_INSTRUMENTS.values())
+        events = [
+            {
+                "time_sec": round(index * 0.5, 6),
+                "instruments": [instruments[_content_seed(source, spec, f"adtof-event-{index}") % len(instruments)]],
+            }
+            for index in range(4)
+        ]
+        notes = [
+            (
+                event["time_sec"], event["time_sec"] + ADTOF_NOTE_DURATION_SECONDS,
+                ADTOF_GM_INSTRUMENTS_INV[event["instruments"][0]],
+                100,
+            )
+            for event in events
+        ]
+        midi_path = destination_dir / "transcription.mid"
+        events_path = destination_dir / "transcription.json"
+        tempo_bpm = spec.midi_tempo or 120.0
+        _write_midi(midi_path, notes, tempo_bpm, channel=9, tempo_map=spec.tempo_map)
+        _validate_drumscript_midi(midi_path)
+        events_path.write_text(json.dumps(events), encoding="utf-8")
+        counts = {instrument: sum(instrument in event["instruments"] for event in events) for instrument in instruments}
+        emit(f"transcribed (fake-adtof): {len(events)} events")
+        return TranscriptionResult(
+            note_count=len(notes), pitch_range_midi=None, first_note_s=None, last_note_s=None,
+            midi_path=midi_path, events_path=events_path,
+            instrument_counts={instrument: count for instrument, count in counts.items() if count},
+            event_count=len(events), first_event_s=events[0]["time_sec"], last_event_s=events[-1]["time_sec"],
+            backend_tempo=None, midi_tempo=spec.midi_tempo,
+        )
 
 
 def _basic_pitch_base_command(package_pin: str) -> list[str]:

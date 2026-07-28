@@ -152,11 +152,11 @@ credentials, and never asks for cost confirmation. A target without a matching
 stem is reported as skipped; it never silently falls back to transcribing the
 full mix.
 
-**Backend routing is per target and is not configurable:**
+**Backend routing is per target by default:**
 
 | Target | Backend |
 | --- | --- |
-| `drums` | DrumScript |
+| `drums` | DrumScript (the default baseline); the opt-in `drums-adtof` variant profile uses ADTOF |
 | `guitar`, `bass`, `vocals`, `instrumental`, `backing`, `strings`, `piano`, `original` | Basic Pitch |
 
 Guitar is the default requested target. Add other targets with repeatable
@@ -180,7 +180,7 @@ vgt analyze --transcribe bass --transcribe drums "Song.RPP"
 - `--mode <target>=<profile>` persists a transcription profile for one target;
   repeat it to select several. Current profiles are `default`, `guitar`,
   `bass`, `bass-monophonic`, `vocals`, `guitar-acoustic`, and (for `drums`)
-  `drums-clean`. For example, `vgt analyze --mode guitar=guitar-acoustic
+  `drums-clean`, and `drums-adtof`. For example, `vgt analyze --mode guitar=guitar-acoustic
   "Song.RPP"` or `vgt analyze --mode drums=drums-clean "Song.RPP"` (see
   [DrumScript](#drumscript-drums) below). A stale mode from an older sidecar
   safely falls back to the target default, but a profile named explicitly on
@@ -378,6 +378,42 @@ note, its raw DrumScript time/instrument alongside the cleanup decision
 (timing adjustment, velocity source, suppression) applied to it, so a
 surprising result is always traceable back to what DrumScript actually
 detected.
+
+### ADTOF alternative (drums, opt-in)
+
+**DrumScript remains the default baseline.** ADTOF is a second, opt-in drum
+backend for comparison; it never replaces an existing DrumScript variant and
+there is no automatic fallback between them. Add it as a separate retained
+candidate:
+
+```sh
+# Keep the default DrumScript candidate and add ADTOF beside it.
+vgt transcription variant add drums --name baseline --profile default "Song.RPP"
+vgt transcription variant add drums --name adtof --profile drums-adtof "Song.RPP"
+```
+
+ADTOF runs its pinned Torch model in an isolated, pre-fetched environment,
+then vgt peak-picks its raw activations, associates hits to the project beat
+grid, derives velocities, and writes the same channel-10 MIDI plus JSON event
+contract as DrumScript. It is therefore heavier than the baseline and needs
+the pinned ADTOF environment and weights available locally; normal offline
+tests use a fake and never download or import Torch.
+
+Both candidates remain peers. Use `vgt status --json "Song.RPP"` to find each
+variant's generated MIDI/JSON path, then score either event JSON (or MIDI)
+against the same local corrected reference with the offline scorer:
+
+```sh
+uv run python scripts/drum_midi_score.py \
+  /path/to/adtof.json /path/to/corrected-reference.json --window-seconds 2
+uv run python scripts/drum_midi_score.py \
+  /path/to/baseline.json /path/to/corrected-reference.json --window-seconds 2
+```
+
+Compare onset F1 and median timing error from the two reports; use the same
+reference, tolerance, and window for both. The scorer is local-only and does
+not invoke either transcription backend. Discard a candidate you do not want
+to retain with `vgt transcription variant discard drums adtof "Song.RPP"`.
 
 Because these are GM percussion selectors rather than musical pitches, the
 reference MIDI has no meaningful pitch range to display — treat the note names
