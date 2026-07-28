@@ -1,10 +1,10 @@
 {
   "current_issue": 184,
-  "session_id": "513ba997-944d-470f-99e5-4f4420d882f3",
-  "pid": 65741,
-  "process_started_at": "Tue Jul 28 05:15:41 2026",
+  "session_id": "59399b41-7033-420e-ba01-810ea102bbf1",
+  "pid": 71600,
+  "process_started_at": "Tue Jul 28 07:13:43 2026",
   "agent": "codex",
-  "started_at": "2026-07-28T03:15:39.793835+00:00",
+  "started_at": "2026-07-28T05:13:41.594121+00:00",
   "scheduler_stalls": {
     "malformed_responses": {
       "followup_issues": {
@@ -16,9 +16,16 @@
     "blocked_issues": {
       "187": {
         "first_seen_at": "2026-07-27T22:08:37.725495+00:00",
-        "last_seen_at": "2026-07-28T03:14:26.663087+00:00",
-        "consecutive_passes": 266,
+        "last_seen_at": "2026-07-28T05:12:29.802635+00:00",
+        "consecutive_passes": 367,
         "title": "Author drum MIDI at the project's detected tempo (not DrumScript's mis-detected tempo)"
+      }
+    },
+    "deferred_passes": {
+      "budget": {
+        "first_seen_at": "2026-07-28T03:23:40.205824+00:00",
+        "last_seen_at": "2026-07-28T05:12:29.800555+00:00",
+        "consecutive_passes": 94
       }
     }
   },
@@ -31,10 +38,10 @@
   "verification_followups": {
     "f0d8bfc9d2dc6da7a31609184e25c4d66d3986fd2340b33a83e98204fb86691e": "created"
   },
-  "role": "implement",
+  "role": "review",
   "branch": "issue-184-drums-clean-snap-onsets-to-vgt-beat-grid",
   "worktree_path": "/Users/marekkucharski/projects/.pm-worktrees/vgt/issue-184",
-  "pr_number": null,
+  "pr_number": 189,
   "followup_generation": {
     "fingerprint": "fbea9b2e785aa0658e1c7e8448235eb91893fcd6925ed6740c4cf98dd212c31b",
     "items": {
@@ -73,11 +80,11 @@
   "pending_transition": {
     "issue": 184,
     "target": "working",
-    "event": "agent.started",
+    "event": "agent.review_started",
     "detail": {
       "issue": 184,
       "agent": "codex",
-      "branch": "issue-184-drums-clean-snap-onsets-to-vgt-beat-grid"
+      "pr": 189
     },
     "cleanup": {}
   }
