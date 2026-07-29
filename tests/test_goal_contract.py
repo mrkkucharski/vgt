@@ -446,11 +446,16 @@ def _run_tempo_map_sync(project: Path, state: str) -> str:
     return state
 
 
-def _run_promote(project: Path, state: str, guid: str) -> tuple[str, str]:
-    """Promote one simulated working copy through the real ReaScript."""
+def _run_promote(project: Path, state: str, *guids: str) -> tuple[str, str]:
+    """Promote selected simulated working copies through the real ReaScript."""
     module = WORKING_COPY_SCRIPT.read_text(encoding="utf-8").split("local ok, error_message = xpcall", 1)[0]
+    selected_guids = "{" + ",".join(json.dumps(guid) for guid in guids) + "}"
     return _run(project, state, module, f"""
-for _, track in ipairs(tracks) do reaper.SetTrackSelected(track, track.guid == {guid!r}) end
+local selected_guids = {selected_guids}
+local selected = {{}}
+for _, guid in ipairs(selected_guids) do selected[guid] = true end
+for _, track in ipairs(tracks) do reaper.SetTrackSelected(track, selected[track.guid]) end
+reaper.ShowMessageBox = function() end
 promote()
 report()
 """)
@@ -473,6 +478,29 @@ for _, track in ipairs(tracks) do
 end
 assert(found, 'missing track ' .. {guid!r})
 io.write(lua_value(found))
+""")
+    return snapshot
+
+
+def _container_children_snapshot(project: Path, state: str, container_guid: str) -> str:
+    """Serialize one container's descendants in their exact project order."""
+    _, snapshot = _run(project, state, "", f"""
+local container_index
+for index, track in ipairs(tracks) do
+  if track.guid == {container_guid!r} then container_index = index break end
+end
+assert(container_index, 'missing container ' .. {container_guid!r})
+local depth = tracks[container_index].I_FOLDERDEPTH or 0
+local children = {{}}
+if depth > 0 then
+  for index = container_index + 1, #tracks do
+    local child = tracks[index]
+    children[#children + 1] = child
+    depth = depth + (child.I_FOLDERDEPTH or 0)
+    if depth == 0 then break end
+  end
+end
+io.write(lua_value(children))
 """)
     return snapshot
 
@@ -729,18 +757,28 @@ sync()
         managed_regions=reapplied["managed_region_ids"],
     ) == layout_before
 
-    # Model the working-copy action's resulting folder shape directly: this
-    # contract is about apply/promotion reconciliation, while focused tests
-    # cover copying track chunks. Apply must retain the user-owned copy and
-    # move its whole [work] block as one unit.
+    # Model a populated workspace.  The selected, marked scratch copy is the
+    # sole eligible promotion target; a selected unmarked lookalike and a
+    # selected renamed/reclaimed copy must remain completely unchanged.
     work_guid = "{WORK-COPY-0001}"
+    unselected_work_guid = "{WORK-UNSELECTED-0002}"
+    unmarked_guid = "{WORK-UNMARKED-0002}"
+    reclaimed_guid = "{WORK-RECLAIMED-0003}"
     state, _ = _run(project, state, "", f"""
 for index, track in ipairs(tracks) do
   if track.ext and track.ext['P_EXT:vgt_container'] == 'work' then
     track.I_FOLDERDEPTH = 1
     table.insert(tracks, index + 1, {{guid='{work_guid}', name='[work] Guitar Ref — default (MIDI)', B_MUTE=0,
-      I_FOLDERDEPTH=-1, ext={{['P_EXT:vgt_working_copy']='1'}},
+      I_FOLDERDEPTH=0, ext={{['P_EXT:vgt_working_copy']='1'}},
       items={{{{position=10,length=4,C_LOCK=0,take={{name='edited by user',source=''}}}}}}}})
+    table.insert(tracks, index + 2, {{guid='{unselected_work_guid}', name='[work] Bass Ref — default (MIDI)', B_MUTE=0,
+      I_FOLDERDEPTH=0, ext={{['P_EXT:vgt_working_copy']='1'}},
+      items={{{{position=12,length=2,C_LOCK=0,take={{name='leave selected state alone',source='bass.mid'}}}}}}}})
+    table.insert(tracks, index + 3, {{guid='{unmarked_guid}', name='[work] hand-made', B_MUTE=1,
+      I_FOLDERDEPTH=0, ext={{custom='keep'}}, items={{{{position=13,length=2,take={{name='leave me',source='manual.wav'}}}}}}}})
+    table.insert(tracks, index + 4, {{guid='{reclaimed_guid}', name='User reclaimed draft', B_MUTE=0,
+      I_FOLDERDEPTH=-1, ext={{['P_EXT:vgt_working_copy']='1',custom='reclaimed'}},
+      items={{{{position=16,length=3,take={{name='do not touch',source='user.wav'}}}}}}}})
     break
   end
 end
@@ -760,10 +798,18 @@ end
         managed_regions=applied_copy_sidecar["managed_region_ids"],
     ) == copy_snapshot
 
-    # Promotion moves that exact track object into [clean]; it must retain
-    # its GUID/items, shed working-copy provenance, and be ignored by every
-    # following apply while [vgt] is still rebuilt once.
-    state, _ = _run_promote(project, state, work_guid)
+    # Promotion moves exactly the eligible selected track. An eligible but
+    # unselected copy, plus ineligible and reclaimed selected tracks, retain
+    # their complete payloads; this catches accidental broad promotion or a
+    # working-copy action that "cleans up" private marks.
+    state, _ = _run(project, state, "", f"""
+local selected = {{['{work_guid}']=true, ['{unmarked_guid}']=true, ['{reclaimed_guid}']=true}}
+for _, track in ipairs(tracks) do reaper.SetTrackSelected(track, selected[track.guid]) end
+""")
+    unselected_work_snapshot = _track_snapshot(project, state, unselected_work_guid)
+    unmarked_snapshot = _track_snapshot(project, state, unmarked_guid)
+    reclaimed_snapshot = _track_snapshot(project, state, reclaimed_guid)
+    state, _ = _run_promote(project, state, work_guid, unmarked_guid, reclaimed_guid)
     state, promotion = _run(project, state, "", f"""
 local found
 for _, track in ipairs(tracks) do if track.guid == '{work_guid}' then found = track end end
@@ -774,12 +820,45 @@ assert(#found.items == 1 and found.items[1].position == 10 and found.items[1].le
 io.write('promotion ok')
 """)
     assert promotion == "promotion ok"
+    assert _track_snapshot(project, state, unselected_work_guid) == unselected_work_snapshot
+    assert _track_snapshot(project, state, unmarked_guid) == unmarked_snapshot
+    assert _track_snapshot(project, state, reclaimed_guid) == reclaimed_snapshot
     promoted_sidecar = read_sidecar(project)
     promoted_snapshot = _track_snapshot(project, state, work_guid)
     state, post_promotion_apply = _run_apply(project, state)
     assert post_promotion_apply.split("#", 1)[0].split("|").count("[vgt] The Seven Rivers (Full March - 3_00)") == 1
     post_promotion_sidecar = read_sidecar(project)
     assert _track_snapshot(project, state, work_guid) == promoted_snapshot
+
+    # A later selected working copy must not be appended by rewriting the
+    # existing promoted clean child (REAPER stores a folder closer on that
+    # child). The explicit action therefore rejects this request atomically.
+    later_work_guid = "{WORK-LATER-0004}"
+    state, _ = _run(project, state, "", f"""
+for index, track in ipairs(tracks) do
+  if track.guid == '{reclaimed_guid}' then
+    track.I_FOLDERDEPTH = 0
+    table.insert(tracks, index + 1, {{guid='{later_work_guid}', name='[work] Later draft', B_MUTE=0,
+      I_FOLDERDEPTH=-1, ext={{['P_EXT:vgt_working_copy']='1'}},
+      items={{{{position=20,length=1,take={{name='later',source='later.mid'}}}}}}}})
+    break
+  end
+end
+""")
+    state, _ = _run(project, state, "", f"""
+for _, track in ipairs(tracks) do reaper.SetTrackSelected(track, track.guid == '{later_work_guid}') end
+""")
+    user_before_rejected_promotion = _user_snapshot(
+        project, state,
+        managed_tracks=post_promotion_sidecar["managed_track_guids"],
+        managed_regions=post_promotion_sidecar["managed_region_ids"],
+    )
+    state, _ = _run_promote(project, state, later_work_guid)
+    assert _user_snapshot(
+        project, state,
+        managed_tracks=post_promotion_sidecar["managed_track_guids"],
+        managed_regions=post_promotion_sidecar["managed_region_ids"],
+    ) == user_before_rejected_promotion
 
 
 def _guid(seed: int) -> str:
@@ -905,12 +984,20 @@ table.insert(tracks, #tracks + 1, {guid='{HAND-WORK}', name='[work] hand-made', 
 table.insert(tracks, #tracks + 1, {guid='{HAND-WORK-CHILD}', name='work user child', I_FOLDERDEPTH=-1,
   items={{position=7,length=1,C_LOCK=0,take={name='keep work item',source='scratch.wav'}}}})
 """)
-    clean_child_before = _track_snapshot(project, state, "{HAND-CLEAN-CHILD}")
-    work_child_before = _track_snapshot(project, state, "{HAND-WORK-CHILD}")
+    # Snapshot the full child payload and sequence before adoption.  Apply may
+    # move the two container blocks, but automatic reconciliation cannot alter
+    # any child or reorder siblings within either block.
+    clean_children_before = _container_children_snapshot(project, state, "{HAND-CLEAN}")
+    work_children_before = _container_children_snapshot(project, state, "{HAND-WORK}")
 
     state, _ = _run_apply(project, state)
-    assert _track_snapshot(project, state, "{HAND-CLEAN-CHILD}") == clean_child_before
-    assert _track_snapshot(project, state, "{HAND-WORK-CHILD}") == work_child_before
+    assert _container_children_snapshot(project, state, "{HAND-CLEAN}") == clean_children_before
+    assert _container_children_snapshot(project, state, "{HAND-WORK}") == work_children_before
+    # A later initialize pass has the same ownership boundary; adoption must
+    # not be a one-pass exception to child payload/order preservation.
+    state, _ = _run_apply(project, state)
+    assert _container_children_snapshot(project, state, "{HAND-CLEAN}") == clean_children_before
+    assert _container_children_snapshot(project, state, "{HAND-WORK}") == work_children_before
     _, output = _run(project, state, "", """
 local positions, clean, work, vgt = {}, nil, nil, nil
 for index, track in ipairs(tracks) do

@@ -63,12 +63,18 @@ commands, environment, pass counts, and executable-coverage audit, is
 
 ## Permanent invariants
 
-- **Non-destructive:** vgt changes only objects it created and recorded as
-  `[vgt]`-managed; it never changes user tracks, items, or regions. vgt also
-  creates and maintains two user-content containers, `[clean]` and `[work]`.
-  It may create, rename, recolour, and reposition those container tracks, and
-  reposition the blocks they contain as a unit. It never modifies, renames,
-  deletes, or reorders anything *inside* them.
+- **Non-destructive, with an explicit working-copy boundary:** automatic
+  initialize/apply reconciliation changes only `[vgt]`-managed objects. It
+  may create, rename, recolour, and reposition the `[clean]` and `[work]`
+  container tracks, and reposition their blocks as a unit, but it never
+  modifies, renames, deletes, or reorders anything inside either container.
+  The separately user-invoked working-copy action is the sole exception: create
+  may affect only the copies it creates, and promote may affect only selected
+  tracks that both retain its durable working-copy mark and still start with
+  `[work]`. Promotion may move and rename those selected tracks into `[clean]`;
+  every unselected, ineligible, or reclaimed track remains untouched. If the
+  requested create or move would require changing an existing container child
+  merely to maintain REAPER folder structure, the action refuses unchanged.
 - **Idempotent:** re-running a workflow reconciles vgt-owned state without
   duplicates or corruption.
 - **Live REAPER mutation:** project changes use REAPER's API, never RPP text

@@ -98,24 +98,6 @@ local function is_marked_work_object(track)
   return value == WORK_EXT_STATE_VALUE
 end
 
--- A name outside the scratch namespace is the user's durable reclaim signal.
--- Forget our private provenance as soon as a later invocation observes that
--- signal, so even a subsequent rename back to `[work] ...` can never make the
--- track eligible for automated promotion again.  This is intentionally the only
--- metadata vgt changes on a reclaimed copy; its media, routing and placement
--- are left entirely alone.
-local function forget_reclaimed_work_objects()
-  local reclaimed = 0
-  for index = 0, reaper.CountTracks(0) - 1 do
-    local track = reaper.GetTrack(0, index)
-    if is_marked_work_object(track) and not starts_with(track_name(track), WORK_PREFIX) then
-      reaper.GetSetMediaTrackInfo_String(track, WORK_EXT_STATE_KEY, "", true)
-      reclaimed = reclaimed + 1
-    end
-  end
-  return reclaimed
-end
-
 local function is_top_level_track(index)
   local depth = 0
   for previous = 0, index - 1 do
@@ -321,13 +303,6 @@ local function create()
   reaper.Undo_BeginBlock()
   reaper.PreventUIRefresh(1)
 
-  -- Clear the selection so only the new copies end up selected.
-  for _, source in ipairs(sources) do reaper.SetTrackSelected(source, false) end
-
-  -- Persist a user's prior rename before looking for a reusable workspace.
-  -- This makes reclamation permanent rather than depending on its current name.
-  forget_reclaimed_work_objects()
-
   local folder, folder_index, resolution_error = find_work_folder()
   if resolution_error then
     reaper.PreventUIRefresh(-1)
@@ -345,6 +320,23 @@ local function create()
     )
     return
   end
+  -- Extending a populated REAPER folder would demote its existing closing
+  -- child from -1 to 0.  That child is user-owned container content, not a
+  -- newly created copy, so create has no authority to change it.  Leave both
+  -- the child and the caller's selection untouched instead.
+  if folder and not empty_container then
+    reaper.PreventUIRefresh(-1)
+    reaper.Undo_EndBlock("vgt: create working copy", -1)
+    reaper.ShowMessageBox(
+      "The [work] container already has content; creating a copy would alter an existing track's folder structure, so nothing was changed.",
+      "vgt working copy", 0
+    )
+    return
+  end
+
+  -- Clear the selection only after every refusal path that must be atomic.
+  -- The freshly created copies become the new selection below.
+  for _, source in ipairs(sources) do reaper.SetTrackSelected(source, false) end
 
   local insert_index
   if folder_index and empty_container then
@@ -352,12 +344,6 @@ local function create()
     -- copy is inserted, so no empty intermediate folder state can persist.
     reaper.SetMediaTrackInfo_Value(folder, "I_FOLDERDEPTH", 1)
     insert_index = folder_index + 1
-  elseif folder_index then
-    -- Extend the existing folder: its current last child closes it (depth -1),
-    -- so demote it to a plain child and let the last new copy become the closer.
-    local last_child = folder_last_child_index(folder_index)
-    reaper.SetMediaTrackInfo_Value(reaper.GetTrack(0, last_child), "I_FOLDERDEPTH", 0)
-    insert_index = last_child + 1
   else
     -- Create the same scaffold initialize would: directly above its root when
     -- present, otherwise at the end. It becomes a folder immediately below.
@@ -443,7 +429,6 @@ local function promote()
   reaper.Undo_BeginBlock()
   reaper.PreventUIRefresh(1)
 
-  forget_reclaimed_work_objects()
   local work, work_index, work_error = find_work_folder()
   if work_error or not work or not is_complete_work_folder(work_index, work) then
     reaper.ShowMessageBox(
@@ -465,10 +450,18 @@ local function promote()
     reaper.Undo_EndBlock("vgt: promote working copies", -1)
     return
   end
-  if not clean then
-    clean, clean_index = create_clean_folder(work_index)
-    -- Inserting clean above work shifts the latter's numeric index.
-    work, work_index = find_work_folder()
+  -- Appending to a populated REAPER folder means changing its current closing
+  -- child from -1 to 0.  That child is already user-owned clean content, not
+  -- a selected working copy, so doing so would violate this action's narrow
+  -- ownership boundary.  Refuse rather than make an invisible structural edit.
+  if clean and not is_empty_work_container(clean) then
+    reaper.ShowMessageBox(
+      "The [clean] container already has content; promotion would alter an existing track's folder structure, so nothing was changed.",
+      "vgt working copy", 0
+    )
+    reaper.PreventUIRefresh(-1)
+    reaper.Undo_EndBlock("vgt: promote working copies", -1)
+    return
   end
 
   -- Preserve the old work children by identity before the move.  If its
@@ -480,13 +473,37 @@ local function promote()
     work_children[reaper.GetTrack(0, index)] = true
   end
 
-  local clean_was_empty = is_empty_work_container(clean)
-  local clean_last = clean_was_empty and clean_index or folder_last_child_index(clean_index)
-  if clean_was_empty then
-    reaper.SetMediaTrackInfo_Value(clean, "I_FOLDERDEPTH", 1)
-  else
-    reaper.SetMediaTrackInfo_Value(reaper.GetTrack(0, clean_last), "I_FOLDERDEPTH", 0)
+  -- Likewise, removing the closing [work] child while other children remain
+  -- would require changing the new final child from 0 to -1.  The user did
+  -- not select that track, so reject the request atomically instead.
+  local work_closer = reaper.GetTrack(0, work_last)
+  local eligible_by_track = {}
+  for _, track in ipairs(eligible) do eligible_by_track[track] = true end
+  local promoted_closer = false
+  local remaining_work_children = 0
+  for index = work_index + 1, work_last do
+    local child = reaper.GetTrack(0, index)
+    if child == work_closer and eligible_by_track[child] then promoted_closer = true end
+    if not eligible_by_track[child] then remaining_work_children = remaining_work_children + 1 end
   end
+  if promoted_closer and remaining_work_children > 0 then
+    reaper.ShowMessageBox(
+      "Promotion would alter an unselected [work] track's folder structure, so nothing was changed.",
+      "vgt working copy", 0
+    )
+    reaper.PreventUIRefresh(-1)
+    reaper.Undo_EndBlock("vgt: promote working copies", -1)
+    return
+  end
+
+  if not clean then
+    clean, clean_index = create_clean_folder(work_index)
+    -- Inserting clean above work shifts the latter's numeric index.
+    work, work_index = find_work_folder()
+  end
+
+  local clean_last = clean_index
+  reaper.SetMediaTrackInfo_Value(clean, "I_FOLDERDEPTH", 1)
 
   -- ReorderSelectedTracks moves the existing track objects: GUIDs, media,
   -- takes, FX, and routing all remain attached to their original track.
