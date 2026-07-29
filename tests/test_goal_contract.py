@@ -40,6 +40,7 @@ FIXTURE_DIR = ROOT / "test" / "Reaper Project"
 APPLY_SCRIPT = ROOT / "reascript" / "vgt_initialize.lua"
 SYNC_SCRIPT = ROOT / "reascript" / "vgt_sync.lua"
 TEMPO_SYNC_SCRIPT = ROOT / "reascript" / "vgt_sync_tempo_map.lua"
+WORKING_COPY_SCRIPT = ROOT / "reascript" / "vgt_working_copy.lua"
 LUA = __import__("os").environ.get("VGT_TEST_LUA", "lua")
 REFERENCE_GUID = "{75418143-1F31-B548-B7D2-96815CB0297D}"
 
@@ -290,19 +291,24 @@ function reaper.GetSelectedTrack(_, index)
   end
   return nil
 end
-function reaper.ReorderSelectedTracks(before_index)
+function reaper.ReorderSelectedTracks(before_index, _make_prev_folder)
   local selected, remaining = {{}}, {{}}
-  for _, t in ipairs(tracks) do
-    if t.selected then selected[#selected + 1] = t else remaining[#remaining + 1] = t end
+  local selected_before = 0
+  for index, t in ipairs(tracks) do
+    if t.selected then
+      selected[#selected + 1] = t
+      if index - 1 < before_index then selected_before = selected_before + 1 end
+    else
+      remaining[#remaining + 1] = t
+    end
   end
-  -- initialize moves only to CountTracks(0), i.e. the end. This fake keeps
-  -- that operation faithful without inventing unrelated folder semantics.
-  if before_index >= #tracks then
-    for _, t in ipairs(selected) do remaining[#remaining + 1] = t end
-    tracks = remaining
-  else
-    error('unexpected non-tail reorder in goal-contract fake')
-  end
+  -- REAPER's target index is expressed in the pre-move project. Removing
+  -- selected tracks above it shifts the insertion point, while the selected
+  -- objects themselves (including I_FOLDERDEPTH) move unchanged and retain
+  -- their project order.
+  local insert_at = math.max(0, math.min(#remaining, before_index - selected_before))
+  for offset, track in ipairs(selected) do table.insert(remaining, insert_at + offset, track) end
+  tracks = remaining
 end
 function reaper.CountTrackMediaItems(t) return #t.items end
 function reaper.GetTrackMediaItem(t, i) return t.items[i + 1] end
@@ -351,6 +357,7 @@ function reaper.Undo_EndBlock() end
 function reaper.PreventUIRefresh() end
 function reaper.MarkProjectDirty() end
 function reaper.UpdateArrange() end
+function reaper.TrackList_AdjustWindows() end
 function reaper.ShowConsoleMsg() end
 function reaper.ShowMessageBox(msg) error(msg) end
 function report()
@@ -377,13 +384,16 @@ function user_snapshot(managed_track_guids, managed_region_ids)
   -- a fixture-specific ID.  A bug that renames or changes the GUID of a user
   -- object must therefore appear in the snapshot comparison.
   for _, track in ipairs(tracks) do
-    local container_kind = track.ext and track.ext['P_EXT:vgt_container'] or ''
-    if not managed_tracks[track.guid] and container_kind == '' then user_tracks[#user_tracks + 1] = track end
+    -- Key by immutable GUID rather than retaining project-array position.
+    -- Containers deliberately stay in this snapshot: their children are
+    -- user-owned, and a promotion bug that changes one must remain visible.
+    if not managed_tracks[track.guid] then user_tracks[track.guid] = track end
   end
   for _, region in ipairs(regions) do if not managed_regions[region.id] then user_regions[#user_regions + 1] = region end end
   return lua_value({{tracks=user_tracks,regions=user_regions,markers=markers}})
 end
 function emit_state()
+  state.tracks, state.regions, state.markers = tracks, regions, markers
   state.next_guid, state.next_region, state.tempo_writes, state.proj_ext = next_guid, next_region, tempo_writes, proj_ext
   io.write('\\n__VGT_STATE__' .. lua_value(state))
 end
@@ -436,12 +446,79 @@ def _run_tempo_map_sync(project: Path, state: str) -> str:
     return state
 
 
+def _run_promote(project: Path, state: str, guid: str) -> tuple[str, str]:
+    """Promote one simulated working copy through the real ReaScript."""
+    module = WORKING_COPY_SCRIPT.read_text(encoding="utf-8").split("local ok, error_message = xpcall", 1)[0]
+    return _run(project, state, module, f"""
+for _, track in ipairs(tracks) do reaper.SetTrackSelected(track, track.guid == {guid!r}) end
+promote()
+report()
+""")
+
+
 def _user_snapshot(project: Path, state: str, *, managed_tracks: list[str] | None = None, managed_regions: list[int] | None = None) -> str:
     """Return a stable byte-for-byte snapshot of every user-owned object."""
     tracks = "{" + ",".join(json.dumps(guid) for guid in managed_tracks or []) + "}"
     regions = "{" + ",".join(str(region_id) for region_id in managed_regions or []) + "}"
     _, snapshot = _run(project, state, "", f"io.write(user_snapshot({tracks}, {regions}))")
     return snapshot
+
+
+def _track_snapshot(project: Path, state: str, guid: str) -> str:
+    """Serialize one user-owned track exactly, independent of its position."""
+    _, snapshot = _run(project, state, "", f"""
+local found
+for _, track in ipairs(tracks) do
+  if track.guid == {guid!r} then found = track end
+end
+assert(found, 'missing track ' .. {guid!r})
+io.write(lua_value(found))
+""")
+    return snapshot
+
+
+def _assert_container_layout(project: Path, state: str, *, copy_guid: str | None = None) -> None:
+    """Assert the canonical top-level tail without hiding user-owned children."""
+    copy_assertion = ""
+    if copy_guid is not None:
+        copy_assertion = f"""
+local copy_index
+for index, track in ipairs(tracks) do if track.guid == {copy_guid!r} then copy_index = index end end
+assert(copy_index and work < copy_index, 'working copy is not below [work]')
+"""
+    _, output = _run(project, state, "", f"""
+local clean_name = '[clean] The Seven Rivers (Full March - 3_00)'
+local work_name = '[work] The Seven Rivers (Full March - 3_00)'
+local vgt_name = '[vgt] The Seven Rivers (Full March - 3_00)'
+local clean, work, vgt, click, reference, paris = nil, nil, nil, nil, nil, nil
+for index, track in ipairs(tracks) do
+  if track.name == clean_name then clean = index end
+  if track.name == work_name then work = index end
+  if track.name == vgt_name then vgt = index end
+  if track.guid == '{{CLICK}}' then click = index end
+  if track.guid == '{REFERENCE_GUID}' then reference = index end
+  if track.guid == '{{PARIS}}' then paris = index end
+end
+assert(clean and work and vgt and clean < work and work < vgt, 'containers are not clean/work/vgt tail')
+assert(click < clean and reference < clean and paris < clean and click < reference and reference < paris,
+  'fixture user tracks lost their relative order above containers')
+assert(reaper.GetMediaTrackInfo_Value(tracks[clean], 'I_CUSTOMCOLOR') == (41 * 65536 + 210 * 256 + 187 + 0x1000000), 'clean colour')
+assert(reaper.GetMediaTrackInfo_Value(tracks[work], 'I_CUSTOMCOLOR') == (239 * 65536 + 175 * 256 + 68 + 0x1000000), 'work colour')
+assert(tracks[clean].ext['P_EXT:vgt_container'] == 'clean' and tracks[work].ext['P_EXT:vgt_container'] == 'work', 'container marks')
+{copy_assertion}
+io.write('container layout ok')
+    """)
+    assert output == "container layout ok"
+    sidecar = read_sidecar(project)
+    _, inventory = _run(project, state, "", """
+local container_guids = {}
+for _, track in ipairs(tracks) do
+  if track.ext and track.ext['P_EXT:vgt_container'] then container_guids[#container_guids + 1] = track.guid end
+end
+table.sort(container_guids)
+io.write(table.concat(container_guids, ','))
+""")
+    assert not set(filter(None, inventory.split(","))) & set(sidecar["managed_track_guids"])
 
 
 def _assert_managed_contract(project: Path, state: str) -> None:
@@ -543,11 +620,21 @@ def test_goal_contract_is_offline_non_destructive_and_idempotent(tmp_path: Path,
     # track/item/region plus the pre-existing tempo map.  It is deliberately
     # not name-based: the final comparison must catch user-object renames.
     state = _lua_state(project)
-    before = _user_snapshot(project, state)
+    initial_user_snapshot = _user_snapshot(project, state)
 
     # Initialization selects the real fixture's reference identity and writes only a sidecar.
     state, _ = _run_apply(project, state)
     assert read_sidecar(project)["config"]["reference_track_guid"] == REFERENCE_GUID
+    initialized = read_sidecar(project)
+    # From this point the scaffold is part of the user-owned snapshot too.
+    # It is compared by GUID, so subsequent legitimate block moves do not
+    # mask any mutation to a container or one of its future children.
+    before = _user_snapshot(
+        project, state,
+        managed_tracks=initialized["managed_track_guids"],
+        managed_regions=initialized["managed_region_ids"],
+    )
+    assert "The Seven Rivers (Full March - 3_00)" in initial_user_snapshot
 
     separator, transcriber = CountingSeparator(), CountingTranscriber()
     analyze(project, stages=("tempo", "key", "sections"))
@@ -617,6 +704,7 @@ sync()
     state, key_snapshot = _run_apply_key_snapshot(project, state)
     assert key_snapshot == "1#0:E minor:nil"
     _assert_managed_contract(project, state)
+    _assert_container_layout(project, state)
     final_sidecar = read_sidecar(project)
     assert _user_snapshot(
         project,
@@ -624,6 +712,74 @@ sync()
         managed_tracks=final_sidecar["managed_track_guids"],
         managed_regions=final_sidecar["managed_region_ids"],
     ) == before
+
+    # A re-apply is layout-idempotent: one marked, correctly coloured
+    # container of each kind remains before the rebuilt [vgt] block.
+    layout_before = _user_snapshot(
+        project, state,
+        managed_tracks=final_sidecar["managed_track_guids"],
+        managed_regions=final_sidecar["managed_region_ids"],
+    )
+    state, _ = _run_apply(project, state)
+    reapplied = read_sidecar(project)
+    _assert_container_layout(project, state)
+    assert _user_snapshot(
+        project, state,
+        managed_tracks=reapplied["managed_track_guids"],
+        managed_regions=reapplied["managed_region_ids"],
+    ) == layout_before
+
+    # Model the working-copy action's resulting folder shape directly: this
+    # contract is about apply/promotion reconciliation, while focused tests
+    # cover copying track chunks. Apply must retain the user-owned copy and
+    # move its whole [work] block as one unit.
+    work_guid = "{WORK-COPY-0001}"
+    state, _ = _run(project, state, "", f"""
+for index, track in ipairs(tracks) do
+  if track.ext and track.ext['P_EXT:vgt_container'] == 'work' then
+    track.I_FOLDERDEPTH = 1
+    table.insert(tracks, index + 1, {{guid='{work_guid}', name='[work] Guitar Ref — default (MIDI)', B_MUTE=0,
+      I_FOLDERDEPTH=-1, ext={{['P_EXT:vgt_working_copy']='1'}},
+      items={{{{position=10,length=4,C_LOCK=0,take={{name='edited by user',source=''}}}}}}}})
+    break
+  end
+end
+""")
+    copy_sidecar = read_sidecar(project)
+    copy_snapshot = _user_snapshot(
+        project, state,
+        managed_tracks=copy_sidecar["managed_track_guids"],
+        managed_regions=copy_sidecar["managed_region_ids"],
+    )
+    state, _ = _run_apply(project, state)
+    applied_copy_sidecar = read_sidecar(project)
+    _assert_container_layout(project, state, copy_guid=work_guid)
+    assert _user_snapshot(
+        project, state,
+        managed_tracks=applied_copy_sidecar["managed_track_guids"],
+        managed_regions=applied_copy_sidecar["managed_region_ids"],
+    ) == copy_snapshot
+
+    # Promotion moves that exact track object into [clean]; it must retain
+    # its GUID/items, shed working-copy provenance, and be ignored by every
+    # following apply while [vgt] is still rebuilt once.
+    state, _ = _run_promote(project, state, work_guid)
+    state, promotion = _run(project, state, "", f"""
+local found
+for _, track in ipairs(tracks) do if track.guid == '{work_guid}' then found = track end end
+assert(found and found.name == '[clean] Guitar Ref — default (MIDI)', 'promoted name')
+assert(found.ext['P_EXT:vgt_working_copy'] == '', 'working-copy mark survives promotion')
+assert(#found.items == 1 and found.items[1].position == 10 and found.items[1].length == 4
+  and found.items[1].take.name == 'edited by user', 'promoted items changed')
+io.write('promotion ok')
+""")
+    assert promotion == "promotion ok"
+    promoted_sidecar = read_sidecar(project)
+    promoted_snapshot = _track_snapshot(project, state, work_guid)
+    state, post_promotion_apply = _run_apply(project, state)
+    assert post_promotion_apply.split("#", 1)[0].split("|").count("[vgt] The Seven Rivers (Full March - 3_00)") == 1
+    post_promotion_sidecar = read_sidecar(project)
+    assert _track_snapshot(project, state, work_guid) == promoted_snapshot
 
 
 def _guid(seed: int) -> str:
@@ -724,6 +880,54 @@ local next_guid, next_region, tempo_writes, proj_ext = state.next_guid, state.ne
     assert region_count == "1"
     assert vgt_count == "1", "a flattened root must be recognized and reconciled, not duplicated"
     assert len(read_sidecar(project)["managed_track_guids"]) == 1
+
+
+def test_goal_contract_adopts_interleaved_handmade_containers_and_moves_their_blocks(tmp_path: Path) -> None:
+    """Keep adoption and canonical block ordering in the offline workflow.
+
+    The first apply establishes the real fixture's sidecar/reference.  The
+    user then replaces its empty scaffold with old, unmarked folders placed
+    between normal tracks; this models projects that predate the scaffold.
+    """
+    project = _copy_project(tmp_path)
+    state, _ = _run_apply(project, _lua_state(project))
+    state, _ = _run(project, state, "", """
+for index = #tracks, 1, -1 do
+  local ext = tracks[index].ext
+  if ext and ext['P_EXT:vgt_container'] then table.remove(tracks, index) end
+end
+table.insert(tracks, 2, {guid='{HAND-CLEAN}', name='[clean] hand-made', I_FOLDERDEPTH=1,
+  I_CUSTOMCOLOR=123, items={}})
+table.insert(tracks, 3, {guid='{HAND-CLEAN-CHILD}', name='clean user child', I_FOLDERDEPTH=-1,
+  items={{position=3,length=2,C_LOCK=1,take={name='keep clean item',source='hand.wav'}}}})
+table.insert(tracks, #tracks + 1, {guid='{HAND-WORK}', name='[work] hand-made', I_FOLDERDEPTH=1,
+  I_CUSTOMCOLOR=456, items={}})
+table.insert(tracks, #tracks + 1, {guid='{HAND-WORK-CHILD}', name='work user child', I_FOLDERDEPTH=-1,
+  items={{position=7,length=1,C_LOCK=0,take={name='keep work item',source='scratch.wav'}}}})
+""")
+    clean_child_before = _track_snapshot(project, state, "{HAND-CLEAN-CHILD}")
+    work_child_before = _track_snapshot(project, state, "{HAND-WORK-CHILD}")
+
+    state, _ = _run_apply(project, state)
+    assert _track_snapshot(project, state, "{HAND-CLEAN-CHILD}") == clean_child_before
+    assert _track_snapshot(project, state, "{HAND-WORK-CHILD}") == work_child_before
+    _, output = _run(project, state, "", """
+local positions, clean, work, vgt = {}, nil, nil, nil
+for index, track in ipairs(tracks) do
+  positions[track.guid] = index
+  if track.guid == '{HAND-CLEAN}' then clean = track end
+  if track.guid == '{HAND-WORK}' then work = track end
+  if track.name == '[vgt] The Seven Rivers (Full March - 3_00)' then vgt = index end
+end
+assert(clean.ext['P_EXT:vgt_container'] == 'clean' and work.ext['P_EXT:vgt_container'] == 'work', 'unmarked folders not adopted')
+assert(clean.I_CUSTOMCOLOR == 123 and work.I_CUSTOMCOLOR == 456, 'adoption recoloured a hand-made folder')
+assert(positions['{CLICK}'] < positions['{75418143-1F31-B548-B7D2-96815CB0297D}']
+  and positions['{75418143-1F31-B548-B7D2-96815CB0297D}'] < positions['{PARIS}'], 'user order changed')
+assert(positions['{PARIS}'] < positions['{HAND-CLEAN}'] and positions['{HAND-CLEAN-CHILD}'] < positions['{HAND-WORK}']
+  and positions['{HAND-WORK-CHILD}'] < vgt, 'container blocks not canonical tail')
+io.write('adoption layout ok')
+""")
+    assert output == "adoption layout ok"
 
 
 def test_goal_contract_exercises_cli_paid_stem_cost_controls_and_resume(
@@ -957,9 +1161,13 @@ def test_goal_contract_reconciles_independent_guitar_bass_and_drum_targets(
     """
     project = _copy_project(tmp_path)
     state = _lua_state(project)
-    original_user_state = _user_snapshot(project, state)
-
     state, _ = _run_apply(project, state)
+    initialized = read_sidecar(project)
+    original_user_state = _user_snapshot(
+        project, state,
+        managed_tracks=initialized["managed_track_guids"],
+        managed_regions=initialized["managed_region_ids"],
+    )
     separator = CountingSeparator()
     separate(project, separator, guitar_type="electric")
     basic_pitch = CountingTranscriber()
@@ -1172,8 +1380,13 @@ def test_goal_contract_keeps_drumscript_variants_on_the_project_timeline(
     # BPM marker. This contract needs the analysis grid itself to become the
     # live project grid, just as a newly prepared project does.
     state = _lua_state(project).replace("markers={{time=0,bpm=100,num=4,den=4}}", "markers={}")
-    original_user_state = _user_snapshot(project, state)
     state, _ = _run_apply(project, state)
+    initialized = read_sidecar(project)
+    original_user_state = _user_snapshot(
+        project, state,
+        managed_tracks=initialized["managed_track_guids"],
+        managed_regions=initialized["managed_region_ids"],
+    )
     analyze(project, stages=("tempo",))
     update_analysis(project, lambda current: current["tempo"].__setitem__("value", {
         **current["tempo"]["value"],
@@ -1407,11 +1620,15 @@ def test_apply_recovers_managed_regions_after_an_interrupted_sidecar_commit(tmp_
     every user region remains byte-for-byte unchanged."""
     project = _copy_project(tmp_path)
     state = _lua_state(project)
-    before = _user_snapshot(project, state)
-
     state, _ = _run_apply(project, state)
     assert read_sidecar(project)["config"]["reference_track_guid"] == REFERENCE_GUID
     assert read_sidecar(project)["managed_region_ids"] == []
+    initialized = read_sidecar(project)
+    before = _user_snapshot(
+        project, state,
+        managed_tracks=initialized["managed_track_guids"],
+        managed_regions=initialized["managed_region_ids"],
+    )
 
     analyze(project, stages=("tempo", "key", "sections"))
 

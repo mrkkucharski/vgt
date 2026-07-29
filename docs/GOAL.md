@@ -49,7 +49,9 @@ behavior, non-invasive tempo fallback, raw-detection cache reuse, exact
 discarded-artifact/cache cleanup, paid-work refusal without explicit
 non-interactive consent, no duplicate paid submission after
 checkpoint recovery, credential non-persistence, and preservation of user
-tracks plus a simulated `[work]` copy. It is run locally as the source of truth
+tracks plus a simulated `[work]` copy, canonical `[clean]`/`[work]`/`[vgt]`
+container layout and ordering, and promotion into `[clean]`. It is run locally
+as the source of truth
 for the offline acceptance suite. Hosted GitHub Actions is intentionally not
 part of this hobby project's verification path because hosted runners are
 billing-blocked; run the complete suite locally instead. It deliberately
