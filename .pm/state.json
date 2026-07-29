@@ -1,10 +1,10 @@
 {
-  "current_issue": 226,
-  "session_id": "1e65db49-302c-46d6-a8d7-bc978757cd9c",
-  "pid": 77711,
-  "process_started_at": "Wed Jul 29 14:57:25 2026",
+  "current_issue": 227,
+  "session_id": "f8313ac3-6995-4d41-9790-77c88bc32f75",
+  "pid": 78164,
+  "process_started_at": "Wed Jul 29 14:59:52 2026",
   "agent": "codex",
-  "started_at": "2026-07-29T12:57:23.731410+00:00",
+  "started_at": "2026-07-29T12:59:50.505520+00:00",
   "scheduler_stalls": {},
   "budget": {
     "window_start": "2026-07-29T12:07:06.074972+00:00",
@@ -18,10 +18,10 @@
   "verification_followups": {
     "f0d8bfc9d2dc6da7a31609184e25c4d66d3986fd2340b33a83e98204fb86691e": "created"
   },
-  "role": "review",
-  "branch": "issue-226-working-copies-target-the-initialize-own",
-  "worktree_path": "/Users/marekkucharski/projects/.pm-worktrees/vgt/issue-226",
-  "pr_number": 231,
+  "role": "implement",
+  "branch": "issue-227-replace-working-copy-discard-with-promot",
+  "worktree_path": "/Users/marekkucharski/projects/.pm-worktrees/vgt/issue-227",
+  "pr_number": null,
   "followup_generation": {
     "fingerprint": "17c90a9889f56e105f690601cf187f135f3c8ec0a453c9240ff5b3a9d731806b",
     "items": {
@@ -66,13 +66,13 @@
     "226": 2
   },
   "pending_transition": {
-    "issue": 226,
+    "issue": 227,
     "target": "working",
-    "event": "agent.review_started",
+    "event": "agent.started",
     "detail": {
-      "issue": 226,
+      "issue": 227,
       "agent": "codex",
-      "pr": 231
+      "branch": "issue-227-replace-working-copy-discard-with-promot"
     },
     "cleanup": {}
   }
