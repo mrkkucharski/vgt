@@ -38,12 +38,11 @@ finishing, blocking, or handing off). Keep them in sync with reality:
    the orchestrator had already replaced `status:needs-fix` with `status:working`
    before you started -- the label on the issue when you receive it is `status:working`.)
 
-3. **Do NOT set `status:blocked` because the issue has sub-tasks.** The orchestrator
-   automatically holds a parent issue until all its sub-issues are closed; you do not
-   need to (and must not) label it blocked for that reason. Using `status:blocked` for
-   sub-task ordering will prevent the issue from being started even after sub-tasks
-   finish. Only use `status:blocked` when you genuinely need a human decision or an
-   external resource you cannot obtain yourself.
+3. **Do NOT set `status:blocked` to express ordering.** The orchestrator already
+   holds an issue back while it has open "blocked by" dependencies or open
+   sub-issues; you do not need to (and must not) label it blocked for that reason.
+   Only use `status:blocked` when you genuinely need a human decision or an external
+   resource you cannot obtain yourself. See "Ordering new issues" below.
 
 4. **Reviewer agents -- when you accept and close an issue:** also remove `status:working`.
    The orchestrator sets `status:working` when it starts a review session. Closing the
@@ -62,8 +61,8 @@ finishing, blocking, or handing off). Keep them in sync with reality:
 ### Priority labels
 
 Every issue should carry a `priority:*` label. The orchestrator uses it to decide
-which issue to start next. **When you create sub-issues or follow-up issues, always
-include a priority label:**
+which issue to start next. **Whenever you create an issue, always include a priority
+label:**
 
 ```
 gh issue create --repo <repo> --title "..." --body "..." \
@@ -93,22 +92,73 @@ yourself.
 `fix-count:N` is set by the orchestrator to track how many review/fix cycles an issue
 has gone through. Do not set or remove these yourself.
 
-## Sub-issues express ordering
+## Ordering new issues
 
-If an issue has sub-issues, the orchestrator will not start it until every one of its
-sub-issues is closed. Break a large task into sub-issues when parts must be done first;
-the sub-issues get picked up on their own, and the parent becomes startable once they're
-all closed. **Never label a parent blocked just because its sub-issues are still open.**
+**Use GitHub's "blocked by" dependencies to express order. Do not create sub-issues.**
+
+The orchestrator will not start an issue while any issue it is blocked by is still
+open. That is the single ordering mechanism here: a flat set of issues plus explicit
+dependencies, no hierarchy.
+
+There is no `gh issue edit` flag for this -- it is a REST call, and it takes the
+blocker's **numeric id, not its issue number**, so it is a two-step recipe:
+
+```
+BLOCKER_ID=$(gh api repos/<repo>/issues/<blocker-number> --jq .id)
+gh api -X POST repos/<repo>/issues/<issue-number>/dependencies/blocked_by -F issue_id=$BLOCKER_ID
+```
+
+Use `-F` (typed), not `-f` (string) -- the API rejects a string id. To check what an
+issue is blocked by:
+
+```
+gh api repos/<repo>/issues/<issue-number>/dependencies/blocked_by --jq '.[].number'
+```
+
+**Create issues in dependency order: the ones that depend on nothing first.** The
+orchestrator may start any issue that currently looks unblocked, and it can begin
+between two of your `gh` calls. So create a blocker before the issue it blocks, and
+record the dependency immediately after creating the issue that has it -- do not
+create a batch of issues and wire them up at the end. (Newly filed issues are held
+briefly before they can start, which covers the gap between those two calls, but the
+window is short and is not a substitute for creating things in the right order.)
+
+**Never label an issue `status:blocked` for ordering.** Dependency-gated issues stay
+`status:queued`; the orchestrator does the holding. `status:blocked` means a human
+decision or an external resource is needed. (If an issue does end up blocked with
+dependencies recorded, the orchestrator returns it to the queue once they all close,
+so it will not stay stuck -- but do not rely on that instead of labeling correctly.)
+
+Sub-issues are still honored if they exist: the orchestrator will not start a parent
+while any of its sub-issues is open. Don't create new ones.
 
 ## docs/ holds project docs
 
-`docs/GOAL.md` defines what "done" means for the whole project -- read it before
-deciding the project is finished or needs more work.
+`docs/AGENTS.md` holds this project's own context and conventions;
+`docs/PRIORITIES.md` (if present) holds the local rules the orchestrator uses to
+choose between queued issues. The scope of the project is expressed as GitHub
+issues, not as a doc -- there is no project-level "done" file to consult.
+
+## No hosted CI
+
+GitHub Actions is disabled for this repository, deliberately. Do not enable it, do
+not add files under `.github/workflows/`, and do not wire up any other hosted CI
+service. You verify your own work by running the project's tests and checks during
+your turn and reporting what you ran -- that is the whole verification story here.
+
+The orchestrator re-asserts the disabled setting on every scheduler pass, so
+turning Actions on will be reverted and recorded in `.pm/log.ndjson`. If an issue
+seems to require CI, mark it `status:blocked` with an explanation instead of
+setting one up.
 
 ## .pm/ is orchestrator bookkeeping
 
 `.pm/state.json` and `.pm/log.ndjson` are owned by the orchestrator. Don't hand-edit
 these; the orchestrator owns them.
+
+`.pm/log.ndjson` and `.pm/runs/` (per-run agent transcripts) are gitignored: they are
+written locally for post-mortems but never committed, since they grow without bound
+and nothing reads them back from the repo. Don't add them to version control.
 
 ## RULES.md
 

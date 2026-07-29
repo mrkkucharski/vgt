@@ -24,3 +24,16 @@ that project's own `AGENTS.md`. They are copied into each new project repo as
 7. **Stay bounded.** Don't try to do the whole project in one sitting. Do a coherent
    chunk of work, leave the repo in a working state, and stop -- you'll be resumed
    automatically.
+8. **Order issues with dependencies, not sub-issues.** When work must happen in a
+   given order, express it with GitHub's "blocked by" issue dependencies. Don't create
+   sub-issues. Create the issues that depend on nothing first, and record each
+   dependency immediately after creating the issue that has it -- the orchestrator can
+   start any issue that currently looks unblocked, including between two of your
+   commands. Never use `status:blocked` to express ordering.
+9. **No hosted CI.** Never enable GitHub Actions, add files under
+   `.github/workflows/`, or wire up any other hosted CI service. Verification happens
+   by running the project's own tests and checks yourself, in your turn (see rule 6).
+   Actions are disabled at the repository level on purpose; the orchestrator re-asserts
+   that on every pass, so re-enabling it will be reverted and logged. If you believe a
+   task genuinely cannot be verified without CI, mark `status:blocked` and explain --
+   don't set it up.
