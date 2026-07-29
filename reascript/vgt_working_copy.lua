@@ -69,12 +69,46 @@ local function clean_name(source_name)
   return CLEAN_PREFIX .. " " .. rest
 end
 
--- A track-state chunk carries the source's own TRACKID. Stamp a fresh GUID into
--- the copy's chunk before applying it, since REAPER track GUIDs must be unique
--- and vgt tracks ownership by GUID -- two tracks sharing one GUID would make
--- both the copy and its source look like the same managed object.
-local function replace_track_guid(chunk, new_guid)
-  return (chunk:gsub("TRACKID {[^}]*}", "TRACKID " .. new_guid, 1))
+-- A track-state chunk is a complete statement of the source's identity, not
+-- just its contents: its TRACKID, the IGUID/GUID of every item, take, envelope
+-- and media source it holds, the item ids, and -- for MIDI -- the POOLEDEVTS
+-- GUID naming the pool its notes belong to. Applied verbatim, REAPER resolves
+-- the copy's MIDI take back onto the *same* pooled source as its origin, so an
+-- edit in the copy silently rewrites whatever else shares that pool (the [vgt]
+-- reference, or a sibling copy) -- and a later attempt to split them apart at
+-- runtime can orphan the shared source and lose both sides' notes outright.
+-- Detaching in the chunk, before REAPER ever sees it, is the only point at
+-- which the copy can be made independent without touching the source at all.
+--
+-- next_guid must return a fresh GUID on every call; it is kept a parameter so
+-- this stays a pure text transform.
+local function detach_chunk_identity(chunk, next_guid)
+  -- The track's own GUID can appear twice -- on the `<TRACK {..}` header and as
+  -- TRACKID -- and the two must agree, so both take the *same* new GUID. Only
+  -- the first of each is the track's identity; a later literal is content.
+  local track_guid = next_guid()
+  local detached = chunk:gsub(
+    "^(%s*<TRACK) {[^}]*}", function(head) return head .. " " .. track_guid end, 1
+  )
+  detached = detached:gsub("TRACKID {[^}]*}", "TRACKID " .. track_guid, 1)
+  -- `IGUID {..}` matches here too: the pattern starts at its trailing `GUID`,
+  -- so the key survives and only the brace body is re-stamped.
+  detached = detached:gsub("GUID {[^}]*}", function() return "GUID " .. next_guid() end)
+  -- Drop the whole line for the two fields that must not be carried over at
+  -- all: the pool the source's notes live in, and REAPER's per-item id (which
+  -- it reassigns when absent). The leading newline goes with the line, so the
+  -- preceding line keeps the one that terminates it.
+  detached = detached:gsub("\n%s*POOLEDEVTS {[^}]*}", "")
+  detached = detached:gsub("\n%s*IID %d+", "")
+  return detached
+end
+
+-- A `MIDIPOOL` source stores no events of its own -- its notes live in
+-- whichever other item owns the pool. Detaching such a chunk would hand the
+-- copy an empty source, so the action refuses the operation rather than
+-- produce a silently empty copy.
+local function borrows_pooled_midi(chunk)
+  return chunk:find("<SOURCE MIDIPOOL", 1, true) ~= nil
 end
 
 -- The index of the last track nested inside the folder that opens at
@@ -262,7 +296,8 @@ end
 local function build_working_copy(insert_index, source_chunk, source_name, folder_depth)
   reaper.InsertTrackAtIndex(insert_index, false)
   local track = reaper.GetTrack(0, insert_index)
-  reaper.SetTrackStateChunk(track, replace_track_guid(source_chunk, reaper.genGuid("")), false)
+  local chunk = detach_chunk_identity(source_chunk, function() return reaper.genGuid("") end)
+  reaper.SetTrackStateChunk(track, chunk, false)
   -- The chunk restored the source's name, mute, ownership mark, folder nesting,
   -- and per-item locks. Override each so the copy is user-owned and editable.
   reaper.GetSetMediaTrackInfo_String(track, "P_NAME", working_name(source_name), true)
@@ -273,27 +308,10 @@ local function build_working_copy(insert_index, source_chunk, source_name, folde
   reaper.SetTrackSelected(track, true)
   -- A vgt reference item is left unlocked already, but a copied label/beat item
   -- can be locked; unlock every item so the whole copy is immediately editable.
-  --
-  -- A MIDI take's chunk carries the same embedded source data as its origin, so
-  -- a byte-for-byte SetTrackStateChunk clone lets REAPER resolve it back onto
-  -- the *same* pooled MIDI source instead of an independent one -- an edit here
-  -- would silently rewrite whatever else shares that pool (the [vgt] reference,
-  -- or a sibling copy). Give every MIDI take a fresh, unpooled source so this
-  -- copy is actually safe to edit independently, per this file's design
-  -- invariant above.
+  -- MIDI independence is already settled by detach_chunk_identity above; do not
+  -- reintroduce a runtime unpool here, which is what destroyed both sides.
   for item_index = 0, reaper.CountTrackMediaItems(track) - 1 do
-    local item = reaper.GetTrackMediaItem(track, item_index)
-    reaper.SetMediaItemInfo_Value(item, "C_LOCK", 0)
-    for take_index = 0, reaper.CountTakes(item) - 1 do
-      local take = reaper.GetTake(item, take_index)
-      if take and reaper.TakeIsMIDI(take) then
-        local ok, events = reaper.MIDI_GetAllEvts(take, "")
-        if ok then
-          reaper.SetMediaItemTake_Source(take, reaper.PCM_Source_CreateFromType("MIDI"))
-          reaper.MIDI_SetAllEvts(take, events)
-        end
-      end
-    end
+    reaper.SetMediaItemInfo_Value(reaper.GetTrackMediaItem(track, item_index), "C_LOCK", 0)
   end
   return track
 end
@@ -317,6 +335,19 @@ local function create()
   if #jobs == 0 then
     reaper.ShowMessageBox("Could not read the selected track(s).", "vgt working copy", 0)
     return
+  end
+  -- Refuse the whole selection before anything is inserted: a copy that cannot
+  -- be detached from its source's MIDI pool is not a working copy at all.
+  for _, job in ipairs(jobs) do
+    if borrows_pooled_midi(job.chunk) then
+      reaper.ShowMessageBox(
+        '"' .. job.name .. '" has pooled MIDI whose notes are stored in another item, '
+          .. "so a copy of it would be empty. Un-pool it first (item properties -> uncheck "
+          .. '"MIDI edits are pooled with other media items"), then run this action again.',
+        "vgt working copy", 0
+      )
+      return
+    end
   end
 
   reaper.Undo_BeginBlock()

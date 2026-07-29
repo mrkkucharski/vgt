@@ -36,7 +36,7 @@ def test_working_copy_is_never_vgt_owned() -> None:
 
 def test_working_name_reprefixes_into_the_work_namespace() -> None:
     script = WORKING_COPY_SCRIPT.read_text()
-    helpers_end = script.index("local function replace_track_guid")
+    helpers_end = script.index("local function detach_chunk_identity")
     lua_program = "\n".join(
         [
             script[:helpers_end],
@@ -52,25 +52,106 @@ def test_working_name_reprefixes_into_the_work_namespace() -> None:
     )
 
 
-def test_replace_track_guid_swaps_only_the_first_trackid() -> None:
+def _detach_program(chunk_lines: list[str], tail: str) -> str:
+    script = WORKING_COPY_SCRIPT.read_text()
+    helpers_end = script.index("local function folder_last_child_index")
+    chunk = "\\n".join(chunk_lines)
+    return "\n".join(
+        [
+            script[:helpers_end],
+            "local n = 0",
+            "local function next_guid() n = n + 1; return '{GEN-' .. n .. '}' end",
+            f"local detached = detach_chunk_identity('{chunk}', next_guid)",
+            tail,
+        ]
+    )
+
+
+def test_detach_chunk_identity_swaps_only_the_first_trackid() -> None:
     """A chunk carries the source's TRACKID; the copy must get a fresh, unique
     GUID (a shared GUID would make the copy and its source indistinguishable to
     vgt's GUID-based ownership)."""
-    script = WORKING_COPY_SCRIPT.read_text()
-    helpers_end = script.index("local function folder_last_child_index")
-    chunk = "<TRACK\\nTRACKID {AAAA-1111}\\nNAME foo\\nTRACKID {SHOULD-STAY}\\n>"
-    lua_program = "\n".join(
-        [
-            script[:helpers_end],
-            f"local chunk = '{chunk}'",
-            "io.write(replace_track_guid(chunk, '{NEW-2222}'))",
-        ]
+    result = _run(
+        _detach_program(
+            ["<TRACK", "TRACKID {AAAA-1111}", "NAME foo", "TRACKID {SHOULD-STAY}", ">"],
+            "io.write(detached)",
+        )
     )
-    result = _run(lua_program)
-    assert "TRACKID {NEW-2222}" in result.stdout
+    assert "TRACKID {GEN-1}" in result.stdout
     assert "{AAAA-1111}" not in result.stdout
     # Only the first TRACKID is the track's identity; a later literal is untouched.
     assert "{SHOULD-STAY}" in result.stdout
+
+
+def test_detach_chunk_identity_keeps_the_track_header_and_trackid_in_agreement() -> None:
+    """A chunk read back from a project file states the track's GUID twice, on
+    the `<TRACK {..}` header and as TRACKID. Both must be re-stamped, and to the
+    *same* new GUID -- one fresh header over a stale TRACKID (or two different
+    fresh GUIDs) would leave the copy describing two different tracks."""
+    result = _run(
+        _detach_program(
+            ["  <TRACK {AAAA-1111}", "    TRACKID {AAAA-1111}", "  >"],
+            "io.write(detached)",
+        )
+    )
+    assert "{AAAA-1111}" not in result.stdout
+    assert "<TRACK {GEN-1}" in result.stdout and "TRACKID {GEN-1}" in result.stdout
+
+
+def test_detach_chunk_identity_restamps_every_item_take_and_source_guid() -> None:
+    """Item, take and media-source GUIDs name objects REAPER requires to be
+    unique. Sharing them with the source is what left the copy and its origin
+    claiming to be the same item -- each occurrence must get its own new GUID."""
+    result = _run(
+        _detach_program(
+            [
+                "<TRACK",
+                "TRACKID {TRACK-OLD}",
+                "<ITEM",
+                "IGUID {ITEM-OLD}",
+                "GUID {TAKE-OLD}",
+                "<SOURCE MIDI",
+                "GUID {SOURCE-OLD}",
+                ">",
+                ">",
+                ">",
+            ],
+            "io.write(detached)",
+        )
+    )
+    out = result.stdout
+    for stale in ("{TRACK-OLD}", "{ITEM-OLD}", "{TAKE-OLD}", "{SOURCE-OLD}"):
+        assert stale not in out
+    # The keys survive -- only the brace bodies change -- and no GUID repeats.
+    assert "IGUID {GEN-2}" in out and "GUID {GEN-3}" in out and "GUID {GEN-4}" in out
+
+
+def test_detach_chunk_identity_drops_the_pool_reference_and_item_id() -> None:
+    """POOLEDEVTS is what binds the copy's MIDI take to its origin's pool, and a
+    duplicated IID is a second item claiming one id. Both lines go, and the
+    surviving lines stay intact around the holes."""
+    result = _run(
+        _detach_program(
+            [
+                "<ITEM",
+                "      IID 25176",
+                "      NAME keep-me",
+                "      <SOURCE MIDI",
+                "        HASDATA 1 480 QN",
+                "        POOLEDEVTS {POOL-OLD}",
+                "        E 11 90 1a 5f",
+                "      >",
+                ">",
+            ],
+            "io.write(detached)",
+        )
+    )
+    out = result.stdout
+    assert "POOLEDEVTS" not in out and "IID" not in out
+    # Nothing else is disturbed: notes, HASDATA and neighbouring lines survive
+    # with their line structure (the removed line takes its own newline).
+    assert "<ITEM\n      NAME keep-me\n" in out
+    assert "        HASDATA 1 480 QN\n        E 11 90 1a 5f\n" in out
 
 
 def _folder_mock(depths_literal: str) -> str:
@@ -411,13 +492,6 @@ def _build_copy_mock() -> str:
             "function reaper.CountTrackMediaItems(track) return #track.items end",
             "function reaper.GetTrackMediaItem(track, index) return track.items[index + 1] end",
             "function reaper.SetMediaItemInfo_Value(item, key, value) item[key] = value end",
-            "function reaper.CountTakes(item) return item.takes and #item.takes or 0 end",
-            "function reaper.GetTake(item, index) return item.takes[index + 1] end",
-            "function reaper.TakeIsMIDI(take) return take.midi end",
-            "function reaper.MIDI_GetAllEvts(take) return true, take.evts end",
-            "function reaper.PCM_Source_CreateFromType(kind) return {new_source = kind} end",
-            "function reaper.SetMediaItemTake_Source(take, source) take.source = source end",
-            "function reaper.MIDI_SetAllEvts(take, evts) take.evts_written = evts end",
             "_G.__tracks = tracks",
         ]
     )
@@ -447,34 +521,82 @@ def test_build_working_copy_produces_an_editable_user_owned_track() -> None:
     assert "TRACKID {GEN-1}" in chunk and "{OLD-1}" not in chunk  # fresh unique GUID
 
 
-def test_build_working_copy_unpools_midi_takes_but_leaves_audio_takes_alone() -> None:
-    """A byte-for-byte SetTrackStateChunk clone would otherwise resolve a MIDI
-    take's embedded source back onto the same pooled source as its origin, so
-    an edit in the [work] copy would silently rewrite the [vgt] reference (or a
-    sibling copy) too. Every MIDI take must get a fresh, independent source;
-    non-MIDI (audio) takes must be left untouched."""
+def test_build_working_copy_hands_reaper_a_fully_detached_midi_chunk() -> None:
+    """The chunk REAPER actually receives is where MIDI independence is won or
+    lost: it must carry the copy's own notes with no pool reference and no
+    borrowed item/take identity, so REAPER cannot resolve the copy back onto
+    its origin's pooled source. An audio take's FILE reference is shared on
+    purpose and must survive."""
     script = WORKING_COPY_SCRIPT.read_text()
     helpers_end = script.index("local function create()")
+    source_chunk = "\\n".join(
+        [
+            "<TRACK",
+            "TRACKID {OLD-1}",
+            "<ITEM",
+            "IID 25176",
+            "IGUID {OLD-ITEM}",
+            "GUID {OLD-TAKE}",
+            "<SOURCE MIDI",
+            "HASDATA 1 480 QN",
+            "POOLEDEVTS {OLD-POOL}",
+            "E 11 90 1a 5f",
+            ">",
+            ">",
+            "<ITEM",
+            "<SOURCE WAVE",
+            'FILE "vgt/stems/bass.wav"',
+            ">",
+            ">",
+            ">",
+        ]
+    )
     lua_program = "\n".join(
         [
             _build_copy_mock(),
-            # Override the mock's default items with one MIDI take and one
-            # audio take, so the unpool step must discriminate between them.
-            (
-                "function reaper.SetTrackStateChunk(track, chunk) track.chunk = chunk track.items = {"
-                "{C_LOCK = 1, takes = {{midi = true, evts = 'NOTES'}}},"
-                "{C_LOCK = 1, takes = {{midi = false, source = 'ORIGINAL-WAV'}}},"
-                "} end"
-            ),
             script[:helpers_end],
-            "build_working_copy(0, 'TRACKID {OLD-1}\\n', '[vgt] Drums Ref (MIDI)', -1)",
-            "local t = reaper.GetTrack(0, 0)",
-            "local midi_take, audio_take = t.items[1].takes[1], t.items[2].takes[1]",
-            "io.write(tostring(midi_take.source.new_source), '|', midi_take.evts_written, '|', tostring(audio_take.source), '|', tostring(audio_take.evts_written))",
+            f"build_working_copy(0, '{source_chunk}', '[vgt] Bass Ref (MIDI)', -1)",
+            "io.write(reaper.GetTrack(0, 0).chunk)",
         ]
     )
-    result = _run(lua_program).stdout
-    assert result == "MIDI|NOTES|ORIGINAL-WAV|nil"
+    chunk = _run(lua_program).stdout
+    # Nothing that names the source object survives ...
+    for stale in ("{OLD-1}", "{OLD-ITEM}", "{OLD-TAKE}", "{OLD-POOL}", "IID", "POOLEDEVTS"):
+        assert stale not in chunk
+    # ... while the notes themselves do, so the copy is independent, not empty.
+    assert "HASDATA 1 480 QN\nE 11 90 1a 5f" in chunk
+    # Audio takes reference a shared stem file by path and are left alone.
+    assert 'FILE "vgt/stems/bass.wav"' in chunk
+
+
+def test_create_refuses_a_source_whose_midi_notes_live_in_another_item() -> None:
+    """A `MIDIPOOL` take stores no notes of its own. Detaching its chunk would
+    hand the copy an empty source, so the action refuses up front and inserts
+    nothing -- rather than producing a silently empty copy."""
+    script = WORKING_COPY_SCRIPT.read_text()
+    helpers_end = script.index("local function choose_action")
+    lua_program = "\n".join(
+        [
+            "local tracks = {{name='[vgt] Bass Ref (MIDI)', values={}, ext={}, items={}, selected=true}}",
+            "reaper = {}",
+            "function reaper.CountTracks() return #tracks end",
+            "function reaper.GetTrack(_, index) return tracks[index + 1] end",
+            "function reaper.GetTrackName(track) return true, track.name end",
+            "function reaper.CountSelectedTracks() return 1 end",
+            "function reaper.GetSelectedTrack() return tracks[1] end",
+            "function reaper.GetTrackStateChunk() return true, '<ITEM\\n<SOURCE MIDIPOOL\\nPOOLEDEVTS {P}\\n>\\n>' end",
+            "function reaper.InsertTrackAtIndex() error('nothing may be inserted') end",
+            "function reaper.Undo_BeginBlock() error('nothing may be mutated') end",
+            "function reaper.ShowMessageBox(text) _G.__warning = text end",
+            script[:helpers_end],
+            "create()",
+            "io.write(#tracks, '|', __warning or '')",
+        ]
+    )
+    count, warning = _run(lua_program).stdout.split("|", 1)
+    assert count == "1"  # refusal is atomic: no container, no copy
+    assert "[vgt] Bass Ref (MIDI)" in warning  # names the offending track ...
+    assert "Un-pool it first" in warning  # ... and how to make it copyable
 
 
 def test_create_does_not_reuse_an_unmarked_work_folder_and_creates_a_container() -> None:
@@ -570,7 +692,7 @@ def test_promote_moves_the_existing_track_and_reclaims_it() -> None:
 
 def test_clean_name_reprefixes_without_namespace_pileup() -> None:
     script = WORKING_COPY_SCRIPT.read_text()
-    helpers_end = script.index("local function replace_track_guid")
+    helpers_end = script.index("local function detach_chunk_identity")
     lua_program = "\n".join(
         [
             script[:helpers_end],
