@@ -98,24 +98,6 @@ local function is_marked_work_object(track)
   return value == WORK_EXT_STATE_VALUE
 end
 
--- A name outside the scratch namespace is the user's durable reclaim signal.
--- Forget our private provenance as soon as a later invocation observes that
--- signal, so even a subsequent rename back to `[work] ...` can never make the
--- track eligible for automated promotion again.  This is intentionally the only
--- metadata vgt changes on a reclaimed copy; its media, routing and placement
--- are left entirely alone.
-local function forget_reclaimed_work_objects()
-  local reclaimed = 0
-  for index = 0, reaper.CountTracks(0) - 1 do
-    local track = reaper.GetTrack(0, index)
-    if is_marked_work_object(track) and not starts_with(track_name(track), WORK_PREFIX) then
-      reaper.GetSetMediaTrackInfo_String(track, WORK_EXT_STATE_KEY, "", true)
-      reclaimed = reclaimed + 1
-    end
-  end
-  return reclaimed
-end
-
 local function is_top_level_track(index)
   local depth = 0
   for previous = 0, index - 1 do
@@ -324,10 +306,6 @@ local function create()
   -- Clear the selection so only the new copies end up selected.
   for _, source in ipairs(sources) do reaper.SetTrackSelected(source, false) end
 
-  -- Persist a user's prior rename before looking for a reusable workspace.
-  -- This makes reclamation permanent rather than depending on its current name.
-  forget_reclaimed_work_objects()
-
   local folder, folder_index, resolution_error = find_work_folder()
   if resolution_error then
     reaper.PreventUIRefresh(-1)
@@ -443,7 +421,6 @@ local function promote()
   reaper.Undo_BeginBlock()
   reaper.PreventUIRefresh(1)
 
-  forget_reclaimed_work_objects()
   local work, work_index, work_error = find_work_folder()
   if work_error or not work or not is_complete_work_folder(work_index, work) then
     reaper.ShowMessageBox(

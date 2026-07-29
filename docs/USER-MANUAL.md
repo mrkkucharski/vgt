@@ -65,8 +65,8 @@ keep. vgt may add:
 
 | Object | When | State and purpose |
 | --- | --- | --- |
-| `[clean] <reference name>` | Initialization | User-content container for promoted finished tracks. vgt creates, renames, recolours, and repositions the container track, but never touches anything inside it. |
-| `[work] <reference name>` | Initialization | User-content container for editable working copies. vgt creates, renames, recolours, and repositions the container track, but never touches anything inside it. |
+| `[clean] <reference name>` | Initialization | User-content container for promoted finished tracks. Automatic initialize/apply may create, rename, recolour, and reposition the container track, but never touches anything inside it. |
+| `[work] <reference name>` | Initialization | User-content container for editable working copies. Automatic initialize/apply may create, rename, recolour, and reposition the container track, but never touches anything inside it. |
 | `[vgt] <reference name>` | Initialization | Folder when it has children; otherwise a plain track. |
 | `[vgt] Chords` | Chord analysis | Unmuted but silent text-item track; chord items are unlocked for editing. |
 | `[vgt] Key` | Valid key analysis | Unmuted, silent text-item track with one editable take name showing the effective root and scale. Use the strict `E minor` format (a pitch class followed by `major` or `minor`). |
@@ -530,12 +530,12 @@ actions) and run it from REAPER's Action List. It offers create and promote:
   and immediately editable. If that container is absent, the action creates
   the same marked `[work]` scaffold itself, ready for initialize to reconcile.
 - **Promote selected `[work]` tracks to `[clean]`** — a selected track is
-  eligible only when it has the working-copy marker and its name still starts
-  with `[work]`. Promotion moves, rather than copies, the track into `[clean]`,
-  so its identity, items, FX, routing, and other contents remain attached. It
-  is renamed `[clean] …` and all vgt working-copy/container/managed marks are
-  removed, leaving it entirely user-owned. Non-eligible selected tracks are
-  left alone.
+  eligible only when it has the durable working-copy marker and its name still
+  starts with `[work]`. Promotion moves, rather than copies, only those eligible
+  selected tracks into `[clean]`, so their identity, items, FX, routing, and
+  other contents remain attached. Each is renamed `[clean] …` and has its vgt
+  working-copy/container/managed marks removed, leaving it entirely user-owned.
+  Unselected, ineligible, and reclaimed tracks are left byte-for-byte alone.
 
 The copies are deliberately outside normal vgt ownership: they are named
 `[work]` (never `[vgt]`), carry no `vgt_managed` mark, and instead carry a
@@ -543,11 +543,11 @@ separate private working-copy marker used only by this action. Normal
 reconciliation never touches them. Older unmarked `[work]` objects are
 conservatively treated as user-owned. There is no discard action: delete an
 unwanted `[work]` track with ordinary REAPER operations. Renaming a copy so it
-no longer starts with `[work]` permanently reclaims it; it is yours from then
-on, exactly like a `[vgt]` track you reclaimed by renaming. Promotion is the
-explicit form of that same reclaim for a finished part. The vgt reference it
-came from remains as the unmuted machine baseline, regenerated on the next
-apply.
+no longer starts with `[work]` reclaims it for ordinary use: neither automatic
+reconciliation nor promotion will touch it. Restoring the scratch name and
+explicitly selecting it is a new deliberate request to promote it. The vgt
+reference it came from remains as the unmuted machine baseline, regenerated on
+the next apply.
 
 The action edits the live project only: it never reads or writes the `.vgt`
 sidecar and never touches a `[vgt]` or user track.
@@ -609,12 +609,14 @@ never block closing an issue:
 
 ## Permanent regression contract
 
-- **Non-destructive:** vgt changes only objects it created and recorded as
-  `[vgt]`-managed; it never changes user tracks, items, or regions. vgt also
-  creates and maintains two user-content containers, `[clean]` and `[work]`.
-  It may create, rename, recolour, and reposition those container tracks, and
-  reposition the blocks they contain as a unit. It never modifies, renames,
-  deletes, or reorders anything *inside* them.
+- **Automatic reconciliation versus explicit working-copy actions:**
+  initialize/apply changes only `[vgt]`-managed objects. It may create, rename,
+  recolour, and reposition `[clean]`/`[work]` container tracks and move their
+  blocks as a unit, but never modifies, renames, deletes, or reorders their
+  contents. The explicitly invoked working-copy action may affect only newly
+  created copies or selected tracks that retain both the durable working-copy
+  mark and their `[work]` name. Promotion alone may move and rename those
+  selected eligible tracks into `[clean]`; all other tracks stay untouched.
 - Initialize maintains the bottom layout and ordering: loose root tracks,
   `[clean]`, `[work]`, then `[vgt]`; it moves each populated user-content
   container only as a whole block.

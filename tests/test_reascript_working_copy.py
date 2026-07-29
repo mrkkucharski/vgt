@@ -30,7 +30,6 @@ def test_working_copy_is_never_vgt_owned() -> None:
     # action's distinct provenance marker is stamped.
     assert 'reaper.GetSetMediaTrackInfo_String(track, VGT_EXT_STATE_KEY, "", true)' in script
     assert 'reaper.GetSetMediaTrackInfo_String(track, WORK_EXT_STATE_KEY, WORK_EXT_STATE_VALUE, true)' in script
-    assert 'local function forget_reclaimed_work_objects()' in script
     # Promotion requires both name and durable provenance, never just `[work]`.
     assert "is_marked_work_object(track) and starts_with(track_name(track), WORK_PREFIX)" in script
 
