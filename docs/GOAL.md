@@ -58,7 +58,11 @@ requires no credentials, network access, model downloads, or live REAPER.
 ## Permanent invariants
 
 - **Non-destructive:** vgt changes only objects it created and recorded as
-  `[vgt]`-managed; it never changes user tracks, items, or regions.
+  `[vgt]`-managed; it never changes user tracks, items, or regions. vgt also
+  creates and maintains two user-content containers, `[clean]` and `[work]`.
+  It may create, rename, recolour, and reposition those container tracks, and
+  reposition the blocks they contain as a unit. It never modifies, renames,
+  deletes, or reorders anything *inside* them.
 - **Idempotent:** re-running a workflow reconciles vgt-owned state without
   duplicates or corruption.
 - **Live REAPER mutation:** project changes use REAPER's API, never RPP text
