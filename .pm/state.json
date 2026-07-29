@@ -1,25 +1,23 @@
 {
-  "current_issue": 222,
-  "session_id": "435f6102-b75e-46a3-9781-3df7b47dbf28",
-  "pid": 44802,
-  "process_started_at": "Wed Jul 29 00:44:14 2026",
-  "agent": "codex",
-  "started_at": "2026-07-28T22:44:12.432450+00:00",
+  "current_issue": 225,
+  "session_id": "a7aef365-759b-4ab2-be21-05872c2fd4ca",
+  "pid": 67054,
+  "process_started_at": "Wed Jul 29 14:07:11 2026",
+  "agent": "claude",
+  "started_at": "2026-07-29T12:07:10.182598+00:00",
   "scheduler_stalls": {},
   "budget": {
-    "window_start": "2026-07-28T21:15:48.918262+00:00",
-    "seconds_used": 211.982172,
-    "dollars_used": 0.9451035000000001,
-    "seconds_used_by_agent": {
-      "claude": 211.982172
-    }
+    "window_start": "2026-07-29T12:07:06.074972+00:00",
+    "seconds_used": 0.0,
+    "dollars_used": 0.0,
+    "seconds_used_by_agent": {}
   },
   "verification_followups": {
     "f0d8bfc9d2dc6da7a31609184e25c4d66d3986fd2340b33a83e98204fb86691e": "created"
   },
   "role": "implement",
-  "branch": "issue-222-certify-the-final-offline-goal-contract",
-  "worktree_path": "/Users/marekkucharski/projects/.pm-worktrees/vgt/issue-222",
+  "branch": "issue-225-establish-the-canonical-clean-work-vgt-c",
+  "worktree_path": "/Users/marekkucharski/projects/.pm-worktrees/vgt/issue-225",
   "pr_number": null,
   "followup_generation": {
     "fingerprint": "17c90a9889f56e105f690601cf187f135f3c8ec0a453c9240ff5b3a9d731806b",
@@ -63,13 +61,13 @@
     "215": 1
   },
   "pending_transition": {
-    "issue": 222,
+    "issue": 225,
     "target": "working",
     "event": "agent.started",
     "detail": {
-      "issue": 222,
-      "agent": "codex",
-      "branch": "issue-222-certify-the-final-offline-goal-contract"
+      "issue": 225,
+      "agent": "claude",
+      "branch": "issue-225-establish-the-canonical-clean-work-vgt-c"
     },
     "cleanup": {}
   }
