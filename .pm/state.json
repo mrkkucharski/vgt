@@ -1,10 +1,10 @@
 {
-  "current_issue": 239,
-  "session_id": "df3bbb43-d9ed-4f65-b01d-ab5becf9e94c",
-  "pid": 6194,
-  "process_started_at": "Wed Jul 29 17:35:33 2026",
+  "current_issue": 243,
+  "session_id": "8db1446d-60d2-4c33-a91b-0f1c2f701a58",
+  "pid": 7498,
+  "process_started_at": "Wed Jul 29 17:44:21 2026",
   "agent": "codex",
-  "started_at": "2026-07-29T15:35:31.969296+00:00",
+  "started_at": "2026-07-29T15:44:19.290034+00:00",
   "scheduler_stalls": {},
   "budget": {
     "window_start": "2026-07-29T12:07:06.074972+00:00",
@@ -18,23 +18,15 @@
   "verification_followups": {
     "f0d8bfc9d2dc6da7a31609184e25c4d66d3986fd2340b33a83e98204fb86691e": "created"
   },
-  "role": "review",
-  "branch": "issue-239-reconcile-container-invariants-with-expl",
-  "worktree_path": "/Users/marekkucharski/projects/.pm-worktrees/vgt/issue-239",
-  "pr_number": 242,
+  "role": "implement",
+  "branch": "issue-243-recertify-current-main-after-transcripti",
+  "worktree_path": "/Users/marekkucharski/projects/.pm-worktrees/vgt/issue-243",
+  "pr_number": null,
   "followup_generation": {
-    "fingerprint": "dc3e17e4139ba95c700d207dbb62f09cbecccc968eedac066128db4eb3619bc2",
+    "fingerprint": "831bf236528c51866d8d92efae6169d55ddc9462ff7bb23d1edcdbdec3fcd354",
     "items": {
-      "687e9f364ae49ba3efde712f20f767c6fa0c251b01fde942f2bdcc60749bff78": {
-        "title": "Certify the complete goal contract on supported Python 3.11",
-        "status": "created"
-      },
-      "c5db7b37eb0007c2a508ba6d3fc6633bfee24ec00dfc2bf3992a088e19a97701": {
-        "title": "Exercise every supported transcription target in the executable goal contract",
-        "status": "created"
-      },
-      "a68d28aa519e2223ef860cf2802f3785ccd4d14b51d57c4ba5f93c7cb16d4cf0": {
-        "title": "Reconcile container invariants with explicit working-copy operations",
+      "7b30e3955323b10b7b43b3e3c5a90749e66c58523c8cdc5be1cf58d45fd51a2e": {
+        "title": "Recertify current main after transcription and working-copy changes",
         "status": "created"
       }
     }
@@ -75,13 +67,13 @@
     "239": 3
   },
   "pending_transition": {
-    "issue": 239,
+    "issue": 243,
     "target": "working",
-    "event": "agent.review_started",
+    "event": "agent.started",
     "detail": {
-      "issue": 239,
+      "issue": 243,
       "agent": "codex",
-      "pr": 242
+      "branch": "issue-243-recertify-current-main-after-transcripti"
     },
     "cleanup": {}
   }
