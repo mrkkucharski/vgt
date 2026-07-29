@@ -18,7 +18,7 @@ dev = ["pytest>=8"]
 vgt = "vgt.cli:main"
 
 [project.optional-dependencies]
-# madmom is the primary beat/downbeat backend (docs/GOAL.md), but its last
+# madmom is the primary beat/downbeat backend, but its last
 # release predates modern Python/NumPy and its build is fragile -- isolated
 # here so a default `vgt` install never needs Cython or a legacy NumPy ABI.
 # When unavailable (or it fails to import), the tempo stage falls back to
@@ -27,7 +27,7 @@ madmom = [
     "madmom>=0.16.1",
     "setuptools<81",  # madmom still imports the deprecated pkg_resources API
 ]
-# MSAF is the primary section-segmentation backend (docs/GOAL.md), but its
+# MSAF is the primary section-segmentation backend, but its
 # maintenance is uncertain and its last release predates modern
 # Python/NumPy/SciPy -- isolated here so a default `vgt` install never needs
 # it. When unavailable (or it fails to import/process), the sections stage

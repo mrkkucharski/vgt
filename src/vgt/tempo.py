@@ -1,5 +1,5 @@
 """Tempo/beat/downbeat grid detection: madmom's DBN beat+downbeat trackers are
-the primary backend (docs/GOAL.md); librosa's `beat_track` is the fallback
+the primary backend; librosa's `beat_track` is the fallback
 when madmom isn't installed (it ships behind the `madmom` extra -- see
 pyproject.toml) or fails to import (its last release predates modern
 Python/NumPy). librosa gives beat times but no downbeats, so its bar phase is
@@ -158,7 +158,7 @@ def build_tempo_grid(
     settings: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Fit the beat grid to either a single constant BPM or a piecewise-linear
-    tempo map, per the tempo-map rule in docs/GOAL.md."""
+    tempo map, per the non-invasive tempo-map rule."""
     settings = settings or {}
     mean_interval = (beat_times[-1] - beat_times[0]) / (len(beat_times) - 1)
     constant_bpm, constant_residual = _fit_constant(beat_times)

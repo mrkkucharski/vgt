@@ -154,7 +154,7 @@ Given that explicit human override, **D-F switches the production routing
 table.** `production_transcriber_router()` in `src/vgt/transcribe.py` now
 passes `drumscript_targets=("drums",)`, so `drums` routes to
 `DrumScriptTranscriber` by default; every other target continues to route to
-`BasicPitchTranscriber`. `docs/GOAL.md` and `docs/USER-MANUAL.md` were updated
+`BasicPitchTranscriber`. The project docs were updated
 to describe this as the shipped behavior, including DrumScript's channel-10 GM
 percussion semantics, fixed velocity, and lack of calibrated confidence.
 

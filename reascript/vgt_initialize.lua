@@ -9,8 +9,8 @@ local CLICK_NAME = PREFIX .. " Click"
 local KEY_NAME = PREFIX .. " Key"
 -- The canonical [clean]/[work]/[vgt] container layout (issue #225). [clean]
 -- and [work] are the two user-content scaffold containers vgt creates and
--- repositions but never reaches inside of; see docs/GOAL.md's amended
--- non-destructive invariant.
+-- repositions but never reaches inside of, per the non-destructive
+-- invariant.
 local CLEAN_PREFIX = "[clean]"
 local WORK_PREFIX = "[work]"
 -- Colour is presentation, never provenance: every ownership decision in this
@@ -645,7 +645,7 @@ end
 --
 -- These two containers are user-content: vgt creates, renames, recolours, and
 -- repositions the container track itself, but never reads or changes what a
--- user puts inside it (docs/GOAL.md's amended non-destructive invariant).
+-- user puts inside it (the non-destructive invariant).
 -- Durable identity is a per-track mark plus a project-scoped GUID, exactly
 -- like the [vgt] root -- but deliberately *not* P_EXT:vgt_managed and *not*
 -- entered into managed_root_manifest: remove_previous_managed_tracks and

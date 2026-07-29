@@ -1,8 +1,8 @@
 """Phase 1 analysis stage: detects tempo/key/sections/chords from the reference
 track's source audio and persists the result into the `.vgt` sidecar.
 
-Runs entirely in the Python CLI (never inside REAPER, per docs/GOAL.md's
-"analysis stays out of the DAW process" requirement). `detect_tempo`,
+Runs entirely in the Python CLI (never inside REAPER: analysis stays out of
+the DAW process). `detect_tempo`,
 `detect_key`, `detect_sections`, and `detect_chords` are all real detectors
 (see tempo.py/key.py/sections.py/chords.py), running through the same
 stage-cache and corrections-survive-rerun framework.

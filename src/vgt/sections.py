@@ -1,5 +1,5 @@
 """Section boundary + label detection: MSAF's novelty/structure segmentation
-is the primary backend (docs/GOAL.md), gated behind an optional `msaf`
+is the primary backend, gated behind an optional `msaf`
 extra/import since its last release predates modern Python/NumPy/SciPy and
 its maintenance is uncertain -- exactly the fragility the issue calls out.
 

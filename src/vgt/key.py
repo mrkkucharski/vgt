@@ -1,6 +1,6 @@
 """Key (root + scale) detection: Essentia's `KeyExtractor` is the primary
-backend (optional -- Essentia wheels are fragile on Apple Silicon, per
-docs/GOAL.md, so it's never a hard dependency); a librosa chroma +
+backend (optional -- Essentia wheels are fragile on Apple Silicon, so it is
+never a hard dependency); a librosa chroma +
 Krumhansl-Schmuckler template-correlation fallback is always available.
 """
 

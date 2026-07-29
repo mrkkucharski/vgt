@@ -1,11 +1,11 @@
 # Stem transcription with Basic Pitch — implementation plan
 
 Status: accepted · Date: 2026-07-21
-Basis: the "Automatic music transcription" and "Building a virtual guitar teacher" research pages in the `llm-wiki` vault (`topics/music-ai/wiki/`), and the delivered vgt baseline in [GOAL.md](GOAL.md) / [USER-MANUAL.md](USER-MANUAL.md).
+Basis: the "Automatic music transcription" and "Building a virtual guitar teacher" research pages in the `llm-wiki` vault (`topics/music-ai/wiki/`), and the delivered vgt baseline in [USER-MANUAL.md](USER-MANUAL.md).
 
 This plan is the design of record for the transcription capability; the issues T-A…T-F below are tracked as GitHub issues. It was drafted in the `llm-wiki` repo and copied here so it travels with the code.
 
-Decision taken up front: **Basic Pitch** (Spotify, Apache-2.0) is the transcriber. This capability jumps ahead of the practice-workflow phase sketched in [GOAL.md](GOAL.md) and delivers a *reference transcription* instead — the "draft guitar reference as a MIDI track" item that was cut from phase 1.
+Decision taken up front: **Basic Pitch** (Spotify, Apache-2.0) is the transcriber. This capability jumps ahead of the then-planned practice-workflow phase and delivers a *reference transcription* instead — the "draft guitar reference as a MIDI track" item that was cut from phase 1.
 
 ## Goal
 

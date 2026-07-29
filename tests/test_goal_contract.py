@@ -1,4 +1,4 @@
-"""Offline executable acceptance contract for :mod:`docs.GOAL`.
+"""Offline executable acceptance contract for vgt's delivered baseline.
 
 This is deliberately one workflow, not a replacement for focused unit tests.
 It uses the real RPP fixture, deterministic analysis/separation/transcription
