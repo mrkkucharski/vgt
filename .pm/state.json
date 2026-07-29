@@ -1,10 +1,10 @@
 {
-  "current_issue": 237,
-  "session_id": "99ff7995-4aea-4657-8a2d-c45b3feeef31",
-  "pid": 94659,
-  "process_started_at": "Wed Jul 29 16:55:00 2026",
+  "current_issue": 238,
+  "session_id": "c41b9e44-03f2-4384-bab0-baa6f8cd65ac",
+  "pid": 95320,
+  "process_started_at": "Wed Jul 29 16:57:27 2026",
   "agent": "codex",
-  "started_at": "2026-07-29T14:54:58.673252+00:00",
+  "started_at": "2026-07-29T14:57:25.606879+00:00",
   "scheduler_stalls": {},
   "budget": {
     "window_start": "2026-07-29T12:07:06.074972+00:00",
@@ -18,10 +18,10 @@
   "verification_followups": {
     "f0d8bfc9d2dc6da7a31609184e25c4d66d3986fd2340b33a83e98204fb86691e": "created"
   },
-  "role": "review",
-  "branch": "issue-237-certify-the-complete-goal-contract-on-su",
-  "worktree_path": "/Users/marekkucharski/projects/.pm-worktrees/vgt/issue-237",
-  "pr_number": 240,
+  "role": "implement",
+  "branch": "issue-238-exercise-every-supported-transcription-t",
+  "worktree_path": "/Users/marekkucharski/projects/.pm-worktrees/vgt/issue-238",
+  "pr_number": null,
   "followup_generation": {
     "fingerprint": "dc3e17e4139ba95c700d207dbb62f09cbecccc968eedac066128db4eb3619bc2",
     "items": {
@@ -74,13 +74,13 @@
     "226": 2
   },
   "pending_transition": {
-    "issue": 237,
+    "issue": 238,
     "target": "working",
-    "event": "agent.review_started",
+    "event": "agent.started",
     "detail": {
-      "issue": 237,
+      "issue": 238,
       "agent": "codex",
-      "pr": 240
+      "branch": "issue-238-exercise-every-supported-transcription-t"
     },
     "cleanup": {}
   }
