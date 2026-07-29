@@ -454,29 +454,6 @@ local function promote()
     work_children[reaper.GetTrack(0, index)] = true
   end
 
-  -- Likewise, removing the closing [work] child while other children remain
-  -- would require changing the new final child from 0 to -1.  The user did
-  -- not select that track, so reject the request atomically instead.
-  local work_closer = reaper.GetTrack(0, work_last)
-  local eligible_by_track = {}
-  for _, track in ipairs(eligible) do eligible_by_track[track] = true end
-  local promoted_closer = false
-  local remaining_work_children = 0
-  for index = work_index + 1, work_last do
-    local child = reaper.GetTrack(0, index)
-    if child == work_closer and eligible_by_track[child] then promoted_closer = true end
-    if not eligible_by_track[child] then remaining_work_children = remaining_work_children + 1 end
-  end
-  if promoted_closer and remaining_work_children > 0 then
-    reaper.ShowMessageBox(
-      "Promotion would alter an unselected [work] track's folder structure, so nothing was changed.",
-      "vgt working copy", 0
-    )
-    reaper.PreventUIRefresh(-1)
-    reaper.Undo_EndBlock("vgt: promote working copies", -1)
-    return
-  end
-
   if not clean then
     clean, clean_index = create_clean_folder(work_index)
     -- Inserting clean above work shifts the latter's numeric index.

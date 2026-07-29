@@ -585,18 +585,26 @@ def test_promote_refuses_renamed_or_unmarked_work_tracks_without_changes() -> No
     assert result.startswith("Select [work] tracks created by vgt to promote them to [clean].|nil|1|[work] Hand made")
 
 
-def test_promote_refuses_when_removing_the_final_work_child_would_change_unselected_content() -> None:
-    """The explicit exception is limited to selected eligible copies: removing
-    the selected final work child would change the reclaimed predecessor's
-    folder-closing flag from 0 to -1, so promotion refuses atomically."""
+def test_promote_reassigns_the_work_closer_onto_a_remaining_sibling() -> None:
+    """Promoting the [work] folder's closing child while an unselected
+    sibling remains reassigns the closing flag (0 -> -1) onto that sibling
+    instead of refusing. This mirrors the reassignment already used whenever
+    any non-closer child is promoted; only the closer-specific case used to
+    be refused, and that refusal is now gone. The unselected sibling's name,
+    marker, and items are otherwise untouched."""
     script = WORKING_COPY_SCRIPT.read_text()
     helpers_end = script.index("local function choose_action")
     tracks = "{{name='[clean] Song',guid='{C}',values={I_FOLDERDEPTH=0},ext={['P_EXT:vgt_container']='clean'},items={}}, {name='[work] Song',guid='{W}',values={I_FOLDERDEPTH=1},ext={['P_EXT:vgt_container']='work'},items={}}, {name='User reclaimed',guid='{R}',values={I_FOLDERDEPTH=0},ext={['P_EXT:vgt_working_copy']='1',keep='reclaimed'},items={'keep'},selected=false}, {name='[work] Draft',guid='{D}',values={I_FOLDERDEPTH=-1},ext={['P_EXT:vgt_working_copy']='1'},items={'draft'},selected=true}}"
     lua_program = "\n".join([
         _promote_mock(tracks), script[:helpers_end],
-        "local before = ''; for _, t in ipairs(__tracks) do before = before .. t.name .. ':' .. t.values.I_FOLDERDEPTH .. ':' .. (t.ext.keep or '') .. ':' .. (t.items[1] or '') .. ';' end; promote(); local after = ''; for _, t in ipairs(__tracks) do after = after .. t.name .. ':' .. t.values.I_FOLDERDEPTH .. ':' .. (t.ext.keep or '') .. ':' .. (t.items[1] or '') .. ';' end; io.write(before == after and 'unchanged' or 'changed')",
+        "promote(); for _, t in ipairs(__tracks) do io.write(t.name, ':', t.values.I_FOLDERDEPTH, ':', t.ext.keep or '', ':', t.items[1] or '', ':', t.ext['P_EXT:vgt_working_copy'] or '', ';') end",
     ])
-    assert _run(lua_program).stdout == "unchanged"
+    assert _run(lua_program).stdout == (
+        "[clean] Song:1:::;"
+        "[clean] Draft:-1::draft:;"
+        "[work] Song:1:::;"
+        "User reclaimed:-1:reclaimed:keep:1;"
+    )
 
 
 def test_promote_appends_into_a_populated_clean_container() -> None:

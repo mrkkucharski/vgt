@@ -542,15 +542,16 @@ actions) and run it from REAPER's Action List. It offers create and promote:
   selected tracks into `[clean]`, so their identity, items, FX, routing, and
   other contents remain attached. Each is renamed `[clean] …` and has its vgt
   working-copy/container/managed marks removed, leaving it entirely user-owned.
-  Unselected, ineligible, and reclaimed tracks are left byte-for-byte alone.
-  REAPER represents a folder's closing edge on its final child; if `[clean]`
-  already has children, promotion reopens that edge (the same append behavior
-  create uses for `[work]`) and moves it onto the newly promoted track. It
-  still refuses, without changing anything, whenever a requested promotion
-  would instead require rewriting that edge on an existing *unselected*
-  `[clean]` or `[work]` child — for example, promoting a `[work]` folder's
-  only selected child while unselected siblings remain would need to move
-  `[work]`'s closing edge onto a track the user never selected.
+  Unselected, ineligible, and reclaimed tracks keep their name, items, FX, and
+  marks untouched. REAPER represents a folder's closing edge as a flag on its
+  final child, so promotion may need to move that flag (never anything else)
+  off a track that changed folder: if `[clean]` already has children, it
+  reopens `[clean]`'s current closing edge and moves it onto the newly
+  promoted track; if promoting empties out `[work]`'s current closing child
+  while an unselected sibling remains, that sibling's flag becomes the new
+  closing edge instead. Promotion still refuses, without changing anything,
+  when `[clean]` or `[work]`'s folder structure doesn't match vgt's expected
+  shape — it won't guess how to repair a folder edited outside this action.
 
 The copies are deliberately outside normal vgt ownership: they are named
 `[work]` (never `[vgt]`), carry no `vgt_managed` mark, and instead carry a
