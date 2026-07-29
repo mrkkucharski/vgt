@@ -2029,7 +2029,7 @@ WORK_COLOR_VALUE = (68 + 175 * 256 + 239 * 65536) | 0x1000000
 VGT_COLOR_VALUE = (189 + 100 * 256 + 175 * 65536) | 0x1000000
 
 
-def _container_harness_preamble(tracks_literal: str) -> str:
+def _container_harness_preamble(tracks_literal: str, project_ext_literal: str = "{}") -> str:
     return "\n".join(
         [
             f"local tracks = {{{tracks_literal}}}",
@@ -2061,7 +2061,7 @@ def _container_harness_preamble(tracks_literal: str) -> str:
             " if key == 'I_FOLDERDEPTH' then track.depth = value end"
             " if key == 'I_CUSTOMCOLOR' then track.color = value end end",
             "function reaper.ColorToNative(r, g, b) return r + g * 256 + b * 65536 end",
-            "local proj_ext = {}",
+            f"local proj_ext = {project_ext_literal}",
             "function reaper.GetProjExtState(_, section, key)"
             " local sec = proj_ext[section]"
             " local value = sec and sec[key]"
@@ -2116,7 +2116,9 @@ _CONTAINER_TRAILER = "\n".join(
         "  local t = reaper.GetTrack(0, i)",
         "  local _, container = reaper.GetSetMediaTrackInfo_String(t, 'P_EXT:vgt_container', '', false)",
         "  local _, managed = reaper.GetSetMediaTrackInfo_String(t, 'P_EXT:vgt_managed', '', false)",
-        "  io.write(t.name, '|', tostring(t.depth or 0), '|', tostring(t.color or 0), '|', container, '|', managed, '|', t.guid, '\\n')",
+        "  local item_signatures = {}",
+        "  for _, item in ipairs(t.items or {}) do item_signatures[#item_signatures + 1] = table.concat({tostring(item.position or 0), tostring(item.length or 0), tostring(item.label or ''), tostring(item.custom or '')}, ',') end",
+        "  io.write(t.name, '|', tostring(t.depth or 0), '|', tostring(t.color or 0), '|', container, '|', managed, '|', t.guid, '|', table.concat(item_signatures, ';'), '\\n')",
         "end",
         "local _, clean_guid = reaper.GetProjExtState(0, 'vgt', 'clean_container')",
         "local _, work_guid = reaper.GetProjExtState(0, 'vgt', 'work_container')",
@@ -2136,10 +2138,12 @@ _REFERENCE_TRACK_LUA = (
 )
 
 
-def _run_container_harness(tracks_literal: str, tmp_path: Path, rerun: bool = False) -> dict:
+def _run_container_harness(
+    tracks_literal: str, tmp_path: Path, rerun: bool = False, project_ext_literal: str = "{}"
+) -> dict:
     rpp = tmp_path / "song.RPP"
     program_parts = [
-        _container_harness_preamble(tracks_literal),
+        _container_harness_preamble(tracks_literal, project_ext_literal),
         APPLY_SCRIPT.read_text(),
     ]
     if rerun:
@@ -2158,7 +2162,7 @@ def _run_container_harness(tracks_literal: str, tmp_path: Path, rerun: bool = Fa
             key, _, value = line.partition("=")
             values[key] = value
         else:
-            name, depth, color, container, managed, guid = line.split("|")
+            name, depth, color, container, managed, guid, item_signature = line.split("|")
             parsed_tracks.append(
                 {
                     "name": name,
@@ -2167,6 +2171,7 @@ def _run_container_harness(tracks_literal: str, tmp_path: Path, rerun: bool = Fa
                     "container": container,
                     "managed": managed,
                     "guid": guid,
+                    "item_signature": item_signature,
                 }
             )
     return {"tracks": parsed_tracks, "stderr": result.stderr, **values}
@@ -2220,6 +2225,25 @@ def test_reapply_is_idempotent_for_the_container_scaffold(tmp_path: Path) -> Non
     assert second["MSG"] == ""
 
 
+def test_guid_recovery_restores_the_container_mark_and_current_name(tmp_path: Path) -> None:
+    tracks_literal = ", ".join(
+        [
+            _REFERENCE_TRACK_LUA,
+            "{name = 'old clean name', guid = '{CLEAN}', items = {}, depth = 0, ext = {}}",
+        ]
+    )
+    state = _run_container_harness(
+        tracks_literal,
+        tmp_path,
+        project_ext_literal="{vgt = {clean_container = '{CLEAN}'}}",
+    )
+
+    clean = next(track for track in state["tracks"] if track["guid"] == "{CLEAN}")
+    assert clean["name"] == "[clean] Mix"
+    assert clean["container"] == "clean"
+    assert state["CLEAN_GUID"] == "{CLEAN}"
+
+
 def _names_are_unique(tracks: list[dict]) -> bool:
     names = [t["name"] for t in tracks]
     return len(names) == len(set(names))
@@ -2229,8 +2253,8 @@ def test_adopts_unmarked_named_and_bare_legacy_containers_leaving_contents_and_c
     tracks_literal = ", ".join(
         [
             _REFERENCE_TRACK_LUA,
-            "{name = '[clean] Old', guid = '{CLEANOLD}', items = {}, depth = 1, ext = {}, color = 999}",
-            "{name = 'ChildA', guid = '{CHILDA}', items = {}, depth = -1, ext = {}}",
+            "{name = '[clean] Old', guid = '{CLEANOLD}', items = {{position = 7, length = 3, label = 'keep parent item', custom = 'parent bytes'}}, depth = 1, ext = {}, color = 999}",
+            "{name = 'ChildA', guid = '{CHILDA}', items = {{position = 11, length = 2, label = 'keep child item', custom = 'child bytes'}}, depth = -1, ext = {}}",
             "{name = '[work]', guid = '{WORKOLD}', items = {}, depth = 0, ext = {}, color = 555}",
         ]
     )
@@ -2247,10 +2271,13 @@ def test_adopts_unmarked_named_and_bare_legacy_containers_leaving_contents_and_c
     assert by_name["[work] Mix"]["container"] == "work"
     assert by_name["[work] Mix"]["color"] == 555
 
-    # The child track inside the adopted [clean] folder is untouched: same
-    # name, same depth, still directly following its container.
+    # The adopted non-empty container remains a folder, and its child track
+    # and item data are byte-for-byte unchanged by adoption/reordering.
+    assert by_name["[clean] Mix"]["depth"] == 1
+    assert by_name["[clean] Mix"]["item_signature"] == "7,3,keep parent item,parent bytes"
     assert by_name["ChildA"]["depth"] == -1
     assert by_name["ChildA"]["guid"] == "{CHILDA}"
+    assert by_name["ChildA"]["item_signature"] == "11,2,keep child item,child bytes"
 
     assert state["CLEAN_GUID"] == "{CLEANOLD}"
     assert state["WORK_GUID"] == "{WORKOLD}"

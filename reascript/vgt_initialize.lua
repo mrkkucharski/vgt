@@ -740,6 +740,10 @@ local function maintain_container(def, reference_name)
 
   local track = find_top_level_track_by_guid(read_container_guid(def.ext_guid_key))
   if track then
+    -- The project GUID is enough to recover this container after a copied or
+    -- partially repaired project, but restore the companion per-track mark
+    -- too so future applies retain both durable identity records.
+    mark_track_container(track, def.kind)
     -- Re-derive and reset the name on every apply so a renamed reference
     -- track keeps all three folders in sync.
     reaper.GetSetMediaTrackInfo_String(track, "P_NAME", full_name, true)
