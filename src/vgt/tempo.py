@@ -158,7 +158,7 @@ def build_tempo_grid(
     settings: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Fit the beat grid to either a single constant BPM or a piecewise-linear
-    tempo map, per the non-invasive tempo-map rule."""
+    tempo map, per the "Respect the project" invariant in docs/AGENTS.md."""
     settings = settings or {}
     mean_interval = (beat_times[-1] - beat_times[0]) / (len(beat_times) - 1)
     constant_bpm, constant_residual = _fit_constant(beat_times)

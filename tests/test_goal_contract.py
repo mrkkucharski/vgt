@@ -1,4 +1,5 @@
-"""Offline executable acceptance contract for vgt's delivered baseline.
+"""Offline executable acceptance contract for the permanent invariants in
+`docs/AGENTS.md`.
 
 This is deliberately one workflow, not a replacement for focused unit tests.
 It uses the real RPP fixture, deterministic analysis/separation/transcription

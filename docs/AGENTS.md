@@ -78,11 +78,54 @@ it creates.
   regions, folders); only `[vgt]`-owned objects may be modified or removed.
 - Commit style: conventional commits (see git history).
 
-## Domain rules
+## Permanent invariants
 
-- **Non-destructive & idempotent** are hard invariants — never overwrite,
-  rename, or delete tracks/objects vgt didn't create; re-running a command must
-  not duplicate or corrupt anything.
-- Prefer manipulating the project through the REAPER API (ReaScript action) over
-  editing `.RPP` text, so changes appear live in the user's open project and
-  REAPER handles construction correctly.
+These are hard rules, not preferences. Source comments in `src/vgt/` and
+`reascript/` refer back to them by name, and `tests/test_goal_contract.py` is
+their offline executable contract: it drives the real RPP fixture through
+initialization, separation, transcription, variant lifecycle, apply/sync, and
+reconciliation to prove they hold. Change one of these only on an explicit human
+decision, and update the contract in the same change.
+
+- **Non-destructive, with an explicit working-copy boundary:** automatic
+  initialize/apply reconciliation changes only `[vgt]`-managed objects. It
+  may create, rename, recolour, and reposition the `[clean]` and `[work]`
+  container tracks, and reposition their blocks as a unit, but it never
+  modifies, renames, deletes, or reorders anything inside either container.
+  The separately user-invoked working-copy action is the sole exception: create
+  may affect only the copies it creates, and promote may affect only selected
+  tracks that both retain its durable working-copy mark and still start with
+  `[work]`. Promotion may move and rename those selected tracks into `[clean]`;
+  every unselected, ineligible, or reclaimed track remains untouched. If the
+  requested create or move would require changing an existing container child
+  merely to maintain REAPER folder structure, the action refuses unchanged.
+- **Idempotent:** re-running a workflow reconciles vgt-owned state without
+  duplicates or corruption.
+- **Live REAPER mutation:** project changes use REAPER's API (a ReaScript
+  action), never `.RPP` text editing, so changes appear live in the user's open
+  project and REAPER handles construction correctly.
+- **Analysis outside REAPER:** CPU-heavy DSP/ML stays in the Python CLI.
+- **Correctable:** human-synchronized chord, section, and key edits survive
+  future runs; machine detections remain available as a baseline. A deliberate
+  tempo-map correction is synchronized only by the separate
+  confirmation-gated action, never by ordinary correction sync.
+- **Separate ownership and evidence:** generated variants can be reconciled or
+  discarded and are peers -- ordered only for stable presentation, never
+  preferred, active, best, or selected -- while `[work]` copies remain
+  user-owned, distinguished by ownership/provenance, never color. Automatic
+  chord analysis stays audio-based; clean MIDI is a useful draft, never
+  ground truth.
+- **Respect the project:** vgt does not overwrite an existing or human-edited
+  tempo map; it falls back to non-invasive beat labels.
+- **Cost safe:** LALAL credentials are environment-only; paid work is cached,
+  checkpointed, and explicitly confirmed when forced or optional.
+
+## Retired designs
+
+The first practice-workflow milestone (a guided practice session: looping a
+section against a backing stem, muting the reference mix) was designed twice
+(issues #89 and #105) and both times spawned implementation sub-issues that
+closed without landing code on `main`. It is **not** planned work. See
+[the retired milestone design](practice-workflow-milestone.md) for the abandoned
+design-of-record; do not resurrect it into new issues without an explicit human
+decision to actually build it.
