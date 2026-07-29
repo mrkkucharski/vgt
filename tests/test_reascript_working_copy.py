@@ -271,40 +271,56 @@ def test_create_reports_and_leaves_a_structurally_changed_container_untouched() 
     assert result.endswith("|[work] Guitar:2|[work] altered:-2|Source:0")
 
 
-def test_create_refuses_a_populated_work_container_without_touching_its_child() -> None:
-    """Adding a copy would rewrite the current closing child from -1 to 0.
-
-    The action owns the new copy, not that existing user-owned child, so a
-    populated container is an atomic refusal even when its shape is valid.
-    """
+def test_create_appends_into_a_populated_work_container() -> None:
+    """A populated-but-structurally-intact [work] folder is not a dead end:
+    create reopens the current closing child (I_FOLDERDEPTH -1 -> 0) and
+    appends the new copy after it, leaving the existing child's name, marker,
+    and items otherwise untouched."""
     script = WORKING_COPY_SCRIPT.read_text()
     helpers_end = script.index("local function choose_action")
     lua_program = "\n".join(
         [
             "local tracks = {",
             "  {name='[work] Guitar', values={I_FOLDERDEPTH=1}, ext={['P_EXT:vgt_container']='work'}, items={}},",
-            "  {name='[work] Existing copy', values={I_FOLDERDEPTH=-1}, ext={['P_EXT:vgt_working_copy']='1',keep='payload'}, items={'item'}},",
+            "  {name='[work] Existing copy', values={I_FOLDERDEPTH=-1}, ext={['P_EXT:vgt_working_copy']='1',keep='payload'}, items={{C_LOCK=1}}},",
             "  {name='Source', values={I_FOLDERDEPTH=0}, ext={}, items={}, selected=true},",
+            "  {name='Outside', values={I_FOLDERDEPTH=0}, ext={}, items={}},",
             "}",
             "reaper = {}",
             "function reaper.CountTracks() return #tracks end",
             "function reaper.GetTrack(_, index) return tracks[index + 1] end",
             "function reaper.GetTrackName(track) return true, track.name end",
             "function reaper.GetMediaTrackInfo_Value(track, key) return track.values[key] or 0 end",
-            "function reaper.GetSetMediaTrackInfo_String(track, key, value, set) if set then error('must not change existing state') end; return true, track.ext[key] or '' end",
+            "function reaper.SetMediaTrackInfo_Value(track, key, value) track.values[key] = value end",
+            "function reaper.GetSetMediaTrackInfo_String(track, key, value, set)",
+            "  if set then if key == 'P_NAME' then track.name = value else track.ext[key] = value end; return true, value end",
+            "  return true, track.ext[key] or ''",
+            "end",
             "function reaper.CountSelectedTracks() return 1 end; function reaper.GetSelectedTrack() return tracks[3] end",
             "function reaper.GetTrackStateChunk() return true, 'TRACKID {SOURCE}' end",
-            "function reaper.SetTrackSelected() error('must preserve selection on refusal') end",
-            "function reaper.InsertTrackAtIndex() error('must not create a partial copy') end",
+            "function reaper.genGuid() return '{COPY}' end",
+            "function reaper.InsertTrackAtIndex(index) table.insert(tracks, index + 1, {name='', values={}, ext={}, items={}}) end",
+            "function reaper.SetTrackStateChunk(track, chunk) track.chunk=chunk end",
+            "function reaper.SetTrackSelected(track, selected) track.selected=selected end",
+            "function reaper.CountTrackMediaItems(track) return #track.items end",
+            "function reaper.GetTrackMediaItem(track, index) return track.items[index + 1] end",
+            "function reaper.SetMediaItemInfo_Value(item, key, value) item[key] = value end",
             "function reaper.Undo_BeginBlock() end; function reaper.Undo_EndBlock() end; function reaper.PreventUIRefresh() end",
-            "function reaper.ShowMessageBox(text) io.write(text) end",
+            "function reaper.TrackList_AdjustWindows() end; function reaper.UpdateArrange() end; function reaper.MarkProjectDirty() end",
+            "function reaper.ShowMessageBox(text) error('unexpected refusal: ' .. text) end",
             script[:helpers_end],
-            "create(); for _, track in ipairs(tracks) do io.write('|', track.name, ':', track.values.I_FOLDERDEPTH, ':', track.ext.keep or '', ':', track.selected and 'selected' or '') end",
+            "create()",
+            "for _, track in ipairs(tracks) do io.write(track.name, ':', track.values.I_FOLDERDEPTH, ':', track.ext.keep or '', ';') end",
         ]
     )
     result = _run(lua_program).stdout
-    assert result.startswith("The [work] container already has content")
-    assert result.endswith("|[work] Guitar:1::|[work] Existing copy:-1:payload:|Source:0::selected")
+    assert result == (
+        "[work] Guitar:1:;"
+        "[work] Existing copy:0:payload;"
+        "[work] Source:-1:;"
+        "Source:0:;"
+        "Outside:0:;"
+    )
 
 
 def test_create_reuses_an_empty_initialize_container() -> None:

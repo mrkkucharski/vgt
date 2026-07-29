@@ -320,20 +320,6 @@ local function create()
     )
     return
   end
-  -- Extending a populated REAPER folder would demote its existing closing
-  -- child from -1 to 0.  That child is user-owned container content, not a
-  -- newly created copy, so create has no authority to change it.  Leave both
-  -- the child and the caller's selection untouched instead.
-  if folder and not empty_container then
-    reaper.PreventUIRefresh(-1)
-    reaper.Undo_EndBlock("vgt: create working copy", -1)
-    reaper.ShowMessageBox(
-      "The [work] container already has content; creating a copy would alter an existing track's folder structure, so nothing was changed.",
-      "vgt working copy", 0
-    )
-    return
-  end
-
   -- Clear the selection only after every refusal path that must be atomic.
   -- The freshly created copies become the new selection below.
   for _, source in ipairs(sources) do reaper.SetTrackSelected(source, false) end
@@ -344,6 +330,15 @@ local function create()
     -- copy is inserted, so no empty intermediate folder state can persist.
     reaper.SetMediaTrackInfo_Value(folder, "I_FOLDERDEPTH", 1)
     insert_index = folder_index + 1
+  elseif folder_index then
+    -- A populated, structurally intact folder (guaranteed by the
+    -- is_complete_work_folder check above): reopen its current closing child
+    -- (I_FOLDERDEPTH -1 -> 0) so new copies can be appended after it. This
+    -- only touches the folder-depth flag, never the child's name, items, FX,
+    -- or any other content, so it stays within this action's ownership.
+    local last_child_index = folder_last_child_index(folder_index)
+    reaper.SetMediaTrackInfo_Value(reaper.GetTrack(0, last_child_index), "I_FOLDERDEPTH", 0)
+    insert_index = last_child_index + 1
   else
     -- Create the same scaffold initialize would: directly above its root when
     -- present, otherwise at the end. It becomes a folder immediately below.

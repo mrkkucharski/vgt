@@ -529,9 +529,13 @@ actions) and run it from REAPER's Action List. It offers create and promote:
   private working-copy marker on the copies; the copies are unmuted, unlocked,
   and immediately editable. If that container is absent, the action creates
   the same marked `[work]` scaffold itself, ready for initialize to reconcile.
-  If `[work]` already has a child, create refuses unchanged: REAPER stores the
-  folder's closing edge on that child, and extending it would alter user-owned
-  content.
+  If `[work]` already has children, create appends the new copies after them,
+  reopening the folder's closing edge (REAPER stores it as a flag on the
+  current last child) and moving it onto the new last copy. Only that
+  folder-depth flag is touched; existing children's names, items, FX, and
+  other content are left alone. If the container's folder structure has been
+  changed outside this action, create refuses and leaves it untouched rather
+  than guess how to repair it.
 - **Promote selected `[work]` tracks to `[clean]`** — a selected track is
   eligible only when it has the durable working-copy marker and its name still
   starts with `[work]`. Promotion moves, rather than copies, only those eligible
