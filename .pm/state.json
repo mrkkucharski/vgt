@@ -1,10 +1,10 @@
 {
   "current_issue": 243,
-  "session_id": "3091ffa3-dd05-4994-b245-9891dad448e3",
-  "pid": 9827,
-  "process_started_at": "Wed Jul 29 17:52:35 2026",
+  "session_id": "213f006f-f006-4ddd-9504-0c0afdb2609e",
+  "pid": 11243,
+  "process_started_at": "Wed Jul 29 18:00:07 2026",
   "agent": "codex",
-  "started_at": "2026-07-29T15:52:33.390117+00:00",
+  "started_at": "2026-07-29T16:00:06.002370+00:00",
   "scheduler_stalls": {},
   "budget": {
     "window_start": "2026-07-29T12:07:06.074972+00:00",
@@ -18,18 +18,13 @@
   "verification_followups": {
     "f0d8bfc9d2dc6da7a31609184e25c4d66d3986fd2340b33a83e98204fb86691e": "created"
   },
-  "role": "review",
+  "role": "implement",
   "branch": "issue-243-recertify-current-main-after-transcripti",
   "worktree_path": "/Users/marekkucharski/projects/.pm-worktrees/vgt/issue-243",
-  "pr_number": 244,
+  "pr_number": null,
   "followup_generation": {
-    "fingerprint": "831bf236528c51866d8d92efae6169d55ddc9462ff7bb23d1edcdbdec3fcd354",
-    "items": {
-      "7b30e3955323b10b7b43b3e3c5a90749e66c58523c8cdc5be1cf58d45fd51a2e": {
-        "title": "Recertify current main after transcription and working-copy changes",
-        "status": "created"
-      }
-    }
+    "fingerprint": "fc3693350c67067c8a71d06b2b4651d2927bed37f834070a36b5f2db12c0b76a",
+    "items": {}
   },
   "fix_counts": {
     "7": 2,
@@ -69,11 +64,11 @@
   "pending_transition": {
     "issue": 243,
     "target": "working",
-    "event": "agent.review_started",
+    "event": "agent.started",
     "detail": {
       "issue": 243,
       "agent": "codex",
-      "pr": 244
+      "branch": "issue-243-recertify-current-main-after-transcripti"
     },
     "cleanup": {}
   }
