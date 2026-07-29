@@ -41,6 +41,14 @@ def _project_copy(tmp_path: Path) -> Path:
     return destination / "Reaper Project.RPP"
 
 
+def _default_variant(record: dict[str, Any]) -> dict[str, Any]:
+    """The automatically managed candidate an analyze run reconciles: a
+    target's first retained variant. Since #223 removed the pre-v13 flat
+    writer, this is the only per-target record shape `analyze` produces, so
+    a target's transcription result is always read through here."""
+    return record["variants"][record["variant_order"][0]]
+
+
 def _add_fake_stem(project: Path, sidecar: dict, target: str, content: bytes) -> None:
     """Fabricate a `stems.artifacts[target]` record pointing at a real file
     holding `content`, without running real separation -- `resolve_target_source`
@@ -448,7 +456,7 @@ def test_analyze_writes_v2_sidecar_with_skeleton_and_provenance(tmp_path: Path) 
     # No separation ran, so the default `guitar` target has no stem to
     # transcribe yet -- retained as `skipped-missing-source`, never falling
     # back to the mix.
-    assert transcription["targets"]["guitar"]["status"] == "skipped-missing-source"
+    assert _default_variant(transcription["targets"]["guitar"])["status"] == "skipped-missing-source"
     provenance = result["analysis"]["provenance"]
     assert provenance["tool"] == "vgt"
     assert provenance["reference_source_path"].endswith("The Seven Rivers (Full March - 3_00).mp3")
@@ -1077,8 +1085,8 @@ def test_refresh_target_per_target_cache_independence(tmp_path: Path) -> None:
     first = analyze(project, stages=("transcription",), transcription_targets=("guitar", "bass"), transcriber=FakeTranscriber())
     guitar_first = first["analysis"]["transcription"]["targets"]["guitar"]
     bass_first = first["analysis"]["transcription"]["targets"]["bass"]
-    assert guitar_first["status"] == "transcribed"
-    assert bass_first["status"] == "transcribed"
+    assert _default_variant(guitar_first)["status"] == "transcribed"
+    assert _default_variant(bass_first)["status"] == "transcribed"
 
     # Changing only the guitar stem's content must never touch bass's entry.
     sidecar = read_sidecar(project)
@@ -1086,7 +1094,10 @@ def test_refresh_target_per_target_cache_independence(tmp_path: Path) -> None:
     write_sidecar(project, sidecar)
 
     second = analyze(project, stages=("transcription",), transcription_targets=("guitar", "bass"), transcriber=FakeTranscriber())
-    assert second["analysis"]["transcription"]["targets"]["guitar"]["input_hash"] != guitar_first["input_hash"]
+    assert (
+        _default_variant(second["analysis"]["transcription"]["targets"]["guitar"])["input_hash"]
+        != _default_variant(guitar_first)["input_hash"]
+    )
     assert second["analysis"]["transcription"]["targets"]["bass"] == bass_first
 
 
@@ -1100,10 +1111,7 @@ def test_variant_compatibility_refresh_preserves_other_candidates(tmp_path: Path
     _add_fake_stem(project, sidecar, "guitar", b"guitar-audio")
     write_sidecar(project, sidecar)
 
-    first = analyze(
-        project, stages=("transcription",), transcription_targets=("guitar",),
-        transcriber=FakeTranscriber(), variant_compatibility=True,
-    )
+    first = analyze(project, stages=("transcription",), transcription_targets=("guitar",), transcriber=FakeTranscriber())
     target = first["analysis"]["transcription"]["targets"]["guitar"]
     assert "selected_variant_id" not in target
     default_id = target["variant_order"][0]
@@ -1116,10 +1124,7 @@ def test_variant_compatibility_refresh_preserves_other_candidates(tmp_path: Path
     target["variant_order"].append(alternative_id)
     write_sidecar(project, sidecar)
 
-    refreshed = analyze(
-        project, stages=("transcription",), transcription_targets=("guitar",),
-        transcriber=FakeTranscriber(), variant_compatibility=True,
-    )
+    refreshed = analyze(project, stages=("transcription",), transcription_targets=("guitar",), transcriber=FakeTranscriber())
     target = refreshed["analysis"]["transcription"]["targets"]["guitar"]
     assert target["variant_order"] == [default_id, alternative_id]
     assert set(target["variants"]) == {default_id, alternative_id}
@@ -1141,7 +1146,10 @@ def test_selecting_one_mode_changes_only_its_target_settings_hash(tmp_path: Path
     set_transcription_modes(project, {"guitar": "guitar-acoustic"})
     second = analyze(project, stages=("transcription",), transcription_targets=("guitar", "bass"), transcriber=FakeTranscriber())
 
-    assert second["analysis"]["transcription"]["targets"]["guitar"]["settings_hash"] != guitar_first["settings_hash"]
+    assert (
+        _default_variant(second["analysis"]["transcription"]["targets"]["guitar"])["settings_hash"]
+        != _default_variant(guitar_first)["settings_hash"]
+    )
     assert second["analysis"]["transcription"]["targets"]["bass"] == bass_first
 
 
@@ -1150,14 +1158,14 @@ def test_refresh_target_fills_in_once_a_missing_stem_arrives(tmp_path: Path) -> 
     _write_v1_sidecar(project)
 
     first = analyze(project, stages=("transcription",), transcription_targets=("vocals",), transcriber=FakeTranscriber())
-    assert first["analysis"]["transcription"]["targets"]["vocals"]["status"] == "skipped-missing-source"
+    assert _default_variant(first["analysis"]["transcription"]["targets"]["vocals"])["status"] == "skipped-missing-source"
 
     sidecar = read_sidecar(project)
     _add_fake_stem(project, sidecar, "vocals", b"vocals-audio")
     write_sidecar(project, sidecar)
 
     second = analyze(project, stages=("transcription",), transcription_targets=("vocals",), transcriber=FakeTranscriber())
-    assert second["analysis"]["transcription"]["targets"]["vocals"]["status"] == "transcribed"
+    assert _default_variant(second["analysis"]["transcription"]["targets"]["vocals"])["status"] == "transcribed"
 
 
 def test_refresh_target_force_recomputes_every_unchanged_target(tmp_path: Path) -> None:
@@ -1168,15 +1176,22 @@ def test_refresh_target_force_recomputes_every_unchanged_target(tmp_path: Path) 
     _add_fake_stem(project, sidecar, "bass", b"bass-audio")
     write_sidecar(project, sidecar)
 
-    class _CountingTranscriber:
-        name = "fake"
+    class _CountingTranscriber(FakeTranscriber):
+        """Counts backend invocations. Basic Pitch targets reach the backend
+        through `detect_raw` (one call per uncached detection group), drums
+        through `transcribe`; counting both keeps this a count of real backend
+        work regardless of which half a target uses."""
 
         def __init__(self) -> None:
             self.calls = 0
 
         def transcribe(self, source, destination_dir, spec, progress=None):
             self.calls += 1
-            return FakeTranscriber().transcribe(source, destination_dir, spec, progress)
+            return super().transcribe(source, destination_dir, spec, progress)
+
+        def detect_raw(self, source, destination_dir, spec, progress=None):
+            self.calls += 1
+            return super().detect_raw(source, destination_dir, spec, progress)
 
     transcriber = _CountingTranscriber()
     targets = ("guitar", "bass")
@@ -1200,13 +1215,16 @@ def test_refresh_target_isolates_one_targets_failure_from_the_others(tmp_path: P
     _add_fake_stem(project, sidecar, "bass", b"bass-audio")
     write_sidecar(project, sidecar)
 
-    class _PartiallyFailingTranscriber:
-        name = "fake"
-
+    class _PartiallyFailingTranscriber(FakeTranscriber):
         def transcribe(self, source, destination_dir, spec, progress=None):
             if source.name == "guitar.bin":
                 raise TranscriptionError("boom: guitar backend exploded")
-            return FakeTranscriber().transcribe(source, destination_dir, spec, progress)
+            return super().transcribe(source, destination_dir, spec, progress)
+
+        def detect_raw(self, source, destination_dir, spec, progress=None):
+            if source.name == "guitar.bin":
+                raise TranscriptionError("boom: guitar backend exploded")
+            return super().detect_raw(source, destination_dir, spec, progress)
 
     result = analyze(
         project,
@@ -1215,8 +1233,8 @@ def test_refresh_target_isolates_one_targets_failure_from_the_others(tmp_path: P
         transcriber=_PartiallyFailingTranscriber(),
     )
 
-    guitar = result["analysis"]["transcription"]["targets"]["guitar"]
-    bass = result["analysis"]["transcription"]["targets"]["bass"]
+    guitar = _default_variant(result["analysis"]["transcription"]["targets"]["guitar"])
+    bass = _default_variant(result["analysis"]["transcription"]["targets"]["bass"])
     assert guitar["status"] == "error"
     assert "boom: guitar backend exploded" in guitar["error"]
     assert bass["status"] == "transcribed"
@@ -1242,8 +1260,12 @@ def test_refresh_target_uses_the_injected_router_and_keeps_drum_cache_independen
     targets = ("guitar", "bass", "drums")
     first = analyze(project, stages=("transcription",), transcription_targets=targets, transcriber_router=router)
     first_targets = first["analysis"]["transcription"]["targets"]
-    assert first_targets["drums"]["backend"] == "drumscript"
-    assert first_targets["guitar"]["backend"] == first_targets["bass"]["backend"] == "basic-pitch"
+    assert _default_variant(first_targets["drums"])["backend"] == "drumscript"
+    assert (
+        _default_variant(first_targets["guitar"])["backend"]
+        == _default_variant(first_targets["bass"])["backend"]
+        == "basic-pitch"
+    )
 
     # Changing a DrumScript-only option changes only the drums settings hash;
     # the normal cache path therefore leaves every Basic Pitch target intact.
@@ -1255,14 +1277,20 @@ def test_refresh_target_uses_the_injected_router_and_keeps_drum_cache_independen
     )
     second = analyze(project, stages=("transcription",), transcription_targets=targets, transcriber_router=changed_router)
     second_targets = second["analysis"]["transcription"]["targets"]
-    assert second_targets["drums"]["settings_hash"] != first_targets["drums"]["settings_hash"]
+    assert (
+        _default_variant(second_targets["drums"])["settings_hash"]
+        != _default_variant(first_targets["drums"])["settings_hash"]
+    )
     assert second_targets["guitar"] == first_targets["guitar"]
     assert second_targets["bass"] == first_targets["bass"]
-    drum = second_targets["drums"]
-    assert drum["events_file"] == "transcription/drums.json"
+    drum = _default_variant(second_targets["drums"])
+    # Every artifact lives under its target's own directory (#223).
+    assert drum["events_file"] == f"transcription/drums/{second_targets['drums']['variant_order'][0]}.json"
     assert drum["event_count"] == 4
     assert drum["pitch_range_midi"] is None
-    assert drum["confidence"] is None
+    # A variant record carries no `confidence` at all -- it was a pre-v13 flat
+    # field, and DrumScript never reported one either way.
+    assert drum.get("confidence") is None
 
 
 def test_drum_backend_error_is_isolated_from_other_transcription_targets(tmp_path: Path) -> None:
@@ -1282,13 +1310,63 @@ def test_drum_backend_error_is_isolated_from_other_transcription_targets(tmp_pat
     router = TargetTranscriberRouter(FakeTranscriber(), FailingDrumBackend(), drumscript_targets=("drums",))
     result = analyze(project, stages=("transcription",), transcription_targets=("guitar", "drums"), transcriber_router=router)
 
-    assert result["analysis"]["transcription"]["targets"]["guitar"]["status"] == "transcribed"
-    drums = result["analysis"]["transcription"]["targets"]["drums"]
+    assert _default_variant(result["analysis"]["transcription"]["targets"]["guitar"])["status"] == "transcribed"
+    drums = _default_variant(result["analysis"]["transcription"]["targets"]["drums"])
     assert drums["status"] == "error"
     assert drums["backend"] == "drumscript"
     assert "drum backend failed" in drums["error"]
 
 
+def test_analyze_relocates_a_legacy_flat_layout_and_sweeps_its_leftovers(tmp_path: Path) -> None:
+    """The state a real pre-v13 project is in (#223): one target's artifacts
+    still at their flat paths with the record pointing there, another target's
+    flat files stranded by an earlier re-reconcile, and an empty detection
+    work directory. One analyze must leave every artifact under
+    `transcription/<target>/` -- without re-running the backend, since
+    relocating a file changes no identity."""
+    project = _project_copy(tmp_path)
+    _write_v1_sidecar(project)
+    sidecar = read_sidecar(project)
+    _add_fake_stem(project, sidecar, "guitar", b"guitar-audio")
+    write_sidecar(project, sidecar)
+    transcriber = FakeTranscriber()
+    analyze(project, stages=("transcription",), transcription_targets=("guitar",), transcriber=transcriber)
+
+    # Rewind that result into the pre-v13 shape: files at the flat paths, the
+    # record naming them, plus leftovers from a target already re-reconciled.
+    sidecar = read_sidecar(project)
+    namespace_dir = artifact_namespace_dir(project, sidecar["analysis"]["stems"]["artifact_namespace"])
+    record = sidecar["analysis"]["transcription"]["targets"]["guitar"]
+    variant_id = record["variant_order"][0]
+    variant = record["variants"][variant_id]
+    for key, flat_name in (("midi_file", midi_artifact_name("guitar")), ("notes_file", notes_artifact_name("guitar"))):
+        (namespace_dir / variant[key]).replace(namespace_dir / flat_name)
+        variant[key] = flat_name
+        record[key] = flat_name
+    record["status"] = "transcribed"
+    (namespace_dir / midi_artifact_name("drums")).write_bytes(b"orphaned drum midi")
+    (namespace_dir / events_artifact_name("drums")).write_bytes(b"orphaned drum events")
+    (namespace_dir / "transcription" / "_work-detection").mkdir(exist_ok=True)
+    write_sidecar(project, sidecar)
+    # A genuine flat record re-derives its own deterministic variant id at read
+    # time (`sidecar._legacy_variant_id`); that migrated id is the one the
+    # relocated artifacts must be named for.
+    variant_id = read_sidecar(project)["analysis"]["transcription"]["targets"]["guitar"]["variant_order"][0]
+
+    result = analyze(project, stages=("transcription",), transcription_targets=("guitar",), transcriber=transcriber)
+
+    transcription_dir = namespace_dir / "transcription"
+    assert sorted(child.name for child in transcription_dir.iterdir()) == ["cache", "guitar"]
+    assert sorted(child.name for child in (transcription_dir / "guitar").iterdir()) == [
+        f"{variant_id}.csv", f"{variant_id}.mid",
+    ]
+    moved = _default_variant(result["analysis"]["transcription"]["targets"]["guitar"])
+    assert moved["midi_file"] == f"transcription/guitar/{variant_id}.mid"
+    assert moved["notes_file"] == f"transcription/guitar/{variant_id}.csv"
+    assert moved["status"] == "transcribed"
+    # Persisted, not just returned.
+    persisted = read_sidecar(project)["analysis"]["transcription"]["targets"]["guitar"]
+    assert persisted["variants"][variant_id]["midi_file"] == f"transcription/guitar/{variant_id}.mid"
 
 
 def test_add_transcription_targets_dedupes_and_preserves_order(tmp_path: Path) -> None:

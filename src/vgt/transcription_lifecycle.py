@@ -22,7 +22,7 @@ from pathlib import Path
 from typing import Any, Callable
 import secrets
 
-from .analysis import reference_source_path
+from .analysis import apply_artifact_layout, reference_source_path
 from .drum_cleanup import DRUM_CLEANUP_PROFILES
 from .project import locate_project
 from .sidecar import (
@@ -240,6 +240,13 @@ def add_variant(
 
     update_analysis(project_path, persist_namespace)
     namespace_dir = artifact_namespace_dir(project_path, namespace)
+    # Adding a variant to a target whose first result predates the per-target
+    # layout must not leave that older artifact behind at its flat path (#223).
+    # Re-derive the target view afterwards: the relocation rewrites the
+    # retained variants' recorded paths, and `reconcile_variants` below is
+    # handed exactly those records as its `existing_variants`.
+    apply_artifact_layout(project_path, namespace, analysis, emit=emit)
+    record = target_record(transcription, target)
 
     resolved_source = resolve_target_source(project_path, target, analysis, reference_source=reference_source_path(project_path, sidecar))
     source, artifact = resolved_source if resolved_source is not None else (None, None)

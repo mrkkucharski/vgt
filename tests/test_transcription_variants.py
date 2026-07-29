@@ -16,6 +16,7 @@ from vgt.transcription_variants import (
     cleanup_hash,
     detection_hash,
     garbage_collect_raw_cache,
+    reconcile_artifact_layout,
     reconcile_variants,
 )
 
@@ -609,3 +610,182 @@ def test_detection_hash_and_cleanup_hash_are_deterministic_and_order_independent
     ch_second = cleanup_hash("raw-hash", input_hash, detail.spec)
     assert ch_first == ch_second
     assert cleanup_hash("other-raw-hash", input_hash, detail.spec) != ch_first
+
+
+# --- artifact layout reconciliation (#223) ----------------------------------
+
+
+def _legacy_target_record(target: str, variant_id: str, *, notes: bool = True, events: bool = False) -> dict[str, Any]:
+    """A target record in the shape `sidecar.migrate_transcription_target`
+    produces for a pre-v13 sidecar: a `default` variant carrying the flat
+    artifact paths verbatim, with the record's own flat compatibility fields
+    still naming the very same files."""
+    variant: dict[str, Any] = {
+        "label": "default",
+        "status": "transcribed",
+        "input_hash": "input-hash",
+        "settings_hash": "settings-hash",
+        "detection_hash": "detection-hash",
+        "cleanup_hash": "cleanup-hash",
+        "midi_file": f"transcription/{target}.mid",
+        "notes_file": f"transcription/{target}.csv" if notes else None,
+        "events_file": f"transcription/{target}.json" if events else None,
+    }
+    return {
+        "status": "transcribed",
+        "midi_file": variant["midi_file"],
+        "notes_file": variant["notes_file"],
+        "events_file": variant["events_file"],
+        "variants": {variant_id: variant},
+        "variant_order": [variant_id],
+        "discarded_variants": [],
+    }
+
+
+def _write_artifact(namespace_dir: Path, name: str, content: bytes = b"artifact") -> Path:
+    path = namespace_dir / name
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(content)
+    return path
+
+
+def test_layout_relocates_a_migrated_flat_variant_and_rewrites_its_record(tmp_path: Path) -> None:
+    """The case every pre-v13 project is in: `upgrade()` derived a `default`
+    variant but deliberately left the files at their flat paths."""
+    namespace_dir = tmp_path / "vgt" / "abc123"
+    _write_artifact(namespace_dir, "transcription/guitar.mid", b"midi")
+    _write_artifact(namespace_dir, "transcription/guitar.csv", b"notes")
+    targets = {"guitar": _legacy_target_record("guitar", "ca81e27f")}
+
+    outcome = reconcile_artifact_layout(namespace_dir=namespace_dir, targets=targets)
+
+    variant = targets["guitar"]["variants"]["ca81e27f"]
+    assert variant["midi_file"] == "transcription/guitar/ca81e27f.mid"
+    assert variant["notes_file"] == "transcription/guitar/ca81e27f.csv"
+    assert (namespace_dir / "transcription/guitar/ca81e27f.mid").read_bytes() == b"midi"
+    assert (namespace_dir / "transcription/guitar/ca81e27f.csv").read_bytes() == b"notes"
+    assert not (namespace_dir / "transcription/guitar.mid").exists()
+    assert not (namespace_dir / "transcription/guitar.csv").exists()
+    # The record's own compatibility view names the same artifacts and must
+    # not be left pointing at a path that no longer exists.
+    assert targets["guitar"]["midi_file"] == "transcription/guitar/ca81e27f.mid"
+    assert outcome.records_changed
+    # Relocating a file changes no identity, so nothing here may invalidate the
+    # variant's cache and force a needless re-transcription.
+    assert (variant["input_hash"], variant["settings_hash"], variant["detection_hash"], variant["cleanup_hash"]) == (
+        "input-hash", "settings-hash", "detection-hash", "cleanup-hash",
+    )
+    assert variant["status"] == "transcribed"
+
+
+def test_layout_sweeps_a_flat_orphan_no_live_variant_references(tmp_path: Path) -> None:
+    """What a variant's first re-reconcile leaves behind: the record already
+    points into the target directory, and the flat file is stranded."""
+    namespace_dir = tmp_path / "vgt" / "abc123"
+    _write_artifact(namespace_dir, "transcription/drums.mid", b"stale-midi")
+    _write_artifact(namespace_dir, "transcription/drums.json", b"stale-events")
+    _write_artifact(namespace_dir, "transcription/drums/791c654b.mid", b"current-midi")
+    _write_artifact(namespace_dir, "transcription/drums/791c654b.json", b"current-events")
+    targets = {
+        "drums": {
+            "variants": {
+                "791c654b": {
+                    "label": "default",
+                    "status": "transcribed",
+                    "midi_file": "transcription/drums/791c654b.mid",
+                    "events_file": "transcription/drums/791c654b.json",
+                }
+            },
+            "variant_order": ["791c654b"],
+            "discarded_variants": [],
+        }
+    }
+
+    outcome = reconcile_artifact_layout(namespace_dir=namespace_dir, targets=targets)
+
+    assert not (namespace_dir / "transcription/drums.mid").exists()
+    assert not (namespace_dir / "transcription/drums.json").exists()
+    assert (namespace_dir / "transcription/drums/791c654b.mid").read_bytes() == b"current-midi"
+    assert sorted(outcome.removed) == ["transcription/drums.json", "transcription/drums.mid"]
+    assert not outcome.records_changed  # nothing recorded pointed at the orphans
+
+
+def test_layout_never_sweeps_a_flat_artifact_a_live_variant_still_references(tmp_path: Path) -> None:
+    """A record whose id the ReaScript would refuse to turn into a path is
+    left strictly alone -- including its file, which stays referenced."""
+    namespace_dir = tmp_path / "vgt" / "abc123"
+    _write_artifact(namespace_dir, "transcription/bass.mid", b"midi")
+    targets = {
+        "bass": {
+            "variants": {"../escape": {"label": "default", "status": "transcribed", "midi_file": "transcription/bass.mid"}},
+            "variant_order": ["../escape"],
+        }
+    }
+
+    outcome = reconcile_artifact_layout(namespace_dir=namespace_dir, targets=targets)
+
+    assert (namespace_dir / "transcription/bass.mid").is_file()
+    assert not list(namespace_dir.glob("transcription/bass/*"))
+    assert outcome.removed == []
+
+
+def test_layout_records_a_missing_flat_artifact_at_its_new_name_without_crashing(tmp_path: Path) -> None:
+    namespace_dir = tmp_path / "vgt" / "abc123"
+    (namespace_dir / "transcription").mkdir(parents=True)
+    targets = {"guitar": _legacy_target_record("guitar", "ca81e27f")}
+
+    messages: list[str] = []
+    outcome = reconcile_artifact_layout(namespace_dir=namespace_dir, targets=targets, emit=messages.append)
+
+    assert targets["guitar"]["variants"]["ca81e27f"]["midi_file"] == "transcription/guitar/ca81e27f.mid"
+    assert outcome.missing == ["transcription/guitar/ca81e27f.mid", "transcription/guitar/ca81e27f.csv"]
+    # Never silently: a dangling record is reported, not swallowed.
+    assert any("is missing" in message for message in messages)
+
+
+def test_layout_removes_only_empty_work_directories(tmp_path: Path) -> None:
+    namespace_dir = tmp_path / "vgt" / "abc123"
+    (namespace_dir / "transcription" / "_work-detection" / "deadbeef").mkdir(parents=True)
+    (namespace_dir / "transcription" / "_work-guitar-abc").mkdir(parents=True)
+    _write_artifact(namespace_dir, "transcription/_work-drums-xyz/in-flight.mid", b"scratch")
+
+    outcome = reconcile_artifact_layout(namespace_dir=namespace_dir, targets={})
+
+    assert not (namespace_dir / "transcription" / "_work-detection").exists()
+    assert not (namespace_dir / "transcription" / "_work-guitar-abc").exists()
+    assert (namespace_dir / "transcription" / "_work-drums-xyz" / "in-flight.mid").is_file()
+    assert sorted(outcome.removed) == ["transcription/_work-detection/", "transcription/_work-guitar-abc/"]
+
+
+def test_layout_reconciliation_is_idempotent(tmp_path: Path) -> None:
+    namespace_dir = tmp_path / "vgt" / "abc123"
+    _write_artifact(namespace_dir, "transcription/guitar.mid", b"midi")
+    _write_artifact(namespace_dir, "transcription/guitar.csv", b"notes")
+    _write_artifact(namespace_dir, "transcription/drums.mid", b"orphan")
+    targets = {"guitar": _legacy_target_record("guitar", "ca81e27f")}
+
+    reconcile_artifact_layout(namespace_dir=namespace_dir, targets=targets)
+    before = sorted(str(path.relative_to(namespace_dir)) for path in namespace_dir.rglob("*") if path.is_file())
+
+    second = reconcile_artifact_layout(namespace_dir=namespace_dir, targets=targets)
+
+    after = sorted(str(path.relative_to(namespace_dir)) for path in namespace_dir.rglob("*") if path.is_file())
+    assert before == after == ["transcription/guitar/ca81e27f.csv", "transcription/guitar/ca81e27f.mid"]
+    assert not second.changed
+
+
+def test_layout_catches_up_a_stale_record_whose_file_another_pass_already_moved(tmp_path: Path) -> None:
+    """`analysis.apply_artifact_layout` runs this twice -- once on its
+    in-memory analysis, once on the authoritative on-disk copy inside the
+    atomic sidecar update -- so a record still naming the flat path after the
+    file has moved must resolve to the new name, not be reported missing."""
+    namespace_dir = tmp_path / "vgt" / "abc123"
+    _write_artifact(namespace_dir, "transcription/guitar/ca81e27f.mid", b"midi")
+    _write_artifact(namespace_dir, "transcription/guitar/ca81e27f.csv", b"notes")
+    targets = {"guitar": _legacy_target_record("guitar", "ca81e27f")}
+
+    outcome = reconcile_artifact_layout(namespace_dir=namespace_dir, targets=targets)
+
+    assert targets["guitar"]["variants"]["ca81e27f"]["midi_file"] == "transcription/guitar/ca81e27f.mid"
+    assert outcome.missing == []
+    assert outcome.records_changed

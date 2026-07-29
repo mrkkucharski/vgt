@@ -41,12 +41,13 @@ without inventing an unsupported drum cleanup profile.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Callable
 import hashlib
 import json
+import re
 import shutil
 
 from .transcribe import (
@@ -58,7 +59,11 @@ from .transcribe import (
     TranscriptionError,
     TranscriptionResult,
     TranscriptionSpec,
+    VALID_TARGETS,
     derive_variant_artifacts,
+    events_artifact_name,
+    midi_artifact_name,
+    notes_artifact_name,
     parse_notes_csv,
     raw_notes_content_hash,
     spec_hash,
@@ -650,3 +655,213 @@ def garbage_collect_raw_cache(
                 group_dir.rmdir()
         removed.append(detection_hash_value)
     return kept, removed
+
+
+# The three artifact kinds a variant can record, each paired with the pre-v13
+# flat name it may still carry and the per-target name it belongs at today
+# (issue #223). `sidecar.migrate_transcription_target` deliberately keeps a
+# migrated variant's flat path verbatim -- it is an in-memory transform and
+# must not touch the filesystem -- so relocating those files is this module's
+# job, on the same footing as `garbage_collect_raw_cache`.
+_ARTIFACT_KINDS: tuple[tuple[str, Callable[[str], str], Callable[[str, str], str]], ...] = (
+    ("midi_file", midi_artifact_name, variant_midi_name),
+    ("notes_file", notes_artifact_name, variant_notes_name),
+    ("events_file", events_artifact_name, variant_events_name),
+)
+
+# Mirrors `vgt_initialize.lua`'s `valid_midi_artifact` guard: a variant id
+# becomes a path component, so never build one from an id the ReaScript would
+# refuse to reconstruct.
+_SAFE_VARIANT_ID = re.compile(r"^[A-Za-z0-9_-]+$")
+
+_LEGACY_NAMES: dict[str, Callable[[str], str]] = {key: legacy_name for key, legacy_name, _variant_name in _ARTIFACT_KINDS}
+
+_WORK_DIR_PREFIX = "_work-"
+
+
+@dataclass
+class LayoutReconciliation:
+    """What one `reconcile_artifact_layout` pass did.
+
+    `moved` and `missing` are artifact names whose record was rewritten (the
+    file relocated, or recorded at its current name while absent), so a caller
+    seeing either must persist the records. `removed` names files and scratch
+    directories deleted, which needs no sidecar change.
+    """
+
+    moved: list[str] = field(default_factory=list)
+    missing: list[str] = field(default_factory=list)
+    removed: list[str] = field(default_factory=list)
+
+    @property
+    def records_changed(self) -> bool:
+        """Whether any variant record's artifact path was rewritten."""
+        return bool(self.moved or self.missing)
+
+    @property
+    def changed(self) -> bool:
+        return bool(self.moved or self.missing or self.removed)
+
+
+def _live_artifact_references(targets: dict[str, Any]) -> set[str]:
+    """Every artifact path any live record still points at.
+
+    Deliberately includes a legacy record's own top-level flat fields as well
+    as its variants': `sidecar.migrate_transcription_target` is additive, so
+    an unmigrated record names the same file twice and neither name may be
+    treated as unreferenced.
+    """
+    referenced: set[str] = set()
+    for record in targets.values():
+        if not isinstance(record, dict):
+            continue
+        holders: list[dict[str, Any]] = [record]
+        variants = record.get("variants")
+        if isinstance(variants, dict):
+            holders.extend(variant for variant in variants.values() if isinstance(variant, dict))
+        for holder in holders:
+            for key, _legacy_name, _variant_name in _ARTIFACT_KINDS:
+                recorded = holder.get(key)
+                if isinstance(recorded, str):
+                    referenced.add(recorded)
+    return referenced
+
+
+def _relocate_variant(
+    variant: dict[str, Any],
+    *,
+    target: str,
+    variant_id: str,
+    namespace_dir: Path,
+    outcome: LayoutReconciliation,
+    say: Callable[[str], None],
+) -> dict[str, str]:
+    """Point one variant record at `transcription/<target>/<variant-id>.*`,
+    moving the file when it is still sitting at the flat path, and return the
+    `{record key: new name}` pairs it rewrote.
+
+    Idempotent by construction, because it decides from the filesystem rather
+    than from the record: a record whose file another pass already moved is
+    simply rewritten in place. That is what lets a caller run this against its
+    in-memory analysis and again against the authoritative on-disk copy inside
+    an atomic sidecar update.
+    """
+    rewritten: dict[str, str] = {}
+    for key, legacy_name, variant_name in _ARTIFACT_KINDS:
+        recorded = variant.get(key)
+        if recorded != legacy_name(target):
+            continue
+        destination_name = variant_name(target, variant_id)
+        source_path = namespace_dir / recorded
+        destination_path = namespace_dir / destination_name
+        if source_path.is_file():
+            if destination_path.is_file():
+                # A previous pass already produced the artifact at its current
+                # name (this record simply had not been rewritten yet); the
+                # flat copy is the stale one.
+                source_path.unlink()
+            else:
+                destination_path.parent.mkdir(parents=True, exist_ok=True)
+                source_path.replace(destination_path)
+            outcome.moved.append(destination_name)
+            say(f"transcription layout — moved {recorded} to {destination_name}")
+        elif destination_path.is_file():
+            outcome.moved.append(destination_name)  # already relocated; record catches up
+        else:
+            outcome.missing.append(destination_name)
+            say(f"transcription layout — {target}/{variant_id}: recorded {recorded} is missing; recorded as {destination_name}")
+        variant[key] = destination_name
+        rewritten[key] = destination_name
+    return rewritten
+
+
+def _sweep_flat_artifacts(namespace_dir: Path, targets: dict[str, Any], outcome: LayoutReconciliation, say: Callable[[str], None]) -> None:
+    """Delete a flat `transcription/<target>.<ext>` no live record references.
+
+    Candidates are derived from `VALID_TARGETS` and the fixed artifact kinds,
+    never from a directory glob, and each is checked against the live
+    reference set first -- the same "only delete what the sidecar says is
+    dead" discipline `garbage_collect_raw_cache` and
+    `transcription_lifecycle._delete_variant_artifacts` follow.
+    """
+    referenced = _live_artifact_references(targets)
+    for target in VALID_TARGETS:
+        for _key, legacy_name, _variant_name in _ARTIFACT_KINDS:
+            name = legacy_name(target)
+            if name in referenced:
+                continue
+            path = namespace_dir / name
+            if path.is_file():
+                path.unlink()
+                outcome.removed.append(name)
+                say(f"transcription layout — removed orphaned {name}")
+
+
+def _sweep_empty_work_dirs(namespace_dir: Path, outcome: LayoutReconciliation) -> None:
+    """Remove `transcription/_work-*` scratch directories left empty by an
+    earlier run. Each reconcile already deletes its own work directory in a
+    `finally`, but the shared `_work-detection` parent it creates outlives
+    them; only genuinely empty directories are removed, so an interrupted
+    run's in-flight scratch is never swept out from under it."""
+    root = namespace_dir / "transcription"
+    if not root.is_dir():
+        return
+    for child in sorted(root.iterdir()):
+        if not child.is_dir() or not child.name.startswith(_WORK_DIR_PREFIX):
+            continue
+        for grandchild in sorted(child.iterdir()):
+            if grandchild.is_dir():
+                try:
+                    grandchild.rmdir()
+                except OSError:
+                    pass  # still holds an interrupted run's scratch
+        try:
+            child.rmdir()
+        except OSError:
+            continue
+        outcome.removed.append(f"transcription/{child.name}/")
+
+
+def reconcile_artifact_layout(
+    *, namespace_dir: Path, targets: dict[str, Any], emit: Callable[[str], None] | None = None
+) -> LayoutReconciliation:
+    """Bring one project's transcription artifacts onto the current layout:
+    every artifact under `transcription/<target>/`, with nothing but per-target
+    directories and `cache/` directly inside `transcription/` (issue #223).
+
+    Three steps, in order: relocate any artifact still recorded at a pre-v13
+    flat path and rewrite the record; delete flat leftovers no live record
+    references (the orphans a variant's first re-reconcile leaves behind when
+    it writes into the per-target directory); and remove empty `_work-*`
+    scratch directories.
+
+    `targets` is mutated in place and the caller persists it -- the same
+    contract `analysis._refresh_target` has with its own target record. Safe to
+    run on every analyze: a project already on the current layout does no I/O
+    beyond a handful of `is_file` checks.
+    """
+    say = emit or (lambda _message: None)
+    outcome = LayoutReconciliation()
+    for target, record in targets.items():
+        if target not in VALID_TARGETS or not isinstance(record, dict):
+            continue  # a malformed or unknown target must not become a path
+        variants = record.get("variants")
+        if not isinstance(variants, dict):
+            continue
+        for variant_id, variant in variants.items():
+            if not isinstance(variant, dict) or not _SAFE_VARIANT_ID.match(variant_id or ""):
+                continue
+            rewritten = _relocate_variant(
+                variant, target=target, variant_id=variant_id, namespace_dir=namespace_dir, outcome=outcome, say=say
+            )
+            # A legacy record names the same artifact once more at its own top
+            # level (see `_live_artifact_references`), and that copy is the one
+            # this variant was derived from. Keep the compatibility view in
+            # step, so nothing holds a live reference to a flat path the sweep
+            # below is about to consider dead.
+            for key, name in rewritten.items():
+                if record.get(key) == _LEGACY_NAMES[key](target):
+                    record[key] = name
+    _sweep_flat_artifacts(namespace_dir, targets, outcome, say)
+    _sweep_empty_work_dirs(namespace_dir, outcome)
+    return outcome

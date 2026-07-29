@@ -421,13 +421,14 @@ local expected = {
   ['[vgt] Key']=true, ['[vgt] Chords']=true, ['[vgt] Vocals']=true,
   ['[vgt] Instrumental']=true, ['[vgt] Bass']=true, ['[vgt] Drums']=true,
   ['[vgt] Guitar']=true, ['[vgt] Backing (no guitar)']=true,
-  ['[vgt] Guitar Ref (MIDI)']=true,
+  ['[vgt] Guitar Ref — default (MIDI)']=true,
 }
 local expected_sources = {
   ['[vgt] Vocals']='stems/vocals.wav', ['[vgt] Instrumental']='stems/instrumental.wav',
   ['[vgt] Bass']='stems/bass.wav', ['[vgt] Drums']='stems/drums.wav',
   ['[vgt] Guitar']='stems/guitar.wav', ['[vgt] Backing (no guitar)']='stems/backing-no-guitar.wav',
-  ['[vgt] Guitar Ref (MIDI)']='transcription/guitar.mid', ['[vgt] Click']='tempo-click.wav',
+  ['[vgt] Guitar Ref — default (MIDI)']='transcription/guitar/default-guitar.mid',
+  ['[vgt] Click']='tempo-click.wav',
 }
 local expected_empty_tracks = {
   ['[vgt] The Seven Rivers (Full March - 3_00)']=true,
@@ -521,13 +522,16 @@ def test_goal_contract_is_offline_non_destructive_and_idempotent(tmp_path: Path,
     analyze(project, stages=("tempo", "key", "sections"))
     separate(project, separator, guitar_type="electric")
     analyze(project, stages=("chords", "transcription"), transcription_targets=("guitar",), transcriber=transcriber)
-    assert (separator.calls, transcriber.calls) == (5, 1)
+    # A Basic Pitch target reaches the backend through `detect_raw` -- its
+    # cleanup is derived from those raw notes -- so one guitar transcription is
+    # one raw detection, never a legacy one-shot `transcribe()` (#223).
+    assert (separator.calls, transcriber.calls, transcriber.raw_calls) == (5, 0, 1)
 
     # The existing 100 BPM map must remain untouched, so apply offers beat labels instead.
     state, first_apply = _run_apply(project, state)
     names, user_items, region_count, vgt_count, tempo_writes = first_apply.split("#")
     assert user_items == "2" and region_count == "3" and tempo_writes == "0"
-    assert "[vgt] Beats" in names and "[vgt] Key" in names and "[vgt] Guitar Ref (MIDI)" in names
+    assert "[vgt] Beats" in names and "[vgt] Key" in names and "[vgt] Guitar Ref — default (MIDI)" in names
     assert int(vgt_count) == 12  # folder, beats/click/key/chords, six stems, MIDI
 
     sidecar = read_sidecar(project)
@@ -565,7 +569,10 @@ sync()
     assert reconciled["analysis"]["sections"]["detected"] == detected_sections
     assert reconciled["analysis"]["key"]["value"] == {"root": "E", "scale": "minor"}
     assert reconciled["analysis"]["key"]["detected"] == detected_key
-    assert (separator.calls, transcriber.calls) == (5, 1)
+    # A Basic Pitch target reaches the backend through `detect_raw` -- its
+    # cleanup is derived from those raw notes -- so one guitar transcription is
+    # one raw detection, never a legacy one-shot `transcribe()` (#223).
+    assert (separator.calls, transcriber.calls, transcriber.raw_calls) == (5, 0, 1)
 
     # The display is rebuilt from the synchronized effective key without
     # adding another track.
@@ -1249,7 +1256,7 @@ table.insert(tracks, {guid='work-drums', name='[work] Drums Ref — default (MID
             {"start_seconds": 0.0, "bpm": 120.004}, {"start_seconds": 100.0, "bpm": 60.0},
         ], "beat_times": [0.1 + index * 0.501 for index in range(400)], "downbeat_offset_seconds": 0.1,
     }))
-    analyze(project, stages=("transcription",), transcriber_router=router, variant_compatibility=True)
+    analyze(project, stages=("transcription",), transcriber_router=router)
     refreshed = read_sidecar(project)["analysis"]["transcription"]["targets"]["drums"]["variants"]
     refreshed_default = refreshed[next(iter(refreshed))]
     after = (namespace / refreshed_default["midi_file"]).read_bytes()
