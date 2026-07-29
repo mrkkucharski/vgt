@@ -113,14 +113,14 @@ def test_folder_last_child_index_handles_a_single_child_folder() -> None:
     assert _run(lua_program).stdout == "1"
 
 
-def test_find_work_folder_matches_only_a_top_level_work_folder_track() -> None:
+def test_find_work_folder_resolves_a_top_level_marked_container() -> None:
     script = WORKING_COPY_SCRIPT.read_text()
     helpers_end = script.index("local function selected_source_tracks")
     lua_program = "\n".join(
         [
             "local tracks = {",
             "  {name = '[vgt] Guitar', depth = 0},",
-            "  {name = '[work]', depth = 1, ext={['P_EXT:vgt_working_copy']='1'}},",  # the real work folder
+            "  {name = '[work] Guitar', depth = 1, ext={['P_EXT:vgt_container']='work'}},",  # the real work container
             "  {name = '[work] Guitar', depth = -1, ext={['P_EXT:vgt_working_copy']='1'}},",  # a marked closing child, not the folder
             "}",
             "reaper = {}",
@@ -134,7 +134,34 @@ def test_find_work_folder_matches_only_a_top_level_work_folder_track() -> None:
             "io.write(folder.name, ':', index)",
         ]
     )
-    assert _run(lua_program).stdout == "[work]:1"
+    assert _run(lua_program).stdout == "[work] Guitar:1"
+
+
+def test_find_work_folder_prefers_recorded_guid_and_falls_back_when_it_is_stale() -> None:
+    script = WORKING_COPY_SCRIPT.read_text()
+    helpers_end = script.index("local function selected_source_tracks")
+    lua_program = "\n".join(
+        [
+            "local tracks = {",
+            "  {name='[work] Recorded', guid='{RECORDED}', depth=0, ext={}},",
+            "  {name='[work] Marked', guid='{MARKED}', depth=1, ext={['P_EXT:vgt_container']='work'}},",
+            "  {name='[work] child', depth=-1, ext={['P_EXT:vgt_working_copy']='1'}},",
+            "}",
+            "local recorded = '{RECORDED}'",
+            "reaper = {}",
+            "function reaper.CountTracks() return #tracks end",
+            "function reaper.GetTrack(_, index) return tracks[index + 1] end",
+            "function reaper.GetTrackGUID(track) return track.guid end",
+            "function reaper.GetProjExtState() return 1, recorded end",
+            "function reaper.GetTrackName(track) return true, track.name end",
+            "function reaper.GetMediaTrackInfo_Value(track, key) return key == 'I_FOLDERDEPTH' and track.depth or 0 end",
+            "function reaper.GetSetMediaTrackInfo_String(track, key, value, set) return true, track.ext[key] or '' end",
+            script[:helpers_end],
+            "io.write(find_work_folder().name, '|')",
+            "recorded = '{STALE}'; io.write(find_work_folder().name)",
+        ]
+    )
+    assert _run(lua_program).stdout == "[work] Recorded|[work] Marked"
 
 
 def test_find_work_folder_ignores_a_flat_work_named_track() -> None:
@@ -185,7 +212,7 @@ def test_find_work_folder_preserves_unmarked_and_nested_work_collisions() -> Non
     assert _run(lua_program).stdout == "nil"
 
 
-def test_find_work_folder_preserves_marked_workspaces_with_altered_folder_depth() -> None:
+def test_find_work_folder_resolves_marked_container_even_with_altered_folder_depth() -> None:
     """The marker is not permission to repair a structurally changed folder.
     Reusing this +2/-2 workspace as though it were vgt's +1/-1 shape would
     leave one folder level open after appending a new copy."""
@@ -194,7 +221,7 @@ def test_find_work_folder_preserves_marked_workspaces_with_altered_folder_depth(
     lua_program = "\n".join(
         [
             "local tracks = {",
-            "  {name = '[work]', depth = 2, ext={['P_EXT:vgt_working_copy']='1'}},",
+            "  {name = '[work] Guitar', depth = 2, ext={['P_EXT:vgt_container']='work'}},",
             "  {name = '[work] altered copy', depth = -2, ext={['P_EXT:vgt_working_copy']='1'}},",
             "  {name = 'Outside', depth = 0},",
             "}",
@@ -205,13 +232,44 @@ def test_find_work_folder_preserves_marked_workspaces_with_altered_folder_depth(
             "function reaper.GetMediaTrackInfo_Value(track, key) return key == 'I_FOLDERDEPTH' and track.depth or 0 end",
             "function reaper.GetSetMediaTrackInfo_String(track, key, value, set) if set then track.ext = track.ext or {}; track.ext[key] = value; return true, value end; return true, track.ext and track.ext[key] or '' end",
             script[:helpers_end],
-            "io.write(tostring(find_work_folder()))",
+            "local folder = find_work_folder(); io.write(folder.name)",
         ]
     )
-    assert _run(lua_program).stdout == "nil"
+    assert _run(lua_program).stdout == "[work] Guitar"
 
 
-def test_find_work_folder_preserves_marked_workspaces_with_nested_children() -> None:
+def test_create_reports_and_leaves_a_structurally_changed_container_untouched() -> None:
+    script = WORKING_COPY_SCRIPT.read_text()
+    helpers_end = script.index("local function choose_action")
+    lua_program = "\n".join(
+        [
+            "local tracks = {",
+            "  {name='[work] Guitar', values={I_FOLDERDEPTH=2}, ext={['P_EXT:vgt_container']='work'}, items={}},",
+            "  {name='[work] altered', values={I_FOLDERDEPTH=-2}, ext={['P_EXT:vgt_working_copy']='1'}, items={}},",
+            "  {name='Source', values={I_FOLDERDEPTH=0}, ext={}, items={}, selected=true},",
+            "}",
+            "reaper = {}",
+            "function reaper.CountTracks() return #tracks end",
+            "function reaper.GetTrack(_, index) return tracks[index + 1] end",
+            "function reaper.GetTrackName(track) return true, track.name end",
+            "function reaper.GetMediaTrackInfo_Value(track, key) return track.values[key] or 0 end",
+            "function reaper.GetSetMediaTrackInfo_String(track, key, value, set) if set then track.ext[key] = value; return true, value end; return true, track.ext[key] or '' end",
+            "function reaper.CountSelectedTracks() return 1 end; function reaper.GetSelectedTrack() return tracks[3] end",
+            "function reaper.GetTrackStateChunk() return true, 'TRACKID {SOURCE}' end",
+            "function reaper.SetTrackSelected(track, selected) track.selected = selected end",
+            "function reaper.InsertTrackAtIndex() error('must not append into a changed container') end",
+            "function reaper.Undo_BeginBlock() end; function reaper.Undo_EndBlock() end; function reaper.PreventUIRefresh() end",
+            "function reaper.ShowMessageBox(text) io.write(text) end",
+            script[:helpers_end],
+            "create(); for _, track in ipairs(tracks) do io.write('|', track.name, ':', track.values.I_FOLDERDEPTH) end",
+        ]
+    )
+    result = _run(lua_program).stdout
+    assert result.startswith("The [work] container has a changed folder structure")
+    assert result.endswith("|[work] Guitar:2|[work] altered:-2|Source:0")
+
+
+def test_find_work_folder_resolves_marked_container_even_with_nested_children() -> None:
     """A total depth of zero is insufficient: a marked child may have been
     made into a folder. Reusing a +1/0/+1/-2 layout would leave that nested
     level open after the old closer is demoted."""
@@ -220,7 +278,7 @@ def test_find_work_folder_preserves_marked_workspaces_with_nested_children() -> 
     lua_program = "\n".join(
         [
             "local tracks = {",
-            "  {name = '[work]', depth = 1, ext={['P_EXT:vgt_working_copy']='1'}},",
+            "  {name = '[work] Guitar', depth = 1, ext={['P_EXT:vgt_container']='work'}},",
             "  {name = '[work] first copy', depth = 0, ext={['P_EXT:vgt_working_copy']='1'}},",
             "  {name = '[work] nested copy', depth = 1, ext={['P_EXT:vgt_working_copy']='1'}},",
             "  {name = '[work] nested child', depth = -2, ext={['P_EXT:vgt_working_copy']='1'}},",
@@ -233,10 +291,10 @@ def test_find_work_folder_preserves_marked_workspaces_with_nested_children() -> 
             "function reaper.GetMediaTrackInfo_Value(track, key) return key == 'I_FOLDERDEPTH' and track.depth or 0 end",
             "function reaper.GetSetMediaTrackInfo_String(track, key, value, set) if set then track.ext = track.ext or {}; track.ext[key] = value; return true, value end; return true, track.ext and track.ext[key] or '' end",
             script[:helpers_end],
-            "io.write(tostring(find_work_folder()))",
+            "local folder = find_work_folder(); io.write(folder.name)",
         ]
     )
-    assert _run(lua_program).stdout == "nil"
+    assert _run(lua_program).stdout == "[work] Guitar"
 
 
 def _build_copy_mock() -> str:
@@ -290,7 +348,7 @@ def test_build_working_copy_produces_an_editable_user_owned_track() -> None:
     assert "TRACKID {GEN-1}" in chunk and "{OLD-1}" not in chunk  # fresh unique GUID
 
 
-def test_create_does_not_reuse_an_unmarked_work_folder_and_marks_its_own_objects() -> None:
+def test_create_does_not_reuse_an_unmarked_work_folder_and_creates_a_container() -> None:
     """A user-created `[work]` folder is a collision, not an invitation to
     mutate its closing child. The action creates a separate marked top-level
     container and keeps both folder-depth regions balanced."""
@@ -302,10 +360,14 @@ def test_create_does_not_reuse_an_unmarked_work_folder_and_marks_its_own_objects
             "  {name='[work]', values={I_FOLDERDEPTH=1}, ext={}, items={}},",
             "  {name='User child', values={I_FOLDERDEPTH=-1}, ext={}, items={}},",
             "  {name='Source', values={I_FOLDERDEPTH=0}, ext={}, items={}, selected=true},",
+            "  {name='[vgt] Reference Mix', values={I_FOLDERDEPTH=0}, ext={}, items={}},",
             "}",
             "reaper = {}",
             "function reaper.CountTracks() return #tracks end",
             "function reaper.GetTrack(_, index) return tracks[index + 1] end",
+            "function reaper.GetTrackGUID(track) return track.guid or ('{TRACK-' .. tostring(track) .. '}') end",
+            "function reaper.GetProjExtState() return 0, '' end; function reaper.SetProjExtState(_, _, _, value) _G.__work_guid = value end",
+            "function reaper.ColorToNative(r, g, b) return r * 65536 + g * 256 + b end",
             "function reaper.GetTrackName(track) return true, track.name end",
             "function reaper.GetMediaTrackInfo_Value(track, key) return track.values[key] or 0 end",
             "function reaper.SetMediaTrackInfo_Value(track, key, value) track.values[key] = value end",
@@ -328,10 +390,13 @@ def test_create_does_not_reuse_an_unmarked_work_folder_and_marks_its_own_objects
             "function reaper.MarkProjectDirty() end; function reaper.ShowMessageBox() error('unexpected warning') end",
             script[:helpers_end],
             "create()",
-            "for _,t in ipairs(tracks) do io.write(t.name, ':', t.values.I_FOLDERDEPTH or 0, ':', t.ext['P_EXT:vgt_working_copy'] or '', ';') end",
+            "for _,t in ipairs(tracks) do io.write(t.name, ':', t.values.I_FOLDERDEPTH or 0, ':', t.ext['P_EXT:vgt_container'] or '', ':', t.ext['P_EXT:vgt_working_copy'] or '', ':', t.values.I_CUSTOMCOLOR or 0, ';') end; io.write('GUID=', __work_guid)",
         ]
     )
-    assert _run(lua_program).stdout == "[work]:1:;User child:-1:;Source:0:;[work]:1:1;[work] Source:-1:1;"
+    result = _run(lua_program).stdout
+    assert result.startswith(
+        "[work]:1:::0;User child:-1:::0;Source:0:::0;[work] Reference Mix:1:work::21278703;[work] Source:-1::1:0;[vgt] Reference Mix:0:::0;GUID={TRACK-"
+    )
 
 
 def test_discard_removes_only_marked_work_tracks() -> None:
@@ -340,7 +405,7 @@ def test_discard_removes_only_marked_work_tracks() -> None:
     lua_program = "\n".join(
         [
             "local tracks = {",
-            "  {name = '[work]', values={I_FOLDERDEPTH=1}, ext={['P_EXT:vgt_working_copy']='1'}},",
+            "  {name = '[work]', values={I_FOLDERDEPTH=1}, ext={['P_EXT:vgt_container']='work'}},",
             "  {name = '[work] Guitar Ref (MIDI)', values={I_FOLDERDEPTH=-1}, ext={['P_EXT:vgt_working_copy']='1'}},",
             "  {name = '[work] User folder', values={I_FOLDERDEPTH=0}}, {name = '[work] User track', values={I_FOLDERDEPTH=0}},",
             "  {name = '[work] Reclaimed', ext={['P_EXT:vgt_working_copy']='1'}, renamed='Kept by user'},",
@@ -353,6 +418,7 @@ def test_discard_removes_only_marked_work_tracks() -> None:
             "function reaper.GetTrackName(track) return true, track.name end",
             "function reaper.GetSetMediaTrackInfo_String(track, key, value, set) if set then track.ext = track.ext or {}; track.ext[key] = value; return true, value end; return true, track.ext and track.ext[key] or '' end",
             "function reaper.GetMediaTrackInfo_Value(track, key) return track.values and track.values[key] or 0 end",
+            "function reaper.SetMediaTrackInfo_Value(track, key, value) track.values = track.values or {}; track.values[key] = value end",
             "function reaper.DeleteTrack(track) for i, t in ipairs(tracks) do if t == track then table.remove(tracks, i); return end end end",
             "function reaper.Undo_BeginBlock() end",
             "function reaper.Undo_EndBlock() end",
@@ -366,7 +432,7 @@ def test_discard_removes_only_marked_work_tracks() -> None:
             "for _, t in ipairs(tracks) do io.write(t.name, ':', t.ext and (t.ext['P_EXT:vgt_working_copy'] or '') or '', ';') end",
         ]
     )
-    assert _run(lua_program).stdout == "[work] User folder:;[work] User track:;Kept by user:;[vgt] Guitar Ref (MIDI):;My Keeper:;"
+    assert _run(lua_program).stdout == "[work]:;[work] User folder:;[work] User track:;Kept by user:;[vgt] Guitar Ref (MIDI):;My Keeper:;"
 
 
 def test_discard_preserves_a_mixed_marked_workspace_without_breaking_its_folder() -> None:
@@ -378,7 +444,7 @@ def test_discard_preserves_a_mixed_marked_workspace_without_breaking_its_folder(
     lua_program = "\n".join(
         [
             "local tracks = {",
-            "  {name='[work]', values={I_FOLDERDEPTH=1}, ext={['P_EXT:vgt_working_copy']='1'}},",
+            "  {name='[work]', values={I_FOLDERDEPTH=1}, ext={['P_EXT:vgt_container']='work'}},",
             "  {name='[work] disposable', values={I_FOLDERDEPTH=0}, ext={['P_EXT:vgt_working_copy']='1'}},",
             "  {name='User addition', values={I_FOLDERDEPTH=-1}, ext={}},",
             "  {name='Outside', values={I_FOLDERDEPTH=0}, ext={}},",
@@ -388,6 +454,7 @@ def test_discard_preserves_a_mixed_marked_workspace_without_breaking_its_folder(
             "function reaper.GetTrack(_, index) return tracks[index + 1] end",
             "function reaper.GetTrackName(track) return true, track.name end",
             "function reaper.GetMediaTrackInfo_Value(track, key) return track.values[key] or 0 end",
+            "function reaper.SetMediaTrackInfo_Value(track, key, value) track.values[key] = value end",
             "function reaper.GetSetMediaTrackInfo_String(track, key, value, set) if set then track.ext[key] = value; return true, value end; return true, track.ext[key] or '' end",
             "function reaper.DeleteTrack() error('a mixed workspace must remain intact') end",
             "function reaper.Undo_BeginBlock() end; function reaper.Undo_EndBlock() end",
@@ -443,7 +510,7 @@ def test_discard_preserves_a_marked_workspace_with_nested_children() -> None:
     lua_program = "\n".join(
         [
             "local tracks = {",
-            "  {name='[work]', values={I_FOLDERDEPTH=1}, ext={['P_EXT:vgt_working_copy']='1'}},",
+            "  {name='[work]', values={I_FOLDERDEPTH=1}, ext={['P_EXT:vgt_container']='work'}},",
             "  {name='[work] first copy', values={I_FOLDERDEPTH=0}, ext={['P_EXT:vgt_working_copy']='1'}},",
             "  {name='[work] nested copy', values={I_FOLDERDEPTH=1}, ext={['P_EXT:vgt_working_copy']='1'}},",
             "  {name='[work] nested child', values={I_FOLDERDEPTH=-2}, ext={['P_EXT:vgt_working_copy']='1'}},",
@@ -482,7 +549,7 @@ def test_discard_preserves_reclaimed_copy_permanently_and_keeps_folder_depths() 
             "local tracks = {",
             "  {name='User folder', values={I_FOLDERDEPTH=1}, ext={}},",
             "  {name='User child', values={I_FOLDERDEPTH=-1}, ext={}},",
-            "  {name='[work]', values={I_FOLDERDEPTH=1}, ext={['P_EXT:vgt_working_copy']='1'}},",
+            "  {name='[work]', values={I_FOLDERDEPTH=1}, ext={['P_EXT:vgt_container']='work'}},",
             "  {name='[work] disposable', values={I_FOLDERDEPTH=-1}, ext={['P_EXT:vgt_working_copy']='1'}},",
             "  {name='Kept part', values={I_FOLDERDEPTH=0}, ext={['P_EXT:vgt_working_copy']='1'}},",
             "}",
@@ -491,6 +558,7 @@ def test_discard_preserves_reclaimed_copy_permanently_and_keeps_folder_depths() 
             "function reaper.GetTrack(_, index) return tracks[index + 1] end",
             "function reaper.GetTrackName(track) return true, track.name end",
             "function reaper.GetMediaTrackInfo_Value(track, key) return track.values[key] or 0 end",
+            "function reaper.SetMediaTrackInfo_Value(track, key, value) track.values[key] = value end",
             "function reaper.GetSetMediaTrackInfo_String(track, key, value, set) if set then track.ext[key] = value; return true, value end; return true, track.ext[key] or '' end",
             "function reaper.DeleteTrack(track) for i, t in ipairs(tracks) do if t == track then table.remove(tracks, i); return end end end",
             "function reaper.Undo_BeginBlock() end; function reaper.Undo_EndBlock() end",
@@ -498,11 +566,11 @@ def test_discard_preserves_reclaimed_copy_permanently_and_keeps_folder_depths() 
             "function reaper.MarkProjectDirty() end; function reaper.ShowMessageBox() error('unexpected warning') end",
             script[:helpers_end],
             "discard()",
-            "tracks[3].name = '[work] Kept part again'",
+            "tracks[4].name = '[work] Kept part again'",
             "for _,t in ipairs(tracks) do io.write(t.name, ':', t.values.I_FOLDERDEPTH, ':', t.ext['P_EXT:vgt_working_copy'] or '', ';') end",
         ]
     )
-    assert _run(lua_program).stdout == "User folder:1:;User child:-1:;[work] Kept part again:0:;"
+    assert _run(lua_program).stdout == "User folder:1:;User child:-1:;[work]:0:;[work] Kept part again:0:;"
 
 
 def test_discard_warns_when_there_is_nothing_to_remove() -> None:
