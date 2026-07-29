@@ -271,6 +271,42 @@ def test_create_reports_and_leaves_a_structurally_changed_container_untouched() 
     assert result.endswith("|[work] Guitar:2|[work] altered:-2|Source:0")
 
 
+def test_create_refuses_a_populated_work_container_without_touching_its_child() -> None:
+    """Adding a copy would rewrite the current closing child from -1 to 0.
+
+    The action owns the new copy, not that existing user-owned child, so a
+    populated container is an atomic refusal even when its shape is valid.
+    """
+    script = WORKING_COPY_SCRIPT.read_text()
+    helpers_end = script.index("local function choose_action")
+    lua_program = "\n".join(
+        [
+            "local tracks = {",
+            "  {name='[work] Guitar', values={I_FOLDERDEPTH=1}, ext={['P_EXT:vgt_container']='work'}, items={}},",
+            "  {name='[work] Existing copy', values={I_FOLDERDEPTH=-1}, ext={['P_EXT:vgt_working_copy']='1',keep='payload'}, items={'item'}},",
+            "  {name='Source', values={I_FOLDERDEPTH=0}, ext={}, items={}, selected=true},",
+            "}",
+            "reaper = {}",
+            "function reaper.CountTracks() return #tracks end",
+            "function reaper.GetTrack(_, index) return tracks[index + 1] end",
+            "function reaper.GetTrackName(track) return true, track.name end",
+            "function reaper.GetMediaTrackInfo_Value(track, key) return track.values[key] or 0 end",
+            "function reaper.GetSetMediaTrackInfo_String(track, key, value, set) if set then error('must not change existing state') end; return true, track.ext[key] or '' end",
+            "function reaper.CountSelectedTracks() return 1 end; function reaper.GetSelectedTrack() return tracks[3] end",
+            "function reaper.GetTrackStateChunk() return true, 'TRACKID {SOURCE}' end",
+            "function reaper.SetTrackSelected() error('must preserve selection on refusal') end",
+            "function reaper.InsertTrackAtIndex() error('must not create a partial copy') end",
+            "function reaper.Undo_BeginBlock() end; function reaper.Undo_EndBlock() end; function reaper.PreventUIRefresh() end",
+            "function reaper.ShowMessageBox(text) io.write(text) end",
+            script[:helpers_end],
+            "create(); for _, track in ipairs(tracks) do io.write('|', track.name, ':', track.values.I_FOLDERDEPTH, ':', track.ext.keep or '', ':', track.selected and 'selected' or '') end",
+        ]
+    )
+    result = _run(lua_program).stdout
+    assert result.startswith("The [work] container already has content")
+    assert result.endswith("|[work] Guitar:1::|[work] Existing copy:-1:payload:|Source:0::selected")
+
+
 def test_create_reuses_an_empty_initialize_container() -> None:
     """Initialize intentionally leaves a newly made container flat until this
     action gives it its first child. That ordinary empty state is not damage."""

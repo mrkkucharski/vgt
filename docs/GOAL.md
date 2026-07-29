@@ -73,8 +73,8 @@ commands, environment, pass counts, and executable-coverage audit, is
   tracks that both retain its durable working-copy mark and still start with
   `[work]`. Promotion may move and rename those selected tracks into `[clean]`;
   every unselected, ineligible, or reclaimed track remains untouched. If the
-  requested move would require changing an existing container child merely to
-  maintain REAPER folder structure, promotion refuses the request unchanged.
+  requested create or move would require changing an existing container child
+  merely to maintain REAPER folder structure, the action refuses unchanged.
 - **Idempotent:** re-running a workflow reconciles vgt-owned state without
   duplicates or corruption.
 - **Live REAPER mutation:** project changes use REAPER's API, never RPP text

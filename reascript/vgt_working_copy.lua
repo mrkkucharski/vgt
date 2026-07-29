@@ -303,9 +303,6 @@ local function create()
   reaper.Undo_BeginBlock()
   reaper.PreventUIRefresh(1)
 
-  -- Clear the selection so only the new copies end up selected.
-  for _, source in ipairs(sources) do reaper.SetTrackSelected(source, false) end
-
   local folder, folder_index, resolution_error = find_work_folder()
   if resolution_error then
     reaper.PreventUIRefresh(-1)
@@ -323,6 +320,23 @@ local function create()
     )
     return
   end
+  -- Extending a populated REAPER folder would demote its existing closing
+  -- child from -1 to 0.  That child is user-owned container content, not a
+  -- newly created copy, so create has no authority to change it.  Leave both
+  -- the child and the caller's selection untouched instead.
+  if folder and not empty_container then
+    reaper.PreventUIRefresh(-1)
+    reaper.Undo_EndBlock("vgt: create working copy", -1)
+    reaper.ShowMessageBox(
+      "The [work] container already has content; creating a copy would alter an existing track's folder structure, so nothing was changed.",
+      "vgt working copy", 0
+    )
+    return
+  end
+
+  -- Clear the selection only after every refusal path that must be atomic.
+  -- The freshly created copies become the new selection below.
+  for _, source in ipairs(sources) do reaper.SetTrackSelected(source, false) end
 
   local insert_index
   if folder_index and empty_container then
@@ -330,12 +344,6 @@ local function create()
     -- copy is inserted, so no empty intermediate folder state can persist.
     reaper.SetMediaTrackInfo_Value(folder, "I_FOLDERDEPTH", 1)
     insert_index = folder_index + 1
-  elseif folder_index then
-    -- Extend the existing folder: its current last child closes it (depth -1),
-    -- so demote it to a plain child and let the last new copy become the closer.
-    local last_child = folder_last_child_index(folder_index)
-    reaper.SetMediaTrackInfo_Value(reaper.GetTrack(0, last_child), "I_FOLDERDEPTH", 0)
-    insert_index = last_child + 1
   else
     -- Create the same scaffold initialize would: directly above its root when
     -- present, otherwise at the end. It becomes a folder immediately below.
