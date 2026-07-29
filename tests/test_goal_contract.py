@@ -1282,6 +1282,149 @@ end
     ) == work_snapshot
 
 
+def test_goal_contract_exercises_every_remaining_basic_pitch_target_end_to_end(
+    tmp_path: Path, deterministic_detectors: None,
+) -> None:
+    """Keep every advertised non-drum target on the complete artifact path.
+
+    Guitar and bass already exercise this path above.  This deliberately adds
+    the remaining Basic Pitch targets in the opposite of their presentation
+    order, so the assertions cover sidecar source association and immutable
+    artifact identity as well as the ReaScript's stem-adjacent ordering.  The
+    original mix is the important exception: it has no generated stem and
+    must land safely after the imported stem block.
+    """
+    project = _copy_project(tmp_path)
+    state = _lua_state(project)
+    state, _ = _run_apply(project, state)
+    initialized = read_sidecar(project)
+    original_user_state = _user_snapshot(
+        project,
+        state,
+        managed_tracks=initialized["managed_track_guids"],
+        managed_regions=initialized["managed_region_ids"],
+    )
+
+    separator = CountingSeparator()
+    separate(project, separator, guitar_type="electric", optional_stems=("strings", "piano"))
+    transcriber = CountingTranscriber()
+    router = TargetTranscriberRouter(
+        basic_pitch=transcriber,
+        drumscript=CountingTranscriber(),
+        drumscript_targets=("drums",),
+    )
+    target_labels = {
+        "vocals": "voice", "instrumental": "band", "backing": "without-guitar",
+        "strings": "orchestra", "piano": "keys", "original": "mix",
+    }
+    # Reversed request order must not become the display/import order.
+    added = {
+        target: add_variant(project, target, label=target_labels[target], profile="default", router=router)
+        for target in ("original", "piano", "strings", "backing", "instrumental", "vocals")
+    }
+    sidecar = read_sidecar(project)
+    transcription = sidecar["analysis"]["transcription"]
+    targets = transcription["targets"]
+    namespace_dir = artifact_namespace_dir(project, sidecar["analysis"]["stems"]["artifact_namespace"])
+
+    # Every target has exactly one opaque, stable identity. Labels are only
+    # presentation, never part of the exact derived artifact paths.
+    variant_ids = {target: targets[target]["variant_order"][:] for target in target_labels}
+    assert all(len(ids) == 1 for ids in variant_ids.values())
+    assert len({ids[0] for ids in variant_ids.values()}) == len(variant_ids)
+    for target, label in target_labels.items():
+        variant_id = variant_ids[target][0]
+        variant = targets[target]["variants"][variant_id]
+        assert variant == added[target]
+        assert variant["source_role"] == target
+        assert variant["backend"] == "basic-pitch"
+        assert variant["status"] == "transcribed"
+        assert variant["midi_file"] == f"transcription/{target}/{variant_id}.mid"
+        assert variant["notes_file"] == f"transcription/{target}/{variant_id}.csv"
+        assert (namespace_dir / variant["midi_file"]).is_file()
+        assert (namespace_dir / variant["notes_file"]).is_file()
+        assert variant["label"] == label
+    assert transcriber.raw_calls == len(target_labels)
+
+    stems = sidecar["analysis"]["stems"]["artifacts"]
+    for target in ("vocals", "instrumental", "backing", "strings", "piano"):
+        assert targets[target]["variants"][variant_ids[target][0]]["input_hash"] == stems[target]["sha256"]
+    assert targets["original"]["variants"][variant_ids["original"][0]]["input_hash"] != stems["vocals"]["sha256"]
+
+    # Apply twice, then reconcile the retained requests. Neither route may
+    # change their IDs, paths, or presentation order.
+    state, first_apply = _run_apply(project, state)
+    names = first_apply.split("#", 1)[0].split("|")
+    for stem, midi in (
+        ("[vgt] Vocals", "[vgt] Vocals Ref — voice (MIDI)"),
+        ("[vgt] Instrumental", "[vgt] Instrumental Ref — band (MIDI)"),
+        ("[vgt] Backing (no guitar)", "[vgt] Backing (no guitar) Ref — without-guitar (MIDI)"),
+        ("[vgt] Strings", "[vgt] Strings Ref — orchestra (MIDI)"),
+        ("[vgt] Keys / Piano", "[vgt] Keys / Piano Ref — keys (MIDI)"),
+    ):
+        assert names.count(midi) == 1
+        assert names.index(midi) == names.index(stem) + 1
+    original_midi = "[vgt] Original Ref — mix (MIDI)"
+    assert names.count(original_midi) == 1
+    assert names.index(original_midi) > max(names.index(f"[vgt] {label}") for label in (
+        "Vocals", "Instrumental", "Bass", "Drums", "Guitar", "Backing (no guitar)", "Strings", "Keys / Piano",
+    ))
+    state, second_apply = _run_apply(project, state)
+    assert second_apply.split("#", 1)[0].split("|") == names
+    analyze(
+        project,
+        stages=("transcription",),
+        transcriber_router=router,
+        transcription_targets=tuple(target_labels),
+    )
+    reconciled = read_sidecar(project)["analysis"]["transcription"]["targets"]
+    assert {target: reconciled[target]["variant_order"] for target in target_labels} == variant_ids
+    state, reconciled_apply = _run_apply(project, state)
+    assert reconciled_apply.split("#", 1)[0].split("|") == names
+
+    # Discard exactly one candidate. Its derived files and only its raw cache
+    # go away; every other advertised target and a user-owned working copy
+    # remain byte-for-byte and visually intact after reapply.
+    discarded_target = "piano"
+    discarded_id = variant_ids[discarded_target][0]
+    discarded = targets[discarded_target]["variants"][discarded_id]
+    discarded_paths = [namespace_dir / discarded[key] for key in ("midi_file", "notes_file")]
+    discarded_cache = transcription["detection_cache"][discarded["detection_hash"]]
+    discarded_cache_paths = [namespace_dir / discarded_cache[key] for key in ("raw_midi_file", "raw_notes_file")]
+    state, _ = _run(project, state, "", """
+table.insert(tracks, {guid='{WORK-EVERY-TARGET}', name='[work] Original Ref — mix (MIDI)', B_MUTE=0,
+  items={{position=10,length=1,C_LOCK=0,take={name='edited by user',source=''}}}})
+""")
+    applied_sidecar = read_sidecar(project)
+    work_snapshot = _user_snapshot(
+        project, state,
+        managed_tracks=applied_sidecar["managed_track_guids"],
+        managed_regions=applied_sidecar["managed_region_ids"],
+    )
+    discard_variant(project, discarded_target, discarded_id)
+    assert not any(path.exists() for path in [*discarded_paths, *discarded_cache_paths])
+    after_discard = read_sidecar(project)["analysis"]["transcription"]
+    assert after_discard["targets"][discarded_target]["variant_order"] == []
+    assert discarded["detection_hash"] not in after_discard["detection_cache"]
+    for target, ids in variant_ids.items():
+        if target != discarded_target:
+            variant = after_discard["targets"][target]["variants"][ids[0]]
+            assert (namespace_dir / variant["midi_file"]).is_file()
+            assert variant["detection_hash"] in after_discard["detection_cache"]
+    state, final_apply = _run_apply(project, state)
+    final_names = final_apply.split("#", 1)[0].split("|")
+    assert "[vgt] Keys / Piano Ref — keys (MIDI)" not in final_names
+    assert final_names.count("[work] Original Ref — mix (MIDI)") == 1
+    final_sidecar = read_sidecar(project)
+    assert _user_snapshot(
+        project,
+        state,
+        managed_tracks=final_sidecar["managed_track_guids"],
+        managed_regions=final_sidecar["managed_region_ids"],
+    ) == work_snapshot
+    assert "The Seven Rivers (Full March - 3_00)" in original_user_state
+
+
 def test_goal_contract_retains_and_discards_adtof_beside_drumscript_offline(
     tmp_path: Path, deterministic_detectors: None,
 ) -> None:
