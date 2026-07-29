@@ -3,7 +3,8 @@
 vgt non-destructively prepares existing REAPER projects for guitar practice. It
 analyzes a reference mix, optionally separates practice stems with LALAL.AI,
 creates local reference MIDI from requested stems, and adds only its own
-`[vgt]`-managed objects.
+`[vgt]`-managed objects, plus the user-content `[clean]` and `[work]`
+containers that initialize keeps immediately above the `[vgt]` area.
 
 Read the [user manual](docs/USER-MANUAL.md) for the current workflow, commands,
 track states, correction process, cost controls, and regression contract.
@@ -25,7 +26,9 @@ wheel, Git URL, or local source. In REAPER, open the Action List and use
 to initialize a project and apply vgt's generated objects, `vgt_sync.lua` to
 save chord, section, and key corrections, `vgt_sync_tempo_map.lua` to adopt a
 tempo-map correction after its confirmation prompt, and `vgt_working_copy.lua`
-to create a protected, user-owned `[work]` copy of a generated reference MIDI track. Use
+to create protected user-owned `[work]` copies of generated reference MIDI and
+promote finished copies into `[clean]`. Initialize maintains the bottom layout:
+loose root tracks, `[clean]`, `[work]`, then `[vgt]`. Use
 `vgt install-reascripts --dry-run` to preview paths, or `--destination DIR`
 to install into a test or nonstandard Scripts directory. Existing files that
 differ from vgt's bundled versions are never replaced unless you confirm the
