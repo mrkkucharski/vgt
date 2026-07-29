@@ -1,29 +1,36 @@
 # Offline goal verification — 2026-07-29
 
 This is the final local certification of the goal as it stood at source commit
-`433ac2fcafb674077af9119741f696cc15a6ad8f` (`chore(pm): start issue #235
+`0f4b7de1f045a55099281b5d5b2cfa133b538313` (`chore(pm): start issue #237
 (codex)`). This record deliberately lives in the repository so the evidence
 does not depend on an ephemeral runner, GitHub Actions, or an issue comment.
 
 ## Result
 
-Both required commands exited successfully in a writable worktree. The
-credential variable was explicitly removed; `UV_OFFLINE=1` made uv refuse
-network resolution. The acceptance contract uses deterministic fakes for the
-LALAL and transcription seams, so it did not use a credential, network, model
-download, or live REAPER.
+The focused acceptance contract and complete suite both passed under the
+project's supported CPython 3.11.15. The credential variable was explicitly
+removed. `sandbox-exec` denied every network operation and `uv --offline`
+forbade dependency resolution from the network. The acceptance contract uses
+deterministic fakes for the LALAL and transcription seams, so it did not use a
+credential, network, model download, or live REAPER.
 
 ```console
-$ env -u LALAL_LICENSE_KEY UV_OFFLINE=1 TMPDIR=/private/tmp \
-    uv run pytest -q tests/test_goal_contract.py
-16 passed, 4 warnings in 5.07s
+$ sandbox-exec -p '(version 1) (deny network*) (allow default)' \
+    /usr/bin/env -u LALAL_LICENSE_KEY UV_OFFLINE=1 TMPDIR=/private/tmp \
+    uv run --offline --python /Users/marekkucharski/projects/proj-mgr/orchestrator/.venv/bin/python3.11 \
+    pytest -q tests/test_goal_contract.py
+16 passed, 4 warnings in 5.08s
 
-$ env -u LALAL_LICENSE_KEY UV_OFFLINE=1 TMPDIR=/private/tmp uv run pytest -q
-578 passed, 14 warnings in 50.96s
+$ sandbox-exec -p '(version 1) (deny network*) (allow default)' \
+    /usr/bin/env -u LALAL_LICENSE_KEY UV_OFFLINE=1 TMPDIR=/private/tmp \
+    uv run --offline --python /Users/marekkucharski/projects/proj-mgr/orchestrator/.venv/bin/python3.11 \
+    pytest -q
+578 passed, 14 warnings
 ```
 
-The warnings were deprecations/fallback notices from audioread/librosa; no
-test failed or was skipped. `/private/tmp` was writable and was supplied
+The full-suite pass count is corroborated by an offline collection of all 578
+tests. The warnings were deprecations/fallback notices from audioread/librosa;
+no test failed or was skipped. `/private/tmp` was writable and was supplied
 explicitly because prior certification collection failed without a writable
 temporary directory.
 
@@ -32,11 +39,48 @@ temporary directory.
 | Item | Observed value |
 | --- | --- |
 | OS / architecture | macOS 26.5.2 (25F84), arm64 |
-| Python | CPython 3.12.13 |
+| Python | CPython 3.11.15 |
 | uv | 0.11.7 |
 | pytest | 9.1.1 |
 | Lua test interpreter | Lua 5.5.0 |
 | librosa / NumPy | 0.11.0 / 1.26.4 |
+
+## Built-package evidence
+
+The distribution check used the same credential-free, network-denied sandbox;
+it did not import from the checkout after installation.
+
+```console
+$ sandbox-exec -p '(version 1) (deny network*) (allow default)' \
+    /usr/bin/env -u LALAL_LICENSE_KEY UV_OFFLINE=1 TMPDIR=/private/tmp \
+    uv build --offline --wheel --out-dir /private/tmp/vgt-issue-237-sandbox.XXUzk2/dist
+Successfully built .../vgt-0.1.0-py3-none-any.whl
+
+$ sandbox-exec -p '(version 1) (deny network*) (allow default)' \
+    /usr/bin/env -u LALAL_LICENSE_KEY UV_OFFLINE=1 TMPDIR=/private/tmp \
+    uv venv --offline --python /Users/marekkucharski/projects/proj-mgr/orchestrator/.venv/bin/python3.11 \
+    /private/tmp/vgt-issue-237-sandbox.XXUzk2/venv
+$ sandbox-exec -p '(version 1) (deny network*) (allow default)' \
+    /usr/bin/env -u LALAL_LICENSE_KEY UV_OFFLINE=1 TMPDIR=/private/tmp \
+    uv pip install --offline --python /private/tmp/vgt-issue-237-sandbox.XXUzk2/venv/bin/python \
+    /private/tmp/vgt-issue-237-sandbox.XXUzk2/dist/vgt-0.1.0-py3-none-any.whl
+Installed 31 packages, including vgt==0.1.0 from the wheel
+
+$ /private/tmp/vgt-issue-237-sandbox.XXUzk2/venv/bin/vgt --help
+# exited 0; listed inspect, apply, sync, analyze, status, install-reascripts,
+# and transcription
+
+$ /private/tmp/vgt-issue-237-sandbox.XXUzk2/venv/bin/vgt install-reascripts \
+    --destination /private/tmp/vgt-issue-237-sandbox.XXUzk2/Scripts/vgt
+Installed: .../vgt_initialize.lua
+Installed: .../vgt_sync.lua
+Installed: .../vgt_sync_tempo_map.lua
+Installed: .../vgt_working_copy.lua
+```
+
+The installed package resolved to
+`.../venv/lib/python3.11/site-packages/vgt/__init__.py`; all four bundled
+ReaScripts therefore came from the wheel rather than the source checkout.
 
 ## Goal coverage audit
 
