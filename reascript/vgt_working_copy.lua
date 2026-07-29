@@ -12,8 +12,7 @@
 -- -- it deletes only tracks that are *both* vgt-owned *and* still `[vgt]`-named.
 -- A separate working-copy marker records which `[work]` objects this action
 -- created. Names alone are user-controlled and therefore never prove ownership.
--- Finishing an edit is a manual drag of the `[work]` track wherever you want it;
--- rename it away from the `[work]` prefix to keep it past a discard.
+-- Finishing an edit promotes the selected `[work]` track into `[clean]`.
 
 local VGT_PREFIX = "[vgt]"
 local WORK_PREFIX = "[work]"
@@ -32,8 +31,11 @@ local WORK_EXT_STATE_VALUE = "1"
 local CONTAINER_EXT_STATE_KEY = "P_EXT:vgt_container"
 local WORK_CONTAINER_KIND = "work"
 local PROJ_EXT_SECTION = "vgt"
+local PROJ_EXT_CLEAN_GUID_KEY = "clean_container"
 local PROJ_EXT_WORK_GUID_KEY = "work_container"
+local CLEAN_CONTAINER_KIND = "clean"
 local WORK_COLOR = {68, 175, 239}
+local CLEAN_COLOR = {187, 210, 41}
 
 local function track_name(track)
   local _, name = reaper.GetTrackName(track, "")
@@ -53,6 +55,18 @@ local function working_name(source_name)
   rest = rest:gsub("^%[work%]%s*", "")
   if rest == "" then rest = "Track" end
   return WORK_PREFIX .. " " .. rest
+end
+
+-- Promotion is a reclaim, not a copy.  Strip every namespace this action can
+-- encounter so a finished track is neither re-adopted as `[vgt]` nor given a
+-- growing stack of `[clean]`/`[work]` prefixes.
+local function clean_name(source_name)
+  local rest = source_name
+  rest = rest:gsub("^%[vgt%]%s*", "")
+  rest = rest:gsub("^%[work%]%s*", "")
+  rest = rest:gsub("^%[clean%]%s*", "")
+  if rest == "" then rest = "Track" end
+  return CLEAN_PREFIX .. " " .. rest
 end
 
 -- A track-state chunk carries the source's own TRACKID. Stamp a fresh GUID into
@@ -84,14 +98,10 @@ local function is_marked_work_object(track)
   return value == WORK_EXT_STATE_VALUE
 end
 
-local function is_discardable_work_object(track)
-  return is_marked_work_object(track) and starts_with(track_name(track), WORK_PREFIX)
-end
-
 -- A name outside the scratch namespace is the user's durable reclaim signal.
 -- Forget our private provenance as soon as a later invocation observes that
 -- signal, so even a subsequent rename back to `[work] ...` can never make the
--- track eligible for automated discard again.  This is intentionally the only
+-- track eligible for automated promotion again.  This is intentionally the only
 -- metadata vgt changes on a reclaimed copy; its media, routing and placement
 -- are left entirely alone.
 local function forget_reclaimed_work_objects()
@@ -112,18 +122,6 @@ local function is_top_level_track(index)
     depth = depth + reaper.GetMediaTrackInfo_Value(reaper.GetTrack(0, previous), "I_FOLDERDEPTH")
   end
   return depth == 0
-end
-
--- Never extend or remove a marked container that now contains a user-owned
--- object (including a marked copy reclaimed by renaming). Doing so could change
--- that user's folder depth. It remains visible but is no longer this action's
--- reusable/discardable scratch area.
-local function workspace_has_only_discardable_children(folder_index)
-  local last_child = folder_last_child_index(folder_index)
-  for index = folder_index + 1, last_child do
-    if not is_discardable_work_object(reaper.GetTrack(0, index)) then return false end
-  end
-  return true
 end
 
 -- A workspace made by this action has exactly one folder level and a child
@@ -147,7 +145,7 @@ local function is_complete_work_folder(folder_index, track)
       return false
     end
   end
-  return workspace_has_only_discardable_children(folder_index)
+  return true
 end
 
 -- initialize creates an empty container as an ordinary top-level track. This
@@ -163,6 +161,12 @@ local function read_work_container_guid()
   -- stubs used by the offline tests; REAPER itself always provides this API.
   if not reaper.GetProjExtState then return "" end
   local _, value = reaper.GetProjExtState(0, PROJ_EXT_SECTION, PROJ_EXT_WORK_GUID_KEY)
+  return value or ""
+end
+
+local function read_clean_container_guid()
+  if not reaper.GetProjExtState then return "" end
+  local _, value = reaper.GetProjExtState(0, PROJ_EXT_SECTION, PROJ_EXT_CLEAN_GUID_KEY)
   return value or ""
 end
 
@@ -182,6 +186,11 @@ local function is_work_container(track)
   return value == WORK_CONTAINER_KIND
 end
 
+local function is_clean_container(track)
+  local _, value = reaper.GetSetMediaTrackInfo_String(track, CONTAINER_EXT_STATE_KEY, "", false)
+  return value == CLEAN_CONTAINER_KIND
+end
+
 -- Resolve the initialize-owned container by its project GUID first, then its
 -- durable track mark. Names are intentionally not identity: a hand-made
 -- `[work]` folder must never become this action's workspace.
@@ -195,6 +204,23 @@ local function find_work_folder()
     if is_top_level_track(index) and is_work_container(track) then
       if found then return nil, nil, "multiple [work] containers are marked in this project" end
       found, found_index = track, index
+    end
+  end
+  return found, found_index
+end
+
+-- Mirrors initialize's durable resolution order.  Names are deliberately not
+-- identity, so a hand-made `[clean]` track is never silently adopted here.
+local function find_clean_folder()
+  local track, index = find_top_level_track_by_guid(read_clean_container_guid())
+  if track then return track, index end
+
+  local found, found_index
+  for index = 0, reaper.CountTracks(0) - 1 do
+    local candidate = reaper.GetTrack(0, index)
+    if is_top_level_track(index) and is_clean_container(candidate) then
+      if found then return nil, nil, "multiple [clean] containers are marked in this project" end
+      found, found_index = candidate, index
     end
   end
   return found, found_index
@@ -222,6 +248,13 @@ local function work_container_name()
     or reference_name_from_container(CLEAN_PREFIX)
   if reference_name then return WORK_PREFIX .. " " .. reference_name end
   return WORK_PREFIX
+end
+
+local function clean_container_name()
+  local reference_name = reference_name_from_container(VGT_PREFIX)
+    or reference_name_from_container(WORK_PREFIX)
+  if reference_name then return CLEAN_PREFIX .. " " .. reference_name end
+  return CLEAN_PREFIX
 end
 
 local function vgt_root_index()
@@ -357,49 +390,138 @@ local function create()
   reaper.Undo_EndBlock("vgt: create working copy", -1)
 end
 
-local function discard()
+local function save_selected_tracks()
+  local selected = {}
+  for index = 0, reaper.CountSelectedTracks(0) - 1 do
+    selected[#selected + 1] = reaper.GetSelectedTrack(0, index)
+  end
+  return selected
+end
+
+local function restore_selected_tracks(selected)
+  for index = 0, reaper.CountTracks(0) - 1 do
+    reaper.SetTrackSelected(reaper.GetTrack(0, index), false)
+  end
+  for _, track in ipairs(selected) do reaper.SetTrackSelected(track, true) end
+end
+
+local function is_promotable(track)
+  return is_marked_work_object(track) and starts_with(track_name(track), WORK_PREFIX)
+end
+
+local function create_clean_folder(work_index)
+  -- A new clean scaffold belongs immediately above work.  In the unusual case
+  -- that this action is run before work exists, retain create's safe fallback.
+  local insert_index = work_index or vgt_root_index() or reaper.CountTracks(0)
+  reaper.InsertTrackAtIndex(insert_index, false)
+  local track = reaper.GetTrack(0, insert_index)
+  reaper.GetSetMediaTrackInfo_String(track, "P_NAME", clean_container_name(), true)
+  reaper.SetMediaTrackInfo_Value(track, "B_MUTE", 0)
+  reaper.GetSetMediaTrackInfo_String(track, CONTAINER_EXT_STATE_KEY, CLEAN_CONTAINER_KIND, true)
+  reaper.SetProjExtState(0, PROJ_EXT_SECTION, PROJ_EXT_CLEAN_GUID_KEY, reaper.GetTrackGUID(track))
+  reaper.SetMediaTrackInfo_Value(
+    track, "I_CUSTOMCOLOR",
+    reaper.ColorToNative(CLEAN_COLOR[1], CLEAN_COLOR[2], CLEAN_COLOR[3]) | 0x1000000
+  )
+  return track, insert_index
+end
+
+local function promote()
+  local selected = save_selected_tracks()
+  local eligible, rejected = {}, 0
+  for _, track in ipairs(selected) do
+    if is_promotable(track) then eligible[#eligible + 1] = track else rejected = rejected + 1 end
+  end
+  if #eligible == 0 then
+    reaper.ShowMessageBox(
+      "Select [work] tracks created by vgt to promote them to [clean].",
+      "vgt working copy", 0
+    )
+    return
+  end
+
   reaper.Undo_BeginBlock()
   reaper.PreventUIRefresh(1)
-  local removed = 0
-  local reclaimed = forget_reclaimed_work_objects()
-  local removable_tracks = {}
-  -- Decide the whole workspace before deleting any child.  A folder's closing
-  -- child carries its balancing -1 depth; deleting that child while preserving
-  -- an unmarked user track in the same folder would accidentally pull later
-  -- tracks into the folder.  Therefore a mixed workspace is preserved as a
-  -- unit. We only remove copies from a complete, resolved workspace whose
-  -- children are all still in the scratch namespace.
-  local folder, folder_index = find_work_folder()
-  if folder and is_complete_work_folder(folder_index, folder) then
-    local last_child = folder_last_child_index(folder_index)
-    for child_index = folder_index + 1, last_child do
-      removable_tracks[reaper.GetTrack(0, child_index)] = true
-    end
+
+  forget_reclaimed_work_objects()
+  local work, work_index, work_error = find_work_folder()
+  if work_error or not work or not is_complete_work_folder(work_index, work) then
+    reaper.ShowMessageBox(
+      work_error or "The [work] container has a changed folder structure; leaving it untouched.",
+      "vgt working copy", 0
+    )
+    reaper.PreventUIRefresh(-1)
+    reaper.Undo_EndBlock("vgt: promote working copies", -1)
+    return
   end
-  -- Delete only objects belonging to one of those complete workspaces.  This
-  -- additionally prevents a user-moved marked track, or a mixed workspace,
-  -- from being guessed at just because it retains a `[work]` name.
-  for index = reaper.CountTracks(0) - 1, 0, -1 do
+
+  local clean, clean_index, clean_error = find_clean_folder()
+  if clean_error or (clean and not is_empty_work_container(clean) and not is_complete_work_folder(clean_index, clean)) then
+    reaper.ShowMessageBox(
+      clean_error or "The [clean] container has a changed folder structure; leaving it untouched.",
+      "vgt working copy", 0
+    )
+    reaper.PreventUIRefresh(-1)
+    reaper.Undo_EndBlock("vgt: promote working copies", -1)
+    return
+  end
+  if not clean then
+    clean, clean_index = create_clean_folder(work_index)
+    -- Inserting clean above work shifts the latter's numeric index.
+    work, work_index = find_work_folder()
+  end
+
+  -- Preserve the old work children by identity before the move.  If its
+  -- closing child is promoted, folder_last_child_index cannot be used until a
+  -- replacement closer has been installed.
+  local work_last = folder_last_child_index(work_index)
+  local work_children = {}
+  for index = work_index + 1, work_last do
+    work_children[reaper.GetTrack(0, index)] = true
+  end
+
+  local clean_was_empty = is_empty_work_container(clean)
+  local clean_last = clean_was_empty and clean_index or folder_last_child_index(clean_index)
+  if clean_was_empty then
+    reaper.SetMediaTrackInfo_Value(clean, "I_FOLDERDEPTH", 1)
+  else
+    reaper.SetMediaTrackInfo_Value(reaper.GetTrack(0, clean_last), "I_FOLDERDEPTH", 0)
+  end
+
+  -- ReorderSelectedTracks moves the existing track objects: GUIDs, media,
+  -- takes, FX, and routing all remain attached to their original track.
+  for index = 0, reaper.CountTracks(0) - 1 do reaper.SetTrackSelected(reaper.GetTrack(0, index), false) end
+  for _, track in ipairs(eligible) do reaper.SetTrackSelected(track, true) end
+  reaper.ReorderSelectedTracks(clean_last + 1, 0)
+
+  local promoted = {}
+  for position, track in ipairs(eligible) do
+    promoted[track] = true
+    reaper.GetSetMediaTrackInfo_String(track, "P_NAME", clean_name(track_name(track)), true)
+    reaper.GetSetMediaTrackInfo_String(track, WORK_EXT_STATE_KEY, "", true)
+    reaper.SetMediaTrackInfo_Value(track, "I_FOLDERDEPTH", position == #eligible and -1 or 0)
+  end
+
+  local remaining = {}
+  for index = 0, reaper.CountTracks(0) - 1 do
     local track = reaper.GetTrack(0, index)
-    if removable_tracks[track] and is_discardable_work_object(track) then
-      reaper.DeleteTrack(track)
-      removed = removed + 1
-    end
+    if work_children[track] and not promoted[track] then remaining[#remaining + 1] = track end
   end
-  -- The initialize-owned container remains as an empty, flat scaffold after
-  -- discarding its copies. It is not a working-copy object itself.
-  if removed > 0 and folder then
-    reaper.SetMediaTrackInfo_Value(folder, "I_FOLDERDEPTH", 0)
+  if #remaining == 0 then
+    reaper.SetMediaTrackInfo_Value(work, "I_FOLDERDEPTH", 0)
+  else
+    reaper.SetMediaTrackInfo_Value(remaining[#remaining], "I_FOLDERDEPTH", -1)
   end
+
+  restore_selected_tracks(selected)
+  reaper.MarkProjectDirty(0)
   reaper.PreventUIRefresh(-1)
   reaper.TrackList_AdjustWindows(false)
   reaper.UpdateArrange()
-  reaper.Undo_EndBlock("vgt: discard working copies", -1)
-  if removed > 0 or reclaimed > 0 then
-    reaper.MarkProjectDirty(0)
-  else
+  reaper.Undo_EndBlock("vgt: promote working copies", -1)
+  if rejected > 0 then
     reaper.ShowMessageBox(
-      "No [work] tracks to discard. Rename a copy so it no longer starts with [work] to keep it.",
+      "Some selected tracks were not vgt-created [work] tracks and were not promoted.",
       "vgt working copy", 0
     )
   end
@@ -412,10 +534,10 @@ local function choose_action()
   if forced ~= "" then return forced end
   gfx.init("vgt working copy", 0, 0)
   gfx.x, gfx.y = gfx.mouse_x, gfx.mouse_y
-  local choice = gfx.showmenu("Create working copy from selected tracks|Discard all [work] copies")
+  local choice = gfx.showmenu("Create working copy from selected tracks|Promote selected [work] tracks to [clean]")
   gfx.quit()
   if choice == 1 then return "create" end
-  if choice == 2 then return "discard" end
+  if choice == 2 then return "promote" end
   return nil
 end
 
@@ -425,8 +547,8 @@ local function main()
   local action = choose_action()
   if action == "create" then
     create()
-  elseif action == "discard" then
-    discard()
+  elseif action == "promote" then
+    promote()
   end
 end
 

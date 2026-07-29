@@ -8,9 +8,12 @@ LUA = os.environ.get("VGT_TEST_LUA", "lua")
 
 
 def _run(lua_program: str, *args: str) -> subprocess.CompletedProcess:
-    return subprocess.run(
-        [LUA, "-", *args], input=lua_program, text=True, capture_output=True, check=True
+    result = subprocess.run(
+        [LUA, "-", *args], input=lua_program, text=True, capture_output=True
     )
+    if result.returncode:
+        raise AssertionError(result.stderr)
+    return result
 
 
 def test_working_copy_is_never_vgt_owned() -> None:
@@ -28,7 +31,7 @@ def test_working_copy_is_never_vgt_owned() -> None:
     assert 'reaper.GetSetMediaTrackInfo_String(track, VGT_EXT_STATE_KEY, "", true)' in script
     assert 'reaper.GetSetMediaTrackInfo_String(track, WORK_EXT_STATE_KEY, WORK_EXT_STATE_VALUE, true)' in script
     assert 'local function forget_reclaimed_work_objects()' in script
-    # Discard requires both name and durable provenance, never just `[work]`.
+    # Promotion requires both name and durable provenance, never just `[work]`.
     assert "is_marked_work_object(track) and starts_with(track_name(track), WORK_PREFIX)" in script
 
 
@@ -380,7 +383,7 @@ def test_build_working_copy_produces_an_editable_user_owned_track() -> None:
     assert mute == "0"  # unmuted so it is audible/visible while editing
     assert depth == "-1"  # closes the folder as requested
     assert mark == ""  # ownership mark cleared -> vgt ignores it
-    assert work_mark == "1"  # action-specific provenance enables safe discard
+    assert work_mark == "1"  # action-specific provenance enables safe promotion
     assert selected == "true"  # new copy becomes the selection
     assert locks == "00"  # every item unlocked -> immediately editable
     assert "TRACKID {GEN-1}" in chunk and "{OLD-1}" not in chunk  # fresh unique GUID
@@ -437,206 +440,98 @@ def test_create_does_not_reuse_an_unmarked_work_folder_and_creates_a_container()
     )
 
 
-def test_discard_removes_only_marked_work_tracks() -> None:
-    script = WORKING_COPY_SCRIPT.read_text()
-    helpers_end = script.index("local function choose_action")
-    lua_program = "\n".join(
+def _promote_mock(tracks_literal: str) -> str:
+    return "\n".join(
         [
-            "local tracks = {",
-            "  {name = '[work]', values={I_FOLDERDEPTH=1}, ext={['P_EXT:vgt_container']='work'}},",
-            "  {name = '[work] Guitar Ref (MIDI)', values={I_FOLDERDEPTH=-1}, ext={['P_EXT:vgt_working_copy']='1'}},",
-            "  {name = '[work] User folder', values={I_FOLDERDEPTH=0}}, {name = '[work] User track', values={I_FOLDERDEPTH=0}},",
-            "  {name = '[work] Reclaimed', ext={['P_EXT:vgt_working_copy']='1'}, renamed='Kept by user'},",
-            "  {name = '[vgt] Guitar Ref (MIDI)'}, {name = 'My Keeper'},",
-            "}",
-            "tracks[5].name = tracks[5].renamed",  # a renamed marked copy is retained
+            f"local tracks = {tracks_literal}",
             "reaper = {}",
             "function reaper.CountTracks() return #tracks end",
             "function reaper.GetTrack(_, index) return tracks[index + 1] end",
-            "function reaper.GetTrackName(track) return true, track.name end",
-            "function reaper.GetSetMediaTrackInfo_String(track, key, value, set) if set then track.ext = track.ext or {}; track.ext[key] = value; return true, value end; return true, track.ext and track.ext[key] or '' end",
-            "function reaper.GetMediaTrackInfo_Value(track, key) return track.values and track.values[key] or 0 end",
-            "function reaper.SetMediaTrackInfo_Value(track, key, value) track.values = track.values or {}; track.values[key] = value end",
-            "function reaper.DeleteTrack(track) for i, t in ipairs(tracks) do if t == track then table.remove(tracks, i); return end end end",
-            "function reaper.Undo_BeginBlock() end",
-            "function reaper.Undo_EndBlock() end",
-            "function reaper.PreventUIRefresh() end",
-            "function reaper.TrackList_AdjustWindows() end",
-            "function reaper.UpdateArrange() end",
-            "function reaper.MarkProjectDirty() end",
-            "function reaper.ShowMessageBox() error('should not warn when [work] tracks were removed') end",
-            script[:helpers_end],
-            "discard()",
-            "for _, t in ipairs(tracks) do io.write(t.name, ':', t.ext and (t.ext['P_EXT:vgt_working_copy'] or '') or '', ';') end",
-        ]
-    )
-    assert _run(lua_program).stdout == "[work]:;[work] User folder:;[work] User track:;Kept by user:;[vgt] Guitar Ref (MIDI):;My Keeper:;"
-
-
-def test_discard_preserves_a_mixed_marked_workspace_without_breaking_its_folder() -> None:
-    """One user track in a marked workspace makes the entire workspace
-    ineligible.  In particular, vgt must not delete its marked closing child
-    and leave the user's folder open over the following track."""
-    script = WORKING_COPY_SCRIPT.read_text()
-    helpers_end = script.index("local function choose_action")
-    lua_program = "\n".join(
-        [
-            "local tracks = {",
-            "  {name='[work]', values={I_FOLDERDEPTH=1}, ext={['P_EXT:vgt_container']='work'}},",
-            "  {name='[work] disposable', values={I_FOLDERDEPTH=0}, ext={['P_EXT:vgt_working_copy']='1'}},",
-            "  {name='User addition', values={I_FOLDERDEPTH=-1}, ext={}},",
-            "  {name='Outside', values={I_FOLDERDEPTH=0}, ext={}},",
-            "}",
-            "reaper = {}",
-            "function reaper.CountTracks() return #tracks end",
-            "function reaper.GetTrack(_, index) return tracks[index + 1] end",
+            "function reaper.GetTrackGUID(track) return track.guid end",
             "function reaper.GetTrackName(track) return true, track.name end",
             "function reaper.GetMediaTrackInfo_Value(track, key) return track.values[key] or 0 end",
             "function reaper.SetMediaTrackInfo_Value(track, key, value) track.values[key] = value end",
-            "function reaper.GetSetMediaTrackInfo_String(track, key, value, set) if set then track.ext[key] = value; return true, value end; return true, track.ext[key] or '' end",
-            "function reaper.DeleteTrack() error('a mixed workspace must remain intact') end",
-            "function reaper.Undo_BeginBlock() end; function reaper.Undo_EndBlock() end",
-            "function reaper.PreventUIRefresh() end; function reaper.TrackList_AdjustWindows() end; function reaper.UpdateArrange() end",
-            "function reaper.MarkProjectDirty() error('nothing changed') end",
-            "function reaper.ShowMessageBox(text) io.write('WARNED:', text) end",
-            script[:helpers_end],
-            "discard()",
-            "for _,t in ipairs(tracks) do io.write(t.name, ':', t.values.I_FOLDERDEPTH, ';') end",
+            "function reaper.GetSetMediaTrackInfo_String(track, key, value, set) if set then if key == 'P_NAME' then track.name=value else track.ext[key]=value end; return true,value end; return true,track.ext[key] or '' end",
+            "function reaper.GetProjExtState(_, _, key) return 1, (_G.__project_ext and _G.__project_ext[key] or '') end",
+            "function reaper.SetProjExtState(_, _, key, value) _G.__project_ext=_G.__project_ext or {}; _G.__project_ext[key]=value end",
+            "function reaper.ColorToNative(r,g,b) return r*65536+g*256+b end",
+            "function reaper.CountSelectedTracks() local n=0; for _,t in ipairs(tracks) do if t.selected then n=n+1 end end; return n end",
+            "function reaper.GetSelectedTrack(_, wanted) local n=0; for _,t in ipairs(tracks) do if t.selected then if n==wanted then return t end; n=n+1 end end end",
+            "function reaper.SetTrackSelected(track, value) track.selected=value end",
+            "function reaper.InsertTrackAtIndex(index) table.insert(tracks,index+1,{name='',guid='{CLEAN}',values={I_FOLDERDEPTH=0},ext={},items={},takes={}}) end",
+            "function reaper.ReorderSelectedTracks(before) local moved={}; for i=#tracks,1,-1 do if tracks[i].selected then table.insert(moved,1,tracks[i]); table.remove(tracks,i) end end; for i=#moved,1,-1 do table.insert(tracks,before + 1,moved[i]) end end",
+            "function reaper.Undo_BeginBlock() end; function reaper.Undo_EndBlock() end; function reaper.PreventUIRefresh() end; function reaper.TrackList_AdjustWindows() end; function reaper.UpdateArrange() end; function reaper.MarkProjectDirty() _G.__dirty=true end",
+            "function reaper.ShowMessageBox(text) _G.__message=text end",
+            "_G.__tracks=tracks",
         ]
     )
-    result = _run(lua_program)
-    assert result.stdout.endswith("[work]:1;[work] disposable:0;User addition:-1;Outside:0;")
 
 
-def test_discard_preserves_a_marked_workspace_with_altered_folder_depth() -> None:
-    """A durable marker only identifies vgt's original scratch shape; it does
-    not authorize deleting a workspace whose nesting has been changed."""
+def test_promote_moves_the_existing_track_and_reclaims_it() -> None:
     script = WORKING_COPY_SCRIPT.read_text()
     helpers_end = script.index("local function choose_action")
     lua_program = "\n".join(
         [
-            "local tracks = {",
-            "  {name='[work]', values={I_FOLDERDEPTH=2}, ext={['P_EXT:vgt_working_copy']='1'}},",
-            "  {name='[work] altered copy', values={I_FOLDERDEPTH=-2}, ext={['P_EXT:vgt_working_copy']='1'}},",
-            "  {name='Outside', values={I_FOLDERDEPTH=0}, ext={}},",
-            "}",
-            "reaper = {}",
-            "function reaper.CountTracks() return #tracks end",
-            "function reaper.GetTrack(_, index) return tracks[index + 1] end",
-            "function reaper.GetTrackName(track) return true, track.name end",
-            "function reaper.GetMediaTrackInfo_Value(track, key) return track.values[key] or 0 end",
-            "function reaper.GetSetMediaTrackInfo_String(track, key, value, set) if set then track.ext[key] = value; return true, value end; return true, track.ext[key] or '' end",
-            "function reaper.DeleteTrack() error('an altered workspace must remain intact') end",
-            "function reaper.Undo_BeginBlock() end; function reaper.Undo_EndBlock() end",
-            "function reaper.PreventUIRefresh() end; function reaper.TrackList_AdjustWindows() end; function reaper.UpdateArrange() end",
-            "function reaper.MarkProjectDirty() error('nothing changed') end",
-            "function reaper.ShowMessageBox(text) io.write('WARNED:', text) end",
+            _promote_mock("{{name='[clean] Song',guid='{C}',values={I_FOLDERDEPTH=1},ext={['P_EXT:vgt_container']='clean'},items={}}, {name='Old clean',guid='{OLD}',values={I_FOLDERDEPTH=-1},ext={},items={}}, {name='[work] Song',guid='{W}',values={I_FOLDERDEPTH=1},ext={['P_EXT:vgt_container']='work'},items={}}, {name='[work] Guitar',guid='{GUITAR}',values={I_FOLDERDEPTH=-1},ext={['P_EXT:vgt_working_copy']='1'},items={'item'},takes={'take'},selected=true}, {name='Outside',guid='{O}',values={I_FOLDERDEPTH=0},ext={},items={}}}"),
             script[:helpers_end],
-            "discard()",
-            "for _,t in ipairs(tracks) do io.write(t.name, ':', t.values.I_FOLDERDEPTH, ';') end",
+            "promote(); local t=__tracks[3]; io.write(t.name,'|',t.guid,'|',t.items[1],'|',t.takes[1],'|',t.ext['P_EXT:vgt_working_copy'] or '', '|',t.ext['P_EXT:vgt_managed'] or '', '|',t.ext['P_EXT:vgt_container'] or '', '|',t.values.I_FOLDERDEPTH,'|',__tracks[4].values.I_FOLDERDEPTH)",
         ]
     )
-    result = _run(lua_program)
-    assert result.stdout.endswith("[work]:2;[work] altered copy:-2;Outside:0;")
+    assert _run(lua_program).stdout == "[clean] Guitar|{GUITAR}|item|take||||-1|0"
 
 
-def test_discard_preserves_a_marked_workspace_with_nested_children() -> None:
-    """Discard applies the same exact-shape guard as reuse, so it cannot
-    remove a marker-bearing workspace after the user creates nested folders."""
+def test_clean_name_reprefixes_without_namespace_pileup() -> None:
+    script = WORKING_COPY_SCRIPT.read_text()
+    helpers_end = script.index("local function replace_track_guid")
+    lua_program = "\n".join(
+        [
+            script[:helpers_end],
+            "io.write(clean_name('[vgt] A'),'|',clean_name('[work] A'),'|',clean_name('[clean] A'),'|',clean_name('A'),'|',clean_name('[work]'))",
+        ]
+    )
+    assert _run(lua_program).stdout == "[clean] A|[clean] A|[clean] A|[clean] A|[clean] Track"
+
+
+def test_promote_into_empty_clean_preserves_selection_order_and_flattens_work() -> None:
     script = WORKING_COPY_SCRIPT.read_text()
     helpers_end = script.index("local function choose_action")
     lua_program = "\n".join(
         [
-            "local tracks = {",
-            "  {name='[work]', values={I_FOLDERDEPTH=1}, ext={['P_EXT:vgt_container']='work'}},",
-            "  {name='[work] first copy', values={I_FOLDERDEPTH=0}, ext={['P_EXT:vgt_working_copy']='1'}},",
-            "  {name='[work] nested copy', values={I_FOLDERDEPTH=1}, ext={['P_EXT:vgt_working_copy']='1'}},",
-            "  {name='[work] nested child', values={I_FOLDERDEPTH=-2}, ext={['P_EXT:vgt_working_copy']='1'}},",
-            "  {name='Outside', values={I_FOLDERDEPTH=0}, ext={}},",
-            "}",
-            "reaper = {}",
-            "function reaper.CountTracks() return #tracks end",
-            "function reaper.GetTrack(_, index) return tracks[index + 1] end",
-            "function reaper.GetTrackName(track) return true, track.name end",
-            "function reaper.GetMediaTrackInfo_Value(track, key) return track.values[key] or 0 end",
-            "function reaper.GetSetMediaTrackInfo_String(track, key, value, set) if set then track.ext[key] = value; return true, value end; return true, track.ext[key] or '' end",
-            "function reaper.DeleteTrack() error('a nested workspace must remain intact') end",
-            "function reaper.Undo_BeginBlock() end; function reaper.Undo_EndBlock() end",
-            "function reaper.PreventUIRefresh() end; function reaper.TrackList_AdjustWindows() end; function reaper.UpdateArrange() end",
-            "function reaper.MarkProjectDirty() error('nothing changed') end",
-            "function reaper.ShowMessageBox(text) io.write('WARNED:', text) end",
+            _promote_mock("{{name='[clean] Song',guid='{C}',values={I_FOLDERDEPTH=0},ext={['P_EXT:vgt_container']='clean'},items={}}, {name='[work] Song',guid='{W}',values={I_FOLDERDEPTH=1},ext={['P_EXT:vgt_container']='work'},items={}}, {name='[work] First',guid='{1}',values={I_FOLDERDEPTH=0},ext={['P_EXT:vgt_working_copy']='1'},items={},selected=true}, {name='[work] Second',guid='{2}',values={I_FOLDERDEPTH=-1},ext={['P_EXT:vgt_working_copy']='1'},items={},selected=true}, {name='Outside',guid='{O}',values={I_FOLDERDEPTH=0},ext={},items={}}}"),
             script[:helpers_end],
-            "discard()",
-            "for _,t in ipairs(tracks) do io.write(t.name, ':', t.values.I_FOLDERDEPTH, ';') end",
+            "promote(); for _,t in ipairs(__tracks) do io.write(t.name,':',t.values.I_FOLDERDEPTH,':',t.selected and 'S' or '', ';') end",
         ]
     )
-    result = _run(lua_program)
-    assert result.stdout.endswith(
-        "[work]:1;[work] first copy:0;[work] nested copy:1;[work] nested child:-2;Outside:0;"
+    assert _run(lua_program).stdout == (
+        "[clean] Song:1:;[clean] First:0:S;[clean] Second:-1:S;[work] Song:0:;Outside:0:;"
     )
 
 
-def test_discard_preserves_reclaimed_copy_permanently_and_keeps_folder_depths() -> None:
-    """A renamed copy has its private marker cleared before disposal.  Even if
-    the user subsequently gives it a `[work]` name again, it remains a user
-    track; the adjacent marked scratch folder is still removed cleanly."""
+def test_promote_creates_clean_above_work_with_initialize_metadata() -> None:
     script = WORKING_COPY_SCRIPT.read_text()
     helpers_end = script.index("local function choose_action")
     lua_program = "\n".join(
         [
-            "local tracks = {",
-            "  {name='User folder', values={I_FOLDERDEPTH=1}, ext={}},",
-            "  {name='User child', values={I_FOLDERDEPTH=-1}, ext={}},",
-            "  {name='[work]', values={I_FOLDERDEPTH=1}, ext={['P_EXT:vgt_container']='work'}},",
-            "  {name='[work] disposable', values={I_FOLDERDEPTH=-1}, ext={['P_EXT:vgt_working_copy']='1'}},",
-            "  {name='Kept part', values={I_FOLDERDEPTH=0}, ext={['P_EXT:vgt_working_copy']='1'}},",
-            "}",
-            "reaper = {}",
-            "function reaper.CountTracks() return #tracks end",
-            "function reaper.GetTrack(_, index) return tracks[index + 1] end",
-            "function reaper.GetTrackName(track) return true, track.name end",
-            "function reaper.GetMediaTrackInfo_Value(track, key) return track.values[key] or 0 end",
-            "function reaper.SetMediaTrackInfo_Value(track, key, value) track.values[key] = value end",
-            "function reaper.GetSetMediaTrackInfo_String(track, key, value, set) if set then track.ext[key] = value; return true, value end; return true, track.ext[key] or '' end",
-            "function reaper.DeleteTrack(track) for i, t in ipairs(tracks) do if t == track then table.remove(tracks, i); return end end end",
-            "function reaper.Undo_BeginBlock() end; function reaper.Undo_EndBlock() end",
-            "function reaper.PreventUIRefresh() end; function reaper.TrackList_AdjustWindows() end; function reaper.UpdateArrange() end",
-            "function reaper.MarkProjectDirty() end; function reaper.ShowMessageBox() error('unexpected warning') end",
+            _promote_mock("{{name='[work] Reference',guid='{W}',values={I_FOLDERDEPTH=1},ext={['P_EXT:vgt_container']='work'},items={}}, {name='[work] Draft',guid='{D}',values={I_FOLDERDEPTH=-1},ext={['P_EXT:vgt_working_copy']='1'},items={},selected=true}, {name='[vgt] Reference',guid='{V}',values={I_FOLDERDEPTH=0},ext={},items={}}}"),
             script[:helpers_end],
-            "discard()",
-            "tracks[4].name = '[work] Kept part again'",
-            "for _,t in ipairs(tracks) do io.write(t.name, ':', t.values.I_FOLDERDEPTH, ':', t.ext['P_EXT:vgt_working_copy'] or '', ';') end",
+            "promote(); local c=__tracks[1]; io.write(c.name,'|',c.ext['P_EXT:vgt_container'],'|',c.values.I_CUSTOMCOLOR,'|',__project_ext.clean_container,'|',__tracks[3].name)",
         ]
     )
-    assert _run(lua_program).stdout == "User folder:1:;User child:-1:;[work]:0:;[work] Kept part again:0:;"
+    assert _run(lua_program).stdout == "[clean] Reference|clean|29086249|{CLEAN}|[work] Reference"
 
 
-def test_discard_warns_when_there_is_nothing_to_remove() -> None:
+def test_promote_refuses_renamed_or_unmarked_work_tracks_without_changes() -> None:
     script = WORKING_COPY_SCRIPT.read_text()
     helpers_end = script.index("local function choose_action")
     lua_program = "\n".join(
         [
-            "local tracks = {{name = '[vgt] Guitar'}, {name = 'User'}}",
-            "reaper = {}",
-            "function reaper.CountTracks() return #tracks end",
-            "function reaper.GetTrack(_, index) return tracks[index + 1] end",
-            "function reaper.GetTrackName(track) return true, track.name end",
-            "function reaper.GetSetMediaTrackInfo_String(track, key, value, set) return true, '' end",
-            "function reaper.GetMediaTrackInfo_Value() return 0 end",
-            "function reaper.DeleteTrack() error('nothing should be deleted') end",
-            "function reaper.Undo_BeginBlock() end",
-            "function reaper.Undo_EndBlock() end",
-            "function reaper.PreventUIRefresh() end",
-            "function reaper.TrackList_AdjustWindows() end",
-            "function reaper.UpdateArrange() end",
-            "function reaper.MarkProjectDirty() error('must not dirty when nothing changed') end",
-            "function reaper.ShowMessageBox(text) io.write('WARNED:', text) end",
+            _promote_mock("{{name='Kept by user',guid='{R}',values={I_FOLDERDEPTH=0},ext={['P_EXT:vgt_working_copy']='1'},items={},selected=true}, {name='[work] Hand made',guid='{U}',values={I_FOLDERDEPTH=0},ext={},items={},selected=true}}"),
             script[:helpers_end],
-            "discard()",
+            "promote(); io.write(__message,'|',tostring(__dirty),'|',__tracks[1].ext['P_EXT:vgt_working_copy'],'|',__tracks[2].name)",
         ]
     )
-    assert _run(lua_program).stdout.startswith("WARNED:")
-    assert "no longer starts with [work]" in _run(lua_program).stdout
+    result = _run(lua_program).stdout
+    assert result.startswith("Select [work] tracks created by vgt to promote them to [clean].|nil|1|[work] Hand made")
 
 
 def test_working_copy_uses_reaper_api_and_never_touches_the_sidecar_or_rpp_text() -> None:
@@ -647,3 +542,6 @@ def test_working_copy_uses_reaper_api_and_never_touches_the_sidecar_or_rpp_text(
     # the sidecar (no analysis/ownership state lives there for working copies).
     assert ".vgt" not in script
     assert "GetSetProjectInfo_String" not in script
+    assert "reaper.ReorderSelectedTracks" in script
+    assert "local function discard()" not in script
+    assert "workspace_has_only_discardable_children" not in script
