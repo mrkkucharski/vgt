@@ -91,6 +91,17 @@ Artifacts live under `vgt/<stable-id>/` beside the project:
 - `transcription/drums/<variant-id>.json` — a DrumScript variant's percussion
   event data (instrument labels and onset times).
 
+Every transcription artifact lives under `transcription/<target>/`, for every
+target; only those per-target directories and `cache/` sit directly inside
+`transcription/`. Projects transcribed by an older vgt kept a target's first
+result at a flat `transcription/<target>.mid` instead. The next `vgt analyze`
+(or `vgt transcription variant add`) relocates those files to the current
+layout, updates the sidecar to match, and deletes any flat leftover no retained
+variant still points at. Nothing is re-transcribed: relocating a file changes
+no cache identity. Run REAPER's initialize action afterwards if the project was
+already open — its imported MIDI items still reference the old paths until the
+managed tracks are rebuilt.
+
 vgt writes a tempo map only when the project still has REAPER's default 120
 BPM, 4/4 map and analysis detected a downbeat. Beat-only fallback analysis
 (for example, librosa when madmom is unavailable) retains the detected BPM and

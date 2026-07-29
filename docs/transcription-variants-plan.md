@@ -296,6 +296,17 @@ transcription/drums/<variant-id>.mid
 Variant IDs are opaque, filesystem-safe identifiers generated once. Labels
 never appear in paths.
 
+This layout is now the only one vgt writes (#223). The pre-v13 flat
+`transcription/<target>.mid` layout is retired: the single-result writer that
+produced it is gone, and `transcription_variants.reconcile_artifact_layout`
+relocates any artifact an older project still records at a flat path, then
+sweeps the leftovers. `sidecar.migrate_transcription_target` still keeps a
+migrated variant's recorded path verbatim — it is a pure in-memory transform
+and must not touch the filesystem — so a record can name a flat path until the
+next analyze or `variant add` reconciles the layout. `vgt_initialize.lua`
+therefore still accepts the flat path for a migrated-but-not-yet-relocated
+variant.
+
 ### Execution behavior
 
 - Reconcile variants independently.

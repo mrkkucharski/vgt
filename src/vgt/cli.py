@@ -484,7 +484,6 @@ def main(argv: list[str] | None = None) -> int:
                 force=args.force,
                 stages=("chords", *transcription_stages),
                 transcription_targets=(args.transcribe_only,) if args.transcribe_only else None,
-                variant_compatibility=True,
             )
             return 0
         if args.command == "status":

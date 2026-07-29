@@ -23,7 +23,6 @@ import hashlib
 import json
 import logging
 import math
-import shutil
 
 from . import __version__
 from .chords import ChordDetectionError, chord_sheet_path, detect_chords as _detect_chords, render_chord_sheet
@@ -47,25 +46,21 @@ from .transcribe import (
     Transcriber,
     TranscriberRouter,
     TargetTranscriberRouter,
-    TranscriptionError,
-    error_entry,
     events_artifact_name,
     effective_profile_name_for_target,
     midi_artifact_name,
-    missing_source_entry,
     notes_artifact_name,
     production_transcriber_router,
     resolve_target_source,
-    spec_hash,
     target_input_hash,
     tempo_map_reference,
-    transcribed_entry,
     validate_profile_for_target,
     validate_target,
 )
 from .transcription_variants import (
     VariantRequest,
     garbage_collect_raw_cache,
+    reconcile_artifact_layout,
     reconcile_variants,
     variant_events_name,
     variant_midi_name,
@@ -202,14 +197,30 @@ def _refresh_stage_with_detected(
     }
 
 
-def _replace_artifact(local_path: Path, final_path: Path) -> None:
-    """Atomically move a backend's local output into its final artifact
-    location, mirroring `separation.py`'s `.part`-suffix move so a crash
-    mid-write never leaves a half-written artifact at the final path."""
-    final_path.parent.mkdir(parents=True, exist_ok=True)
-    tmp_final = final_path.with_suffix(final_path.suffix + ".part")
-    shutil.move(str(local_path), str(tmp_final))
-    tmp_final.replace(final_path)
+def apply_artifact_layout(
+    project_path: Path, namespace: str, analysis: dict[str, Any], *, emit: Callable[[str], None]
+) -> None:
+    """Bring this project's transcription artifacts onto the current layout and
+    persist the record rewrites atomically (issue #223).
+
+    Runs twice by design: once against the caller's in-memory `analysis`, which
+    performs the actual file moves and emits the progress lines, and again
+    inside the atomic sidecar update against the authoritative on-disk copy,
+    which finds the files already moved and only rewrites the records there.
+    `reconcile_artifact_layout` is idempotent and filesystem-driven precisely so
+    that second pass is safe (see its docstring).
+    """
+    namespace_dir = artifact_namespace_dir(project_path, namespace)
+    outcome = reconcile_artifact_layout(
+        namespace_dir=namespace_dir, targets=analysis["transcription"]["targets"], emit=emit
+    )
+    if not outcome.records_changed:
+        return
+
+    def persist_layout(current: dict[str, Any]) -> None:
+        reconcile_artifact_layout(namespace_dir=namespace_dir, targets=current["transcription"]["targets"])
+
+    update_analysis(project_path, persist_layout)
 
 
 def _refresh_target(
@@ -222,7 +233,6 @@ def _refresh_target(
     *,
     force: bool,
     emit: Callable[[str], None],
-    variant_compatibility: bool = False,
 ) -> dict[str, Any]:
     """Reconcile one transcription target's `targets` index entry.
 
@@ -233,19 +243,16 @@ def _refresh_target(
     whose stem hasn't arrived yet is simply retained as
     `skipped-missing-source` until a later run finds it (see
     `sidecar.py` schema v10 and `docs/transcription-plan.md` section 2).
+
+    Every target goes through the variants model, so every artifact this
+    writes lands under `transcription/<target>/` (#223). The pre-v13
+    single-result writer it replaced was the one remaining producer of flat
+    `transcription/<target>.mid` artifacts, and the only caller that ever
+    reached it was a library caller taking the old default.
     """
     validate_target(target)
 
     existing_target = analysis["transcription"]["targets"].get(target)
-    genuine_variants = (
-        isinstance(existing_target, dict)
-        and isinstance(existing_target.get("variants"), dict)
-        and "status" not in existing_target
-    )
-    if not variant_compatibility and not genuine_variants:
-        return _refresh_legacy_target(
-            project_path, target, analysis, reference_source, namespace, router, force=force, emit=emit
-        )
 
     # Schema v13 retains several generated candidates for one target.  The
     # established analyze flags remain a compatibility surface over that
@@ -326,64 +333,6 @@ def _refresh_target(
     analysis["transcription"]["detection_cache"] = outcome.detection_cache
 
     return record
-
-
-def _refresh_legacy_target(
-    project_path: Path, target: str, analysis: dict[str, Any], reference_source: Path,
-    namespace: str, router: TranscriberRouter, *, force: bool, emit: Callable[[str], None],
-) -> dict[str, Any]:
-    """The pre-v13 single-result implementation retained for API callers.
-
-    The CLI opts into the variant compatibility path; direct callers that
-    supplied a legacy `Transcriber` with only ``transcribe`` remain supported.
-    """
-    tempo_value = analysis["tempo"].get("value")
-    midi_tempo = tempo_value.get("bpm") if isinstance(tempo_value, dict) else None
-    time_signature = tempo_value.get("time_signature") if isinstance(tempo_value, dict) else None
-    beat_times = tempo_value.get("beat_times") if isinstance(tempo_value, dict) else None
-    downbeat_offset_s = tempo_value.get("downbeat_offset_seconds") if isinstance(tempo_value, dict) else None
-    modes = analysis["transcription"].get("modes")
-    transcriber = router.for_target(target, modes)
-    spec = router.spec_for_target(
-        target, midi_tempo=midi_tempo, modes=modes, time_signature=time_signature,
-        beat_times=beat_times, downbeat_offset_s=downbeat_offset_s,
-        tempo_map=tempo_map_reference(tempo_value if isinstance(tempo_value, dict) else None),
-    )
-    settings_hash = spec_hash(spec)
-    resolved = resolve_target_source(project_path, target, analysis, reference_source=reference_source)
-    if resolved is None:
-        emit(f"transcription skipped for {target}: no {target} stem available")
-        return missing_source_entry(spec, target)
-    source_path, artifact = resolved
-    input_hash = target_input_hash(source_path, artifact)
-    existing = analysis["transcription"]["targets"].get(target)
-    if (
-        not force and isinstance(existing, dict) and existing.get("status") == "transcribed"
-        and existing.get("input_hash") == input_hash and existing.get("settings_hash") == settings_hash
-    ):
-        emit(f"transcription — {target}: unchanged, using cached result")
-        return existing
-    emit(f"transcription — {target}: transcribing…")
-    namespace_dir = artifact_namespace_dir(project_path, namespace)
-    work_dir = namespace_dir / "transcription" / f"_work-{target}"
-    try:
-        try:
-            result = transcriber.transcribe(source_path, work_dir, spec, progress=emit)
-        except TranscriptionError as exc:
-            emit(f"transcription error for {target}: {exc}")
-            return error_entry(spec, source_role=target, input_hash=input_hash, error=str(exc))
-        _replace_artifact(result.midi_path, namespace_dir / midi_artifact_name(target))
-        if result.notes_path is not None:
-            _replace_artifact(result.notes_path, namespace_dir / notes_artifact_name(target))
-        if result.events_path is not None:
-            _replace_artifact(result.events_path, namespace_dir / events_artifact_name(target))
-    finally:
-        if work_dir.is_dir():
-            shutil.rmtree(work_dir, ignore_errors=True)
-    return transcribed_entry(
-        spec, source_role=target, input_hash=input_hash, target=target, result=result,
-        transcribed_at=datetime.now(UTC).isoformat().replace("+00:00", "Z"),
-    )
 
 
 def _tempo_map_beat_times(tempo_value: dict[str, Any], source: Path) -> list[float] | None:
@@ -570,7 +519,6 @@ def analyze(
     transcriber: Transcriber | None = None,
     transcriber_router: TranscriberRouter | None = None,
     transcription_targets: tuple[str, ...] | None = None,
-    variant_compatibility: bool = False,
 ) -> dict[str, Any]:
     """Run (or refresh) analysis for `project` and persist it into the sidecar.
 
@@ -634,6 +582,11 @@ def analyze(
                 transcription_targets if transcription_targets is not None else analysis["transcription"]["requested_targets"]
             )
             emit(f"[{position}/{total}] transcription — reconciling {len(targets_to_run)} target(s)…")
+            # Before anything writes: relocate any artifact a pre-v13 record
+            # still points at, and sweep the flat leftovers a variant's first
+            # re-reconcile stranded, so every target's artifacts share one
+            # layout regardless of when that target was first transcribed.
+            apply_artifact_layout(project_path, namespace, analysis, emit=emit)
             if transcriber is not None and transcriber_router is not None:
                 raise AnalysisError("pass either transcriber or transcriber_router, not both")
             active_router = (
@@ -650,7 +603,6 @@ def analyze(
                     active_router,
                     force=force,
                     emit=emit,
-                    variant_compatibility=variant_compatibility,
                 )
                 # Each target's success (or failure) becomes durable
                 # immediately, same as every other stage below -- a later
