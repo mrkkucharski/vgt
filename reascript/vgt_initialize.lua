@@ -7,6 +7,18 @@ local CHORDS_NAME = PREFIX .. " Chords"
 local BEATS_NAME = PREFIX .. " Beats"
 local CLICK_NAME = PREFIX .. " Click"
 local KEY_NAME = PREFIX .. " Key"
+-- The canonical [clean]/[work]/[vgt] container layout (issue #225). [clean]
+-- and [work] are the two user-content scaffold containers vgt creates and
+-- repositions but never reaches inside of; see docs/GOAL.md's amended
+-- non-destructive invariant.
+local CLEAN_PREFIX = "[clean]"
+local WORK_PREFIX = "[work]"
+-- Colour is presentation, never provenance: every ownership decision in this
+-- file reads P_EXT marks, GUIDs, and the manifest, never a track's colour.
+-- Nothing below may branch on these values.
+local CLEAN_COLOR = {187, 210, 41}
+local WORK_COLOR = {68, 175, 239}
+local VGT_COLOR = {189, 100, 175}
 local STEM_TRACKS = {
   {artifact = "vocals", filename = "stems/vocals.wav", name = PREFIX .. " Vocals"},
   {artifact = "instrumental", filename = "stems/instrumental.wav", name = PREFIX .. " Instrumental"},
@@ -57,8 +69,12 @@ local function track_name(track)
   return name
 end
 
+local function starts_with(name, prefix)
+  return name:sub(1, #prefix) == prefix
+end
+
 local function starts_with_vgt(track)
-  return track_name(track):sub(1, #PREFIX) == PREFIX
+  return starts_with(track_name(track), PREFIX)
 end
 
 -- Ownership must survive a stale or missing sidecar: `managed_track_guids` is
@@ -596,12 +612,268 @@ local function validate_reconciliation_inventory(analysis)
   return inventory
 end
 
+local function warn(message)
+  reaper.ShowConsoleMsg("vgt: " .. message .. "\n")
+end
+
 local function find_track_by_guid(guid)
   for index = 0, reaper.CountTracks(0) - 1 do
     local track = reaper.GetTrack(0, index)
     if reaper.GetTrackGUID(track) == guid then return track end
   end
   return nil
+end
+
+local function track_index(track)
+  local guid = reaper.GetTrackGUID(track)
+  for index = 0, reaper.CountTracks(0) - 1 do
+    if reaper.GetTrackGUID(reaper.GetTrack(0, index)) == guid then return index end
+  end
+  return nil
+end
+
+local function is_top_level_track(index)
+  local depth = 0
+  for previous = 0, index - 1 do
+    depth = depth + reaper.GetMediaTrackInfo_Value(reaper.GetTrack(0, previous), "I_FOLDERDEPTH")
+  end
+  return depth == 0
+end
+
+-- ---------------------------------------------------------------------------
+-- [clean]/[work] container scaffold (issue #225)
+--
+-- These two containers are user-content: vgt creates, renames, recolours, and
+-- repositions the container track itself, but never reads or changes what a
+-- user puts inside it (docs/GOAL.md's amended non-destructive invariant).
+-- Durable identity is a per-track mark plus a project-scoped GUID, exactly
+-- like the [vgt] root -- but deliberately *not* P_EXT:vgt_managed and *not*
+-- entered into managed_root_manifest: remove_previous_managed_tracks and
+-- reconciliation_inventory both union sidecar GUIDs, the per-track managed
+-- mark, and the manifest roles, so keeping containers out of all three (on
+-- top of the starts_with_vgt name guard, which already excludes "[clean]"/
+-- "[work]" names) means they can never enter a removal or ambiguous-root set.
+-- ---------------------------------------------------------------------------
+local CONTAINER_EXT_STATE_KEY = "P_EXT:vgt_container"
+local PROJ_EXT_CLEAN_GUID_KEY = "clean_container"
+local PROJ_EXT_WORK_GUID_KEY = "work_container"
+
+-- Adoption at step 3 below is a deliberate, narrow relaxation of "names are
+-- never provenance" that applies only to these two containers, never to the
+-- [vgt] root: vgt only ever moves, renames, and recolours the container
+-- itself, so mispicking one is recoverable by hand rather than destructive.
+-- Real projects (including the author's) already contain hand-made [clean]/
+-- [work] folders; refusing to adopt them would silently produce duplicates.
+local CONTAINER_DEFS = {
+  {kind = "clean", prefix = CLEAN_PREFIX, ext_guid_key = PROJ_EXT_CLEAN_GUID_KEY, color = CLEAN_COLOR, legacy_bare = false},
+  {kind = "work", prefix = WORK_PREFIX, ext_guid_key = PROJ_EXT_WORK_GUID_KEY, color = WORK_COLOR, legacy_bare = true},
+}
+
+local function track_container_kind(track)
+  local _, value = reaper.GetSetMediaTrackInfo_String(track, CONTAINER_EXT_STATE_KEY, "", false)
+  return value or ""
+end
+
+local function mark_track_container(track, kind)
+  reaper.GetSetMediaTrackInfo_String(track, CONTAINER_EXT_STATE_KEY, kind, true)
+end
+
+local function read_container_guid(ext_guid_key)
+  local _, value = reaper.GetProjExtState(0, PROJ_EXT_SECTION, ext_guid_key)
+  return value or ""
+end
+
+local function write_container_guid(ext_guid_key, guid)
+  reaper.SetProjExtState(0, PROJ_EXT_SECTION, ext_guid_key, guid)
+end
+
+local function find_top_level_track_by_guid(guid)
+  if guid == "" then return nil end
+  for index = 0, reaper.CountTracks(0) - 1 do
+    local track = reaper.GetTrack(0, index)
+    if reaper.GetTrackGUID(track) == guid and is_top_level_track(index) then return track end
+  end
+  return nil
+end
+
+local function top_level_tracks_with_container_mark(kind)
+  local matches = {}
+  for index = 0, reaper.CountTracks(0) - 1 do
+    local track = reaper.GetTrack(0, index)
+    if is_top_level_track(index) and track_container_kind(track) == kind then matches[#matches + 1] = track end
+  end
+  return matches
+end
+
+-- A bare legacy "[work]" (no trailing name) is only ever an adoption
+-- candidate for the work container -- it is renamed to "[work] <reference
+-- name>" like every other resolution path, by the unconditional rename below.
+local function top_level_adoption_candidates(def)
+  local matches = {}
+  for index = 0, reaper.CountTracks(0) - 1 do
+    local track = reaper.GetTrack(0, index)
+    if is_top_level_track(index) then
+      local name = track_name(track)
+      -- Step 3 is adoption of a *previously unmarked* hand-made container.
+      -- Never overwrite the other kind's durable mark because its current
+      -- name happens to be misleading: marks, not names, remain identity.
+      if track_container_kind(track) == ""
+        and (starts_with(name, def.prefix .. " ") or (def.legacy_bare and name == def.prefix))
+      then
+        matches[#matches + 1] = track
+      end
+    end
+  end
+  return matches
+end
+
+local function track_names_joined(tracks)
+  local names = {}
+  for _, track in ipairs(tracks) do names[#names + 1] = track_name(track) end
+  return table.concat(names, ", ")
+end
+
+-- Resolves, adopts, or creates the container described by `def`, following
+-- the four-step order documented in the issue: a recorded GUID, then a
+-- durable per-track mark, then name-based adoption, then creation. Returns
+-- nil (skipping maintenance for this kind this run) when steps 2 or 3 turn up
+-- more than one candidate -- this is intentionally a soft warning, not the
+-- hard error the [vgt]-root ambiguity check uses, because a mispicked
+-- scaffold container is recoverable by hand.
+local function maintain_container(def, reference_name)
+  local full_name = def.prefix .. " " .. reference_name
+
+  local track = find_top_level_track_by_guid(read_container_guid(def.ext_guid_key))
+  if track then
+    -- The project GUID is enough to recover this container after a copied or
+    -- partially repaired project, but restore the companion per-track mark
+    -- too so future applies retain both durable identity records.
+    mark_track_container(track, def.kind)
+    -- Re-derive and reset the name on every apply so a renamed reference
+    -- track keeps all three folders in sync.
+    reaper.GetSetMediaTrackInfo_String(track, "P_NAME", full_name, true)
+    return track
+  end
+
+  local marked = top_level_tracks_with_container_mark(def.kind)
+  if #marked > 1 then
+    warn("multiple " .. def.kind .. "-marked containers found (" .. track_names_joined(marked)
+      .. "); skipping " .. def.prefix .. " container maintenance this run.")
+    return nil
+  end
+  if #marked == 1 then
+    track = marked[1]
+    write_container_guid(def.ext_guid_key, reaper.GetTrackGUID(track))
+    reaper.GetSetMediaTrackInfo_String(track, "P_NAME", full_name, true)
+    return track
+  end
+
+  local adoptable = top_level_adoption_candidates(def)
+  if #adoptable > 1 then
+    warn("multiple unmarked " .. def.prefix .. " candidates found (" .. track_names_joined(adoptable)
+      .. "); skipping " .. def.prefix .. " container maintenance this run.")
+    return nil
+  end
+  if #adoptable == 1 then
+    track = adoptable[1]
+    mark_track_container(track, def.kind)
+    write_container_guid(def.ext_guid_key, reaper.GetTrackGUID(track))
+    reaper.GetSetMediaTrackInfo_String(track, "P_NAME", full_name, true)
+    -- Colour is left exactly as the user set it: this track already existed
+    -- as a hand-made folder before vgt ever adopted it.
+    return track
+  end
+
+  -- Nothing to resolve or adopt: create a fresh one at the end of the
+  -- project. Left at the default I_FOLDERDEPTH 0 -- an empty container is a
+  -- plain top-level track; it only becomes a folder once it gains its first
+  -- child (a later, separate action -- promotion/working-copy placement --
+  -- not this one).
+  local index = reaper.CountTracks(0)
+  reaper.InsertTrackAtIndex(index, true)
+  track = reaper.GetTrack(0, index)
+  reaper.GetSetMediaTrackInfo_String(track, "P_NAME", full_name, true)
+  mark_track_container(track, def.kind)
+  write_container_guid(def.ext_guid_key, reaper.GetTrackGUID(track))
+  -- Colour is set once, at creation, and never again -- a user recolouring a
+  -- container by hand must keep their choice on every later apply.
+  reaper.SetMediaTrackInfo_Value(track, "I_CUSTOMCOLOR", reaper.ColorToNative(def.color[1], def.color[2], def.color[3]) | 0x1000000)
+  return track
+end
+
+-- Duplicated from vgt_working_copy.lua's folder_last_child_index: these two
+-- .lua files are standalone REAPER actions with no shared module. The region
+-- ends on the child whose I_FOLDERDEPTH brings the running depth back to zero
+-- (0 for an empty/flattened container, which returns folder_index itself).
+local function folder_last_child_index(folder_index)
+  local count = reaper.CountTracks(0)
+  local depth = reaper.GetMediaTrackInfo_Value(reaper.GetTrack(0, folder_index), "I_FOLDERDEPTH")
+  local last = folder_index
+  local index = folder_index + 1
+  while index < count and depth > 0 do
+    depth = depth + reaper.GetMediaTrackInfo_Value(reaper.GetTrack(0, index), "I_FOLDERDEPTH")
+    last = index
+    index = index + 1
+  end
+  return last
+end
+
+local function save_selected_tracks()
+  local selected = {}
+  for index = 0, reaper.CountSelectedTracks(0) - 1 do
+    selected[#selected + 1] = reaper.GetSelectedTrack(0, index)
+  end
+  return selected
+end
+
+local function restore_selected_tracks(selected)
+  for index = 0, reaper.CountTracks(0) - 1 do
+    reaper.SetTrackSelected(reaper.GetTrack(0, index), false)
+  end
+  for _, track in ipairs(selected) do
+    reaper.SetTrackSelected(track, true)
+  end
+end
+
+-- Moves the container block (the container track plus every child, found by
+-- walking I_FOLDERDEPTH accumulation) to the end of the project as a single
+-- unit. The block is depth-balanced (parent +1 ... last child -1, sum zero),
+-- so reordering it as one unit cannot disturb the folder depth of anything
+-- around it. The user's track selection is saved and restored around the
+-- move, since ReorderSelectedTracks works through the selection and would
+-- otherwise leave it silently changed.
+local function move_container_block_to_end(track)
+  local index = track_index(track)
+  if not index then return end
+  local last_child = folder_last_child_index(index)
+  -- Already last: skip the call entirely so re-apply is a true no-op rather
+  -- than relying on REAPER's behavior for a zero-distance reorder.
+  if last_child == reaper.CountTracks(0) - 1 then return end
+
+  local saved_selection = save_selected_tracks()
+  for i = 0, reaper.CountTracks(0) - 1 do
+    reaper.SetTrackSelected(reaper.GetTrack(0, i), false)
+  end
+  for i = index, last_child do
+    reaper.SetTrackSelected(reaper.GetTrack(0, i), true)
+  end
+  reaper.ReorderSelectedTracks(reaper.CountTracks(0), 0)
+  restore_selected_tracks(saved_selection)
+end
+
+-- When the two complete blocks already form the final project tail in the
+-- canonical order, neither move is needed. This guard is important because
+-- moving clean and then work is otherwise a round trip even on re-apply:
+-- clean temporarily passes work, then work passes clean again. Checking whole
+-- blocks (rather than just their container tracks) preserves the same rule for
+-- user-filled folders and keeps a true re-apply free of reorders.
+local function containers_are_canonical_tail(clean_container, work_container)
+  local clean_index = track_index(clean_container)
+  local work_index = track_index(work_container)
+  if not clean_index or not work_index then return false end
+  local clean_last = folder_last_child_index(clean_index)
+  local work_last = folder_last_child_index(work_index)
+  return clean_last + 1 == work_index and work_last == reaper.CountTracks(0) - 1
 end
 
 -- Once a reference has been persisted, it is authoritative: reuse it without
@@ -866,10 +1138,6 @@ local function add_click_track(index, tempo, reference_start, managed_tracks, ar
   local take = reaper.AddTakeToMediaItem(item)
   reaper.SetMediaItemTake_Source(take, source)
   managed_tracks[#managed_tracks + 1] = click_track
-end
-
-local function warn(message)
-  reaper.ShowConsoleMsg("vgt: " .. message .. "\n")
 end
 
 -- Separation can take several minutes and is the Python process's exclusive
@@ -1237,11 +1505,33 @@ local function apply()
     error("the chosen reference track no longer exists.")
   end
 
+  -- Resolve/adopt/create the [clean] and [work] scaffold containers, then
+  -- move each block (container + its contents) to the end of the project in
+  -- that order, before the [vgt] root below claims reaper.CountTracks(0) as
+  -- its own insertion point. Sequencing is load-bearing: add_stem_tracks,
+  -- add_click_track, add_key_track, and the chords track all append at
+  -- CountTracks(0), so a container sitting below [vgt] at that moment would
+  -- capture every track vgt creates from here on. Skip a kind entirely (do
+  -- not move it) when maintain_container found it ambiguous this run.
+  local reference_name = track_name(reference)
+  local clean_container = maintain_container(CONTAINER_DEFS[1], reference_name)
+  local work_container = maintain_container(CONTAINER_DEFS[2], reference_name)
+  local canonical_tail = clean_container and work_container
+    and containers_are_canonical_tail(clean_container, work_container)
+  if not canonical_tail then
+    if clean_container then move_container_block_to_end(clean_container) end
+    if work_container then move_container_block_to_end(work_container) end
+  end
+
   local insert_at = reaper.CountTracks(0)
   reaper.InsertTrackAtIndex(insert_at, true)
   local folder = reaper.GetTrack(0, insert_at)
   reaper.GetSetMediaTrackInfo_String(folder, "P_NAME", folder_name, true)
   mark_track_managed(folder, "managed-root")
+  -- The [vgt] root is deleted and rebuilt on every apply, so -- unlike
+  -- [clean]/[work], which are coloured once -- it is coloured on every
+  -- creation; that is inherent to it being vgt-owned, not an exception.
+  reaper.SetMediaTrackInfo_Value(folder, "I_CUSTOMCOLOR", reaper.ColorToNative(VGT_COLOR[1], VGT_COLOR[2], VGT_COLOR[3]) | 0x1000000)
   -- Persist root identity as soon as it exists. A crash before sidecar commit
   -- can therefore still be recovered without treating the next run as new.
   write_root_manifest(folder, {folder})

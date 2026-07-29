@@ -2009,3 +2009,413 @@ def test_write_sync_gives_up_after_the_retry_limit_leaving_the_prior_sidecar_int
 
     assert not (tmp_path / "song.vgt.tmp").exists()
     assert json.loads(sidecar.read_text())["analysis"]["chords"]["human_verified"] is False
+
+
+# ---------------------------------------------------------------------------
+# [clean]/[work]/[vgt] container scaffold (issue #225)
+#
+# These tests run the *entire* vgt_initialize.lua apply() end to end against a
+# small, fully mutable fake-REAPER project harness (a Lua table of tracks that
+# InsertTrackAtIndex/DeleteTrack/ReorderSelectedTracks actually mutate), since
+# the acceptance criteria are about final on-disk track order, depth, colour,
+# and identity after a real apply -- not about any single helper in isolation.
+# No analysis is ever seeded, so every tempo/key/chords/stems/section branch
+# in apply() short-circuits, leaving only the reference track plus the
+# [clean]/[work]/[vgt] scaffold to reason about.
+# ---------------------------------------------------------------------------
+
+CLEAN_COLOR_VALUE = (187 + 210 * 256 + 41 * 65536) | 0x1000000
+WORK_COLOR_VALUE = (68 + 175 * 256 + 239 * 65536) | 0x1000000
+VGT_COLOR_VALUE = (189 + 100 * 256 + 175 * 65536) | 0x1000000
+
+
+def _container_harness_preamble(tracks_literal: str, project_ext_literal: str = "{}") -> str:
+    return "\n".join(
+        [
+            f"local tracks = {{{tracks_literal}}}",
+            "local guid_counter = 0",
+            "local function next_guid() guid_counter = guid_counter + 1; return '{GEN-' .. guid_counter .. '}' end",
+            "reaper = {}",
+            "function reaper.EnumProjects() return true, arg[1] end",
+            "function reaper.ShowConsoleMsg(msg) io.stderr:write(msg) end",
+            "function reaper.ShowMessageBox(msg) _G.__message_box = msg end",
+            "function reaper.CountTracks() return #tracks end",
+            "function reaper.GetTrack(_, index) return tracks[index + 1] end",
+            "function reaper.GetTrackGUID(track) return track.guid end",
+            "function reaper.GetTrackName(track) return true, track.name or '' end",
+            "function reaper.InsertTrackAtIndex(index, defaults)"
+            " local t = {name = '', guid = next_guid(), items = {}, depth = 0, ext = {}}"
+            " table.insert(tracks, index + 1, t) end",
+            "function reaper.DeleteTrack(track)"
+            " for i, t in ipairs(tracks) do if t == track then table.remove(tracks, i) return end end end",
+            "function reaper.GetSetMediaTrackInfo_String(track, key, value, set)"
+            " if key == 'P_NAME' then if set then track.name = value return true end return true, track.name or '' end"
+            " track.ext = track.ext or {}"
+            " if set then track.ext[key] = value return true end"
+            " return true, track.ext[key] or '' end",
+            "function reaper.GetMediaTrackInfo_Value(track, key)"
+            " if key == 'I_FOLDERDEPTH' then return track.depth or 0 end"
+            " if key == 'I_CUSTOMCOLOR' then return track.color or 0 end"
+            " return 0 end",
+            "function reaper.SetMediaTrackInfo_Value(track, key, value)"
+            " if key == 'I_FOLDERDEPTH' then track.depth = value end"
+            " if key == 'I_CUSTOMCOLOR' then track.color = value end end",
+            "function reaper.ColorToNative(r, g, b) return r + g * 256 + b * 65536 end",
+            f"local proj_ext = {project_ext_literal}",
+            "function reaper.GetProjExtState(_, section, key)"
+            " local sec = proj_ext[section]"
+            " local value = sec and sec[key]"
+            " if value == nil or value == '' then return 0, '' end"
+            " return 1, value end",
+            "function reaper.SetProjExtState(_, section, key, value)"
+            " proj_ext[section] = proj_ext[section] or {} proj_ext[section][key] = value end",
+            "function reaper.SetTrackSelected(track, selected) track.selected = selected end",
+            "function reaper.CountSelectedTracks()"
+            " local n = 0 for _, t in ipairs(tracks) do if t.selected then n = n + 1 end end return n end",
+            "function reaper.GetSelectedTrack(_, index)"
+            " local n = 0"
+            " for _, t in ipairs(tracks) do if t.selected then if n == index then return t end n = n + 1 end end"
+            " return nil end",
+            "_G.__reorder_calls = 0",
+            "function reaper.ReorderSelectedTracks(before_index, make_prev_folder)"
+            " _G.__reorder_calls = _G.__reorder_calls + 1"
+            " local selected, rest = {}, {}"
+            " for _, t in ipairs(tracks) do"
+            "   if t.selected then selected[#selected + 1] = t else rest[#rest + 1] = t end"
+            " end"
+            " local merged = {}"
+            " for _, t in ipairs(rest) do merged[#merged + 1] = t end"
+            " for _, t in ipairs(selected) do merged[#merged + 1] = t end"
+            " tracks = merged end",
+            "function reaper.CountTrackMediaItems(t) return #(t.items or {}) end",
+            "function reaper.GetTrackMediaItem(t, i) return t.items[i + 1] end",
+            "function reaper.GetActiveTake(item) return item.take end",
+            "function reaper.GetMediaItemTake_Source(take) return take.source end",
+            "function reaper.GetMediaSourceFileName(source, buf) return source end",
+            "function reaper.GetMediaItemInfo_Value(item, key)"
+            " if key == 'D_POSITION' then return item.position or 0 end return item.length or 0 end",
+            "function reaper.CountProjectMarkers() return 0 end",
+            "function reaper.PreventUIRefresh() end",
+            "function reaper.Undo_BeginBlock() end",
+            "function reaper.Undo_EndBlock() end",
+            "function reaper.MarkProjectDirty() end",
+            "function reaper.UpdateArrange() end",
+            "function reaper.GetExtState(section, key)"
+            " if section == 'vgt' and key == 'guitar_type' then return 'electric' end"
+            " if section == 'vgt' and key == 'reference_index' then return '0' end"
+            " return '' end",
+            "gfx = setmetatable({}, {__index = function() error('menu should not be shown in this test') end})",
+        ]
+    )
+
+
+_CONTAINER_TRAILER = "\n".join(
+    [
+        "io.write('TRACKS:\\n')",
+        "for i = 0, reaper.CountTracks(0) - 1 do",
+        "  local t = reaper.GetTrack(0, i)",
+        "  local _, container = reaper.GetSetMediaTrackInfo_String(t, 'P_EXT:vgt_container', '', false)",
+        "  local _, managed = reaper.GetSetMediaTrackInfo_String(t, 'P_EXT:vgt_managed', '', false)",
+        "  local item_signatures = {}",
+        "  for _, item in ipairs(t.items or {}) do item_signatures[#item_signatures + 1] = table.concat({tostring(item.position or 0), tostring(item.length or 0), tostring(item.label or ''), tostring(item.custom or '')}, ',') end",
+        "  io.write(t.name, '|', tostring(t.depth or 0), '|', tostring(t.color or 0), '|', container, '|', managed, '|', t.guid, '|', table.concat(item_signatures, ';'), '\\n')",
+        "end",
+        "local _, clean_guid = reaper.GetProjExtState(0, 'vgt', 'clean_container')",
+        "local _, work_guid = reaper.GetProjExtState(0, 'vgt', 'work_container')",
+        "io.write('CLEAN_GUID=', clean_guid, '\\n')",
+        "io.write('WORK_GUID=', work_guid, '\\n')",
+        "io.write('REORDER_CALLS=', tostring(_G.__reorder_calls or 0), '\\n')",
+        "local selected_names = {}",
+        "for i = 0, reaper.CountSelectedTracks(0) - 1 do selected_names[#selected_names + 1] = reaper.GetSelectedTrack(0, i).name end",
+        "io.write('SELECTED=', table.concat(selected_names, ','), '\\n')",
+        "io.write('MSG=', tostring(_G.__message_box or ''), '\\n')",
+    ]
+)
+
+_REFERENCE_TRACK_LUA = (
+    "{name = 'Mix', guid = '{REF}', "
+    "items = {{take = {source = 'song.mp3'}, position = 0, length = 180}}, depth = 0, ext = {}}"
+)
+
+
+def _run_container_harness(
+    tracks_literal: str, tmp_path: Path, rerun: bool = False, project_ext_literal: str = "{}"
+) -> dict:
+    rpp = tmp_path / "song.RPP"
+    program_parts = [
+        _container_harness_preamble(tracks_literal, project_ext_literal),
+        APPLY_SCRIPT.read_text(),
+    ]
+    if rerun:
+        program_parts.append("local ok2, err2 = xpcall(apply, debug.traceback)")
+        program_parts.append("if not ok2 then _G.__message_box = tostring(err2) end")
+    program_parts.append(_CONTAINER_TRAILER)
+    program = "\n".join(program_parts)
+    result = subprocess.run([LUA, "-", str(rpp)], input=program, text=True, capture_output=True)
+    assert result.returncode == 0, result.stderr
+
+    lines = result.stdout.splitlines()
+    parsed_tracks = []
+    values = {}
+    for line in lines[1:]:
+        if "=" in line and line.split("=", 1)[0].isupper():
+            key, _, value = line.partition("=")
+            values[key] = value
+        else:
+            name, depth, color, container, managed, guid, item_signature = line.split("|")
+            parsed_tracks.append(
+                {
+                    "name": name,
+                    "depth": int(depth),
+                    "color": int(color),
+                    "container": container,
+                    "managed": managed,
+                    "guid": guid,
+                    "item_signature": item_signature,
+                }
+            )
+    return {"tracks": parsed_tracks, "stderr": result.stderr, **values}
+
+
+def test_fresh_project_creates_both_containers_flattened_and_ordered(tmp_path: Path) -> None:
+    state = _run_container_harness(_REFERENCE_TRACK_LUA, tmp_path)
+    names = [t["name"] for t in state["tracks"]]
+    assert names == ["Mix", "[clean] Mix", "[work] Mix", "[vgt] Mix"]
+
+    by_name = {t["name"]: t for t in state["tracks"]}
+    assert by_name["[clean] Mix"]["depth"] == 0
+    assert by_name["[work] Mix"]["depth"] == 0
+    assert by_name["[vgt] Mix"]["depth"] == 0
+
+    assert by_name["[clean] Mix"]["color"] == CLEAN_COLOR_VALUE
+    assert by_name["[work] Mix"]["color"] == WORK_COLOR_VALUE
+    assert by_name["[vgt] Mix"]["color"] == VGT_COLOR_VALUE
+
+    assert by_name["[clean] Mix"]["container"] == "clean"
+    assert by_name["[work] Mix"]["container"] == "work"
+    assert by_name["[clean] Mix"]["managed"] == ""
+    assert by_name["[work] Mix"]["managed"] == ""
+    assert by_name["[vgt] Mix"]["managed"] == "1"
+
+    assert state["CLEAN_GUID"] == by_name["[clean] Mix"]["guid"]
+    assert state["WORK_GUID"] == by_name["[work] Mix"]["guid"]
+    # Creation already appends the blocks in canonical order, so no reorder
+    # call is needed at all.
+    assert state["REORDER_CALLS"] == "0"
+    assert state["MSG"] == ""
+
+
+def test_reapply_is_idempotent_for_the_container_scaffold(tmp_path: Path) -> None:
+    first = _run_container_harness(_REFERENCE_TRACK_LUA, tmp_path)
+    second = _run_container_harness(_REFERENCE_TRACK_LUA, tmp_path, rerun=True)
+
+    assert [t["name"] for t in second["tracks"]] == [t["name"] for t in first["tracks"]]
+    assert second["CLEAN_GUID"] == first["CLEAN_GUID"]
+    assert second["WORK_GUID"] == first["WORK_GUID"]
+
+    by_name = {t["name"]: t for t in second["tracks"]}
+    assert by_name["[clean] Mix"]["color"] == CLEAN_COLOR_VALUE
+    assert by_name["[work] Mix"]["color"] == WORK_COLOR_VALUE
+    assert by_name["Mix"]["guid"] == "{REF}"
+    assert _names_are_unique(second["tracks"])
+    # The second apply removes and rebuilds only [vgt]. Both container blocks
+    # are already the canonical final tail, so it must not issue another
+    # reorder (neither apply needed one for this already-canonical project).
+    assert second["REORDER_CALLS"] == "0"
+    assert second["MSG"] == ""
+
+
+def test_guid_recovery_restores_the_container_mark_and_current_name(tmp_path: Path) -> None:
+    tracks_literal = ", ".join(
+        [
+            _REFERENCE_TRACK_LUA,
+            "{name = 'old clean name', guid = '{CLEAN}', items = {}, depth = 0, ext = {}}",
+        ]
+    )
+    state = _run_container_harness(
+        tracks_literal,
+        tmp_path,
+        project_ext_literal="{vgt = {clean_container = '{CLEAN}'}}",
+    )
+
+    clean = next(track for track in state["tracks"] if track["guid"] == "{CLEAN}")
+    assert clean["name"] == "[clean] Mix"
+    assert clean["container"] == "clean"
+    assert state["CLEAN_GUID"] == "{CLEAN}"
+
+
+def _names_are_unique(tracks: list[dict]) -> bool:
+    names = [t["name"] for t in tracks]
+    return len(names) == len(set(names))
+
+
+def test_adopts_unmarked_named_and_bare_legacy_containers_leaving_contents_and_colour_alone(tmp_path: Path) -> None:
+    tracks_literal = ", ".join(
+        [
+            _REFERENCE_TRACK_LUA,
+            "{name = '[clean] Old', guid = '{CLEANOLD}', items = {{position = 7, length = 3, label = 'keep parent item', custom = 'parent bytes'}}, depth = 1, ext = {}, color = 999}",
+            "{name = 'ChildA', guid = '{CHILDA}', items = {{position = 11, length = 2, label = 'keep child item', custom = 'child bytes'}}, depth = -1, ext = {}}",
+            "{name = '[work]', guid = '{WORKOLD}', items = {}, depth = 0, ext = {}, color = 555}",
+        ]
+    )
+    state = _run_container_harness(tracks_literal, tmp_path)
+    names = [t["name"] for t in state["tracks"]]
+    assert names == ["Mix", "[clean] Mix", "ChildA", "[work] Mix", "[vgt] Mix"]
+
+    by_name = {t["name"]: t for t in state["tracks"]}
+    assert by_name["[clean] Mix"]["guid"] == "{CLEANOLD}"
+    assert by_name["[clean] Mix"]["container"] == "clean"
+    assert by_name["[clean] Mix"]["color"] == 999  # left exactly as the user set it
+
+    assert by_name["[work] Mix"]["guid"] == "{WORKOLD}"
+    assert by_name["[work] Mix"]["container"] == "work"
+    assert by_name["[work] Mix"]["color"] == 555
+
+    # The adopted non-empty container remains a folder, and its child track
+    # and item data are byte-for-byte unchanged by adoption/reordering.
+    assert by_name["[clean] Mix"]["depth"] == 1
+    assert by_name["[clean] Mix"]["item_signature"] == "7,3,keep parent item,parent bytes"
+    assert by_name["ChildA"]["depth"] == -1
+    assert by_name["ChildA"]["guid"] == "{CHILDA}"
+    assert by_name["ChildA"]["item_signature"] == "11,2,keep child item,child bytes"
+
+    assert state["CLEAN_GUID"] == "{CLEANOLD}"
+    assert state["WORK_GUID"] == "{WORKOLD}"
+
+
+def test_name_adoption_never_overwrites_the_other_containers_durable_mark(tmp_path: Path) -> None:
+    """A misleading name is not permission to steal a container whose
+    P_EXT:vgt_container identity already says it is the other kind."""
+    tracks_literal = ", ".join(
+        [
+            _REFERENCE_TRACK_LUA,
+            "{name = '[clean] Misnamed work', guid = '{WORK}', items = {}, depth = 0, ext = {['P_EXT:vgt_container'] = 'work'}, color = 555}",
+        ]
+    )
+    state = _run_container_harness(tracks_literal, tmp_path)
+    by_guid = {track["guid"]: track for track in state["tracks"]}
+
+    # The marked work track is resolved at step 2 and renamed as work. Clean
+    # has no unmarked candidate, so it receives its own new container.
+    assert by_guid["{WORK}"]["name"] == "[work] Mix"
+    assert by_guid["{WORK}"]["container"] == "work"
+    assert by_guid["{WORK}"]["color"] == 555
+    clean = next(track for track in state["tracks"] if track["container"] == "clean")
+    assert clean["guid"] != "{WORK}"
+    assert clean["name"] == "[clean] Mix"
+    assert [track["name"] for track in state["tracks"]][-3:] == ["[clean] Mix", "[work] Mix", "[vgt] Mix"]
+
+
+def test_ambiguous_unmarked_candidates_warn_and_skip_that_kind_without_failing_apply(tmp_path: Path) -> None:
+    tracks_literal = ", ".join(
+        [
+            _REFERENCE_TRACK_LUA,
+            "{name = '[clean] One', guid = '{C1}', items = {}, depth = 0, ext = {}}",
+            "{name = '[clean] Two', guid = '{C2}', items = {}, depth = 0, ext = {}}",
+        ]
+    )
+    state = _run_container_harness(tracks_literal, tmp_path)
+    names = [t["name"] for t in state["tracks"]]
+    # Neither ambiguous candidate is renamed, deleted, or replaced; no new
+    # [clean] container is created; [work] and [vgt] still get built normally.
+    assert "[clean] One" in names
+    assert "[clean] Two" in names
+    assert "[clean] Mix" not in names
+    assert names[-2:] == ["[work] Mix", "[vgt] Mix"]
+    assert state["MSG"] == ""  # apply still completes; this is a soft warning
+    assert "multiple unmarked" in state["stderr"]
+    assert "[clean] One" in state["stderr"] and "[clean] Two" in state["stderr"]
+
+
+def test_ambiguous_marked_candidates_also_warn_and_skip_that_kind(tmp_path: Path) -> None:
+    """Step 2 (the durable per-track mark) can be ambiguous too, not just
+    step 3 (name-based adoption) -- both are soft warnings, never a hard error."""
+    tracks_literal = ", ".join(
+        [
+            _REFERENCE_TRACK_LUA,
+            "{name = 'Renamed Work A', guid = '{W1}', items = {}, depth = 0, ext = {['P_EXT:vgt_container'] = 'work'}}",
+            "{name = 'Renamed Work B', guid = '{W2}', items = {}, depth = 0, ext = {['P_EXT:vgt_container'] = 'work'}}",
+        ]
+    )
+    state = _run_container_harness(tracks_literal, tmp_path)
+    names = [t["name"] for t in state["tracks"]]
+    assert "Renamed Work A" in names
+    assert "Renamed Work B" in names
+    assert "[work] Mix" not in names
+    assert names[-2:] == ["[clean] Mix", "[vgt] Mix"]
+    assert state["MSG"] == ""
+    assert "multiple" in state["stderr"]
+    assert "Renamed Work A" in state["stderr"] and "Renamed Work B" in state["stderr"]
+
+
+def test_containers_starting_interleaved_or_below_vgt_end_up_correctly_ordered(tmp_path: Path) -> None:
+    tracks_literal = ", ".join(
+        [
+            _REFERENCE_TRACK_LUA,
+            "{name = '[work] Mix', guid = '{W}', items = {}, depth = 0, ext = {['P_EXT:vgt_container'] = 'work'}}",
+            "{name = 'OtherUserTrack', guid = '{OTHER}', items = {}, depth = 0, ext = {}}",
+            "{name = '[clean] Mix', guid = '{C}', items = {}, depth = 0, ext = {['P_EXT:vgt_container'] = 'clean'}}",
+        ]
+    )
+    state = _run_container_harness(tracks_literal, tmp_path)
+    names = [t["name"] for t in state["tracks"]]
+    assert names == ["Mix", "OtherUserTrack", "[clean] Mix", "[work] Mix", "[vgt] Mix"]
+
+
+def test_container_moves_restore_the_users_track_selection(tmp_path: Path) -> None:
+    tracks_literal = ", ".join(
+        [
+            "{name = 'Mix', guid = '{REF}', items = {{take = {source = 'song.mp3'}, position = 0, length = 180}}, depth = 0, ext = {}, selected = true}",
+            "{name = '[work] Mix', guid = '{W}', items = {}, depth = 0, ext = {['P_EXT:vgt_container'] = 'work'}}",
+            "{name = 'OtherUserTrack', guid = '{OTHER}', items = {}, depth = 0, ext = {}, selected = true}",
+            "{name = '[clean] Mix', guid = '{C}', items = {}, depth = 0, ext = {['P_EXT:vgt_container'] = 'clean'}}",
+        ]
+    )
+    state = _run_container_harness(tracks_literal, tmp_path)
+
+    assert [t["name"] for t in state["tracks"]] == ["Mix", "OtherUserTrack", "[clean] Mix", "[work] Mix", "[vgt] Mix"]
+    assert state["SELECTED"] == "Mix,OtherUserTrack"
+
+
+def test_containers_are_never_removed_or_treated_as_root_candidates(tmp_path: Path) -> None:
+    """Containers are marked with P_EXT:vgt_container (not vgt_managed) and
+    are never entered into managed_root_manifest or the sidecar's
+    managed_track_guids, so remove_previous_managed_tracks and
+    reconciliation_inventory must both ignore them regardless of any other
+    (even stale/incorrect) ownership evidence -- protected first by the
+    starts_with_vgt name guard, since neither "[clean]" nor "[work]" starts
+    with "[vgt]"."""
+    script = APPLY_SCRIPT.read_text()
+    helpers_end = script.index("local function find_track_by_guid")
+    sidecar = tmp_path / "song.vgt"
+    # Deliberately (and incorrectly) list the clean container's GUID as if it
+    # were sidecar-managed, to prove the name guard is what actually protects it.
+    sidecar.write_text(json.dumps({"managed_track_guids": ["{CLEAN}"]}), encoding="utf-8")
+    lua_program = "\n".join(
+        [
+            "local tracks = {"
+            "{name = '[clean] Mix', guid = '{CLEAN}', depth = 0, ext = {['P_EXT:vgt_container'] = 'clean'}},"
+            "{name = '[work] Mix', guid = '{WORK}', depth = 0, ext = {['P_EXT:vgt_container'] = 'work'}},"
+            "}",
+            "reaper = {}",
+            "function reaper.EnumProjects() return true, arg[1] end",
+            "function reaper.CountTracks() return #tracks end",
+            "function reaper.GetTrack(_, index) return tracks[index + 1] end",
+            "function reaper.GetTrackGUID(track) return track.guid end",
+            "function reaper.GetTrackName(track) return true, track.name end",
+            "function reaper.GetMediaTrackInfo_Value(track, key) return 0 end",
+            "function reaper.GetSetMediaTrackInfo_String(track, key, value, set)"
+            " track.ext = track.ext or {}"
+            " if set then track.ext[key] = value return true end"
+            " return true, track.ext[key] or '' end",
+            "function reaper.GetProjExtState() return 0, '' end",
+            "function reaper.DeleteTrack(track)"
+            " for i, t in ipairs(tracks) do if t == track then table.remove(tracks, i) return end end end",
+            script[:helpers_end],
+            "remove_previous_managed_tracks()",
+            "local inventory = validate_reconciliation_inventory({})",
+            "io.write(#tracks, ':', #inventory.roots)",
+        ]
+    )
+    result = subprocess.run([LUA, "-", str(tmp_path / "song.RPP")], input=lua_program, text=True, capture_output=True, check=True)
+    assert result.stdout == "2:0"

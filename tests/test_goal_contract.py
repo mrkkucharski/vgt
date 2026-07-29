@@ -276,6 +276,34 @@ function reaper.CountTracks() return #tracks end
 function reaper.GetTrack(_, i) return tracks[i + 1] end
 function reaper.GetTrackName(t) return true, t.name end
 function reaper.GetTrackGUID(t) return t.guid end
+function reaper.SetTrackSelected(t, selected) t.selected = selected and true or nil end
+function reaper.CountSelectedTracks()
+  local count = 0; for _, t in ipairs(tracks) do if t.selected then count = count + 1 end end; return count
+end
+function reaper.GetSelectedTrack(_, index)
+  local selected_index = 0
+  for _, t in ipairs(tracks) do
+    if t.selected then
+      if selected_index == index then return t end
+      selected_index = selected_index + 1
+    end
+  end
+  return nil
+end
+function reaper.ReorderSelectedTracks(before_index)
+  local selected, remaining = {{}}, {{}}
+  for _, t in ipairs(tracks) do
+    if t.selected then selected[#selected + 1] = t else remaining[#remaining + 1] = t end
+  end
+  -- initialize moves only to CountTracks(0), i.e. the end. This fake keeps
+  -- that operation faithful without inventing unrelated folder semantics.
+  if before_index >= #tracks then
+    for _, t in ipairs(selected) do remaining[#remaining + 1] = t end
+    tracks = remaining
+  else
+    error('unexpected non-tail reorder in goal-contract fake')
+  end
+end
 function reaper.CountTrackMediaItems(t) return #t.items end
 function reaper.GetTrackMediaItem(t, i) return t.items[i + 1] end
 function reaper.GetActiveTake(i) return i.take end
@@ -348,7 +376,10 @@ function user_snapshot(managed_track_guids, managed_region_ids)
   -- Filter by the immutable ownership records, rather than mutable labels or
   -- a fixture-specific ID.  A bug that renames or changes the GUID of a user
   -- object must therefore appear in the snapshot comparison.
-  for _, track in ipairs(tracks) do if not managed_tracks[track.guid] then user_tracks[#user_tracks + 1] = track end end
+  for _, track in ipairs(tracks) do
+    local container_kind = track.ext and track.ext['P_EXT:vgt_container'] or ''
+    if not managed_tracks[track.guid] and container_kind == '' then user_tracks[#user_tracks + 1] = track end
+  end
   for _, region in ipairs(regions) do if not managed_regions[region.id] then user_regions[#user_regions + 1] = region end end
   return lua_value({{tracks=user_tracks,regions=user_regions,markers=markers}})
 end
