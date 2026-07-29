@@ -1,10 +1,10 @@
 {
-  "current_issue": 235,
-  "session_id": "ac06ff39-7613-46c5-b2fc-7f4284b72ae7",
-  "pid": 86945,
-  "process_started_at": "Wed Jul 29 15:45:55 2026",
+  "current_issue": 237,
+  "session_id": "60802e33-efb3-4782-8e7f-4b5b4eb96295",
+  "pid": 93021,
+  "process_started_at": "Wed Jul 29 16:46:46 2026",
   "agent": "codex",
-  "started_at": "2026-07-29T13:45:52.891525+00:00",
+  "started_at": "2026-07-29T14:46:43.896148+00:00",
   "scheduler_stalls": {},
   "budget": {
     "window_start": "2026-07-29T12:07:06.074972+00:00",
@@ -18,15 +18,23 @@
   "verification_followups": {
     "f0d8bfc9d2dc6da7a31609184e25c4d66d3986fd2340b33a83e98204fb86691e": "created"
   },
-  "role": "review",
-  "branch": "issue-235-certify-current-main-with-a-durable-offl",
-  "worktree_path": "/Users/marekkucharski/projects/.pm-worktrees/vgt/issue-235",
-  "pr_number": 236,
+  "role": "implement",
+  "branch": "issue-237-certify-the-complete-goal-contract-on-su",
+  "worktree_path": "/Users/marekkucharski/projects/.pm-worktrees/vgt/issue-237",
+  "pr_number": null,
   "followup_generation": {
-    "fingerprint": "619fd0a98833654628ff064a725c301f12208b0392d51f5f9509c1dca849ed48",
+    "fingerprint": "dc3e17e4139ba95c700d207dbb62f09cbecccc968eedac066128db4eb3619bc2",
     "items": {
-      "2f712dc3e30b3c3d34a0c8c1a3bf3fa19931b8efb1b4a3453303ffc33dff0fc1": {
-        "title": "Certify current main with a durable offline goal-verification record",
+      "687e9f364ae49ba3efde712f20f767c6fa0c251b01fde942f2bdcc60749bff78": {
+        "title": "Certify the complete goal contract on supported Python 3.11",
+        "status": "created"
+      },
+      "c5db7b37eb0007c2a508ba6d3fc6633bfee24ec00dfc2bf3992a088e19a97701": {
+        "title": "Exercise every supported transcription target in the executable goal contract",
+        "status": "created"
+      },
+      "a68d28aa519e2223ef860cf2802f3785ccd4d14b51d57c4ba5f93c7cb16d4cf0": {
+        "title": "Reconcile container invariants with explicit working-copy operations",
         "status": "created"
       }
     }
@@ -66,13 +74,13 @@
     "226": 2
   },
   "pending_transition": {
-    "issue": 235,
+    "issue": 237,
     "target": "working",
-    "event": "agent.review_started",
+    "event": "agent.started",
     "detail": {
-      "issue": 235,
+      "issue": 237,
       "agent": "codex",
-      "pr": 236
+      "branch": "issue-237-certify-the-complete-goal-contract-on-su"
     },
     "cleanup": {}
   }
