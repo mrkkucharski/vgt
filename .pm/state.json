@@ -1,23 +1,24 @@
 {
   "current_issue": 225,
-  "session_id": "ae15045a-cf6e-4121-9e27-b02c05e7d4b1",
-  "pid": 69754,
-  "process_started_at": "Wed Jul 29 14:23:47 2026",
-  "agent": "claude",
-  "started_at": "2026-07-29T12:23:45.957433+00:00",
+  "session_id": "da6127ce-6317-4817-846e-a49d614aa2f9",
+  "pid": 71058,
+  "process_started_at": "Wed Jul 29 14:28:33 2026",
+  "agent": "codex",
+  "started_at": "2026-07-29T12:28:31.860299+00:00",
   "scheduler_stalls": {},
   "budget": {
     "window_start": "2026-07-29T12:07:06.074972+00:00",
-    "seconds_used": 73.640352,
-    "dollars_used": 0.0,
+    "seconds_used": 356.968769,
+    "dollars_used": 1.4997767999999998,
     "seconds_used_by_agent": {
-      "codex": 73.640352
+      "codex": 73.640352,
+      "claude": 283.328417
     }
   },
   "verification_followups": {
     "f0d8bfc9d2dc6da7a31609184e25c4d66d3986fd2340b33a83e98204fb86691e": "created"
   },
-  "role": "review",
+  "role": "fix",
   "branch": "issue-225-establish-the-canonical-clean-work-vgt-c",
   "worktree_path": "/Users/marekkucharski/projects/.pm-worktrees/vgt/issue-225",
   "pr_number": 230,
@@ -61,16 +62,16 @@
     "202": 1,
     "203": 1,
     "215": 1,
-    "225": 1
+    "225": 2
   },
   "pending_transition": {
     "issue": 225,
     "target": "working",
-    "event": "agent.review_started",
+    "event": "agent.fix_started",
     "detail": {
       "issue": 225,
-      "agent": "claude",
-      "pr": 230
+      "agent": "codex",
+      "fix_count": 2
     },
     "cleanup": {}
   }
