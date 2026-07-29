@@ -442,10 +442,18 @@ local function promote()
     reaper.Undo_EndBlock("vgt: promote working copies", -1)
     return
   end
-  if not clean then
-    clean, clean_index = create_clean_folder(work_index)
-    -- Inserting clean above work shifts the latter's numeric index.
-    work, work_index = find_work_folder()
+  -- Appending to a populated REAPER folder means changing its current closing
+  -- child from -1 to 0.  That child is already user-owned clean content, not
+  -- a selected working copy, so doing so would violate this action's narrow
+  -- ownership boundary.  Refuse rather than make an invisible structural edit.
+  if clean and not is_empty_work_container(clean) then
+    reaper.ShowMessageBox(
+      "The [clean] container already has content; promotion would alter an existing track's folder structure, so nothing was changed.",
+      "vgt working copy", 0
+    )
+    reaper.PreventUIRefresh(-1)
+    reaper.Undo_EndBlock("vgt: promote working copies", -1)
+    return
   end
 
   -- Preserve the old work children by identity before the move.  If its
@@ -457,13 +465,37 @@ local function promote()
     work_children[reaper.GetTrack(0, index)] = true
   end
 
-  local clean_was_empty = is_empty_work_container(clean)
-  local clean_last = clean_was_empty and clean_index or folder_last_child_index(clean_index)
-  if clean_was_empty then
-    reaper.SetMediaTrackInfo_Value(clean, "I_FOLDERDEPTH", 1)
-  else
-    reaper.SetMediaTrackInfo_Value(reaper.GetTrack(0, clean_last), "I_FOLDERDEPTH", 0)
+  -- Likewise, removing the closing [work] child while other children remain
+  -- would require changing the new final child from 0 to -1.  The user did
+  -- not select that track, so reject the request atomically instead.
+  local work_closer = reaper.GetTrack(0, work_last)
+  local eligible_by_track = {}
+  for _, track in ipairs(eligible) do eligible_by_track[track] = true end
+  local promoted_closer = false
+  local remaining_work_children = 0
+  for index = work_index + 1, work_last do
+    local child = reaper.GetTrack(0, index)
+    if child == work_closer and eligible_by_track[child] then promoted_closer = true end
+    if not eligible_by_track[child] then remaining_work_children = remaining_work_children + 1 end
   end
+  if promoted_closer and remaining_work_children > 0 then
+    reaper.ShowMessageBox(
+      "Promotion would alter an unselected [work] track's folder structure, so nothing was changed.",
+      "vgt working copy", 0
+    )
+    reaper.PreventUIRefresh(-1)
+    reaper.Undo_EndBlock("vgt: promote working copies", -1)
+    return
+  end
+
+  if not clean then
+    clean, clean_index = create_clean_folder(work_index)
+    -- Inserting clean above work shifts the latter's numeric index.
+    work, work_index = find_work_folder()
+  end
+
+  local clean_last = clean_index
+  reaper.SetMediaTrackInfo_Value(clean, "I_FOLDERDEPTH", 1)
 
   -- ReorderSelectedTracks moves the existing track objects: GUIDs, media,
   -- takes, FX, and routing all remain attached to their original track.

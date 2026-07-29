@@ -471,9 +471,9 @@ def test_promote_moves_the_existing_track_and_reclaims_it() -> None:
     helpers_end = script.index("local function choose_action")
     lua_program = "\n".join(
         [
-            _promote_mock("{{name='[clean] Song',guid='{C}',values={I_FOLDERDEPTH=1},ext={['P_EXT:vgt_container']='clean'},items={}}, {name='Old clean',guid='{OLD}',values={I_FOLDERDEPTH=-1},ext={},items={}}, {name='[work] Song',guid='{W}',values={I_FOLDERDEPTH=1},ext={['P_EXT:vgt_container']='work'},items={}}, {name='[work] Guitar',guid='{GUITAR}',values={I_FOLDERDEPTH=-1},ext={['P_EXT:vgt_working_copy']='1',['P_EXT:vgt_managed']='1',['P_EXT:vgt_container']='work'},items={'item'},takes={'take'},selected=true}, {name='Outside',guid='{O}',values={I_FOLDERDEPTH=0},ext={},items={}}}"),
+            _promote_mock("{{name='[clean] Song',guid='{C}',values={I_FOLDERDEPTH=0},ext={['P_EXT:vgt_container']='clean'},items={}}, {name='[work] Song',guid='{W}',values={I_FOLDERDEPTH=1},ext={['P_EXT:vgt_container']='work'},items={}}, {name='[work] Guitar',guid='{GUITAR}',values={I_FOLDERDEPTH=-1},ext={['P_EXT:vgt_working_copy']='1',['P_EXT:vgt_managed']='1',['P_EXT:vgt_container']='work'},items={'item'},takes={'take'},selected=true}, {name='Outside',guid='{O}',values={I_FOLDERDEPTH=0},ext={},items={}}}"),
             script[:helpers_end],
-            "promote(); local t=__tracks[3]; io.write(t.name,'|',t.guid,'|',t.items[1],'|',t.takes[1],'|',t.ext['P_EXT:vgt_working_copy'] or '', '|',t.ext['P_EXT:vgt_managed'] or '', '|',t.ext['P_EXT:vgt_container'] or '', '|',t.values.I_FOLDERDEPTH,'|',__tracks[4].values.I_FOLDERDEPTH)",
+            "promote(); local t=__tracks[2]; io.write(t.name,'|',t.guid,'|',t.items[1],'|',t.takes[1],'|',t.ext['P_EXT:vgt_working_copy'] or '', '|',t.ext['P_EXT:vgt_managed'] or '', '|',t.ext['P_EXT:vgt_container'] or '', '|',t.values.I_FOLDERDEPTH,'|',__tracks[3].values.I_FOLDERDEPTH)",
         ]
     )
     assert _run(lua_program).stdout == "[clean] Guitar|{GUITAR}|item|take||||-1|0"
@@ -531,6 +531,27 @@ def test_promote_refuses_renamed_or_unmarked_work_tracks_without_changes() -> No
     )
     result = _run(lua_program).stdout
     assert result.startswith("Select [work] tracks created by vgt to promote them to [clean].|nil|1|[work] Hand made")
+
+
+def test_promote_refuses_when_folder_repair_would_change_unselected_content() -> None:
+    """The explicit exception is limited to selected eligible copies, even
+    though REAPER normally needs to rewrite a folder's previous closing child
+    when appending or removing the final child."""
+    script = WORKING_COPY_SCRIPT.read_text()
+    helpers_end = script.index("local function choose_action")
+    cases = [
+        # Appending to clean would change Old clean from -1 to 0.
+        "{{name='[clean] Song',guid='{C}',values={I_FOLDERDEPTH=1},ext={['P_EXT:vgt_container']='clean'},items={}}, {name='Old clean',guid='{OLD}',values={I_FOLDERDEPTH=-1},ext={keep='yes'},items={'keep'},selected=false}, {name='[work] Song',guid='{W}',values={I_FOLDERDEPTH=1},ext={['P_EXT:vgt_container']='work'},items={}}, {name='[work] Draft',guid='{D}',values={I_FOLDERDEPTH=-1},ext={['P_EXT:vgt_working_copy']='1'},items={'draft'},selected=true}}",
+        # Removing the selected final work child would change the reclaimed
+        # predecessor from 0 to -1.
+        "{{name='[clean] Song',guid='{C}',values={I_FOLDERDEPTH=0},ext={['P_EXT:vgt_container']='clean'},items={}}, {name='[work] Song',guid='{W}',values={I_FOLDERDEPTH=1},ext={['P_EXT:vgt_container']='work'},items={}}, {name='User reclaimed',guid='{R}',values={I_FOLDERDEPTH=0},ext={['P_EXT:vgt_working_copy']='1',keep='reclaimed'},items={'keep'},selected=false}, {name='[work] Draft',guid='{D}',values={I_FOLDERDEPTH=-1},ext={['P_EXT:vgt_working_copy']='1'},items={'draft'},selected=true}}",
+    ]
+    for tracks in cases:
+        lua_program = "\n".join([
+            _promote_mock(tracks), script[:helpers_end],
+            "local before = ''; for _, t in ipairs(__tracks) do before = before .. t.name .. ':' .. t.values.I_FOLDERDEPTH .. ':' .. (t.ext.keep or '') .. ':' .. (t.items[1] or '') .. ';' end; promote(); local after = ''; for _, t in ipairs(__tracks) do after = after .. t.name .. ':' .. t.values.I_FOLDERDEPTH .. ':' .. (t.ext.keep or '') .. ':' .. (t.items[1] or '') .. ';' end; io.write(before == after and 'unchanged' or 'changed')",
+        ])
+        assert _run(lua_program).stdout == "unchanged"
 
 
 def test_working_copy_uses_reaper_api_and_never_touches_the_sidecar_or_rpp_text() -> None:

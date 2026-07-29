@@ -830,6 +830,36 @@ io.write('promotion ok')
     post_promotion_sidecar = read_sidecar(project)
     assert _track_snapshot(project, state, work_guid) == promoted_snapshot
 
+    # A later selected working copy must not be appended by rewriting the
+    # existing promoted clean child (REAPER stores a folder closer on that
+    # child). The explicit action therefore rejects this request atomically.
+    later_work_guid = "{WORK-LATER-0004}"
+    state, _ = _run(project, state, "", f"""
+for index, track in ipairs(tracks) do
+  if track.guid == '{reclaimed_guid}' then
+    track.I_FOLDERDEPTH = 0
+    table.insert(tracks, index + 1, {{guid='{later_work_guid}', name='[work] Later draft', B_MUTE=0,
+      I_FOLDERDEPTH=-1, ext={{['P_EXT:vgt_working_copy']='1'}},
+      items={{{{position=20,length=1,take={{name='later',source='later.mid'}}}}}}}})
+    break
+  end
+end
+""")
+    state, _ = _run(project, state, "", f"""
+for _, track in ipairs(tracks) do reaper.SetTrackSelected(track, track.guid == '{later_work_guid}') end
+""")
+    user_before_rejected_promotion = _user_snapshot(
+        project, state,
+        managed_tracks=post_promotion_sidecar["managed_track_guids"],
+        managed_regions=post_promotion_sidecar["managed_region_ids"],
+    )
+    state, _ = _run_promote(project, state, later_work_guid)
+    assert _user_snapshot(
+        project, state,
+        managed_tracks=post_promotion_sidecar["managed_track_guids"],
+        managed_regions=post_promotion_sidecar["managed_region_ids"],
+    ) == user_before_rejected_promotion
+
 
 def _guid(seed: int) -> str:
     # GUIDs are matched by the reascript's `{[%x%-]+}` pattern, so only

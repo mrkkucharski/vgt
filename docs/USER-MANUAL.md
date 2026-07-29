@@ -536,6 +536,9 @@ actions) and run it from REAPER's Action List. It offers create and promote:
   other contents remain attached. Each is renamed `[clean] …` and has its vgt
   working-copy/container/managed marks removed, leaving it entirely user-owned.
   Unselected, ineligible, and reclaimed tracks are left byte-for-byte alone.
+  REAPER represents a folder's closing edge on its final child; if a requested
+  promotion would require rewriting that edge on an existing unselected
+  `[clean]` or `[work]` child, the action refuses without changing anything.
 
 The copies are deliberately outside normal vgt ownership: they are named
 `[work]` (never `[vgt]`), carry no `vgt_managed` mark, and instead carry a
@@ -617,6 +620,8 @@ never block closing an issue:
   created copies or selected tracks that retain both the durable working-copy
   mark and their `[work]` name. Promotion alone may move and rename those
   selected eligible tracks into `[clean]`; all other tracks stay untouched.
+  A request that would require a folder-depth rewrite on an existing,
+  unselected container child is rejected unchanged.
 - Initialize maintains the bottom layout and ordering: loose root tracks,
   `[clean]`, `[work]`, then `[vgt]`; it moves each populated user-content
   container only as a whole block.
