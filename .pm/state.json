@@ -1,10 +1,10 @@
 {
   "current_issue": 239,
-  "session_id": "4e8d4f23-2c73-4ee3-bd15-4d2e4e358a09",
-  "pid": 97772,
-  "process_started_at": "Wed Jul 29 17:06:59 2026",
+  "session_id": "b08576cf-9342-4177-98a4-e7df77f234eb",
+  "pid": 99507,
+  "process_started_at": "Wed Jul 29 17:15:13 2026",
   "agent": "codex",
-  "started_at": "2026-07-29T15:06:57.378604+00:00",
+  "started_at": "2026-07-29T15:15:11.654415+00:00",
   "scheduler_stalls": {},
   "budget": {
     "window_start": "2026-07-29T12:07:06.074972+00:00",
@@ -18,10 +18,10 @@
   "verification_followups": {
     "f0d8bfc9d2dc6da7a31609184e25c4d66d3986fd2340b33a83e98204fb86691e": "created"
   },
-  "role": "implement",
+  "role": "review",
   "branch": "issue-239-reconcile-container-invariants-with-expl",
   "worktree_path": "/Users/marekkucharski/projects/.pm-worktrees/vgt/issue-239",
-  "pr_number": null,
+  "pr_number": 242,
   "followup_generation": {
     "fingerprint": "dc3e17e4139ba95c700d207dbb62f09cbecccc968eedac066128db4eb3619bc2",
     "items": {
@@ -76,11 +76,11 @@
   "pending_transition": {
     "issue": 239,
     "target": "working",
-    "event": "agent.started",
+    "event": "agent.review_started",
     "detail": {
       "issue": 239,
       "agent": "codex",
-      "branch": "issue-239-reconcile-container-invariants-with-expl"
+      "pr": 242
     },
     "cleanup": {}
   }
