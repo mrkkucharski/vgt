@@ -57,6 +57,10 @@ part of this hobby project's verification path because hosted runners are
 billing-blocked; run the complete suite locally instead. It deliberately
 requires no credentials, network access, model downloads, or live REAPER.
 
+The latest committed local certification, including the exact source commit,
+commands, environment, pass counts, and executable-coverage audit, is
+[the offline goal-verification record](GOAL-VERIFICATION-2026-07-29.md).
+
 ## Permanent invariants
 
 - **Non-destructive:** vgt changes only objects it created and recorded as
