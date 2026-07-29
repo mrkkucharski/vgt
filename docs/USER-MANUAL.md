@@ -23,8 +23,9 @@ checklist.
    `vgt_sync_tempo_map.lua` is the separate, confirmation-gated action for
    adopting a REAPER tempo-map correction; and
    `vgt_working_copy.lua` creates protected user-owned `[work]` copies of
-   generated reference MIDI. This step does not require retaining a source
-   checkout. `--dry-run` previews paths without changing them and
+   generated reference MIDI and promotes finished copies into `[clean]`. This
+   step does not require retaining a source checkout. `--dry-run` previews
+   paths without changing them and
    `--destination DIR` is useful for a custom REAPER resource location or
    automated test. The installer leaves identical files alone and asks before
    replacing a different file; use `--force` only when you intend to replace
@@ -32,7 +33,10 @@ checklist.
 2. Save the target `.RPP` in REAPER 7.x.
 3. Run `vgt_initialize.lua` from REAPER's Action List.
    On first use choose a file-backed reference track and declare whether its
-   guitar is electric or acoustic. This writes an adjacent `Song.vgt` sidecar.
+   guitar is electric or acoustic. This writes an adjacent `Song.vgt` sidecar,
+   creates the `[clean] <reference name>` and `[work] <reference name>`
+   containers, and puts the loose root tracks, `[clean]`, `[work]`, and `[vgt]`
+   folders in that order.
 4. Run `vgt analyze "Song.RPP"` in a terminal. After any available separation,
    it also transcribes the requested stems locally: DrumScript transcribes
    `drums`, and Basic Pitch transcribes every other target. This is free and
@@ -53,10 +57,16 @@ the required REAPER actions; they never text-edit an RPP.
 ## Objects vgt creates in REAPER
 
 Original tracks, items, and regions are never renamed, deleted, or changed.
-vgt creates a `[vgt] <reference name>` container and may add:
+At the bottom of the project, initialize maintains this four-position layout:
+loose root tracks, `[clean] <reference name>`, `[work] <reference name>`, then
+`[vgt] <reference name>`. It encodes a bottom-up workflow: vgt generates into
+`[vgt]`; copy down into `[work]` to edit; then promote up into `[clean]` to
+keep. vgt may add:
 
 | Object | When | State and purpose |
 | --- | --- | --- |
+| `[clean] <reference name>` | Initialization | User-content container for promoted finished tracks. vgt creates, renames, recolours, and repositions the container track, but never touches anything inside it. |
+| `[work] <reference name>` | Initialization | User-content container for editable working copies. vgt creates, renames, recolours, and repositions the container track, but never touches anything inside it. |
 | `[vgt] <reference name>` | Initialization | Folder when it has children; otherwise a plain track. |
 | `[vgt] Chords` | Chord analysis | Unmuted but silent text-item track; chord items are unlocked for editing. |
 | `[vgt] Key` | Valid key analysis | Unmuted, silent text-item track with one editable take name showing the effective root and scale. Use the strict `E minor` format (a pitch class followed by `major` or `minor`). |
@@ -69,6 +79,17 @@ vgt creates a `[vgt] <reference name>` container and may add:
 
 Chords and Beats are unmuted so labels stay visible, but contain no audible
 media. Click is muted because it is audible media.
+
+REAPER has no valid empty folder, so an empty `[clean]` or `[work]` container
+appears as a plain track until it receives its first child. Seeing a plain
+`[clean] <song>` on a fresh project is therefore expected. Only the container
+tracks are coloured: `[clean]` is yellow-green `rgb(187,210,41)`, `[work]` is
+light blue `rgb(68,175,239)`, and `[vgt]` is mauve `rgb(189,100,175)`. vgt sets
+that colour once when it creates a container; a hand-made container keeps its
+existing colour when adopted, and no later manual recolour is overridden.
+Colour is presentation only: ownership is tracked through provenance rather
+than color, and generated reference MIDI remains in the default/neutral track
+colour.
 
 ## Analysis, verification, and corrections
 
@@ -488,10 +509,10 @@ override with `shlex.split` and never runs it through a shell.
 
 `[vgt] <Target> Ref — <Label> (MIDI)` is recreated on every apply, like every other
 vgt-owned object, for both backends. Edits to it do not survive: make a working
-copy before editing (see [Working copies](#working-copies-vgt_working_copylua)).
+copy before editing (see [Working copies and promotion](#working-copies-and-promotion-vgt_working_copylua)).
 There is no `vgt sync` read-back for MIDI.
 
-## Working copies (`vgt_working_copy.lua`)
+## Working copies and promotion (`vgt_working_copy.lua`)
 
 Because every `[vgt]` object is regenerated on each apply, the reference MIDI is
 a draft to read, not an editing surface. `vgt_working_copy.lua` makes a
@@ -499,31 +520,34 @@ a draft to read, not an editing surface. `vgt_working_copy.lua` makes a
 that no later apply or sync will ever touch.
 
 Install it with `vgt install-reascripts` (it ships alongside the other three
-actions) and run it from REAPER's Action List. It offers two choices:
+actions) and run it from REAPER's Action List. It offers create and promote:
 
 - **Create working copy from selected tracks** — select the track(s) you want
   to work with (typically the selected `[vgt] <Target> Ref — <Label> (MIDI)`, plus its stem and
   `[vgt] Chords` for context), then run this. Each selected track is duplicated
-  into a `[work]` folder track. The action puts a durable private working-copy
-  marker on that folder and its copies; only a marked folder is reused. An
-  existing unmarked `[work]` folder or track is treated as user-owned and left
-  alone. The copies are unmuted, unlocked, and immediately editable.
-- **Discard all [work] copies** — deletes only marked tracks that still start
-  with `[work]` in a complete marked workspace; unmarked legacy or user-created
-  `[work]` tracks are preserved. If you add any unmarked track to a marked
-  workspace, that whole mixed folder is preserved rather than risking its
-  folder structure.
+  into the initialize-owned `[work]` container. The action puts a durable
+  private working-copy marker on the copies; the copies are unmuted, unlocked,
+  and immediately editable. If that container is absent, the action creates
+  the same marked `[work]` scaffold itself, ready for initialize to reconcile.
+- **Promote selected `[work]` tracks to `[clean]`** — a selected track is
+  eligible only when it has the working-copy marker and its name still starts
+  with `[work]`. Promotion moves, rather than copies, the track into `[clean]`,
+  so its identity, items, FX, routing, and other contents remain attached. It
+  is renamed `[clean] …` and all vgt working-copy/container/managed marks are
+  removed, leaving it entirely user-owned. Non-eligible selected tracks are
+  left alone.
 
 The copies are deliberately outside normal vgt ownership: they are named
 `[work]` (never `[vgt]`), carry no `vgt_managed` mark, and instead carry a
 separate private working-copy marker used only by this action. Normal
 reconciliation never touches them. Older unmarked `[work]` objects are
-conservatively treated as user-owned and cannot be discarded by vgt. To **keep**
-an edited copy past a discard (or promote it as your finished part), drag it
-where you want and rename it so it no longer starts with `[work]`; it is yours
-from then on, exactly like a `[vgt]` track you reclaimed by renaming. The vgt
-reference it came from remains as the unmuted machine baseline, regenerated on
-the next apply.
+conservatively treated as user-owned. There is no discard action: delete an
+unwanted `[work]` track with ordinary REAPER operations. Renaming a copy so it
+no longer starts with `[work]` permanently reclaims it; it is yours from then
+on, exactly like a `[vgt]` track you reclaimed by renaming. Promotion is the
+explicit form of that same reclaim for a finished part. The vgt reference it
+came from remains as the unmuted machine baseline, regenerated on the next
+apply.
 
 The action edits the live project only: it never reads or writes the `.vgt`
 sidecar and never touches a `[vgt]` or user track.
@@ -534,8 +558,9 @@ Autonomous vgt work and its automated tests only cover static artifact
 validation (readable MIDI, well-formed JSON, correct REAPER placement via
 stubbed tests). They never open REAPER, run a live ReaScript, or judge whether
 a transcription sounds right. This checklist is human-owned, not an
-autonomous-agent acceptance task. Before trusting a reference in practice, the
-user should, in a real REAPER session:
+autonomous-agent acceptance task, and never a reason to block closing an
+issue. Before trusting a reference in practice, the user should, in a real
+REAPER session:
 
 - listen to `[vgt] Drums Ref (MIDI)` against the `[vgt] Drums` audio stem with
   a drum-kit instrument loaded, and judge whether the detected kicks, snares,
@@ -557,7 +582,14 @@ user should, in a real REAPER session:
   fragmentation, and both chord-tone metrics;
 - create a `[work]` copy from the preferred generated candidate, edit it, run
   analyze/apply, and confirm it remains intact; then discard a rejected
-  generated variant and confirm only that generated track/artifacts disappear.
+  generated variant and confirm only that generated track/artifacts disappear;
+- run initialize on a disposable copy whose folders are out of order (or with
+  hand-made unmarked `[clean]`/`[work]` folders), and confirm the three
+  containers end up in order, are adopted rather than duplicated, and have
+  nothing inside them moved or changed;
+- promote a `[work]` track and confirm it lands in `[clean]`, keeps its items
+  and FX, is renamed, and survives a following initialize untouched;
+- confirm an empty `[clean]` does not swallow the tracks below it.
 
 This is also the place to exercise initialize's duplicate-`[vgt]`-folder
 protection (issue #174) live, since the offline fake-REAPER harness in
@@ -577,7 +609,15 @@ never block closing an issue:
 
 ## Permanent regression contract
 
-- vgt changes only objects it created and recorded as `[vgt]`-managed.
+- **Non-destructive:** vgt changes only objects it created and recorded as
+  `[vgt]`-managed; it never changes user tracks, items, or regions. vgt also
+  creates and maintains two user-content containers, `[clean]` and `[work]`.
+  It may create, rename, recolour, and reposition those container tracks, and
+  reposition the blocks they contain as a unit. It never modifies, renames,
+  deletes, or reorders anything *inside* them.
+- Initialize maintains the bottom layout and ordering: loose root tracks,
+  `[clean]`, `[work]`, then `[vgt]`; it moves each populated user-content
+  container only as a whole block.
 - Re-running initialization or analysis creates no duplicate managed tracks,
   regions, or stems.
 - Managed track and region ownership is durable against an interrupted apply:
@@ -593,8 +633,9 @@ never block closing an issue:
   the project and reports the project/sidecar paths and every ownership count.
   This is intentional: a `[vgt]` name never grants deletion permission. To
   recover a duplicated project, save a backup, use the reported GUIDs to keep
-  the authenticated root, and rename each unauthenticated folder to `[work]`
-  (or another non-`[vgt]` name) before applying again. The renamed folder is
+  the authenticated root, and rename each unauthenticated folder to a clearly
+  non-container, non-`[vgt]` name (for example `[archive] duplicate`) before
+  applying again. The renamed folder is
   then preserved as user-owned; apply never removes it automatically.
 - Project mutation uses REAPER's API, never RPP text editing.
 - Heavy analysis runs in the CLI, not inside REAPER.
