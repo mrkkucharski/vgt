@@ -1,10 +1,10 @@
 {
-  "current_issue": 227,
-  "session_id": "454c5e14-4dcc-49de-b5dd-701b41a22f9f",
-  "pid": 79508,
-  "process_started_at": "Wed Jul 29 15:08:03 2026",
+  "current_issue": 228,
+  "session_id": "cd567f0e-cb79-4223-a74a-7ce4e21e2dd0",
+  "pid": 80071,
+  "process_started_at": "Wed Jul 29 15:10:31 2026",
   "agent": "codex",
-  "started_at": "2026-07-29T13:08:01.337341+00:00",
+  "started_at": "2026-07-29T13:10:29.213824+00:00",
   "scheduler_stalls": {},
   "budget": {
     "window_start": "2026-07-29T12:07:06.074972+00:00",
@@ -18,10 +18,10 @@
   "verification_followups": {
     "f0d8bfc9d2dc6da7a31609184e25c4d66d3986fd2340b33a83e98204fb86691e": "created"
   },
-  "role": "review",
-  "branch": "issue-227-replace-working-copy-discard-with-promot",
-  "worktree_path": "/Users/marekkucharski/projects/.pm-worktrees/vgt/issue-227",
-  "pr_number": 232,
+  "role": "implement",
+  "branch": "issue-228-extend-the-offline-goal-contract-to-cont",
+  "worktree_path": "/Users/marekkucharski/projects/.pm-worktrees/vgt/issue-228",
+  "pr_number": null,
   "followup_generation": {
     "fingerprint": "17c90a9889f56e105f690601cf187f135f3c8ec0a453c9240ff5b3a9d731806b",
     "items": {
@@ -66,13 +66,13 @@
     "226": 2
   },
   "pending_transition": {
-    "issue": 227,
+    "issue": 228,
     "target": "working",
-    "event": "agent.review_started",
+    "event": "agent.started",
     "detail": {
-      "issue": 227,
+      "issue": 228,
       "agent": "codex",
-      "pr": 232
+      "branch": "issue-228-extend-the-offline-goal-contract-to-cont"
     },
     "cleanup": {}
   }
