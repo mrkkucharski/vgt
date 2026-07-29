@@ -17,7 +17,7 @@
 
 local VGT_PREFIX = "[vgt]"
 local WORK_PREFIX = "[work]"
-local WORK_FOLDER_NAME = WORK_PREFIX
+local CLEAN_PREFIX = "[clean]"
 -- The same durable ownership mark vgt_initialize.lua sets on its tracks. A copy
 -- must never carry it, or a future apply could treat the copy as a stale vgt
 -- track to reconcile (the name guard already protects it, but clearing the mark
@@ -27,6 +27,13 @@ local VGT_EXT_STATE_KEY = "P_EXT:vgt_managed"
 -- must continue to ignore working copies and their container.
 local WORK_EXT_STATE_KEY = "P_EXT:vgt_working_copy"
 local WORK_EXT_STATE_VALUE = "1"
+-- Container identity belongs to vgt_initialize.lua. Working-copy provenance
+-- remains deliberately separate, so copies stay outside normal reconciliation.
+local CONTAINER_EXT_STATE_KEY = "P_EXT:vgt_container"
+local WORK_CONTAINER_KIND = "work"
+local PROJ_EXT_SECTION = "vgt"
+local PROJ_EXT_WORK_GUID_KEY = "work_container"
+local WORK_COLOR = {68, 175, 239}
 
 local function track_name(track)
   local _, name = reaper.GetTrackName(track, "")
@@ -143,17 +150,85 @@ local function is_complete_work_folder(folder_index, track)
   return workspace_has_only_discardable_children(folder_index)
 end
 
--- The reused `[work]` folder, if one created by this action already exists: a
--- marked top-level folder track named exactly `[work]`. Legacy/unmarked folders
--- are user-owned and intentionally not guessed at. Returns track and index.
-local function find_work_folder()
+-- initialize creates an empty container as an ordinary top-level track. This
+-- action is the operation that gives it its first child, so this is the one
+-- safe flat shape we may turn into a folder. Any other shape still goes
+-- through is_complete_work_folder's exact structural check above.
+local function is_empty_work_container(track)
+  return reaper.GetMediaTrackInfo_Value(track, "I_FOLDERDEPTH") == 0
+end
+
+local function read_work_container_guid()
+  -- The guard keeps this helper directly exercisable with the minimal REAPER
+  -- stubs used by the offline tests; REAPER itself always provides this API.
+  if not reaper.GetProjExtState then return "" end
+  local _, value = reaper.GetProjExtState(0, PROJ_EXT_SECTION, PROJ_EXT_WORK_GUID_KEY)
+  return value or ""
+end
+
+local function find_top_level_track_by_guid(guid)
+  if guid == "" then return nil end
   for index = 0, reaper.CountTracks(0) - 1 do
     local track = reaper.GetTrack(0, index)
-    if track_name(track) == WORK_FOLDER_NAME
-      and is_marked_work_object(track)
-      and is_top_level_track(index)
-      and is_complete_work_folder(index, track) then
+    if reaper.GetTrackGUID(track) == guid and is_top_level_track(index) then
       return track, index
+    end
+  end
+  return nil
+end
+
+local function is_work_container(track)
+  local _, value = reaper.GetSetMediaTrackInfo_String(track, CONTAINER_EXT_STATE_KEY, "", false)
+  return value == WORK_CONTAINER_KIND
+end
+
+-- Resolve the initialize-owned container by its project GUID first, then its
+-- durable track mark. Names are intentionally not identity: a hand-made
+-- `[work]` folder must never become this action's workspace.
+local function find_work_folder()
+  local track, index = find_top_level_track_by_guid(read_work_container_guid())
+  if track then return track, index end
+
+  local found, found_index
+  for index = 0, reaper.CountTracks(0) - 1 do
+    local track = reaper.GetTrack(0, index)
+    if is_top_level_track(index) and is_work_container(track) then
+      if found then return nil, nil, "multiple [work] containers are marked in this project" end
+      found, found_index = track, index
+    end
+  end
+  return found, found_index
+end
+
+local function reference_name_from_container(prefix)
+  for index = 0, reaper.CountTracks(0) - 1 do
+    local track = reaper.GetTrack(0, index)
+    if is_top_level_track(index) then
+      local name = track_name(track)
+      local expected_prefix = prefix .. " "
+      if starts_with(name, expected_prefix) then
+        local reference_name = name:sub(#expected_prefix + 1)
+        if reference_name ~= "" then return reference_name end
+      end
+    end
+  end
+  return nil
+end
+
+local function work_container_name()
+  -- This standalone action never reads the sidecar. Reuse a live scaffold
+  -- name when available; initialize will adopt and rename a bare fallback.
+  local reference_name = reference_name_from_container(VGT_PREFIX)
+    or reference_name_from_container(CLEAN_PREFIX)
+  if reference_name then return WORK_PREFIX .. " " .. reference_name end
+  return WORK_PREFIX
+end
+
+local function vgt_root_index()
+  for index = 0, reaper.CountTracks(0) - 1 do
+    local track = reaper.GetTrack(0, index)
+    if is_top_level_track(index) and starts_with(track_name(track), VGT_PREFIX) then
+      return index
     end
   end
   return nil
@@ -220,25 +295,51 @@ local function create()
   -- This makes reclamation permanent rather than depending on its current name.
   forget_reclaimed_work_objects()
 
-  local _, folder_index = find_work_folder()
+  local folder, folder_index, resolution_error = find_work_folder()
+  if resolution_error then
+    reaper.PreventUIRefresh(-1)
+    reaper.Undo_EndBlock("vgt: create working copy", -1)
+    reaper.ShowMessageBox(resolution_error .. ".", "vgt working copy", 0)
+    return
+  end
+  local empty_container = folder and is_empty_work_container(folder)
+  if folder and not empty_container and not is_complete_work_folder(folder_index, folder) then
+    reaper.PreventUIRefresh(-1)
+    reaper.Undo_EndBlock("vgt: create working copy", -1)
+    reaper.ShowMessageBox(
+      "The [work] container has a changed folder structure; leaving it untouched.",
+      "vgt working copy", 0
+    )
+    return
+  end
+
   local insert_index
-  if folder_index then
+  if folder_index and empty_container then
+    -- An initialize-created empty scaffold becomes a folder only as its first
+    -- copy is inserted, so no empty intermediate folder state can persist.
+    reaper.SetMediaTrackInfo_Value(folder, "I_FOLDERDEPTH", 1)
+    insert_index = folder_index + 1
+  elseif folder_index then
     -- Extend the existing folder: its current last child closes it (depth -1),
     -- so demote it to a plain child and let the last new copy become the closer.
     local last_child = folder_last_child_index(folder_index)
     reaper.SetMediaTrackInfo_Value(reaper.GetTrack(0, last_child), "I_FOLDERDEPTH", 0)
     insert_index = last_child + 1
   else
-    -- Create a marked `[work]` folder at the end. Its marker belongs only to
-    -- this action (not normal vgt reconciliation); an unmarked legacy folder
-    -- is preserved rather than reused based on its name.
-    insert_index = reaper.CountTracks(0)
+    -- Create the same scaffold initialize would: directly above its root when
+    -- present, otherwise at the end. It becomes a folder immediately below.
+    insert_index = vgt_root_index() or reaper.CountTracks(0)
     reaper.InsertTrackAtIndex(insert_index, false)
     local created = reaper.GetTrack(0, insert_index)
-    reaper.GetSetMediaTrackInfo_String(created, "P_NAME", WORK_FOLDER_NAME, true)
+    reaper.GetSetMediaTrackInfo_String(created, "P_NAME", work_container_name(), true)
     reaper.SetMediaTrackInfo_Value(created, "B_MUTE", 0)
     reaper.SetMediaTrackInfo_Value(created, "I_FOLDERDEPTH", 1)
-    reaper.GetSetMediaTrackInfo_String(created, WORK_EXT_STATE_KEY, WORK_EXT_STATE_VALUE, true)
+    reaper.GetSetMediaTrackInfo_String(created, CONTAINER_EXT_STATE_KEY, WORK_CONTAINER_KIND, true)
+    reaper.SetProjExtState(0, PROJ_EXT_SECTION, PROJ_EXT_WORK_GUID_KEY, reaper.GetTrackGUID(created))
+    reaper.SetMediaTrackInfo_Value(
+      created, "I_CUSTOMCOLOR",
+      reaper.ColorToNative(WORK_COLOR[1], WORK_COLOR[2], WORK_COLOR[3]) | 0x1000000
+    )
     insert_index = insert_index + 1
   end
 
@@ -266,18 +367,13 @@ local function discard()
   -- child carries its balancing -1 depth; deleting that child while preserving
   -- an unmarked user track in the same folder would accidentally pull later
   -- tracks into the folder.  Therefore a mixed workspace is preserved as a
-  -- unit.  We only remove a complete, marked workspace whose every object is
-  -- still in the scratch namespace.
-  for index = 0, reaper.CountTracks(0) - 1 do
-    local track = reaper.GetTrack(0, index)
-    if track_name(track) == WORK_FOLDER_NAME
-      and is_marked_work_object(track)
-      and is_top_level_track(index)
-      and is_complete_work_folder(index, track) then
-      local last_child = folder_last_child_index(index)
-      for child_index = index, last_child do
-        removable_tracks[reaper.GetTrack(0, child_index)] = true
-      end
+  -- unit. We only remove copies from a complete, resolved workspace whose
+  -- children are all still in the scratch namespace.
+  local folder, folder_index = find_work_folder()
+  if folder and is_complete_work_folder(folder_index, folder) then
+    local last_child = folder_last_child_index(folder_index)
+    for child_index = folder_index + 1, last_child do
+      removable_tracks[reaper.GetTrack(0, child_index)] = true
     end
   end
   -- Delete only objects belonging to one of those complete workspaces.  This
@@ -289,6 +385,11 @@ local function discard()
       reaper.DeleteTrack(track)
       removed = removed + 1
     end
+  end
+  -- The initialize-owned container remains as an empty, flat scaffold after
+  -- discarding its copies. It is not a working-copy object itself.
+  if removed > 0 and folder then
+    reaper.SetMediaTrackInfo_Value(folder, "I_FOLDERDEPTH", 0)
   end
   reaper.PreventUIRefresh(-1)
   reaper.TrackList_AdjustWindows(false)
