@@ -150,6 +150,14 @@ local function is_complete_work_folder(folder_index, track)
   return workspace_has_only_discardable_children(folder_index)
 end
 
+-- initialize creates an empty container as an ordinary top-level track. This
+-- action is the operation that gives it its first child, so this is the one
+-- safe flat shape we may turn into a folder. Any other shape still goes
+-- through is_complete_work_folder's exact structural check above.
+local function is_empty_work_container(track)
+  return reaper.GetMediaTrackInfo_Value(track, "I_FOLDERDEPTH") == 0
+end
+
 local function read_work_container_guid()
   -- The guard keeps this helper directly exercisable with the minimal REAPER
   -- stubs used by the offline tests; REAPER itself always provides this API.
@@ -294,7 +302,8 @@ local function create()
     reaper.ShowMessageBox(resolution_error .. ".", "vgt working copy", 0)
     return
   end
-  if folder and not is_complete_work_folder(folder_index, folder) then
+  local empty_container = folder and is_empty_work_container(folder)
+  if folder and not empty_container and not is_complete_work_folder(folder_index, folder) then
     reaper.PreventUIRefresh(-1)
     reaper.Undo_EndBlock("vgt: create working copy", -1)
     reaper.ShowMessageBox(
@@ -305,7 +314,12 @@ local function create()
   end
 
   local insert_index
-  if folder_index then
+  if folder_index and empty_container then
+    -- An initialize-created empty scaffold becomes a folder only as its first
+    -- copy is inserted, so no empty intermediate folder state can persist.
+    reaper.SetMediaTrackInfo_Value(folder, "I_FOLDERDEPTH", 1)
+    insert_index = folder_index + 1
+  elseif folder_index then
     -- Extend the existing folder: its current last child closes it (depth -1),
     -- so demote it to a plain child and let the last new copy become the closer.
     local last_child = folder_last_child_index(folder_index)

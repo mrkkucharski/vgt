@@ -269,6 +269,44 @@ def test_create_reports_and_leaves_a_structurally_changed_container_untouched() 
     assert result.endswith("|[work] Guitar:2|[work] altered:-2|Source:0")
 
 
+def test_create_reuses_an_empty_initialize_container() -> None:
+    """Initialize intentionally leaves a newly made container flat until this
+    action gives it its first child. That ordinary empty state is not damage."""
+    script = WORKING_COPY_SCRIPT.read_text()
+    helpers_end = script.index("local function choose_action")
+    lua_program = "\n".join(
+        [
+            "local tracks = {",
+            "  {name='[work] Guitar', values={I_FOLDERDEPTH=0}, ext={['P_EXT:vgt_container']='work'}, items={}},",
+            "  {name='Source', values={I_FOLDERDEPTH=0}, ext={}, items={}, selected=true},",
+            "  {name='Outside', values={I_FOLDERDEPTH=0}, ext={}, items={}},",
+            "}",
+            "reaper = {}",
+            "function reaper.CountTracks() return #tracks end",
+            "function reaper.GetTrack(_, index) return tracks[index + 1] end",
+            "function reaper.GetTrackName(track) return true, track.name end",
+            "function reaper.GetMediaTrackInfo_Value(track, key) return track.values[key] or 0 end",
+            "function reaper.SetMediaTrackInfo_Value(track, key, value) track.values[key] = value end",
+            "function reaper.GetSetMediaTrackInfo_String(track, key, value, set) if set then if key == 'P_NAME' then track.name = value else track.ext[key] = value end; return true, value end; return true, track.ext[key] or '' end",
+            "function reaper.CountSelectedTracks() return 1 end; function reaper.GetSelectedTrack() return tracks[2] end",
+            "function reaper.GetTrackStateChunk() return true, 'TRACKID {SOURCE}' end",
+            "function reaper.genGuid() return '{COPY}' end",
+            "function reaper.InsertTrackAtIndex(index) table.insert(tracks, index + 1, {name='', values={}, ext={}, items={}}) end",
+            "function reaper.SetTrackStateChunk(track, chunk) track.chunk=chunk end",
+            "function reaper.SetTrackSelected(track, selected) track.selected=selected end",
+            "function reaper.CountTrackMediaItems(track) return #track.items end",
+            "function reaper.GetTrackMediaItem(track, index) return track.items[index + 1] end",
+            "function reaper.SetMediaItemInfo_Value() end",
+            "function reaper.Undo_BeginBlock() end; function reaper.Undo_EndBlock() end; function reaper.PreventUIRefresh() end",
+            "function reaper.TrackList_AdjustWindows() end; function reaper.UpdateArrange() end; function reaper.MarkProjectDirty() end",
+            "function reaper.ShowMessageBox() error('an empty initialized container must be reusable') end",
+            script[:helpers_end],
+            "create(); for _, track in ipairs(tracks) do io.write(track.name, ':', track.values.I_FOLDERDEPTH, ';') end",
+        ]
+    )
+    assert _run(lua_program).stdout == "[work] Guitar:1;[work] Source:-1;Source:0;Outside:0;"
+
+
 def test_find_work_folder_resolves_marked_container_even_with_nested_children() -> None:
     """A total depth of zero is insufficient: a marked child may have been
     made into a folder. Reusing a +1/0/+1/-2 layout would leave that nested
