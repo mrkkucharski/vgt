@@ -499,6 +499,8 @@ local function promote()
     promoted[track] = true
     reaper.GetSetMediaTrackInfo_String(track, "P_NAME", clean_name(track_name(track)), true)
     reaper.GetSetMediaTrackInfo_String(track, WORK_EXT_STATE_KEY, "", true)
+    reaper.GetSetMediaTrackInfo_String(track, VGT_EXT_STATE_KEY, "", true)
+    reaper.GetSetMediaTrackInfo_String(track, CONTAINER_EXT_STATE_KEY, "", true)
     reaper.SetMediaTrackInfo_Value(track, "I_FOLDERDEPTH", position == #eligible and -1 or 0)
   end
 

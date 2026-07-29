@@ -472,7 +472,7 @@ def test_promote_moves_the_existing_track_and_reclaims_it() -> None:
     helpers_end = script.index("local function choose_action")
     lua_program = "\n".join(
         [
-            _promote_mock("{{name='[clean] Song',guid='{C}',values={I_FOLDERDEPTH=1},ext={['P_EXT:vgt_container']='clean'},items={}}, {name='Old clean',guid='{OLD}',values={I_FOLDERDEPTH=-1},ext={},items={}}, {name='[work] Song',guid='{W}',values={I_FOLDERDEPTH=1},ext={['P_EXT:vgt_container']='work'},items={}}, {name='[work] Guitar',guid='{GUITAR}',values={I_FOLDERDEPTH=-1},ext={['P_EXT:vgt_working_copy']='1'},items={'item'},takes={'take'},selected=true}, {name='Outside',guid='{O}',values={I_FOLDERDEPTH=0},ext={},items={}}}"),
+            _promote_mock("{{name='[clean] Song',guid='{C}',values={I_FOLDERDEPTH=1},ext={['P_EXT:vgt_container']='clean'},items={}}, {name='Old clean',guid='{OLD}',values={I_FOLDERDEPTH=-1},ext={},items={}}, {name='[work] Song',guid='{W}',values={I_FOLDERDEPTH=1},ext={['P_EXT:vgt_container']='work'},items={}}, {name='[work] Guitar',guid='{GUITAR}',values={I_FOLDERDEPTH=-1},ext={['P_EXT:vgt_working_copy']='1',['P_EXT:vgt_managed']='1',['P_EXT:vgt_container']='work'},items={'item'},takes={'take'},selected=true}, {name='Outside',guid='{O}',values={I_FOLDERDEPTH=0},ext={},items={}}}"),
             script[:helpers_end],
             "promote(); local t=__tracks[3]; io.write(t.name,'|',t.guid,'|',t.items[1],'|',t.takes[1],'|',t.ext['P_EXT:vgt_working_copy'] or '', '|',t.ext['P_EXT:vgt_managed'] or '', '|',t.ext['P_EXT:vgt_container'] or '', '|',t.values.I_FOLDERDEPTH,'|',__tracks[4].values.I_FOLDERDEPTH)",
         ]
