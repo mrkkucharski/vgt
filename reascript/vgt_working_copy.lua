@@ -273,8 +273,27 @@ local function build_working_copy(insert_index, source_chunk, source_name, folde
   reaper.SetTrackSelected(track, true)
   -- A vgt reference item is left unlocked already, but a copied label/beat item
   -- can be locked; unlock every item so the whole copy is immediately editable.
+  --
+  -- A MIDI take's chunk carries the same embedded source data as its origin, so
+  -- a byte-for-byte SetTrackStateChunk clone lets REAPER resolve it back onto
+  -- the *same* pooled MIDI source instead of an independent one -- an edit here
+  -- would silently rewrite whatever else shares that pool (the [vgt] reference,
+  -- or a sibling copy). Give every MIDI take a fresh, unpooled source so this
+  -- copy is actually safe to edit independently, per this file's design
+  -- invariant above.
   for item_index = 0, reaper.CountTrackMediaItems(track) - 1 do
-    reaper.SetMediaItemInfo_Value(reaper.GetTrackMediaItem(track, item_index), "C_LOCK", 0)
+    local item = reaper.GetTrackMediaItem(track, item_index)
+    reaper.SetMediaItemInfo_Value(item, "C_LOCK", 0)
+    for take_index = 0, reaper.CountTakes(item) - 1 do
+      local take = reaper.GetTake(item, take_index)
+      if take and reaper.TakeIsMIDI(take) then
+        local ok, events = reaper.MIDI_GetAllEvts(take, "")
+        if ok then
+          reaper.SetMediaItemTake_Source(take, reaper.PCM_Source_CreateFromType("MIDI"))
+          reaper.MIDI_SetAllEvts(take, events)
+        end
+      end
+    end
   end
   return track
 end

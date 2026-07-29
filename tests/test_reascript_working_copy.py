@@ -411,6 +411,13 @@ def _build_copy_mock() -> str:
             "function reaper.CountTrackMediaItems(track) return #track.items end",
             "function reaper.GetTrackMediaItem(track, index) return track.items[index + 1] end",
             "function reaper.SetMediaItemInfo_Value(item, key, value) item[key] = value end",
+            "function reaper.CountTakes(item) return item.takes and #item.takes or 0 end",
+            "function reaper.GetTake(item, index) return item.takes[index + 1] end",
+            "function reaper.TakeIsMIDI(take) return take.midi end",
+            "function reaper.MIDI_GetAllEvts(take) return true, take.evts end",
+            "function reaper.PCM_Source_CreateFromType(kind) return {new_source = kind} end",
+            "function reaper.SetMediaItemTake_Source(take, source) take.source = source end",
+            "function reaper.MIDI_SetAllEvts(take, evts) take.evts_written = evts end",
             "_G.__tracks = tracks",
         ]
     )
@@ -438,6 +445,36 @@ def test_build_working_copy_produces_an_editable_user_owned_track() -> None:
     assert selected == "true"  # new copy becomes the selection
     assert locks == "00"  # every item unlocked -> immediately editable
     assert "TRACKID {GEN-1}" in chunk and "{OLD-1}" not in chunk  # fresh unique GUID
+
+
+def test_build_working_copy_unpools_midi_takes_but_leaves_audio_takes_alone() -> None:
+    """A byte-for-byte SetTrackStateChunk clone would otherwise resolve a MIDI
+    take's embedded source back onto the same pooled source as its origin, so
+    an edit in the [work] copy would silently rewrite the [vgt] reference (or a
+    sibling copy) too. Every MIDI take must get a fresh, independent source;
+    non-MIDI (audio) takes must be left untouched."""
+    script = WORKING_COPY_SCRIPT.read_text()
+    helpers_end = script.index("local function create()")
+    lua_program = "\n".join(
+        [
+            _build_copy_mock(),
+            # Override the mock's default items with one MIDI take and one
+            # audio take, so the unpool step must discriminate between them.
+            (
+                "function reaper.SetTrackStateChunk(track, chunk) track.chunk = chunk track.items = {"
+                "{C_LOCK = 1, takes = {{midi = true, evts = 'NOTES'}}},"
+                "{C_LOCK = 1, takes = {{midi = false, source = 'ORIGINAL-WAV'}}},"
+                "} end"
+            ),
+            script[:helpers_end],
+            "build_working_copy(0, 'TRACKID {OLD-1}\\n', '[vgt] Drums Ref (MIDI)', -1)",
+            "local t = reaper.GetTrack(0, 0)",
+            "local midi_take, audio_take = t.items[1].takes[1], t.items[2].takes[1]",
+            "io.write(tostring(midi_take.source.new_source), '|', midi_take.evts_written, '|', tostring(audio_take.source), '|', tostring(audio_take.evts_written))",
+        ]
+    )
+    result = _run(lua_program).stdout
+    assert result == "MIDI|NOTES|ORIGINAL-WAV|nil"
 
 
 def test_create_does_not_reuse_an_unmarked_work_folder_and_creates_a_container() -> None:
