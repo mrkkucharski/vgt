@@ -852,6 +852,21 @@ local function move_container_block_to_end(track)
   restore_selected_tracks(saved_selection)
 end
 
+-- When the two complete blocks already form the final project tail in the
+-- canonical order, neither move is needed. This guard is important because
+-- moving clean and then work is otherwise a round trip even on re-apply:
+-- clean temporarily passes work, then work passes clean again. Checking whole
+-- blocks (rather than just their container tracks) preserves the same rule for
+-- user-filled folders and keeps a true re-apply free of reorders.
+local function containers_are_canonical_tail(clean_container, work_container)
+  local clean_index = track_index(clean_container)
+  local work_index = track_index(work_container)
+  if not clean_index or not work_index then return false end
+  local clean_last = folder_last_child_index(clean_index)
+  local work_last = folder_last_child_index(work_index)
+  return clean_last + 1 == work_index and work_last == reaper.CountTracks(0) - 1
+end
+
 -- Once a reference has been persisted, it is authoritative: reuse it without
 -- prompting on every later apply, and never silently fall back to a
 -- candidate menu while old analysis/stems/tempo data still refers to it.
@@ -1492,8 +1507,12 @@ local function apply()
   local reference_name = track_name(reference)
   local clean_container = maintain_container(CONTAINER_DEFS[1], reference_name)
   local work_container = maintain_container(CONTAINER_DEFS[2], reference_name)
-  if clean_container then move_container_block_to_end(clean_container) end
-  if work_container then move_container_block_to_end(work_container) end
+  local canonical_tail = clean_container and work_container
+    and containers_are_canonical_tail(clean_container, work_container)
+  if not canonical_tail then
+    if clean_container then move_container_block_to_end(clean_container) end
+    if work_container then move_container_block_to_end(work_container) end
+  end
 
   local insert_at = reaper.CountTracks(0)
   reaper.InsertTrackAtIndex(insert_at, true)

@@ -2123,6 +2123,9 @@ _CONTAINER_TRAILER = "\n".join(
         "io.write('CLEAN_GUID=', clean_guid, '\\n')",
         "io.write('WORK_GUID=', work_guid, '\\n')",
         "io.write('REORDER_CALLS=', tostring(_G.__reorder_calls or 0), '\\n')",
+        "local selected_names = {}",
+        "for i = 0, reaper.CountSelectedTracks(0) - 1 do selected_names[#selected_names + 1] = reaper.GetSelectedTrack(0, i).name end",
+        "io.write('SELECTED=', table.concat(selected_names, ','), '\\n')",
         "io.write('MSG=', tostring(_G.__message_box or ''), '\\n')",
     ]
 )
@@ -2191,6 +2194,9 @@ def test_fresh_project_creates_both_containers_flattened_and_ordered(tmp_path: P
 
     assert state["CLEAN_GUID"] == by_name["[clean] Mix"]["guid"]
     assert state["WORK_GUID"] == by_name["[work] Mix"]["guid"]
+    # Creation already appends the blocks in canonical order, so no reorder
+    # call is needed at all.
+    assert state["REORDER_CALLS"] == "0"
     assert state["MSG"] == ""
 
 
@@ -2207,6 +2213,10 @@ def test_reapply_is_idempotent_for_the_container_scaffold(tmp_path: Path) -> Non
     assert by_name["[work] Mix"]["color"] == WORK_COLOR_VALUE
     assert by_name["Mix"]["guid"] == "{REF}"
     assert _names_are_unique(second["tracks"])
+    # The second apply removes and rebuilds only [vgt]. Both container blocks
+    # are already the canonical final tail, so it must not issue another
+    # reorder (neither apply needed one for this already-canonical project).
+    assert second["REORDER_CALLS"] == "0"
     assert second["MSG"] == ""
 
 
@@ -2300,6 +2310,21 @@ def test_containers_starting_interleaved_or_below_vgt_end_up_correctly_ordered(t
     state = _run_container_harness(tracks_literal, tmp_path)
     names = [t["name"] for t in state["tracks"]]
     assert names == ["Mix", "OtherUserTrack", "[clean] Mix", "[work] Mix", "[vgt] Mix"]
+
+
+def test_container_moves_restore_the_users_track_selection(tmp_path: Path) -> None:
+    tracks_literal = ", ".join(
+        [
+            "{name = 'Mix', guid = '{REF}', items = {{take = {source = 'song.mp3'}, position = 0, length = 180}}, depth = 0, ext = {}, selected = true}",
+            "{name = '[work] Mix', guid = '{W}', items = {}, depth = 0, ext = {['P_EXT:vgt_container'] = 'work'}}",
+            "{name = 'OtherUserTrack', guid = '{OTHER}', items = {}, depth = 0, ext = {}, selected = true}",
+            "{name = '[clean] Mix', guid = '{C}', items = {}, depth = 0, ext = {['P_EXT:vgt_container'] = 'clean'}}",
+        ]
+    )
+    state = _run_container_harness(tracks_literal, tmp_path)
+
+    assert [t["name"] for t in state["tracks"]] == ["Mix", "OtherUserTrack", "[clean] Mix", "[work] Mix", "[vgt] Mix"]
+    assert state["SELECTED"] == "Mix,OtherUserTrack"
 
 
 def test_containers_are_never_removed_or_treated_as_root_candidates(tmp_path: Path) -> None:
