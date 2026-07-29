@@ -714,7 +714,12 @@ local function top_level_adoption_candidates(def)
     local track = reaper.GetTrack(0, index)
     if is_top_level_track(index) then
       local name = track_name(track)
-      if starts_with(name, def.prefix .. " ") or (def.legacy_bare and name == def.prefix) then
+      -- Step 3 is adoption of a *previously unmarked* hand-made container.
+      -- Never overwrite the other kind's durable mark because its current
+      -- name happens to be misleading: marks, not names, remain identity.
+      if track_container_kind(track) == ""
+        and (starts_with(name, def.prefix .. " ") or (def.legacy_bare and name == def.prefix))
+      then
         matches[#matches + 1] = track
       end
     end

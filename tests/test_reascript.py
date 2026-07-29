@@ -2283,6 +2283,29 @@ def test_adopts_unmarked_named_and_bare_legacy_containers_leaving_contents_and_c
     assert state["WORK_GUID"] == "{WORKOLD}"
 
 
+def test_name_adoption_never_overwrites_the_other_containers_durable_mark(tmp_path: Path) -> None:
+    """A misleading name is not permission to steal a container whose
+    P_EXT:vgt_container identity already says it is the other kind."""
+    tracks_literal = ", ".join(
+        [
+            _REFERENCE_TRACK_LUA,
+            "{name = '[clean] Misnamed work', guid = '{WORK}', items = {}, depth = 0, ext = {['P_EXT:vgt_container'] = 'work'}, color = 555}",
+        ]
+    )
+    state = _run_container_harness(tracks_literal, tmp_path)
+    by_guid = {track["guid"]: track for track in state["tracks"]}
+
+    # The marked work track is resolved at step 2 and renamed as work. Clean
+    # has no unmarked candidate, so it receives its own new container.
+    assert by_guid["{WORK}"]["name"] == "[work] Mix"
+    assert by_guid["{WORK}"]["container"] == "work"
+    assert by_guid["{WORK}"]["color"] == 555
+    clean = next(track for track in state["tracks"] if track["container"] == "clean")
+    assert clean["guid"] != "{WORK}"
+    assert clean["name"] == "[clean] Mix"
+    assert [track["name"] for track in state["tracks"]][-3:] == ["[clean] Mix", "[work] Mix", "[vgt] Mix"]
+
+
 def test_ambiguous_unmarked_candidates_warn_and_skip_that_kind_without_failing_apply(tmp_path: Path) -> None:
     tracks_literal = ", ".join(
         [
