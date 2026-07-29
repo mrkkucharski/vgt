@@ -761,6 +761,7 @@ sync()
     # sole eligible promotion target; a selected unmarked lookalike and a
     # selected renamed/reclaimed copy must remain completely unchanged.
     work_guid = "{WORK-COPY-0001}"
+    unselected_work_guid = "{WORK-UNSELECTED-0002}"
     unmarked_guid = "{WORK-UNMARKED-0002}"
     reclaimed_guid = "{WORK-RECLAIMED-0003}"
     state, _ = _run(project, state, "", f"""
@@ -770,9 +771,12 @@ for index, track in ipairs(tracks) do
     table.insert(tracks, index + 1, {{guid='{work_guid}', name='[work] Guitar Ref — default (MIDI)', B_MUTE=0,
       I_FOLDERDEPTH=0, ext={{['P_EXT:vgt_working_copy']='1'}},
       items={{{{position=10,length=4,C_LOCK=0,take={{name='edited by user',source=''}}}}}}}})
-    table.insert(tracks, index + 2, {{guid='{unmarked_guid}', name='[work] hand-made', B_MUTE=1,
+    table.insert(tracks, index + 2, {{guid='{unselected_work_guid}', name='[work] Bass Ref — default (MIDI)', B_MUTE=0,
+      I_FOLDERDEPTH=0, ext={{['P_EXT:vgt_working_copy']='1'}},
+      items={{{{position=12,length=2,C_LOCK=0,take={{name='leave selected state alone',source='bass.mid'}}}}}}}})
+    table.insert(tracks, index + 3, {{guid='{unmarked_guid}', name='[work] hand-made', B_MUTE=1,
       I_FOLDERDEPTH=0, ext={{custom='keep'}}, items={{{{position=13,length=2,take={{name='leave me',source='manual.wav'}}}}}}}})
-    table.insert(tracks, index + 3, {{guid='{reclaimed_guid}', name='User reclaimed draft', B_MUTE=0,
+    table.insert(tracks, index + 4, {{guid='{reclaimed_guid}', name='User reclaimed draft', B_MUTE=0,
       I_FOLDERDEPTH=-1, ext={{['P_EXT:vgt_working_copy']='1',custom='reclaimed'}},
       items={{{{position=16,length=3,take={{name='do not touch',source='user.wav'}}}}}}}})
     break
@@ -794,13 +798,15 @@ end
         managed_regions=applied_copy_sidecar["managed_region_ids"],
     ) == copy_snapshot
 
-    # Promotion moves exactly the eligible selected track. Ineligible and
-    # reclaimed selected tracks retain their complete track payloads; this
-    # catches a working-copy action that "cleans up" their private marks.
+    # Promotion moves exactly the eligible selected track. An eligible but
+    # unselected copy, plus ineligible and reclaimed selected tracks, retain
+    # their complete payloads; this catches accidental broad promotion or a
+    # working-copy action that "cleans up" private marks.
     state, _ = _run(project, state, "", f"""
 local selected = {{['{work_guid}']=true, ['{unmarked_guid}']=true, ['{reclaimed_guid}']=true}}
 for _, track in ipairs(tracks) do reaper.SetTrackSelected(track, selected[track.guid]) end
 """)
+    unselected_work_snapshot = _track_snapshot(project, state, unselected_work_guid)
     unmarked_snapshot = _track_snapshot(project, state, unmarked_guid)
     reclaimed_snapshot = _track_snapshot(project, state, reclaimed_guid)
     state, _ = _run_promote(project, state, work_guid, unmarked_guid, reclaimed_guid)
@@ -814,6 +820,7 @@ assert(#found.items == 1 and found.items[1].position == 10 and found.items[1].le
 io.write('promotion ok')
 """)
     assert promotion == "promotion ok"
+    assert _track_snapshot(project, state, unselected_work_guid) == unselected_work_snapshot
     assert _track_snapshot(project, state, unmarked_guid) == unmarked_snapshot
     assert _track_snapshot(project, state, reclaimed_guid) == reclaimed_snapshot
     promoted_sidecar = read_sidecar(project)
@@ -953,6 +960,11 @@ table.insert(tracks, #tracks + 1, {guid='{HAND-WORK-CHILD}', name='work user chi
     clean_children_before = _container_children_snapshot(project, state, "{HAND-CLEAN}")
     work_children_before = _container_children_snapshot(project, state, "{HAND-WORK}")
 
+    state, _ = _run_apply(project, state)
+    assert _container_children_snapshot(project, state, "{HAND-CLEAN}") == clean_children_before
+    assert _container_children_snapshot(project, state, "{HAND-WORK}") == work_children_before
+    # A later initialize pass has the same ownership boundary; adoption must
+    # not be a one-pass exception to child payload/order preservation.
     state, _ = _run_apply(project, state)
     assert _container_children_snapshot(project, state, "{HAND-CLEAN}") == clean_children_before
     assert _container_children_snapshot(project, state, "{HAND-WORK}") == work_children_before
