@@ -1,10 +1,10 @@
 {
   "current_issue": 229,
-  "session_id": "323e6541-b97c-4b2e-a535-d587826b121a",
-  "pid": 82464,
-  "process_started_at": "Wed Jul 29 15:22:23 2026",
+  "session_id": "763e8afd-8380-409a-a158-069a4d7487f1",
+  "pid": 83838,
+  "process_started_at": "Wed Jul 29 15:29:28 2026",
   "agent": "codex",
-  "started_at": "2026-07-29T13:22:21.442457+00:00",
+  "started_at": "2026-07-29T13:29:26.558556+00:00",
   "scheduler_stalls": {},
   "budget": {
     "window_start": "2026-07-29T12:07:06.074972+00:00",
@@ -18,10 +18,10 @@
   "verification_followups": {
     "f0d8bfc9d2dc6da7a31609184e25c4d66d3986fd2340b33a83e98204fb86691e": "created"
   },
-  "role": "implement",
+  "role": "review",
   "branch": "issue-229-reconcile-user-manual-and-readme-with-th",
   "worktree_path": "/Users/marekkucharski/projects/.pm-worktrees/vgt/issue-229",
-  "pr_number": null,
+  "pr_number": 234,
   "followup_generation": {
     "fingerprint": "17c90a9889f56e105f690601cf187f135f3c8ec0a453c9240ff5b3a9d731806b",
     "items": {
@@ -68,11 +68,11 @@
   "pending_transition": {
     "issue": 229,
     "target": "working",
-    "event": "agent.started",
+    "event": "agent.review_started",
     "detail": {
       "issue": 229,
       "agent": "codex",
-      "branch": "issue-229-reconcile-user-manual-and-readme-with-th"
+      "pr": 234
     },
     "cleanup": {}
   }
