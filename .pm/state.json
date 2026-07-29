@@ -1,24 +1,24 @@
 {
   "current_issue": 239,
-  "session_id": "d061d058-313a-4d4e-8591-929fc809e146",
-  "pid": 4064,
-  "process_started_at": "Wed Jul 29 17:29:36 2026",
+  "session_id": "c3c45569-79ba-4ceb-8f4e-7401fa8dccfb",
+  "pid": 4753,
+  "process_started_at": "Wed Jul 29 17:32:00 2026",
   "agent": "codex",
-  "started_at": "2026-07-29T15:29:34.730881+00:00",
+  "started_at": "2026-07-29T15:31:59.153026+00:00",
   "scheduler_stalls": {},
   "budget": {
     "window_start": "2026-07-29T12:07:06.074972+00:00",
-    "seconds_used": 1072.3490239999999,
+    "seconds_used": 1214.3474829999998,
     "dollars_used": 1.4997767999999998,
     "seconds_used_by_agent": {
-      "codex": 789.0206069999999,
+      "codex": 931.019066,
       "claude": 283.328417
     }
   },
   "verification_followups": {
     "f0d8bfc9d2dc6da7a31609184e25c4d66d3986fd2340b33a83e98204fb86691e": "created"
   },
-  "role": "review",
+  "role": "fix",
   "branch": "issue-239-reconcile-container-invariants-with-expl",
   "worktree_path": "/Users/marekkucharski/projects/.pm-worktrees/vgt/issue-239",
   "pr_number": 242,
@@ -72,16 +72,16 @@
     "215": 1,
     "225": 3,
     "226": 2,
-    "239": 2
+    "239": 3
   },
   "pending_transition": {
     "issue": 239,
     "target": "working",
-    "event": "agent.review_started",
+    "event": "agent.fix_started",
     "detail": {
       "issue": 239,
       "agent": "codex",
-      "pr": 242
+      "fix_count": 3
     },
     "cleanup": {}
   }
