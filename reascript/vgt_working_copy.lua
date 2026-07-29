@@ -445,20 +445,6 @@ local function promote()
     reaper.Undo_EndBlock("vgt: promote working copies", -1)
     return
   end
-  -- Appending to a populated REAPER folder means changing its current closing
-  -- child from -1 to 0.  That child is already user-owned clean content, not
-  -- a selected working copy, so doing so would violate this action's narrow
-  -- ownership boundary.  Refuse rather than make an invisible structural edit.
-  if clean and not is_empty_work_container(clean) then
-    reaper.ShowMessageBox(
-      "The [clean] container already has content; promotion would alter an existing track's folder structure, so nothing was changed.",
-      "vgt working copy", 0
-    )
-    reaper.PreventUIRefresh(-1)
-    reaper.Undo_EndBlock("vgt: promote working copies", -1)
-    return
-  end
-
   -- Preserve the old work children by identity before the move.  If its
   -- closing child is promoted, folder_last_child_index cannot be used until a
   -- replacement closer has been installed.
@@ -497,8 +483,20 @@ local function promote()
     work, work_index = find_work_folder()
   end
 
-  local clean_last = clean_index
-  reaper.SetMediaTrackInfo_Value(clean, "I_FOLDERDEPTH", 1)
+  local clean_last
+  if is_empty_work_container(clean) then
+    reaper.SetMediaTrackInfo_Value(clean, "I_FOLDERDEPTH", 1)
+    clean_last = clean_index
+  else
+    -- A populated, structurally intact [clean] folder (guaranteed by the
+    -- guard above): reopen its current closing child (I_FOLDERDEPTH -1 -> 0)
+    -- so the promoted tracks land after the existing ones, mirroring
+    -- create()'s append-into-a-populated-container behavior. Only that
+    -- folder-depth flag is touched -- the existing child's name, items, FX,
+    -- and other content are left alone.
+    clean_last = folder_last_child_index(clean_index)
+    reaper.SetMediaTrackInfo_Value(reaper.GetTrack(0, clean_last), "I_FOLDERDEPTH", 0)
+  end
 
   -- ReorderSelectedTracks moves the existing track objects: GUIDs, media,
   -- takes, FX, and routing all remain attached to their original track.

@@ -543,10 +543,14 @@ actions) and run it from REAPER's Action List. It offers create and promote:
   other contents remain attached. Each is renamed `[clean] …` and has its vgt
   working-copy/container/managed marks removed, leaving it entirely user-owned.
   Unselected, ineligible, and reclaimed tracks are left byte-for-byte alone.
-  REAPER represents a folder's closing edge on its final child; if a requested
-  create or promotion would require rewriting that edge on an existing
-  unselected `[clean]` or `[work]` child, the action refuses without changing
-  anything.
+  REAPER represents a folder's closing edge on its final child; if `[clean]`
+  already has children, promotion reopens that edge (the same append behavior
+  create uses for `[work]`) and moves it onto the newly promoted track. It
+  still refuses, without changing anything, whenever a requested promotion
+  would instead require rewriting that edge on an existing *unselected*
+  `[clean]` or `[work]` child — for example, promoting a `[work]` folder's
+  only selected child while unselected siblings remain would need to move
+  `[work]`'s closing edge onto a track the user never selected.
 
 The copies are deliberately outside normal vgt ownership: they are named
 `[work]` (never `[vgt]`), carry no `vgt_managed` mark, and instead carry a
