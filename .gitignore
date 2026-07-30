@@ -14,11 +14,15 @@ __pycache__/
 # macOS Finder metadata.
 .DS_Store
 
-# Regenerable vgt analysis/stem artifacts under the test fixture's
+# Regenerable vgt analysis/stem artifacts under a test fixture's
 # `vgt/<namespace>/` folder (see docs/stem-separation-plan.md's Artifact
-# layout); real user projects live outside this repo, so this is scoped to
-# the checked-in fixture only.
+# layout), plus the per-project sidecar and its write lock that appear next
+# to any fixture `.RPP` once `vgt analyze` runs against it; real user
+# projects live outside this repo, so this is scoped to the checked-in
+# fixtures only.
 test/**/vgt/
+test/**/*.vgt
+test/**/.*.vgt.lock
 
 # Orchestrator logs: raw per-run agent transcripts and the event stream. Both are
 # written locally and grow without bound; neither is read back from the repo (the
