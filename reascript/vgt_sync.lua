@@ -1,24 +1,15 @@
 -- vgt sync action for REAPER 7.x.
 -- Install this file in REAPER's Action List and run it while a vgt-prepared
--- project is open. It synchronizes every manual REAPER edit back into the
--- adjacent .vgt sidecar in one invocation:
---   * the (user-editable) [vgt] Chords track's items -- position, length,
---     take name -- become analysis.chords.value.segments;
---   * the [vgt]-owned section regions -- start, end, name -- become
---     analysis.sections.value.
---   * the [vgt] Key track's sole take name, in strict `<pitch> <mode>` form,
---     becomes analysis.key.value.
--- All are written as human_verified: true, so the corrections survive
--- future `vgt analyze` and apply runs. This consolidates the formerly
--- separate chord and section read-back actions into a single action (#33).
+-- project is open. It synchronizes [vgt]-owned section regions -- start,
+-- end, name -- into analysis.sections.value in the adjacent .vgt sidecar as
+-- human_verified: true, so the corrections survive future `vgt analyze` and
+-- apply runs.
 -- It never edits the RPP: only vgt_initialize.lua mutates REAPER projects,
 -- per the "ReaScript is a thin caller" rule -- this action's own job is
 -- entirely REAPER-state bookkeeping, symmetric to how vgt_initialize.lua's
 -- write_settings() already writes the sidecar directly from Lua.
 
 local PREFIX = "[vgt]"
-local CHORDS_NAME = PREFIX .. " Chords"
-local KEY_NAME = PREFIX .. " Key"
 
 local function project_path()
   local _, path = reaper.EnumProjects(-1, "")
@@ -30,26 +21,12 @@ local function sidecar_path()
   return (path:gsub("%.[^./\\]*$", "") .. ".vgt")
 end
 
-local function track_name(track)
-  local _, name = reaper.GetTrackName(track, "")
-  return name
-end
-
 local function read_sidecar_body()
   local file = io.open(sidecar_path(), "r")
   if not file then return nil end
   local body = file:read("*a")
   file:close()
   return body
-end
-
-local function read_managed_guids()
-  local body = read_sidecar_body()
-  if not body then return {} end
-  local guids = {}
-  local array = body:match('"managed_track_guids"%s*:%s*%[(.-)%]') or ""
-  for guid in array:gmatch("{[%x%-]+}") do guids[guid] = true end
-  return guids
 end
 
 local function read_managed_region_ids()
@@ -68,21 +45,6 @@ local function find_track_by_guid(guid)
   end
   return nil
 end
-
--- Only a track vgt itself created and recorded (by GUID, in
--- managed_track_guids) is eligible -- never touch a user track that merely
--- happens to be named "[vgt] Chords".
-local function find_vgt_named_track(name)
-  local managed = read_managed_guids()
-  for index = 0, reaper.CountTracks(0) - 1 do
-    local track = reaper.GetTrack(0, index)
-    if track_name(track) == name and managed[reaper.GetTrackGUID(track)] then return track end
-  end
-  return nil
-end
-
-local function find_vgt_chords_track() return find_vgt_named_track(CHORDS_NAME) end
-local function find_vgt_key_track() return find_vgt_named_track(KEY_NAME) end
 
 local function reference_track()
   local body = read_sidecar_body() or ""
@@ -318,55 +280,6 @@ local function round6(value)
   return math.floor(value * 1e6 + 0.5) / 1e6
 end
 
-local function chord_items_as_segments(chords_track, offset)
-  local items = {}
-  for index = 0, reaper.CountTrackMediaItems(chords_track) - 1 do
-    local item = reaper.GetTrackMediaItem(chords_track, index)
-    local position = reaper.GetMediaItemInfo_Value(item, "D_POSITION")
-    local length = reaper.GetMediaItemInfo_Value(item, "D_LENGTH")
-    if length > 0 then
-      local take = reaper.GetActiveTake(item)
-      local label = take and reaper.GetTakeName(take) or ""
-      if label == "" then label = "N" end
-      items[#items + 1] = {position = position, length = length, label = label}
-    end
-  end
-  table.sort(items, function(a, b) return a.position < b.position end)
-
-  local segments = {}
-  for _, item in ipairs(items) do
-    segments[#segments + 1] = {
-      start_seconds = round6(item.position - offset),
-      end_seconds = round6(item.position + item.length - offset),
-      chord = item.label,
-    }
-  end
-  return segments
-end
-
--- Flats are accepted at the editing boundary but persisted as one canonical
--- sharp spelling, representing exactly the twelve pitch classes.
-local PITCH_CLASS = {
-  C = "C", ["C#"] = "C#", Db = "C#", D = "D", ["D#"] = "D#", Eb = "D#",
-  E = "E", Fb = "E", ["E#"] = "F", F = "F", ["F#"] = "F#", Gb = "F#",
-  G = "G", ["G#"] = "G#", Ab = "G#", A = "A", ["A#"] = "A#", Bb = "A#",
-  B = "B", Cb = "B", ["B#"] = "C",
-}
-
-local function key_track_as_value(key_track)
-  local count = reaper.CountTrackMediaItems(key_track)
-  if count == 0 then error("[vgt] Key has no item; restore exactly one item named like 'E minor'.") end
-  if count ~= 1 then error("[vgt] Key is ambiguous; keep exactly one item named like 'E minor'.") end
-  local take = reaper.GetActiveTake(reaper.GetTrackMediaItem(key_track, 0))
-  local label = take and reaper.GetTakeName(take) or ""
-  local root, scale = label:match("^([A-G][#b]?) ([a-z]+)$")
-  root = root and PITCH_CLASS[root] or nil
-  if not root or (scale ~= "major" and scale ~= "minor") then
-    error("Invalid [vgt] Key label '" .. tostring(label) .. "'; use exactly 'E minor' style text.")
-  end
-  return {root = root, scale = scale}
-end
-
 local function section_label(name)
   if name:sub(1, #PREFIX) == PREFIX then
     return name:sub(#PREFIX + 1):gsub("^%s+", "")
@@ -402,13 +315,10 @@ local function decode_stage(analysis_text, key)
   return start, finish, decode_json(analysis_text:sub(start, finish))
 end
 
--- Splice corrected `chords` segments and `sections` entries into the
--- sidecar's analysis.chords.value.segments and analysis.sections.value,
--- setting each stage's human_verified/verified_at, leaving every other
+-- Splice corrected `sections` entries into analysis.sections.value, setting
+-- human_verified/verified_at, leaving every other
 -- byte of the sidecar (other stages, detected baselines, config, formatting)
--- untouched. Both stages are located before either is rewritten, then
--- spliced back in from the last span to the first, so rewriting one stage's
--- (possibly different-length) text never invalidates the other's offsets.
+-- untouched.
 --
 -- Shared sidecar commit protocol (#138): this action cannot take Python's
 -- `fcntl` lock, so it re-reads the sidecar fresh on every attempt -- merging
@@ -417,7 +327,7 @@ end
 -- re-checks `generation` right before the atomic rename. A mismatch there
 -- means Python committed in the gap; discard the temp file and retry the
 -- merge against that newer state instead of renaming a stale one over it.
-local function write_sync(segments, sections, key_value)
+local function write_sync(sections)
   for attempt = 1, GENERATION_RETRY_LIMIT do
     local body = read_sidecar_body()
     if not body then error("No .vgt sidecar found; run vgt_initialize.lua first.") end
@@ -429,27 +339,12 @@ local function write_sync(segments, sections, key_value)
     local timestamp = os.date("!%Y-%m-%dT%H:%M:%SZ")
 
     local edits = {}
-    if segments ~= nil then
-      local chords_start, chords_end, chords_decoded = decode_stage(analysis_text, "chords")
-      chords_decoded.value = type(chords_decoded.value) == "table" and chords_decoded.value or {}
-      chords_decoded.value.segments = segments
-      chords_decoded.human_verified = true
-      chords_decoded.verified_at = timestamp
-      edits[#edits + 1] = {start = chords_start, finish = chords_end, text = encode_json(chords_decoded)}
-    end
     if sections ~= nil then
       local sections_start, sections_end, sections_decoded = decode_stage(analysis_text, "sections")
       sections_decoded.value = sections
       sections_decoded.human_verified = true
       sections_decoded.verified_at = timestamp
       edits[#edits + 1] = {start = sections_start, finish = sections_end, text = encode_json(sections_decoded)}
-    end
-    if key_value ~= nil then
-      local key_start, key_end, key_decoded = decode_stage(analysis_text, "key")
-      key_decoded.value = key_value
-      key_decoded.human_verified = true
-      key_decoded.verified_at = timestamp
-      edits[#edits + 1] = {start = key_start, finish = key_end, text = encode_json(key_decoded)}
     end
     table.sort(edits, function(a, b) return a.start > b.start end)
     for _, edit in ipairs(edits) do
@@ -486,30 +381,20 @@ end
 local function sync()
   if project_path() == "" then error("Save the REAPER project before syncing.") end
 
-  local chords_track = find_vgt_chords_track()
-  local key_track = find_vgt_key_track()
-  if not chords_track and not key_track then
-    error("No managed " .. CHORDS_NAME .. " or " .. KEY_NAME .. " track found; run vgt_initialize.lua first.")
-  end
-
   local offset = reference_start(reference_track())
-  local segments = chords_track and chord_items_as_segments(chords_track, offset) or nil
-  local sections = chords_track and managed_regions_as_sections(offset) or nil
-  -- Validate before any sidecar transaction, so invalid key text cannot
-  -- partially commit chord/section edits.
-  local key_value = key_track and key_track_as_value(key_track) or nil
+  local sections = managed_regions_as_sections(offset)
 
   -- This action only ever writes the sidecar file, never REAPER project
   -- state, so there is nothing to wrap in an undo block.
-  write_sync(segments, sections, key_value)
+  write_sync(sections)
 
   -- ShowConsoleMsg (not ShowMessageBox) on success: a modal dialog here
   -- would block headless/automated runs waiting for a click that never
   -- comes, matching vgt_initialize.lua's convention of only popping a
   -- blocking message box on failure.
   reaper.ShowConsoleMsg(string.format(
-    "vgt: synced %d chord item(s), %d section region(s), and %d key correction(s) into the sidecar as human-verified.\n",
-    segments and #segments or 0, sections and #sections or 0, key_value and 1 or 0
+    "vgt: synced %d section region(s) into the sidecar as human-verified.\n",
+    #sections
   ))
 end
 

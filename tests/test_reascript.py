@@ -1534,14 +1534,12 @@ def test_sync_only_reads_reaper_state_and_never_mutates_the_rpp() -> None:
         assert forbidden not in script
 
 
-def test_sync_only_touches_vgt_owned_chords_track_and_regions() -> None:
+def test_sync_only_reads_vgt_owned_regions() -> None:
     script = SYNC_SCRIPT.read_text()
-    assert 'local CHORDS_NAME = PREFIX .. " Chords"' in script
-    # Ownership is checked by identity -- GUID for the chords track, region ID
-    # for regions -- against the sidecar's managed_track_guids /
-    # managed_region_ids, not just by name, so same-named user objects are
-    # never touched.
-    assert "managed[reaper.GetTrackGUID(track)]" in script
+    assert "CHORDS_NAME" not in script
+    assert "KEY_NAME" not in script
+    # Ownership is checked by saved region ID, not just presentation, so
+    # same-named user objects are never included.
     assert "read_managed_region_ids" in script
     assert "managed[region_id]" in script
     assert "reaper.EnumProjectMarkers3" in script
@@ -1579,12 +1577,9 @@ def _run_lua_module(script: str, rpp_path: Path, program: str) -> subprocess.Com
     )
 
 
-def test_sync_writes_corrected_chords_and_sections_in_one_invocation(tmp_path: Path) -> None:
-    """End-to-end: fake REAPER [vgt] Chords items and [vgt]-owned regions,
-    relative to a reference track's start, round-trip into sidecar segments
-    and sections in a single `sync()` call -- other analysis stages and
-    sidecar fields are left byte-identical, and each stage's own `detected`
-    baseline is untouched (#19, extended to sections by #33)."""
+def test_sync_writes_corrected_sections_only(tmp_path: Path) -> None:
+    """End-to-end: [vgt]-owned regions round-trip into sections while chord
+    and key analysis stay byte-identical."""
     rpp = tmp_path / "song.RPP"
     sidecar = tmp_path / "song.vgt"
     chords_guid = "{AAAAAAAA-1111-2222-3333-444444444444}"
@@ -1595,10 +1590,10 @@ def test_sync_writes_corrected_chords_and_sections_in_one_invocation(tmp_path: P
         "chords": {
             "value": {"segments": [{"start_seconds": 0.0, "end_seconds": 1.0, "chord": "Am"}], "vocabulary": "maj_min", "backend": "librosa"},
             "detected": {"segments": [{"start_seconds": 0.0, "end_seconds": 1.0, "chord": "Am"}], "vocabulary": "maj_min", "backend": "librosa"},
-            "human_verified": False,
             "input_hash": "old-chords-hash",
             "settings_hash": "old-chords-settings",
         },
+        "key": {"value": {"root": "C", "scale": "major"}},
         "sections": {
             "value": [{"label": "A", "start_seconds": 0.0, "end_seconds": 2.0}],
             "detected": [{"label": "A", "start_seconds": 0.0, "end_seconds": 2.0}],
@@ -1661,26 +1656,9 @@ _G.__messages = messages
 
     result = _run_lua_module(SYNC_SCRIPT.read_text(), rpp, lua_mock + "\nsync()\nio.write(__messages[1])")
     assert result.returncode == 0, result.stderr
-    assert "synced 2 chord item(s), 2 section region(s), and 0 key correction(s)" in result.stdout
+    assert "synced 2 section region(s)" in result.stdout
 
     data = json.loads(sidecar.read_text())
-
-    assert data["analysis"]["chords"] == {
-        "value": {
-            "segments": [
-                {"start_seconds": 0.5, "end_seconds": 1.5, "chord": "Am"},
-                {"start_seconds": 1.5, "end_seconds": 3.0, "chord": "F"},
-            ],
-            "vocabulary": "maj_min",
-            "backend": "librosa",
-        },
-        "detected": analysis["chords"]["detected"],
-        "human_verified": True,
-        "input_hash": "old-chords-hash",
-        "settings_hash": "old-chords-settings",
-        "verified_at": data["analysis"]["chords"]["verified_at"],
-    }
-    assert data["analysis"]["chords"]["verified_at"].endswith("Z")
 
     assert data["analysis"]["sections"] == {
         "value": [
@@ -1695,57 +1673,11 @@ _G.__messages = messages
     }
     assert data["analysis"]["sections"]["verified_at"].endswith("Z")
 
-    # Each stage's own `detected` (the original machine detection) is
-    # untouched by the correction, and the untouched tempo stage round-trips
-    # byte-for-byte in structure.
-    assert data["analysis"]["chords"]["detected"] == analysis["chords"]["detected"]
+    # Chords, key, and tempo are untouched by the section correction.
+    assert data["analysis"]["chords"] == analysis["chords"]
+    assert data["analysis"]["key"] == analysis["key"]
     assert data["analysis"]["sections"]["detected"] == analysis["sections"]["detected"]
     assert data["analysis"]["tempo"] == analysis["tempo"]
-
-
-def test_sync_fails_clearly_when_no_chords_track_exists(tmp_path: Path) -> None:
-    rpp = tmp_path / "song.RPP"
-    sidecar = tmp_path / "song.vgt"
-    sidecar.write_text(json.dumps({"schema_version": 2, "managed_track_guids": [], "config": {"reference_track_guid": "{X}"}, "analysis": {}}))
-
-    lua_mock = """
-reaper = {}
-function reaper.EnumProjects(idx, buf) return true, arg[1] end
-function reaper.CountTracks(proj) return 0 end
-function reaper.GetTrack(proj, index) return nil end
-local messages = {}
-function reaper.ShowMessageBox(msg, title, kind) messages[#messages + 1] = msg end
-_G.__messages = messages
-"""
-    # Run the full script, including its xpcall driver, so a missing-track
-    # error is reported through ShowMessageBox exactly as it would be live.
-    full_program = "\n".join([lua_mock, SYNC_SCRIPT.read_text(), "io.write(__messages[1] or '')"])
-    result = subprocess.run([LUA, "-", str(rpp)], input=full_program, text=True, capture_output=True)
-    assert result.returncode == 0, result.stderr
-    assert "No managed [vgt] Chords or [vgt] Key track found" in result.stdout
-
-
-def test_key_sync_requires_one_strict_label_and_normalizes_flats() -> None:
-    """The key parser is intentionally narrow: it is the validation boundary
-    before sync starts its atomic sidecar transaction."""
-    script = SYNC_SCRIPT.read_text()
-    helpers_end = script.index("local function sync()")
-    lua_program = "\n".join([
-        "reaper = {}",
-        "function reaper.CountTrackMediaItems(track) return #track.items end",
-        "function reaper.GetTrackMediaItem(track, index) return track.items[index + 1] end",
-        "function reaper.GetActiveTake(item) return item.take end",
-        "function reaper.GetTakeName(take) return take.name end",
-        script[:helpers_end],
-        "local valid = key_track_as_value({items = {{take = {name = 'Db minor'}}}})",
-        "local invalid_ok = pcall(key_track_as_value, {items = {{take = {name = 'D flat minor'}}}})",
-        "local ambiguous_ok = pcall(key_track_as_value, {items = {{take = {name = 'D minor'}}, {take = {name = 'E minor'}}}})",
-        "local missing_ok = pcall(key_track_as_value, {items = {}})",
-        "io.write(valid.root .. ':' .. valid.scale .. ':' .. tostring(invalid_ok) .. ':' .. tostring(ambiguous_ok) .. ':' .. tostring(missing_ok))",
-    ])
-    result = subprocess.run([LUA, "-", "song.RPP"], input=lua_program, text=True, capture_output=True)
-    assert result.returncode == 0, result.stderr
-    assert result.stdout == "C#:minor:false:false:false"
 
 
 def test_write_settings_merges_a_concurrent_analyze_commit_via_generation_retry(tmp_path: Path) -> None:
@@ -1857,14 +1789,13 @@ def test_write_sync_merges_a_concurrent_analyze_commit_via_generation_retry(tmp_
     concurrent `vgt analyze` commit landing (bumping `generation` and
     refreshing the tempo stage). The retry must merge the human correction
     onto that newer sidecar rather than clobbering the concurrent commit with
-    a stale re-read of chords/sections."""
+    a stale re-read of sections."""
     sidecar = tmp_path / "song.vgt"
     sidecar.write_text(json.dumps({
         "schema_version": 5, "generation": 1,
         "managed_track_guids": [], "managed_region_ids": [], "config": {},
         "analysis": {
             "tempo": {"value": {"bpm": 120}},
-            "chords": {"value": {"segments": []}, "human_verified": False},
             "sections": {"value": [], "human_verified": False},
         },
     }))
@@ -1886,15 +1817,14 @@ def test_write_sync_merges_a_concurrent_analyze_commit_via_generation_retry(tmp_
             # Simulates a concurrent `vgt analyze` tempo refresh landing in
             # the gap between write_sync's fresh read and its pre-rename check.
             "      local concurrent = real_open(sidecar_file, 'w')",
-            "      concurrent:write([[{\"schema_version\": 5, \"generation\": 2, \"managed_track_guids\": [], \"managed_region_ids\": [], \"config\": {}, \"analysis\": {\"tempo\": {\"value\": {\"bpm\": 140}}, \"chords\": {\"value\": {\"segments\": []}, \"human_verified\": false}, \"sections\": {\"value\": [], \"human_verified\": false}}}]])",
+            "      concurrent:write([[{\"schema_version\": 5, \"generation\": 2, \"managed_track_guids\": [], \"managed_region_ids\": [], \"config\": {}, \"analysis\": {\"tempo\": {\"value\": {\"bpm\": 140}}, \"sections\": {\"value\": [], \"human_verified\": false}}}]])",
             "      concurrent:close()",
             "    end",
             "  end",
             "  return real_open(path, mode)",
             "end",
-            'local segments = {{start_seconds = 0, end_seconds = 1, chord = "Am"}}',
             'local sections = {{start_seconds = 0, end_seconds = 1, label = "Verse"}}',
-            "write_sync(segments, sections)",
+            "write_sync(sections)",
             "io.write(tostring(read_count))",
         ]
     )
@@ -1904,8 +1834,6 @@ def test_write_sync_merges_a_concurrent_analyze_commit_via_generation_retry(tmp_
 
     data = json.loads(sidecar.read_text())
     # The human correction this sync() call made survives...
-    assert data["analysis"]["chords"]["value"]["segments"][0]["chord"] == "Am"
-    assert data["analysis"]["chords"]["human_verified"] is True
     assert data["analysis"]["sections"]["value"][0]["label"] == "Verse"
     # ...alongside the concurrently-committed tempo refresh it never itself wrote.
     assert data["analysis"]["tempo"]["value"]["bpm"] == 140
@@ -1926,7 +1854,6 @@ def test_write_sync_interrupted_write_leaves_the_previous_valid_sidecar_intact(t
         "managed_track_guids": [], "managed_region_ids": [], "config": {},
         "analysis": {
             "tempo": {"value": {"bpm": 120}},
-            "chords": {"value": {"segments": []}, "human_verified": False},
             "sections": {"value": [], "human_verified": False},
         },
     })
@@ -1943,9 +1870,8 @@ def test_write_sync_interrupted_write_leaves_the_previous_valid_sidecar_intact(t
             # file is fully written, but the rename never completes.
             "local real_rename = os.rename",
             "os.rename = function(...) return nil, 'simulated crash before replace' end",
-            'local segments = {{start_seconds = 0, end_seconds = 1, chord = "Am"}}',
             'local sections = {{start_seconds = 0, end_seconds = 1, label = "Verse"}}',
-            "local ok, err = pcall(write_sync, segments, sections)",
+            "local ok, err = pcall(write_sync, sections)",
             "io.write(tostring(ok), ':', tostring(err):find('simulated crash') ~= nil and 'crashed' or tostring(err))",
         ]
     )
@@ -1970,7 +1896,6 @@ def test_write_sync_gives_up_after_the_retry_limit_leaving_the_prior_sidecar_int
         "managed_track_guids": [], "managed_region_ids": [], "config": {},
         "analysis": {
             "tempo": {"value": {"bpm": 120}},
-            "chords": {"value": {"segments": []}, "human_verified": False},
             "sections": {"value": [], "human_verified": False},
         },
     })
@@ -1997,9 +1922,8 @@ def test_write_sync_gives_up_after_the_retry_limit_leaving_the_prior_sidecar_int
             "  end",
             "  return real_open(path, mode)",
             "end",
-            'local segments = {{start_seconds = 0, end_seconds = 1, chord = "Am"}}',
             'local sections = {{start_seconds = 0, end_seconds = 1, label = "Verse"}}',
-            "local ok, err = pcall(write_sync, segments, sections)",
+            "local ok, err = pcall(write_sync, sections)",
             "io.write(tostring(ok), ':', tostring(err):find('concurrently') ~= nil and 'retryable' or tostring(err))",
         ]
     )
@@ -2008,7 +1932,7 @@ def test_write_sync_gives_up_after_the_retry_limit_leaving_the_prior_sidecar_int
     assert result.stdout == "false:retryable"
 
     assert not (tmp_path / "song.vgt.tmp").exists()
-    assert json.loads(sidecar.read_text())["analysis"]["chords"]["human_verified"] is False
+    assert json.loads(sidecar.read_text())["analysis"]["sections"]["human_verified"] is False
 
 
 # ---------------------------------------------------------------------------

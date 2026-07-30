@@ -692,25 +692,17 @@ def test_goal_contract_is_offline_non_destructive_and_idempotent(tmp_path: Path,
     assert int(vgt_count) == 12  # folder, beats/click/key/chords, six stems, MIDI
 
     sidecar = read_sidecar(project)
-    # These are real edits to the state produced by apply, not a newly-built
-    # approximation of it.  Sync must read them while preserving every other object.
+    # This is a real edit to the state produced by apply, not a newly-built
+    # approximation of it. Sync must read it while preserving every other object.
     sync_module = SYNC_SCRIPT.read_text(encoding="utf-8").split("local ok, error_message = xpcall", 1)[0]
     state, _ = _run(project, state, sync_module, """
-for _, track in ipairs(tracks) do
-  if track.name == '[vgt] Chords' then track.items = {{position=10.25,length=0.75,take={name='Dm'}}} end
-  if track.name == '[vgt] Key' then track.items[1].take.name = 'E minor' end
-end
 for _, region in ipairs(regions) do
   if region.id == %d then region.start=10.25; region.finish=11; region.name='[vgt] Bridge' end
 end
 sync()
 """ % sidecar["managed_region_ids"][0])
     synced = read_sidecar(project)
-    assert synced["analysis"]["chords"]["value"]["segments"][0]["chord"] == "Dm"
     assert synced["analysis"]["sections"]["value"][0]["label"] == "Bridge"
-    assert synced["analysis"]["key"]["value"] == {"root": "E", "scale": "minor"}
-    assert "human_verified" not in synced["analysis"]["key"]
-    assert "detected" not in synced["analysis"]["chords"]
     detected_sections = synced["analysis"]["sections"]["detected"]
 
     # Forced free re-analysis preserves section edits but regenerates key and
@@ -1820,23 +1812,23 @@ def test_goal_contract_sync_survives_a_concurrent_analyze_commit(tmp_path: Path,
     """Extends the goal contract for the shared sidecar commit protocol
     (#138): a `vgt analyze` commit that lands in the narrow window between
     vgt_sync.lua's fresh read and its pre-rename generation check must not be
-    silently discarded, and the human chord/section corrections vgt_sync.lua
-    is committing in that same call must not be lost either -- both writers'
+    silently discarded, and the human section correction vgt_sync.lua is
+    committing in that same call must not be lost either -- both writers'
     changes must be present together in the final sidecar."""
     project = _copy_project(tmp_path)
     state = _lua_state(project)
 
     state, _ = _run_apply(project, state)
     analyze(project, stages=("tempo", "key", "sections", "chords"))
-    # A second apply is what actually builds the `[vgt] Chords` track from
-    # the analysis just committed -- the first apply ran before it existed.
+    # A second apply is what actually builds the managed regions from the
+    # analysis just committed -- the first apply ran before they existed.
     state, _ = _run_apply(project, state)
     before_bpm = read_sidecar(project)["analysis"]["tempo"]["value"]["bpm"]
 
     sync_module = SYNC_SCRIPT.read_text(encoding="utf-8").split("local ok, error_message = xpcall", 1)[0]
     program = """
-for _, track in ipairs(tracks) do
-  if track.name == '[vgt] Chords' then track.items = {{position=10.25,length=0.75,take={name='Dm'}}} end
+for _, region in ipairs(regions) do
+  if region.id == %d then region.start=10.25; region.finish=11; region.name='[vgt] Bridge' end
 end
 
 local sidecar_file = sidecar_path()
@@ -1863,13 +1855,11 @@ end
 
 sync()
 """
-    state, _ = _run(project, state, sync_module, program)
+    state, _ = _run(project, state, sync_module, program % read_sidecar(project)["managed_region_ids"][0])
 
     synced = read_sidecar(project)
-    # vgt_sync.lua's own chord edit is retained as the current value, while
-    # the Python schema reader discards its retired verification metadata.
-    assert synced["analysis"]["chords"]["value"]["segments"][0]["chord"] == "Dm"
-    assert "human_verified" not in synced["analysis"]["chords"]
+    # vgt_sync.lua's own section edit is retained as the current value.
+    assert synced["analysis"]["sections"]["value"][0]["label"] == "Bridge"
     # The concurrently-committed analyze() change, never itself read by sync().
     assert synced["analysis"]["tempo"]["value"]["bpm"] == 141.0
     assert synced["analysis"]["tempo"]["value"]["bpm"] != before_bpm
