@@ -40,6 +40,7 @@ from .drum_cleanup import (
     cleaned_events_to_midi_notes,
 )
 from .drum_grid import reconcile_event_times
+from .pyin_notes import PYIN_ALGORITHM_VERSION
 
 # Valid target names: the separation artifact names, plus the untouched mix
 # ("original"). A target is always a single named source, never a merged set.
@@ -214,6 +215,36 @@ GUITAR_FRAGMENT_MERGE_GAP_S = 0.03
 GUITAR_ISOLATED_MAX_DURATION_S = 0.15
 GUITAR_ISOLATED_NEIGHBOUR_WINDOW_S = 1.0
 
+# pYIN monophonic backend (see `vgt.pyin_notes` for why bass does not use
+# Basic Pitch at all, and docs/bass-transcription-findings.md for the measured
+# comparison). These are analysis settings, not instrument tuning: the
+# per-instrument frequency window and note-length floor come from the profile.
+PYIN_SAMPLE_RATE_HZ = 22050
+PYIN_FRAME_LENGTH = 2048
+# 256 samples at 22050 Hz is an 11.6 ms frame. Onset timing can therefore be
+# out by up to one frame, which is well inside the tolerance of a reference
+# track meant to be read along with the audio.
+PYIN_HOP_LENGTH = 256
+# 5 frames (~58 ms) removes single-frame pitch jitter and closes one-frame
+# dropouts without merging genuine adjacent semitones -- a real bass note is
+# many frames long at any playable tempo.
+PYIN_MEDIAN_FILTER_FRAMES = 5
+
+# Bass, tracked monophonically. The frequency window is the *fundamental*
+# search range handed to pYIN, not a post-filter: 35 Hz sits just below a
+# 5-string's low B (30.9 Hz is reachable but drop-tuned; 35 Hz keeps the
+# tracker off the stem's rumble floor), and 330 Hz covers a 24-fret 4-string's
+# top. On the 7Rivers stem two independent estimators put the actual line at
+# MIDI 29-43, comfortably inside this.
+BASS_PYIN_FREQUENCY_HZ = (35.0, 330.0)
+# 70 ms at 120 BPM is well under a 32nd note, so this only discards tracker
+# fragments, never a played note.
+BASS_PYIN_MINIMUM_NOTE_LENGTH_MS = 70.0
+# A bass note that rings for two bars is a tracker artifact holding through a
+# rest, not a played sustain. Expressed in bars for the same reason
+# `GUITAR_SUSTAIN_CLAMP_BARS` is.
+BASS_SUSTAIN_CLAMP_BARS = 2.0
+
 
 @dataclass(frozen=True)
 class CleanupStage:
@@ -246,13 +277,37 @@ class ProbeExpectations:
 
 
 @dataclass(frozen=True)
+class PyinSettings:
+    """The analysis settings a `backend="pyin"` profile adds on top of the
+    frequency window and note-length floor it already shares with a Basic
+    Pitch profile (see `InstrumentProfile.pyin`)."""
+
+    sample_rate_hz: int = PYIN_SAMPLE_RATE_HZ
+    frame_length: int = PYIN_FRAME_LENGTH
+    hop_length: int = PYIN_HOP_LENGTH
+    median_filter_frames: int = PYIN_MEDIAN_FILTER_FRAMES
+
+
+@dataclass(frozen=True)
 class InstrumentProfile:
-    """One instrument's complete transcription identity: Basic Pitch model
-    parameters plus its ordered post-processing pipeline.
+    """One instrument's complete transcription identity: its detector settings
+    plus its ordered post-processing pipeline.
 
     Adding a second tuned instrument means adding an entry to
     `_INSTRUMENT_PROFILES`, not copying an `if` branch in
     `default_spec_for_target` -- see the module docstring.
+
+    `backend` selects which spec this profile builds. The detector fields below
+    are shared where they mean the same thing to both backends
+    (`minimum_note_length_ms`, `minimum_frequency_hz`, `maximum_frequency_hz`,
+    `cleanup`) and Basic Pitch's own where they don't: `onset_threshold`,
+    `frame_threshold`, `melodia_trick`, and `multiple_pitch_bends` describe a
+    Basic Pitch inference and are simply not read for a `pyin` profile, which
+    carries its analysis settings in `pyin` instead. They are deliberately not
+    made `| None` -- `_DEFAULT_PROFILE` supplies them for every profile, and a
+    `pyin` profile's `PyinSpec` never serializes them, so they cannot leak into
+    its identity (which is what would make them a real footgun rather than an
+    unread default).
     """
 
     name: str
@@ -266,6 +321,12 @@ class InstrumentProfile:
     melodia_trick: bool
     cleanup: tuple[CleanupStage, ...] = ()
     probe_expectations: ProbeExpectations | None = None
+    # Required when `backend == "pyin"`; ignored otherwise.
+    pyin: PyinSettings | None = None
+    # Bars of sustain `clamp_sustain` allows, when this profile's cleanup
+    # includes that stage. Per-profile because a bass ring-out worth keeping is
+    # not the same length as an acoustic guitar's.
+    sustain_clamp_bars: float = GUITAR_SUSTAIN_CLAMP_BARS
 
 
 _DEFAULT_PROFILE = InstrumentProfile(
@@ -289,18 +350,68 @@ _GUITAR_PROFILE = replace(
     minimum_frequency_hz=70.0,
     maximum_frequency_hz=1400.0,
 )  # below drop/Eb-tuned E2 (82.4 Hz), above 24th-fret E6 (1318.5 Hz)
-_BASS_PROFILE = replace(
-    _DEFAULT_PROFILE, name="bass", minimum_frequency_hz=30.0, maximum_frequency_hz=400.0
+# `bass-basic-pitch` is the pre-#/pyin `bass` profile, kept under its explicit
+# backend name so an existing sidecar's stored settings still resolve and a user
+# can still ask for the old behaviour for comparison. It is no longer bass's
+# default: on a real stem Basic Pitch does not produce a usable bass line at
+# any setting (see `vgt.pyin_notes` and
+# docs/bass-transcription-findings.md).
+_BASS_BASIC_PITCH_PROFILE = replace(
+    _DEFAULT_PROFILE, name="bass-basic-pitch", minimum_frequency_hz=30.0, maximum_frequency_hz=400.0
 )  # 5-string low B is 30.9 Hz
-# A bass is a single-line source.  This is deliberately not its default
-# profile: a separated bass stem may carry bleed, and the value of removing
-# that content needs a user listening test on a real stem.  It is reachable
-# only by an explicit `--mode bass=bass-monophonic` selection.
+# A bass is a single-line source.  `force_monophony` was the original attempt
+# at exploiting that, and it is retained for comparison, but it resolves an
+# overlap by *velocity* -- and a bass ghost harmonic is routinely louder than
+# its own fundamental, so on the reference stem it dropped the right note far
+# more often than the wrong one (30% frame accuracy). `bass` below solves the
+# same problem at the detector instead.
 _BASS_MONOPHONIC_PROFILE = replace(
-    _BASS_PROFILE,
+    _BASS_BASIC_PITCH_PROFILE,
     name="bass-monophonic",
     cleanup=(CleanupStage("force_monophony"),),
 )
+
+# Bass's default: a monophonic pitch tracker, not a polyphonic model. The
+# cleanup pipeline is deliberately short, because a tracker's failure modes are
+# not a polyphonic model's -- there are no harmonic ghosts to drop and no
+# voices to cap (see `pyin_notes.segment_notes` on why polyphony is 1 by
+# construction). What is left is the ordered subset that still applies:
+#
+# 1. `merge_fragments` rejoins a held note the median filter split across a
+#    two-frame pitch wobble. First, for the same reason as the guitar
+#    pipeline: every later stage reasons about note lengths.
+# 2. `drop_isolated_notes` removes a short run at a pitch nothing else in the
+#    part touches -- an octave slip the median filter was too narrow to catch.
+# 3. `clamp_sustain` caps a note the tracker held through a rest, after
+#    merging, since a chain of fragments is how such a note survives step 1.
+_BASS_PYIN_CLEANUP: tuple[CleanupStage, ...] = (
+    CleanupStage("merge_fragments", {"max_gap_s": GUITAR_FRAGMENT_MERGE_GAP_S}),
+    CleanupStage(
+        "drop_isolated_notes",
+        {
+            "max_duration_s": GUITAR_ISOLATED_MAX_DURATION_S,
+            "neighbour_window_s": GUITAR_ISOLATED_NEIGHBOUR_WINDOW_S,
+        },
+    ),
+    CleanupStage("clamp_sustain", {}),
+)
+_BASS_PYIN_PROFILE = InstrumentProfile(
+    name="bass-pyin",
+    backend="pyin",
+    onset_threshold=DEFAULT_ONSET_THRESHOLD,
+    frame_threshold=DEFAULT_FRAME_THRESHOLD,
+    minimum_note_length_ms=BASS_PYIN_MINIMUM_NOTE_LENGTH_MS,
+    minimum_frequency_hz=BASS_PYIN_FREQUENCY_HZ[0],
+    maximum_frequency_hz=BASS_PYIN_FREQUENCY_HZ[1],
+    multiple_pitch_bends=DEFAULT_MULTIPLE_PITCH_BENDS,
+    melodia_trick=DEFAULT_MELODIA_TRICK,
+    cleanup=_BASS_PYIN_CLEANUP,
+    pyin=PyinSettings(),
+    sustain_clamp_bars=BASS_SUSTAIN_CLAMP_BARS,
+)
+# `bass` is `bass-pyin` under the name `_profile_for_target` resolves for the
+# target, so a project that never names a profile gets the tracker.
+_BASS_PROFILE = replace(_BASS_PYIN_PROFILE, name="bass")
 _VOCALS_PROFILE = replace(
     _DEFAULT_PROFILE, name="vocals", minimum_frequency_hz=70.0, maximum_frequency_hz=1200.0
 )  # bass voice to whistle-adjacent soprano
@@ -324,10 +435,15 @@ _VOCALS_PROFILE = replace(
 # 5. `cap_simultaneous_voices` runs last so it enforces six voices on the
 #    final note lengths, which is the only place the invariant can hold.
 #
-# `bass-monophonic` has a one-stage `force_monophony` pipeline.  Its position
-# is therefore order-independent today.  Do not add it to `vocals`: LALAL's
-# vocals stem routinely contains stacked backing vocals and harmonies, which
-# are genuinely polyphonic rather than detection artifacts.
+# `bass-monophonic` has a one-stage `force_monophony` pipeline, so it has no
+# ordering to get wrong -- but its position is NOT order-independent in general.
+# Measured on the 7Rivers bass stem, moving `clamp_sustain` from before it to
+# after it swings frame accuracy by ~20 points: a multi-second drone note wins
+# every overlap it spans, so it must be shortened before overlaps are resolved.
+# Anything that gives `force_monophony` siblings must put it last.
+# Do not add it to `vocals`: LALAL's vocals stem routinely contains stacked
+# backing vocals and harmonies, which are genuinely polyphonic rather than
+# detection artifacts.
 #
 # `clamp_sustain`'s `params` starts empty: `default_spec_for_target` fills in
 # `max_duration_s` from the detected tempo (see `_instantiate_cleanup`), and
@@ -428,6 +544,8 @@ _INSTRUMENT_PROFILES: dict[str, InstrumentProfile] = {
     "default": _DEFAULT_PROFILE,
     "guitar": _GUITAR_PROFILE,
     "bass": _BASS_PROFILE,
+    "bass-pyin": _BASS_PYIN_PROFILE,
+    "bass-basic-pitch": _BASS_BASIC_PITCH_PROFILE,
     "bass-monophonic": _BASS_MONOPHONIC_PROFILE,
     "vocals": _VOCALS_PROFILE,
     "guitar-acoustic": _GUITAR_ACOUSTIC_PROFILE,
@@ -548,7 +666,13 @@ _PROFILE_NAMES_BY_TARGET["guitar"] = (
     "guitar-acoustic-clean",
     "guitar-acoustic-strict-chords",
 )
-_PROFILE_NAMES_BY_TARGET["bass"] = ("default", "bass", "bass-monophonic")
+_PROFILE_NAMES_BY_TARGET["bass"] = (
+    "default",
+    "bass",
+    "bass-pyin",
+    "bass-basic-pitch",
+    "bass-monophonic",
+)
 _PROFILE_NAMES_BY_TARGET["drums"] = DRUM_TRANSCRIPTION_PROFILE_NAMES
 
 
@@ -585,7 +709,7 @@ def backend_for_target_profile(target: str, modes: Mapping[str, str] | None) -> 
     validate_target(target)
     if target == "drums":
         return drum_transcription_profile(modes).backend
-    return "basic-pitch"
+    return _profile_for_target(target, modes).backend
 
 
 def _profile_for_target(target: str, modes: Mapping[str, str] | None) -> InstrumentProfile:
@@ -717,6 +841,43 @@ class BasicPitchSpec:
 
 
 @dataclass(frozen=True)
+class PyinSpec:
+    """Everything that changes one monophonic pitch-tracked target's output.
+
+    Unlike `BasicPitchSpec` this carries no `package_pin`/`serialization`: pYIN
+    runs in-process through librosa (already a hard vgt dependency), so what
+    stands in for a pinned runtime is `algorithm_version` -- see
+    `vgt.pyin_notes.PYIN_ALGORITHM_VERSION` for why librosa's own version is
+    deliberately not part of the identity.
+
+    Every field here is read by the backend, which is the whole point of not
+    reusing `BasicPitchSpec`: a `pyin` variant's `settings_hash` must not
+    contain an `onset_threshold` or a `melodia_trick` that nothing consults,
+    and `vgt transcription profile show` must not display them.
+    """
+
+    backend: str  # "pyin" | "fake"
+    algorithm_version: int
+    sample_rate_hz: int
+    frame_length: int
+    hop_length: int
+    median_filter_frames: int
+    minimum_note_length_ms: float
+    minimum_frequency_hz: float
+    maximum_frequency_hz: float
+    midi_tempo: float | None
+    tempo_map: "TempoMapReference | None" = None
+    cleanup: tuple[CleanupStage, ...] = ()
+
+    def to_dict(self) -> dict[str, Any]:
+        data = asdict(self)
+        if data["tempo_map"] is None:
+            del data["tempo_map"]
+        data["cleanup"] = [{"name": stage.name, "params": stage.params} for stage in self.cleanup]
+        return data
+
+
+@dataclass(frozen=True)
 class DrumScriptSpec:
     """Settings that can affect DrumScript events or the MIDI derived from them.
 
@@ -821,7 +982,14 @@ class AdtofActivationResult:
     cache_hit: bool
 
 
-TranscriptionSpec = BasicPitchSpec | DrumScriptSpec | AdtofSpec
+TranscriptionSpec = BasicPitchSpec | PyinSpec | DrumScriptSpec | AdtofSpec
+
+# The two note-producing specs. Both carry a `cleanup` pipeline, a `midi_tempo`
+# and a `tempo_map`, which is everything `_apply_cleanup_stages` and
+# `derive_variant_artifacts` need -- so a monophonic variant reuses the same
+# raw-detection/derived-cleanup machinery as a Basic Pitch one rather than
+# getting a parallel code path (see `vgt.transcription_variants`).
+NoteSpec = BasicPitchSpec | PyinSpec
 
 
 @dataclass(frozen=True)
@@ -938,7 +1106,19 @@ def default_spec_for_target(
         )
     profile = _profile_for_target(target, modes)
     bar_seconds = _bar_duration_seconds(midi_tempo, time_signature)
-    sustain_clamp_s = bar_seconds * GUITAR_SUSTAIN_CLAMP_BARS if bar_seconds else None
+    sustain_clamp_s = bar_seconds * profile.sustain_clamp_bars if bar_seconds else None
+    if profile.backend == "pyin":
+        return pyin_spec_from_profile(
+            profile,
+            midi_tempo=midi_tempo,
+            sustain_clamp_s=sustain_clamp_s,
+            tempo_map=tempo_map,
+            # `backend` is the caller's override, which the offline suite uses
+            # to force `"fake"`; the profile only decides *which* real backend
+            # would run. Defaulting it away here would make every bass spec
+            # claim "pyin" even under `FakeTranscriber`.
+            backend="pyin" if backend == "basic-pitch" else backend,
+        )
     return BasicPitchSpec(
         backend=backend,
         package_pin=package_pin,
@@ -950,6 +1130,43 @@ def default_spec_for_target(
         maximum_frequency_hz=profile.maximum_frequency_hz,
         multiple_pitch_bends=profile.multiple_pitch_bends,
         melodia_trick=profile.melodia_trick,
+        midi_tempo=midi_tempo,
+        tempo_map=tempo_map,
+        cleanup=_instantiate_cleanup(profile.cleanup, sustain_clamp_s=sustain_clamp_s),
+    )
+
+
+def pyin_spec_from_profile(
+    profile: InstrumentProfile,
+    *,
+    midi_tempo: float | None,
+    sustain_clamp_s: float | None,
+    tempo_map: TempoMapReference | None = None,
+    backend: str = "pyin",
+) -> PyinSpec:
+    """Build the `PyinSpec` a `backend="pyin"` profile describes.
+
+    Shared by `default_spec_for_target` and
+    `transcription_profiles.spec_from_resolved_profile`, so a profile selected
+    through `--mode` and one selected through `variant add --profile` can never
+    resolve to different settings.
+    """
+    if profile.backend != "pyin":
+        raise TranscriptionError(f"profile {profile.name!r} does not use the pyin backend")
+    if profile.pyin is None:
+        raise TranscriptionError(f"pyin profile {profile.name!r} carries no PyinSettings")
+    if profile.minimum_frequency_hz is None or profile.maximum_frequency_hz is None:
+        raise TranscriptionError(f"pyin profile {profile.name!r} needs an explicit frequency window")
+    return PyinSpec(
+        backend=backend,
+        algorithm_version=PYIN_ALGORITHM_VERSION,
+        sample_rate_hz=profile.pyin.sample_rate_hz,
+        frame_length=profile.pyin.frame_length,
+        hop_length=profile.pyin.hop_length,
+        median_filter_frames=profile.pyin.median_filter_frames,
+        minimum_note_length_ms=profile.minimum_note_length_ms,
+        minimum_frequency_hz=profile.minimum_frequency_hz,
+        maximum_frequency_hz=profile.maximum_frequency_hz,
         midi_tempo=midi_tempo,
         tempo_map=tempo_map,
         cleanup=_instantiate_cleanup(profile.cleanup, sustain_clamp_s=sustain_clamp_s),
@@ -1002,7 +1219,27 @@ def target_input_hash(path: Path, artifact: dict[str, Any] | None) -> str:
     return hash_source_file(path)
 
 
+def _spec_package_pin(spec: TranscriptionSpec) -> str | None:
+    """The pinned package a spec's backend runs, or `None` for one that runs
+    in-process. Only pYIN has no pin: librosa is already a vgt dependency, so
+    there is no isolated environment to pin, and `PyinSpec.algorithm_version`
+    carries the runtime identity a pin would otherwise provide."""
+    return None if isinstance(spec, PyinSpec) else spec.package_pin
+
+
 def _settings_dict(spec: TranscriptionSpec) -> dict[str, Any]:
+    if isinstance(spec, PyinSpec):
+        return {
+            "algorithm_version": spec.algorithm_version,
+            "sample_rate_hz": spec.sample_rate_hz,
+            "frame_length": spec.frame_length,
+            "hop_length": spec.hop_length,
+            "median_filter_frames": spec.median_filter_frames,
+            "minimum_note_length_ms": spec.minimum_note_length_ms,
+            "minimum_frequency_hz": spec.minimum_frequency_hz,
+            "maximum_frequency_hz": spec.maximum_frequency_hz,
+            "midi_tempo": spec.midi_tempo,
+        }
     if isinstance(spec, DrumScriptSpec):
         return {
             "runtime_version": spec.runtime_version,
@@ -1036,7 +1273,7 @@ def missing_source_entry(spec: TranscriptionSpec, source_role: str) -> dict[str,
     requested target waiting for its stem to arrive (see module docstring)."""
     return {
         "backend": spec.backend,
-        "package_pin": spec.package_pin,
+        "package_pin": _spec_package_pin(spec),
         "serialization": spec.serialization if isinstance(spec, BasicPitchSpec) else None,
         "source_role": source_role,
         "input_hash": None,
@@ -1074,7 +1311,7 @@ def transcribed_entry(
     """A `targets` index entry recording a completed transcription."""
     return {
         "backend": spec.backend,
-        "package_pin": spec.package_pin,
+        "package_pin": _spec_package_pin(spec),
         "serialization": spec.serialization if isinstance(spec, BasicPitchSpec) else None,
         "source_role": source_role,
         "input_hash": input_hash,
@@ -1112,7 +1349,7 @@ def error_entry(spec: TranscriptionSpec, *, source_role: str, input_hash: str | 
     target from scratch rather than leaving a dangling "in progress" state."""
     return {
         "backend": spec.backend,
-        "package_pin": spec.package_pin,
+        "package_pin": _spec_package_pin(spec),
         "serialization": spec.serialization if isinstance(spec, BasicPitchSpec) else None,
         "source_role": source_role,
         "input_hash": input_hash,
@@ -1225,6 +1462,10 @@ class TargetTranscriberRouter:
     drumscript_classifier_mode: str = DRUMSCRIPT_CLASSIFIER_MODE
     drumscript_time_signature: tuple[int, int] | None = None
     adtof: Transcriber | None = None
+    # Defaults to `basic_pitch` so a router built by an existing caller (or a
+    # test wiring a single fake) keeps routing every note target to the one
+    # transcriber it supplied, rather than failing on bass.
+    pyin: Transcriber | None = None
 
     def for_target(self, target: str, modes: Mapping[str, str] | None = None) -> Transcriber:
         validate_target(target)
@@ -1233,6 +1474,8 @@ class TargetTranscriberRouter:
             if self.adtof is None:
                 raise TranscriptionError("ADTOF is not available in this router")
             return self.adtof
+        if backend == "pyin":
+            return self.pyin if self.pyin is not None else self.basic_pitch
         return self.drumscript if backend == "drumscript" else self.basic_pitch
 
     def spec_for_target(
@@ -1262,12 +1505,14 @@ class TargetTranscriberRouter:
 
 
 def production_transcriber_router() -> TranscriberRouter:
-    """Current production route: DrumScript handles drums, Basic Pitch everything else."""
+    """Current production route: DrumScript handles drums, pYIN handles the
+    monophonic targets its profiles claim (bass), Basic Pitch everything else."""
     basic_pitch = BasicPitchTranscriber()
     return TargetTranscriberRouter(
         basic_pitch=basic_pitch,
         drumscript=DrumScriptTranscriber(),
         adtof=AdtofTranscriber(),
+        pyin=PyinTranscriber(),
         drumscript_targets=("drums",),
     )
 
@@ -1291,8 +1536,9 @@ def _content_seed(source: Path, spec: TranscriptionSpec, salt: str) -> int:
 
 def _fake_notes(source: Path, spec: TranscriptionSpec, note_count: int = 4) -> list[tuple[float, float, int, int]]:
     """A short, deterministic note list: (start_s, end_s, pitch_midi, velocity)."""
-    minimum_frequency_hz = spec.minimum_frequency_hz if isinstance(spec, BasicPitchSpec) else None
-    maximum_frequency_hz = spec.maximum_frequency_hz if isinstance(spec, BasicPitchSpec) else None
+    windowed = isinstance(spec, (BasicPitchSpec, PyinSpec))
+    minimum_frequency_hz = spec.minimum_frequency_hz if windowed else None
+    maximum_frequency_hz = spec.maximum_frequency_hz if windowed else None
     min_pitch = _hz_to_midi(minimum_frequency_hz or 82.4)  # standard-tuning low E as a fallback center
     max_pitch = _hz_to_midi(maximum_frequency_hz or 880.0)
     if max_pitch <= min_pitch:
@@ -1470,7 +1716,7 @@ class FakeTranscriber:
         notes = _fake_notes(source, spec)
         midi_path = destination_dir / "transcription.mid"
         notes_path = destination_dir / "transcription.csv"
-        tempo_bpm = spec.midi_tempo if isinstance(spec, BasicPitchSpec) else None
+        tempo_bpm = spec.midi_tempo if isinstance(spec, (BasicPitchSpec, PyinSpec)) else None
         tempo_bpm = tempo_bpm or 120.0
         _write_midi(midi_path, notes, tempo_bpm, tempo_map=spec.tempo_map)
         _write_notes_csv(notes_path, notes, source, spec)
@@ -2129,7 +2375,7 @@ _CLEANUP_STAGE_FUNCTIONS: dict[str, Callable[..., list[ParsedNote]]] = {
 
 def _apply_cleanup_stages(
     notes: list[ParsedNote],
-    spec: BasicPitchSpec,
+    spec: NoteSpec,
     source: Path | None = None,
     spectral_cache: dict[tuple[int, int], _SpectralAnalysis] | None = None,
 ) -> list[ParsedNote]:
@@ -2182,7 +2428,7 @@ def raw_notes_content_hash(path: Path) -> str:
 
 def derive_variant_artifacts(
     raw_notes: list[ParsedNote],
-    spec: BasicPitchSpec,
+    spec: NoteSpec,
     *,
     midi_path: Path,
     notes_path: Path,
@@ -2330,6 +2576,84 @@ class BasicPitchTranscriber:
             notes_path=raw.raw_notes_path,
             max_note_duration_s=max_note_duration_s,
             max_simultaneous_voices=max_simultaneous_voices,
+        )
+
+
+class PyinTranscriber:
+    """Monophonic pitch-tracking backend (see `vgt.pyin_notes`).
+
+    Unlike Basic Pitch and DrumScript this runs in-process: librosa is already
+    a hard vgt dependency, so there is no isolated interpreter to pin and no
+    subprocess to degrade. Failure is still per target -- unreadable audio or a
+    tracker error raises `TranscriptionError`, so the orchestrator marks just
+    this target and continues.
+
+    It implements `detect_raw` as well as `transcribe` so a monophonic variant
+    joins the same two-level cache as a Basic Pitch one: the F0 track is by far
+    the expensive part, and retuning only `cleanup` must not re-run it.
+    """
+
+    name = "pyin"
+
+    def detect_raw(
+        self,
+        source: Path,
+        destination_dir: Path,
+        spec: TranscriptionSpec,
+        progress: Callable[[str], None] | None = None,
+    ) -> RawDetectionResult:
+        emit = progress or (lambda _message: None)
+        if not isinstance(spec, PyinSpec):
+            raise TranscriptionError("PyinTranscriber requires a PyinSpec")
+        try:
+            destination_dir.mkdir(parents=True, exist_ok=True)
+        except OSError as exc:
+            raise TranscriptionError(f"could not prepare {destination_dir}: {exc}") from exc
+
+        emit(f"transcribing (pyin): {source.name}")
+        from .pyin_notes import transcribe_monophonic
+
+        try:
+            raw_notes = transcribe_monophonic(
+                str(source),
+                sample_rate_hz=spec.sample_rate_hz,
+                frame_length=spec.frame_length,
+                hop_length=spec.hop_length,
+                minimum_frequency_hz=spec.minimum_frequency_hz,
+                maximum_frequency_hz=spec.maximum_frequency_hz,
+                median_filter_frames=spec.median_filter_frames,
+                minimum_note_length_ms=spec.minimum_note_length_ms,
+            )
+        except TranscriptionError:
+            raise
+        except Exception as exc:  # librosa/soundfile raise a wide range of errors
+            raise TranscriptionError(f"pyin failed on {source.name}: {exc}") from exc
+
+        notes = [
+            ParsedNote(start_s=start, end_s=end, pitch_midi=pitch, velocity=velocity, pitch_bend=())
+            for start, end, pitch, velocity in raw_notes
+        ]
+        midi_path = destination_dir / "transcription.mid"
+        notes_path = destination_dir / "transcription.csv"
+        _write_parsed_notes_csv(notes_path, notes)
+        _write_midi(midi_path, raw_notes, spec.midi_tempo or 120.0, tempo_map=spec.tempo_map)
+        emit(f"detected (pyin): {len(notes)} notes")
+        return RawDetectionResult(
+            notes=notes, raw_midi_path=midi_path, raw_notes_path=notes_path, midi_tempo=spec.midi_tempo
+        )
+
+    def transcribe(
+        self,
+        source: Path,
+        destination_dir: Path,
+        spec: TranscriptionSpec,
+        progress: Callable[[str], None] | None = None,
+    ) -> TranscriptionResult:
+        if not isinstance(spec, PyinSpec):
+            raise TranscriptionError("PyinTranscriber requires a PyinSpec")
+        raw = self.detect_raw(source, destination_dir, spec, progress)
+        return derive_variant_artifacts(
+            raw.notes, spec, midi_path=raw.raw_midi_path, notes_path=raw.raw_notes_path
         )
 
 

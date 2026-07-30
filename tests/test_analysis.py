@@ -1261,11 +1261,11 @@ def test_refresh_target_uses_the_injected_router_and_keeps_drum_cache_independen
     first = analyze(project, stages=("transcription",), transcription_targets=targets, transcriber_router=router)
     first_targets = first["analysis"]["transcription"]["targets"]
     assert _default_variant(first_targets["drums"])["backend"] == "drumscript"
-    assert (
-        _default_variant(first_targets["guitar"])["backend"]
-        == _default_variant(first_targets["bass"])["backend"]
-        == "basic-pitch"
-    )
+    assert _default_variant(first_targets["guitar"])["backend"] == "basic-pitch"
+    # Bass resolves to the monophonic tracker. A router built without an
+    # explicit `pyin` transcriber still routes it to the one note backend it was
+    # given, so injecting a single fake keeps covering every note target.
+    assert _default_variant(first_targets["bass"])["backend"] == "pyin"
 
     # Changing a DrumScript-only option changes only the drums settings hash;
     # the normal cache path therefore leaves every Basic Pitch target intact.
@@ -1436,7 +1436,7 @@ def test_cli_mode_rejects_a_profile_registered_for_another_target(tmp_path: Path
 
     error = capsys.readouterr().err
     assert "profile for 'bass' must be one of" in error
-    assert "('default', 'bass', 'bass-monophonic')" in error
+    assert "('default', 'bass', 'bass-pyin', 'bass-basic-pitch', 'bass-monophonic')" in error
 
 
 def test_forget_transcription_targets_before_any_analysis_is_a_harmless_no_op(tmp_path: Path) -> None:

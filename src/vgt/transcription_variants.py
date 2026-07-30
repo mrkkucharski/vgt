@@ -54,6 +54,8 @@ from .transcribe import (
     BasicPitchSpec,
     AdtofSpec,
     DrumScriptSpec,
+    NoteSpec,
+    PyinSpec,
     ParsedNote,
     Transcriber,
     TranscriptionError,
@@ -114,24 +116,25 @@ def _now() -> str:
     return datetime.now(UTC).isoformat().replace("+00:00", "Z")
 
 
-def detection_identity(target: str, input_hash: str, spec: BasicPitchSpec) -> dict[str, Any]:
-    """Everything that determines one Basic Pitch inference (see the plan's
-    "Layer 1: raw detection" section). Two specs with equal identity here can
-    share one raw detection run regardless of which profile produced them."""
-    return {
+def detection_identity(target: str, input_hash: str, spec: NoteSpec) -> dict[str, Any]:
+    """Everything that determines one detection run (see the plan's "Layer 1:
+    raw detection" section). Two specs with equal identity here can share one
+    raw inference regardless of which profile produced them.
+
+    Both note-producing backends resolve through here. A `PyinSpec` contributes
+    its own analysis settings rather than Basic Pitch's detector fields, so the
+    two identity shapes are disjoint apart from the keys that mean the same
+    thing to both -- and a pyin variant can therefore never collide with, or be
+    served from, a Basic Pitch variant's cache entry.
+    """
+    common = {
         "target": target,
         "input_hash": input_hash,
         "backend": spec.backend,
-        "package_pin": spec.package_pin,
-        "serialization": spec.serialization,
-        "onset_threshold": spec.onset_threshold,
-        "frame_threshold": spec.frame_threshold,
         "minimum_note_length_ms": spec.minimum_note_length_ms,
         "minimum_frequency_hz": spec.minimum_frequency_hz,
         "maximum_frequency_hz": spec.maximum_frequency_hz,
-        "multiple_pitch_bends": spec.multiple_pitch_bends,
-        "melodia_trick": spec.melodia_trick,
-        # Basic Pitch embeds this in the raw MIDI it emits, so it is part of
+        # The backend embeds this in the raw MIDI it emits, so it is part of
         # what determines the raw artifact even though it never changes note
         # timings themselves (see the plan's "MIDI tempo metadata" note).
         "midi_tempo": spec.midi_tempo,
@@ -140,13 +143,31 @@ def detection_identity(target: str, input_hash: str, spec: BasicPitchSpec) -> di
         # fresh detection-cache identity as well as a fresh derived variant.
         "tempo_map": spec.tempo_map.to_dict() if spec.tempo_map is not None else None,
     }
+    if isinstance(spec, PyinSpec):
+        return {
+            **common,
+            "algorithm_version": spec.algorithm_version,
+            "sample_rate_hz": spec.sample_rate_hz,
+            "frame_length": spec.frame_length,
+            "hop_length": spec.hop_length,
+            "median_filter_frames": spec.median_filter_frames,
+        }
+    return {
+        **common,
+        "package_pin": spec.package_pin,
+        "serialization": spec.serialization,
+        "onset_threshold": spec.onset_threshold,
+        "frame_threshold": spec.frame_threshold,
+        "multiple_pitch_bends": spec.multiple_pitch_bends,
+        "melodia_trick": spec.melodia_trick,
+    }
 
 
-def detection_hash(target: str, input_hash: str, spec: BasicPitchSpec) -> str:
+def detection_hash(target: str, input_hash: str, spec: NoteSpec) -> str:
     return _hash(detection_identity(target, input_hash, spec))
 
 
-def cleanup_identity(raw_notes_hash: str, source_audio_hash: str, spec: BasicPitchSpec) -> dict[str, Any]:
+def cleanup_identity(raw_notes_hash: str, source_audio_hash: str, spec: NoteSpec) -> dict[str, Any]:
     """Everything that determines one derived cleanup variant beyond its raw
     detection (see the plan's "Layer 2: derived variant" section): the raw
     note-event content, the source audio (ghost confirmation reads the
@@ -158,7 +179,7 @@ def cleanup_identity(raw_notes_hash: str, source_audio_hash: str, spec: BasicPit
     }
 
 
-def cleanup_hash(raw_notes_hash: str, source_audio_hash: str, spec: BasicPitchSpec) -> str:
+def cleanup_hash(raw_notes_hash: str, source_audio_hash: str, spec: NoteSpec) -> str:
     return _hash(cleanup_identity(raw_notes_hash, source_audio_hash, spec))
 
 
@@ -205,7 +226,10 @@ def _base_variant_fields(request: VariantRequest, target: str) -> dict[str, Any]
         "profile_definition_hash": request.profile_definition_hash,
         "effective_profile": request.effective_profile,
         "backend": spec.backend,
-        "package_pin": spec.package_pin,
+        # pYIN runs in-process, so it has neither a pinned package nor a model
+        # serialization; its runtime identity is `algorithm_version`, already
+        # inside `settings_hash` below (see `vgt.transcribe.PyinSpec`).
+        "package_pin": None if isinstance(spec, PyinSpec) else spec.package_pin,
         "serialization": spec.serialization if isinstance(spec, BasicPitchSpec) else None,
         "source_role": target,
         "settings_hash": spec_hash(spec),
@@ -404,7 +428,7 @@ def _reconcile_drumscript_variant(
 def _obtain_raw_group(
     *,
     detection_hash_value: str,
-    representative_spec: BasicPitchSpec,
+    representative_spec: NoteSpec,
     target: str,
     transcriber: Transcriber,
     source: Path,
@@ -531,7 +555,7 @@ def reconcile_variants(
             invocations += count
             commit_variant(request.variant_id, record)
             continue
-        if not isinstance(request.spec, BasicPitchSpec):
+        if not isinstance(request.spec, (BasicPitchSpec, PyinSpec)):
             raise TranscriptionError(f"unsupported spec type for variant {request.variant_id!r}: {type(request.spec)!r}")
         groups.setdefault(detection_hash(target, input_hash, request.spec), []).append(request)
 
@@ -564,7 +588,7 @@ def reconcile_variants(
 
         for request in group_requests:
             spec = request.spec
-            assert isinstance(spec, BasicPitchSpec)
+            assert isinstance(spec, (BasicPitchSpec, PyinSpec))
             variant_cleanup_hash = cleanup_hash(raw_notes_hash, input_hash, spec)
             existing = existing_variants.get(request.variant_id)
             if not force and _existing_basic_pitch_current(
