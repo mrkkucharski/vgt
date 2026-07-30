@@ -14,6 +14,11 @@ decoder and optional fusion of the original, instrumental, guitar, and backing
 sources. Its remaining value is as evidence for future validation and classifier
 work, not as a current implementation plan.
 
+**Historical sidecar note.** The experiment used a chord sheet that was marked
+`human_verified` in the sidecar at the time. That pre-schema-17 field no longer
+exists for chords: current chord and key tracks are disposable audio-derived
+drafts, and durable corrections live in promoted `[clean]` working copies.
+
 ---
 
 ## Part 1 — How this chord detector works
@@ -138,8 +143,8 @@ different amounts:
 ## Part 3 — Setup and validity
 
 - Song: `The Seven Rivers (Full March - 3_00)` — 178s, 355-beat grid, key A# minor.
-- Ground truth: the human-verified chord sheet in the sidecar
-  (`analysis.chords.value`, 59 segments, `human_verified: true`).
+- Ground truth: the 59-segment chord sheet in the experiment's sidecar
+  (`analysis.chords.value`; it was marked `human_verified: true` at the time).
 - Backend: the always-available librosa chroma + maj/min template classifier
   described in Part 1. madmom and Chordino are not installed here, so this is
   exactly the code path that produced your shipped detection.

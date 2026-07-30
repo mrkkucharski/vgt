@@ -115,10 +115,11 @@ decision, and update the contract in the same change.
   action), never `.RPP` text editing, so changes appear live in the user's open
   project and REAPER handles construction correctly.
 - **Analysis outside REAPER:** CPU-heavy DSP/ML stays in the Python CLI.
-- **Correctable:** human-synchronized chord, section, and key edits survive
-  future runs; machine detections remain available as a baseline. A deliberate
-  tempo-map correction is synchronized only by the separate
-  confirmation-gated action, never by ordinary correction sync.
+- **Correctable:** human-synchronized section edits survive future runs and
+  retain a machine-detected baseline. Chord and key tracks are disposable
+  audio-derived drafts; preserve a correction by promoting a working copy into
+  `[clean]`. A deliberate tempo-map correction is synchronized only by the
+  separate confirmation-gated action, never by ordinary correction sync.
 - **Separate ownership and evidence:** generated variants can be reconciled or
   discarded and are peers -- ordered only for stable presentation, never
   preferred, active, best, or selected -- while `[work]` copies remain
