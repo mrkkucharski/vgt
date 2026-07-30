@@ -1,10 +1,10 @@
 {
-  "current_issue": 246,
-  "session_id": "8702ba36-2df5-41d5-8e7f-93bc04e85bac",
-  "pid": 56450,
-  "process_started_at": "Thu Jul 30 07:35:25 2026",
+  "current_issue": 249,
+  "session_id": "1778f99b-0f35-4245-aee5-d40bd8a7b873",
+  "pid": 57983,
+  "process_started_at": "Thu Jul 30 07:44:41 2026",
   "agent": "codex",
-  "started_at": "2026-07-30T05:35:23.479064+00:00",
+  "started_at": "2026-07-30T05:44:39.981965+00:00",
   "scheduler_stalls": {},
   "budget": {
     "window_start": "2026-07-30T05:17:12.304618+00:00",
@@ -15,13 +15,30 @@
   "verification_followups": {
     "f0d8bfc9d2dc6da7a31609184e25c4d66d3986fd2340b33a83e98204fb86691e": "created"
   },
-  "role": "review",
-  "branch": "issue-246-fix-promote-misassigns-work-s-closing-ed",
-  "worktree_path": "/Users/marekkucharski/projects/.pm-worktrees/vgt/issue-246",
-  "pr_number": 248,
+  "role": "implement",
+  "branch": "issue-249-update-the-goal-contract-for-the-pyin-ba",
+  "worktree_path": "/Users/marekkucharski/projects/.pm-worktrees/vgt/issue-249",
+  "pr_number": null,
   "followup_generation": {
-    "fingerprint": "fc3693350c67067c8a71d06b2b4651d2927bed37f834070a36b5f2db12c0b76a",
-    "items": {}
+    "fingerprint": "5db6b1c73bb96f303e62f679cdaedae02d1136c0f634d755cfa6b9c9be8655e5",
+    "items": {
+      "308756baea43fae8b2e3b67d639a41ed902e87c4d820c0b98c415f6d4e3286ee": {
+        "title": "Update the goal contract for the pYIN bass backend",
+        "status": "created"
+      },
+      "8f4216c4fcfd7db796bec56aeefe739144ccca542f5cd8454b5cc5dfc318bcb9": {
+        "title": "Allow project profiles to extend pYIN bass profiles",
+        "status": "created"
+      },
+      "834c0d923817c3316425ab9c85c9765bca437b6f6fd43694c96e33d397652567": {
+        "title": "Reconcile contradictory bass accuracy and range documentation",
+        "status": "created"
+      },
+      "bd0d46391710231c0c97707685f487e3f5f458ded93c6406575503cc1ae7de4d": {
+        "title": "Add a combined real-fixture regression for drums-clean",
+        "status": "created"
+      }
+    }
   },
   "fix_counts": {
     "7": 2,
@@ -59,13 +76,13 @@
     "239": 3
   },
   "pending_transition": {
-    "issue": 246,
+    "issue": 249,
     "target": "working",
-    "event": "agent.review_started",
+    "event": "agent.started",
     "detail": {
-      "issue": 246,
+      "issue": 249,
       "agent": "codex",
-      "pr": 248
+      "branch": "issue-249-update-the-goal-contract-for-the-pyin-ba"
     },
     "cleanup": {}
   }
