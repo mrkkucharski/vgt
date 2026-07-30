@@ -3447,10 +3447,18 @@ def parse_drumscript_events(path: Path) -> list[dict[str, Any]]:
             raise TranscriptionError("drumscript event has an invalid time_sec")
         if not isinstance(instruments, list) or not instruments or not all(isinstance(item, str) for item in instruments):
             raise TranscriptionError("drumscript event has an empty or invalid instruments list")
-        unsupported = sorted(set(instruments).difference(DRUMSCRIPT_INSTRUMENTS))
+        # DrumScript's own classifier emits "unknown" deliberately, for an
+        # onset it detected but couldn't assign to a skin/metal instrument
+        # (see its classify_event/midi_exporter, which likewise drops
+        # "unknown" from its own clean score). That is a known, expected
+        # label to discard, not an unrecognized one to fail loudly on.
+        recognized = [instrument for instrument in instruments if instrument != "unknown"]
+        unsupported = sorted(set(recognized).difference(DRUMSCRIPT_INSTRUMENTS))
         if unsupported:
             raise TranscriptionError(f"drumscript event has unsupported instruments: {', '.join(unsupported)}")
-        events.append({"time_sec": float(time_sec), "instruments": instruments})
+        if not recognized:
+            continue
+        events.append({"time_sec": float(time_sec), "instruments": recognized})
     return events
 
 

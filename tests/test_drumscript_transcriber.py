@@ -291,6 +291,25 @@ def test_rejects_malformed_or_unusable_event_outputs(tmp_path: Path, monkeypatch
         _transcribe(tmp_path, monkeypatch, events)
 
 
+def test_unknown_label_is_dropped_from_a_mixed_event_not_rejected(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    # DrumScript's own classifier legitimately emits "unknown" for an onset
+    # it couldn't assign to a skin/metal instrument, and its own MIDI
+    # exporter silently drops that label rather than erroring. vgt should do
+    # the same, keeping the event's other recognized instrument(s).
+    result = _transcribe(tmp_path, monkeypatch, [{"time_sec": 1.25, "instruments": ["kick", "unknown"]}])
+    assert result.note_count == 1
+    assert result.instrument_counts == {"kick": 1}
+
+
+def test_unknown_only_event_is_dropped_entirely(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    result = _transcribe(tmp_path, monkeypatch, [
+        {"time_sec": 1.25, "instruments": ["unknown"]},
+        {"time_sec": 2.0, "instruments": ["snare"]},
+    ], _midi(notes=(38,), onset_s=2.0))
+    assert result.note_count == 1
+    assert result.instrument_counts == {"snare": 1}
+
+
 def test_zero_event_array_is_a_valid_visible_result(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     result = _transcribe(tmp_path, monkeypatch, [], _midi(notes=()))
     assert result.note_count == 0
