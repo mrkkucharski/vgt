@@ -1966,7 +1966,13 @@ def test_second_apply_reuses_the_persisted_reference_without_prompting_in_a_mult
     assert read_sidecar(project)["config"]["reference_track_guid"] == REFERENCE_GUID
 
 
-def test_reascript_uses_beats_not_a_tempo_map_when_bar_phase_is_unknown(tmp_path: Path) -> None:
+def test_reascript_applies_a_beat_anchored_tempo_map_when_bar_phase_is_unknown(tmp_path: Path) -> None:
+    """A beat-only result (downbeat_detected False) has no trustworthy bar
+    phase, but the BPM itself is phase-free (issue #275): a virgin-default
+    project (single 120/4/4 marker, eligible for vgt ownership) must still
+    get the analyzed rate, anchored on the first detected beat rather than a
+    downbeat, and must not claim bar phase for it -- so no `[vgt] Beats`
+    fallback track is offered, exactly like the downbeat-detected case."""
     project = _copy_project(tmp_path)
     project.with_suffix(".vgt").write_text(json.dumps({
         "config": {"reference_track_guid": REFERENCE_GUID},
@@ -1976,8 +1982,33 @@ def test_reascript_uses_beats_not_a_tempo_map_when_bar_phase_is_unknown(tmp_path
             "beat_times": [0.25, 0.78, 1.29],
         }}},
     }))
-    # A default map would otherwise be eligible for vgt ownership.
     state = _lua_state(project).replace("time=0,bpm=100,num=4,den=4", "time=0,bpm=120,num=4,den=4")
+    _, result = _run_apply(project, state)
+    names, _user_items, _regions, _vgt, tempo_writes = result.split("#")
+
+    assert "[vgt] Beats" not in names
+    assert int(tempo_writes) >= 2
+    assert read_sidecar(project)["config"]["tempo_map_applied"] is True
+
+
+def test_reascript_leaves_a_non_default_map_untouched_when_bar_phase_is_unknown(tmp_path: Path) -> None:
+    """The relaxed guard only applies to projects that pass
+    is_single_default_tempo_marker(); a project already on a deliberate,
+    non-default tempo (e.g. Hotel California Cover's 150 BPM, #273/#274) must
+    still be left alone -- that case is for the drift warning, not this
+    issue."""
+    project = _copy_project(tmp_path)
+    project.with_suffix(".vgt").write_text(json.dumps({
+        "config": {"reference_track_guid": REFERENCE_GUID},
+        "analysis": {"tempo": {"value": {
+            "backend": "librosa", "bpm": 147.759, "time_signature": "4/4",
+            "downbeat_detected": False, "downbeat_offset_seconds": None,
+            "beat_times": [0.25, 0.78, 1.29],
+        }}},
+    }))
+    # Project tempo (100 BPM, from the base fixture) is neither the analyzed
+    # rate nor REAPER's genuine 120/4/4 default, so it must stay untouched.
+    state = _lua_state(project)
     _, result = _run_apply(project, state)
     names, _user_items, _regions, _vgt, tempo_writes = result.split("#")
 
