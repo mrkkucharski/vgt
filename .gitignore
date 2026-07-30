@@ -24,6 +24,12 @@ test/**/vgt/
 test/**/*.vgt
 test/**/.*.vgt.lock
 
+# test/7Rivers is the exception: its vgt output and sidecar are committed
+# as a reproducibility baseline. The write lock stays ignored everywhere
+# (including here) -- it's a runtime mutex, not baseline content.
+!test/7Rivers/vgt/
+!test/7Rivers/7Rivers.vgt
+
 # Orchestrator logs: raw per-run agent transcripts and the event stream. Both are
 # written locally and grow without bound; neither is read back from the repo (the
 # event stream is mirrored to the orchestrator's own logs dir), so they are kept
