@@ -536,6 +536,15 @@ actions) and run it from REAPER's Action List. It offers create and promote:
   other content are left alone. If the container's folder structure has been
   changed outside this action, create refuses and leaves it untouched rather
   than guess how to repair it.
+
+  A MIDI copy is fully detached from its source: the copy gets its own item,
+  take and source identity and carries no reference to the source's MIDI pool,
+  so editing notes in `[work]` never reaches back into the `[vgt]` reference or
+  a sibling copy. Audio takes still reference the same stem file on disk — that
+  sharing is deliberate and costs nothing. If a selected track's own notes live
+  in *another* item (REAPER shows "MIDI edits are pooled with other media
+  items"), create refuses the whole selection and asks you to un-pool that item
+  first, since a copy of it would be empty.
 - **Promote selected `[work]` tracks to `[clean]`** — a selected track is
   eligible only when it has the durable working-copy marker and its name still
   starts with `[work]`. Promotion moves, rather than copies, only those eligible
