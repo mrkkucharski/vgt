@@ -1019,6 +1019,53 @@ local function apply_tempo_map(tempo, reference_start)
   return true
 end
 
+-- Projected drift threshold (issue #274): below this, a project/analyzed
+-- tempo mismatch is inaudible noise over the reference span; above it, it is
+-- the kind of accumulated error that visibly desyncs anything authored
+-- against the analyzed grid (see the Hotel California Cover incident).
+local TEMPO_DRIFT_WARN_SECONDS = 0.05
+
+-- The analyzed BPM that governs the reference's start (offset 0), i.e. the
+-- span a piecewise tempo map would place there -- never a single global BPM
+-- once the tempo is piecewise, since an early span's value can differ
+-- sharply from a later one.
+local function analyzed_bpm_at_reference_start(tempo)
+  if tempo.mode == "piecewise" and type(tempo.spans) == "table" and #tempo.spans > 0 then
+    local covering = nil
+    for _, span in ipairs(tempo.spans) do
+      local start_seconds = tonumber(span.start_seconds) or 0
+      if start_seconds <= 0 and (not covering or start_seconds > (tonumber(covering.start_seconds) or -math.huge)) then
+        covering = span
+      end
+    end
+    covering = covering or tempo.spans[1]
+    local span_bpm = tonumber(covering.bpm)
+    if span_bpm and span_bpm > 0 then return span_bpm end
+  end
+  return tonumber(tempo.bpm)
+end
+
+-- Read-only guardrail (issue #273/#274): compares the project's own tempo at
+-- the reference start against the analyzed tempo and warns when the
+-- projected drift across the reference span would be audible. Never writes
+-- a tempo marker -- that stays gated by the apply_tempo_map decision tree
+-- above, regardless of what this finds.
+local function warn_if_tempo_disagrees(tempo, reference_start, reference_end)
+  local analyzed_bpm = analyzed_bpm_at_reference_start(tempo)
+  if not analyzed_bpm or analyzed_bpm <= 0 then return end
+  local _, _, project_bpm = reaper.TimeMap_GetTimeSigAtTime(0, reference_start)
+  if not project_bpm or project_bpm <= 0 then return end
+  local span_seconds = reference_end - reference_start
+  if span_seconds <= 0 then return end
+  local drift_seconds = math.abs(1 - project_bpm / analyzed_bpm) * span_seconds
+  if drift_seconds >= TEMPO_DRIFT_WARN_SECONDS then
+    warn(string.format(
+      "project tempo (%.3f BPM) disagrees with the analyzed tempo (%.3f BPM); projected drift across the %.1fs reference span is %.2fs. "
+        .. "Set the project tempo to %.3f BPM to match, or note that reference MIDI is immune to this once it ignores the project tempo map (#273).",
+      project_bpm, analyzed_bpm, span_seconds, drift_seconds, analyzed_bpm))
+  end
+end
+
 -- A canonical snapshot of every tempo/time-sig marker currently in the
 -- project, in REAPER's own marker order. Comparing this against the
 -- fingerprint recorded the last time vgt wrote the map is how a re-apply
@@ -1694,6 +1741,8 @@ local function apply()
       tempo_data_fp = ""
       offer_beats_track(insert_at + 1, tempo, reference_start, reference_end, managed_tracks)
     end
+
+    warn_if_tempo_disagrees(tempo, reference_start, reference_end)
   end
 
   if type(tempo) == "table" then
