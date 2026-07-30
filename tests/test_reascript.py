@@ -1066,6 +1066,58 @@ def test_reconciliation_aborts_rather_than_silently_appending_beside_a_flattened
     assert "root candidates=1" in result.stdout
 
 
+def test_reconciliation_resyncs_a_stale_manifest_when_the_live_root_is_self_authenticated(tmp_path: Path) -> None:
+    """Issue #268: a prior apply() can rebuild and fully mark the entire
+    [vgt] tree -- including this run's own root -- and then be interrupted
+    before write_root_manifest ever runs, leaving the manifest naming a GUID
+    that no longer exists. The root candidate itself still carries first-hand
+    P_EXT evidence (exactly what `authenticated` requires when there is no
+    manifest at all), so this must resync the stale manifest from the live
+    marks and proceed rather than hard-stopping forever."""
+    rpp = tmp_path / "7Rivers.RPP"
+    script = APPLY_SCRIPT.read_text()
+    helpers_end = script.index("local function find_track_by_guid")
+    lua_program = "\n".join([
+        "local tracks = {"
+        "{name = '[vgt] Seven Rivers', guid = '{A11CE-0001}', depth = 1, role = 'managed-root', managed = true},"
+        "{name = '[vgt] Guitar', guid = '{C0DE-0002}', depth = -1, role = 'stem:guitar', managed = true},"
+        "}",
+        "reaper = {}", "function reaper.EnumProjects() return true, arg[1] end", "function reaper.CountTracks() return #tracks end",
+        "function reaper.GetTrack(_, index) return tracks[index + 1] end", "function reaper.GetTrackGUID(track) return track.guid end",
+        "function reaper.GetTrackName(track) return true, track.name end", "function reaper.GetMediaTrackInfo_Value(track) return track.depth end",
+        "function reaper.GetSetMediaTrackInfo_String(track, key, buf, set) if key == 'P_EXT:vgt_role' then return true, track.role end return true, track.managed and '1' or '' end",
+        "local manifest = 'root={DEAD-0000};{DEAD-0000}=managed-root'",
+        "function reaper.GetProjExtState() return 1, manifest end",
+        "function reaper.SetProjExtState(_, _, _, value) manifest = value end",
+        script[:helpers_end],
+        "local ok = pcall(validate_reconciliation_inventory, {})",
+        "io.write(tostring(ok), '|', manifest)",
+    ])
+    result = subprocess.run([LUA, "-", str(rpp)], input=lua_program, text=True, capture_output=True, check=True)
+    assert result.stdout == "true|root={A11CE-0001};{A11CE-0001}=managed-root;{C0DE-0002}=stem:guitar"
+
+
+def test_reconciliation_still_refuses_a_stale_manifest_with_no_other_evidence(tmp_path: Path) -> None:
+    """The resync above only fires when the live root itself is
+    self-authenticated. A root that merely shares the manifest's disagreement
+    -- no sidecar GUID, no durable P_EXT mark -- is exactly the unauthenticated
+    case this whole check exists to catch, and must still hard-stop."""
+    rpp = tmp_path / "7Rivers.RPP"
+    script = APPLY_SCRIPT.read_text()
+    helpers_end = script.index("local function find_track_by_guid")
+    lua_program = "\n".join([
+        "local tracks = {{name = '[vgt] Seven Rivers', guid = '{A11CE-0001}', depth = 1, role = 'managed-root'}}",
+        "reaper = {}", "function reaper.EnumProjects() return true, arg[1] end", "function reaper.CountTracks() return #tracks end",
+        "function reaper.GetTrack(_, index) return tracks[index + 1] end", "function reaper.GetTrackGUID(track) return track.guid end",
+        "function reaper.GetTrackName(track) return true, track.name end", "function reaper.GetMediaTrackInfo_Value(track) return track.depth end",
+        "function reaper.GetSetMediaTrackInfo_String(track, key, buf, set) return true, '' end",
+        "function reaper.GetProjExtState() return 1, 'root={DEAD-0000};{DEAD-0000}=managed-root' end",
+        script[:helpers_end], "local ok, message = pcall(validate_reconciliation_inventory, {})", "io.write(tostring(ok), '|', message)",
+    ])
+    result = subprocess.run([LUA, "-", str(rpp)], input=lua_program, text=True, capture_output=True, check=True)
+    assert "false|" in result.stdout and "managed-root manifest disagrees with the live [vgt] root" in result.stdout
+
+
 def test_variant_reconciliation_removes_generated_tracks_but_preserves_a_working_copy(tmp_path: Path) -> None:
     """Discard is represented by omitting its variant on the next apply. The
     reconciliation removal phase may clear old generated variants, but it must

@@ -744,6 +744,16 @@ never block closing an issue:
   non-container, non-`[vgt]` name (for example `[archive] duplicate`) before
   applying again. The renamed folder is
   then preserved as user-owned; apply never removes it automatically.
+  - One case recovers automatically rather than stopping: an apply that was
+    interrupted after it finished rebuilding and marking the entire `[vgt]`
+    tree (including the root's own durable per-track mark) but before it
+    reached its own final manifest write leaves the on-disk manifest naming a
+    GUID that no longer matches the live root. Because the live root itself
+    -- not some other track -- already carries first-hand ownership evidence
+    (its sidecar GUID or its durable P_EXT mark), the next apply resyncs the
+    manifest from the live marks and proceeds normally instead of stopping.
+    The hard stop above is reserved for a root with no such first-hand
+    evidence on itself.
 - Project mutation uses REAPER's API, never RPP text editing.
 - Heavy analysis runs in the CLI, not inside REAPER.
 - vgt-owned audio is time-based and does not stretch with tempo-map changes.
