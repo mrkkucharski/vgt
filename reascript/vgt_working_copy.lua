@@ -504,6 +504,32 @@ local function promote()
     work_children[reaper.GetTrack(0, index)] = true
   end
 
+  -- Promoting [work]'s own closing child while an unselected sibling remains
+  -- reassigns that sibling's flag (0 -> -1) to keep [work] closed -- fine on
+  -- its own. Appending into a populated [clean] similarly reopens *its*
+  -- unselected closing child (-1 -> 0). Doing both at once in a single
+  -- promote would edit two different foreign tracks' folder structure for
+  -- one user action; refuse atomically instead of guessing which is safe.
+  if clean and not is_empty_work_container(clean) then
+    local eligible_by_track = {}
+    for _, track in ipairs(eligible) do eligible_by_track[track] = true end
+    local work_closer = reaper.GetTrack(0, work_last)
+    local remaining_work_children = 0
+    for index = work_index + 1, work_last do
+      local child = reaper.GetTrack(0, index)
+      if not eligible_by_track[child] then remaining_work_children = remaining_work_children + 1 end
+    end
+    if eligible_by_track[work_closer] and remaining_work_children > 0 then
+      reaper.ShowMessageBox(
+        "Promotion would need to alter both [work]'s and [clean]'s existing closing tracks at once, so nothing was changed.",
+        "vgt working copy", 0
+      )
+      reaper.PreventUIRefresh(-1)
+      reaper.Undo_EndBlock("vgt: promote working copies", -1)
+      return
+    end
+  end
+
   if not clean then
     clean, clean_index = create_clean_folder(work_index)
     -- Inserting clean above work shifts the latter's numeric index.
