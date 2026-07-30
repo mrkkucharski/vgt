@@ -1,11 +1,51 @@
 {
-  "current_issue": 256,
-  "session_id": "e8fa5a19-c74d-456a-91b9-d4a90bdaca1e",
-  "pid": 75152,
-  "process_started_at": "Thu Jul 30 09:02:02 2026",
-  "agent": "codex",
-  "started_at": "2026-07-30T07:02:00.893788+00:00",
-  "scheduler_stalls": {},
+  "current_issue": 268,
+  "session_id": "d81af524-89e9-461a-b10b-442a508c88d5",
+  "pid": 81080,
+  "process_started_at": "Thu Jul 30 11:10:11 2026",
+  "agent": "claude",
+  "started_at": "2026-07-30T09:10:09.913464+00:00",
+  "scheduler_stalls": {
+    "blocked_issues": {
+      "267": {
+        "first_seen_at": "2026-07-30T07:58:58.709828+00:00",
+        "last_seen_at": "2026-07-30T09:08:56.450752+00:00",
+        "consecutive_passes": 61,
+        "title": "Measure the vocals transcription profile"
+      },
+      "266": {
+        "first_seen_at": "2026-07-30T07:58:58.712103+00:00",
+        "last_seen_at": "2026-07-30T09:08:56.451713+00:00",
+        "consecutive_passes": 61,
+        "title": "Validate pYIN bass across songs and low tunings"
+      },
+      "265": {
+        "first_seen_at": "2026-07-30T07:58:58.713113+00:00",
+        "last_seen_at": "2026-07-30T09:08:56.452583+00:00",
+        "consecutive_passes": 61,
+        "title": "Benchmark guitar profiles beyond 7Rivers"
+      },
+      "264": {
+        "first_seen_at": "2026-07-30T07:58:58.714019+00:00",
+        "last_seen_at": "2026-07-30T09:08:56.453479+00:00",
+        "consecutive_passes": 61,
+        "title": "Validate chord decoding on additional annotated songs"
+      },
+      "263": {
+        "first_seen_at": "2026-07-30T07:58:58.714756+00:00",
+        "last_seen_at": "2026-07-30T09:08:56.454290+00:00",
+        "consecutive_passes": 61,
+        "title": "Add a reproducible multi-song quality benchmark"
+      }
+    },
+    "deferred_passes": {
+      "budget": {
+        "first_seen_at": "2026-07-30T08:46:34.456842+00:00",
+        "last_seen_at": "2026-07-30T09:08:56.448439+00:00",
+        "consecutive_passes": 20
+      }
+    }
+  },
   "budget": {
     "window_start": "2026-07-30T05:17:12.304618+00:00",
     "seconds_used": 207.368952,
@@ -17,27 +57,31 @@
   "verification_followups": {
     "f0d8bfc9d2dc6da7a31609184e25c4d66d3986fd2340b33a83e98204fb86691e": "created"
   },
-  "role": "review",
-  "branch": "issue-256-update-user-manual-md-for-chords-key-reg",
-  "worktree_path": "/Users/marekkucharski/projects/.pm-worktrees/vgt/issue-256",
-  "pr_number": 262,
+  "role": "implement",
+  "branch": "issue-268-apply-has-no-recovery-when-interrupted-b",
+  "worktree_path": "/Users/marekkucharski/projects/.pm-worktrees/vgt/issue-268",
+  "pr_number": null,
   "followup_generation": {
-    "fingerprint": "5db6b1c73bb96f303e62f679cdaedae02d1136c0f634d755cfa6b9c9be8655e5",
+    "fingerprint": "56fab22a68207d92fd436f13f543f0b36b631d49e9d321d132b6400ce7b7d97e",
     "items": {
-      "308756baea43fae8b2e3b67d639a41ed902e87c4d820c0b98c415f6d4e3286ee": {
-        "title": "Update the goal contract for the pYIN bass backend",
+      "7296f2f70820d934f2611a1607f022153f831a1e681baa9842da2d4220e3ba02": {
+        "title": "Add a reproducible multi-song quality benchmark",
         "status": "created"
       },
-      "8f4216c4fcfd7db796bec56aeefe739144ccca542f5cd8454b5cc5dfc318bcb9": {
-        "title": "Allow project profiles to extend pYIN bass profiles",
+      "5f8e9e4d00a33e11e29f65dcd24ba6416c6fb4b04387d7ce7f93e7147ebbd956": {
+        "title": "Validate chord decoding on additional annotated songs",
         "status": "created"
       },
-      "834c0d923817c3316425ab9c85c9765bca437b6f6fd43694c96e33d397652567": {
-        "title": "Reconcile contradictory bass accuracy and range documentation",
+      "5b284681b1d3d025bf4b1ed1ff8a1c0f2e9e666342b567fd44ef599c4d29c540": {
+        "title": "Benchmark guitar profiles beyond 7Rivers",
         "status": "created"
       },
-      "bd0d46391710231c0c97707685f487e3f5f458ded93c6406575503cc1ae7de4d": {
-        "title": "Add a combined real-fixture regression for drums-clean",
+      "697e1faea5e53eeb1f6c5bab6ceaddfb491512a5b279640f7b8b17c1ee340c01": {
+        "title": "Validate pYIN bass across songs and low tunings",
+        "status": "created"
+      },
+      "c13ddefdd2e208aadc01dfc65406b8bf3528fc3976825d7bde4b230cdf815d28": {
+        "title": "Measure the vocals transcription profile",
         "status": "created"
       }
     }
@@ -78,13 +122,13 @@
     "239": 3
   },
   "pending_transition": {
-    "issue": 256,
+    "issue": 268,
     "target": "working",
-    "event": "agent.review_started",
+    "event": "agent.started",
     "detail": {
-      "issue": 256,
-      "agent": "codex",
-      "pr": 262
+      "issue": 268,
+      "agent": "claude",
+      "branch": "issue-268-apply-has-no-recovery-when-interrupted-b"
     },
     "cleanup": {}
   }
