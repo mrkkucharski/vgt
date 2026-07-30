@@ -594,11 +594,15 @@ for _, track in ipairs(tracks) do
       end
     elseif track.name == '[vgt] Key' then
       assert(#track.items == 1 and track.items[1].position == 10 and track.items[1].length == 4
-        and track.items[1].notes == 'E minor' and track.items[1].take.name == 'E minor'
+        and track.items[1].notes == 'C major' and track.items[1].take.name == 'C major'
         and track.items[1].C_LOCK == nil, 'key annotation')
     elseif track.name == '[vgt] Chords' then
-      assert(#track.items == 1 and track.items[1].position == 10.25 and track.items[1].length == 0.75
-        and track.items[1].notes == 'Dm' and track.items[1].take.name == 'Dm' and track.items[1].C_LOCK == nil, 'chord annotations')
+      assert(#track.items == 2
+        and track.items[1].position == 10 and track.items[1].length == 1
+        and track.items[1].notes == 'C:maj' and track.items[1].take.name == 'C:maj'
+        and track.items[2].position == 11 and track.items[2].length == 1
+        and track.items[2].notes == 'G:maj' and track.items[2].take.name == 'G:maj'
+        and track.items[1].C_LOCK == nil and track.items[2].C_LOCK == nil, 'chord annotations')
     elseif expected_sources[track.name] then
       -- An audio item is as long as its source; a reference MIDI instead
       -- spans the whole reference track (10..14) however early its last note
@@ -705,30 +709,27 @@ sync()
     assert synced["analysis"]["chords"]["value"]["segments"][0]["chord"] == "Dm"
     assert synced["analysis"]["sections"]["value"][0]["label"] == "Bridge"
     assert synced["analysis"]["key"]["value"] == {"root": "E", "scale": "minor"}
-    assert synced["analysis"]["key"]["human_verified"] is True
-    detected_chords = synced["analysis"]["chords"]["detected"]
+    assert "human_verified" not in synced["analysis"]["key"]
+    assert "detected" not in synced["analysis"]["chords"]
     detected_sections = synced["analysis"]["sections"]["detected"]
-    detected_key = synced["analysis"]["key"]["detected"]
 
-    # Forced free re-analysis refreshes detected baselines but preserves human sync edits;
-    # paid splits and the target MIDI cache must not run again.
+    # Forced free re-analysis preserves section edits but regenerates key and
+    # chord analysis; paid splits and the target MIDI cache must not run again.
     analyze(project, force=True, stages=("key", "sections", "chords"))
     analyze(project, stages=("transcription",), transcription_targets=("guitar",), transcriber=transcriber)
     separate(project, separator, guitar_type="electric")
     reconciled = read_sidecar(project)
-    assert reconciled["analysis"]["chords"]["value"]["segments"][0]["chord"] == "Dm"
+    assert reconciled["analysis"]["chords"]["value"]["segments"][0]["chord"] == "C:maj"
     assert reconciled["analysis"]["sections"]["value"][0]["label"] == "Bridge"
-    assert reconciled["analysis"]["chords"]["detected"] == detected_chords
     assert reconciled["analysis"]["sections"]["detected"] == detected_sections
-    assert reconciled["analysis"]["key"]["value"] == {"root": "E", "scale": "minor"}
-    assert reconciled["analysis"]["key"]["detected"] == detected_key
+    assert reconciled["analysis"]["key"]["value"] == {"root": "C", "scale": "major", "confidence": 1.0, "backend": "contract"}
     # A Basic Pitch target reaches the backend through `detect_raw` -- its
     # cleanup is derived from those raw notes -- so one guitar transcription is
     # one raw detection, never a legacy one-shot `transcribe()` (#223).
     assert (separator.calls, transcriber.calls, transcriber.raw_calls) == (5, 0, 1)
 
-    # The display is rebuilt from the synchronized effective key without
-    # adding another track.
+    # The display is rebuilt from the regenerated key without adding another
+    # track.
     state, second_apply = _run_apply(project, state)
     names, user_items, region_count, vgt_count, tempo_writes = second_apply.split("#")
     assert user_items == "2" and region_count == "3" and tempo_writes == "0"
@@ -737,7 +738,7 @@ sync()
     # rather than re-prompting or drifting onto another candidate (issue #136).
     assert read_sidecar(project)["config"]["reference_track_guid"] == REFERENCE_GUID
     state, key_snapshot = _run_apply_key_snapshot(project, state)
-    assert key_snapshot == "1#0:E minor:nil"
+    assert key_snapshot == "1#0:C major:nil"
     _assert_managed_contract(project, state)
     _assert_container_layout(project, state)
     final_sidecar = read_sidecar(project)
@@ -1865,9 +1866,10 @@ sync()
     state, _ = _run(project, state, sync_module, program)
 
     synced = read_sidecar(project)
-    # vgt_sync.lua's own change: the human chord correction.
+    # vgt_sync.lua's own chord edit is retained as the current value, while
+    # the Python schema reader discards its retired verification metadata.
     assert synced["analysis"]["chords"]["value"]["segments"][0]["chord"] == "Dm"
-    assert synced["analysis"]["chords"]["human_verified"] is True
+    assert "human_verified" not in synced["analysis"]["chords"]
     # The concurrently-committed analyze() change, never itself read by sync().
     assert synced["analysis"]["tempo"]["value"]["bpm"] == 141.0
     assert synced["analysis"]["tempo"]["value"]["bpm"] != before_bpm

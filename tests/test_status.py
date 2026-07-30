@@ -64,10 +64,11 @@ def test_status_reports_analysis_corrections_artifacts_and_json(tmp_path: Path, 
     assert main(["status", str(project)]) == 0
     text = capsys.readouterr().out
     assert "120.0 BPM, 4/4, bar phase unknown, detected" in text
-    assert "A# minor, detected" in text
+    assert "A# minor" in text
     assert "2 sections, detected" in text
-    assert "2 segments, human-corrected, detected baseline present" in text
-    assert "Last human correction: 2026-07-19T11:00:00Z" in text
+    assert "2 segments" in text
+    assert "human-corrected" not in text
+    assert "Last human correction: unknown" in text
     assert "click: present" in text
     assert "transcription (basic-pitch[onnx]==0.4.0): 3 requested" in text
     assert "guitar   872 notes, MIDI 40-76, profile guitar, transcribed 2026-07-19T10:05:00Z" in text
@@ -77,7 +78,10 @@ def test_status_reports_analysis_corrections_artifacts_and_json(tmp_path: Path, 
     assert main(["status", "--json", str(project)]) == 0
     status = json.loads(capsys.readouterr().out)
     assert status["reference_track"]["source_exists"] is True
-    assert status["stages"]["chords"]["detected_present"] is True
+    assert "human_verified" not in status["stages"]["chords"]
+    assert "detected_present" not in status["stages"]["chords"]
+    assert "state" not in status["stages"]["chords"]
+    assert "verified_at" not in status["stages"]["chords"]
     assert status["stages"]["tempo"]["downbeat_detected"] is False
     assert status["artifacts"]["section_timeline"]["exists"] is True
     assert set(status["stems"]["operations"]) == {

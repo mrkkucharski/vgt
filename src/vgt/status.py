@@ -253,23 +253,24 @@ def build_status(project_path: Path) -> dict[str, Any]:
         stage = analysis.get(name)
         stage = stage if isinstance(stage, dict) else {}
         summary = _stage_summary(name, stage)
-        human_verified = bool(stage.get("human_verified"))
-        detected_present = stage.get("detected") is not None
-        state = "missing" if summary is None else ("human-corrected" if human_verified else "detected")
         stages[name] = {
             "present": summary is not None,
-            "human_verified": human_verified,
-            "detected_present": detected_present,
-            "state": state,
             "summary": summary,
             "analyzed_at": stage.get("analyzed_at") if isinstance(stage.get("analyzed_at"), str) else None,
-            "verified_at": stage.get("verified_at") if isinstance(stage.get("verified_at"), str) else None,
             "downbeat_detected": (
                 stage.get("value", {}).get("downbeat_detected") is True
                 if name == "tempo" and isinstance(stage.get("value"), dict)
                 else None
             ),
         }
+        if name in DETECTED_SPLIT_STAGES:
+            human_verified = bool(stage.get("human_verified"))
+            stages[name].update({
+                "human_verified": human_verified,
+                "detected_present": stage.get("detected") is not None,
+                "state": "missing" if summary is None else ("human-corrected" if human_verified else "detected"),
+                "verified_at": stage.get("verified_at") if isinstance(stage.get("verified_at"), str) else None,
+            })
 
     artifacts = _artifact_paths(project_path, analysis)
     stems = analysis.get("stems") if isinstance(analysis.get("stems"), dict) else {}
@@ -345,7 +346,7 @@ def build_status(project_path: Path) -> dict[str, Any]:
         "transcription": _transcription_status(analysis),
         "timestamps": {
             "last_analysis_at": _latest_timestamp([stage["analyzed_at"] for stage in stages.values()]),
-            "last_human_correction_at": _latest_timestamp([stage["verified_at"] for stage in stages.values()]),
+            "last_human_correction_at": _latest_timestamp([stage.get("verified_at") for stage in stages.values()]),
         },
         "artifacts": {
             name: {"path": str(artifact) if artifact else None, "exists": artifact.is_file() if artifact else False}
@@ -378,9 +379,9 @@ def format_status(status: dict[str, Any]) -> str:
     ]
     for name, stage in status["stages"].items():
         detail = stage["summary"] or "missing"
-        if stage["present"]:
+        if stage["present"] and name in DETECTED_SPLIT_STAGES:
             detail += f", {stage['state']}"
-            if name in DETECTED_SPLIT_STAGES and stage["detected_present"]:
+            if stage["detected_present"]:
                 detail += ", detected baseline present"
         lines.append(f"  {name}: {detail}")
     transcription = status["transcription"]
