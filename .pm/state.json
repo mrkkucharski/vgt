@@ -1,10 +1,10 @@
 {
   "current_issue": 252,
-  "session_id": "42db7b43-ecad-4a86-b473-abba65b246d5",
-  "pid": 62851,
-  "process_started_at": "Thu Jul 30 08:10:09 2026",
+  "session_id": "e1baedb3-a5e5-40a1-8f7e-40e16914008d",
+  "pid": 63912,
+  "process_started_at": "Thu Jul 30 08:15:55 2026",
   "agent": "codex",
-  "started_at": "2026-07-30T06:10:07.701030+00:00",
+  "started_at": "2026-07-30T06:15:54.091758+00:00",
   "scheduler_stalls": {},
   "budget": {
     "window_start": "2026-07-30T05:17:12.304618+00:00",
@@ -17,10 +17,10 @@
   "verification_followups": {
     "f0d8bfc9d2dc6da7a31609184e25c4d66d3986fd2340b33a83e98204fb86691e": "created"
   },
-  "role": "implement",
+  "role": "review",
   "branch": "issue-252-add-a-combined-real-fixture-regression-f",
   "worktree_path": "/Users/marekkucharski/projects/.pm-worktrees/vgt/issue-252",
-  "pr_number": null,
+  "pr_number": 258,
   "followup_generation": {
     "fingerprint": "5db6b1c73bb96f303e62f679cdaedae02d1136c0f634d755cfa6b9c9be8655e5",
     "items": {
@@ -80,11 +80,11 @@
   "pending_transition": {
     "issue": 252,
     "target": "working",
-    "event": "agent.started",
+    "event": "agent.review_started",
     "detail": {
       "issue": 252,
       "agent": "codex",
-      "branch": "issue-252-add-a-combined-real-fixture-regression-f"
+      "pr": 258
     },
     "cleanup": {}
   }
