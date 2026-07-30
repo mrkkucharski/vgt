@@ -5,7 +5,8 @@ Runs entirely in the Python CLI (never inside REAPER, per the "Analysis
 outside REAPER" invariant in docs/AGENTS.md). `detect_tempo`,
 `detect_key`, `detect_sections`, and `detect_chords` are all real detectors
 (see tempo.py/key.py/sections.py/chords.py), running through the same
-stage-cache and corrections-survive-rerun framework.
+stage-cache framework. Tempo and sections retain their correction-survival
+mechanism; corrected chord and key tracks belong in the working-copy area.
 
 Stages run in `sidecar.ANALYSIS_STAGES` order (tempo before chords), so
 `detect_chords` can read the tempo stage's just-refreshed beat grid out of
@@ -155,9 +156,9 @@ def _refresh_stage_with_detected(
     analyzed_at: str | None = None,
     render_baseline_artifact: bool = False,
 ) -> dict[str, Any]:
-    """Like `sidecar.refresh_stage`, but tracks `detected` -- the pristine
-    machine-detection baseline -- independently of `value`. Used for the
-    `key`, `chords`, and `sections` stages (`sidecar.DETECTED_SPLIT_STAGES`).
+    """Refresh a human-correctable stage while tracking `detected` -- the
+    pristine machine-detection baseline -- independently of `value`. Used
+    for `tempo` and `sections` (`sidecar.DETECTED_SPLIT_STAGES`).
 
     Before a human verifies `value`, the two are recomputed together (there
     is only one detector call; `detected` is just the pristine copy of its
@@ -170,14 +171,17 @@ def _refresh_stage_with_detected(
     by that recompute; only `detected` moves, preserving the human's
     correction while keeping the machine baseline current (#19)."""
     if not stage.get("human_verified"):
-        refreshed = refresh_stage(
-            stage, input_hash=input_hash, settings_hash=settings_hash, compute=compute, force=force, analyzed_at=analyzed_at
-        )
-        if refreshed is stage:
+        if not force and stage_is_current(stage, input_hash=input_hash, settings_hash=settings_hash):
             return stage
+        value = compute()
         return {
-            **refreshed,
-            "detected": copy.deepcopy(refreshed["value"]),
+            "value": value,
+            "human_verified": False,
+            "input_hash": input_hash,
+            "settings_hash": settings_hash,
+            "analyzed_at": analyzed_at,
+            "verified_at": None,
+            "detected": copy.deepcopy(value),
             "detected_input_hash": input_hash,
             "detected_settings_hash": settings_hash,
         }
@@ -466,19 +470,11 @@ def detect_chords(
     analysis: dict[str, Any],
     namespace: str,
     *,
-    render_artifact: bool = True,
     sources: dict[str, Path] | None = None,
 ) -> dict[str, Any]:
     """Beat-aligned maj/min chord segments (see chords.py), snapped to the
     tempo stage's shared beat grid, plus a chord-sheet text artifact rendered
-    under the project's `vgt/<namespace>/` folder for by-eye verification.
-
-    `render_artifact=False` skips writing that artifact: used when this is
-    only refreshing the `detected` baseline of an already human-verified
-    stage (see `_refresh_stage_with_detected`), so the on-disk `chords.txt` --
-    documented as reflecting the effective, human-corrected `value` -- isn't
-    silently overwritten with the raw machine detection the human corrected
-    away from."""
+    under the project's `vgt/<namespace>/` folder for by-eye verification."""
     tempo_value = analysis["tempo"]["value"]
     beat_times = _tempo_beat_times(tempo_value, source)
     try:
@@ -488,8 +484,7 @@ def detect_chords(
     except ChordDetectionError as exc:
         raise AnalysisError(str(exc)) from exc
     artifact_path = chord_sheet_path(project_path, namespace)
-    if render_artifact:
-        render_chord_sheet(chords_value, artifact_path)
+    render_chord_sheet(chords_value, artifact_path)
     chords_value["chord_sheet_path"] = artifact_path.name
     return chords_value
 
@@ -522,11 +517,11 @@ def analyze(
 ) -> dict[str, Any]:
     """Run (or refresh) analysis for `project` and persist it into the sidecar.
 
-    Idempotent: unchanged inputs/settings leave cached stage values untouched,
-    and stages marked `human_verified` are never recomputed.
+    Idempotent: unchanged inputs/settings leave cached stage values untouched.
+    Tempo and sections marked `human_verified` are never recomputed.
 
-    `force` recomputes every stage even when its cache is current, but still
-    preserves human-verified stages.
+    `force` recomputes every stage even when its cache is current, while still
+    preserving human-verified tempo and sections stages.
 
     `progress`, when given, is called with human-readable status lines as each
     stage starts (the detectors are otherwise silent for a minute or more); the
@@ -652,8 +647,8 @@ def analyze(
             stage_input_hash, chord_source_paths = _chord_source_identity(chord_sources(project_path, source, analysis))
         else:
             stage_input_hash = input_hash
-        if analysis[stage].get("human_verified"):
-            if stage in DETECTED_SPLIT_STAGES and (
+        if stage in DETECTED_SPLIT_STAGES and analysis[stage].get("human_verified"):
+            if (
                 force
                 or analysis[stage].get("detected_input_hash") != stage_input_hash
                 or analysis[stage].get("detected_settings_hash") != settings_hash
@@ -661,6 +656,8 @@ def analyze(
                 emit(f"[{position}/{total}] {stage} — human-verified value kept; refreshing detected baseline…")
             else:
                 emit(f"[{position}/{total}] {stage} — human-verified, keeping")
+        elif stage in ("key", "chords"):
+            emit(f"[{position}/{total}] {stage} — re-analyzing…")
         elif not force and stage_is_current(analysis[stage], input_hash=stage_input_hash, settings_hash=settings_hash):
             emit(f"[{position}/{total}] {stage} — unchanged, using cached result")
         elif force:
@@ -678,7 +675,9 @@ def analyze(
             "input_hash": stage_input_hash,
             "settings_hash": settings_hash,
             "compute": compute_stage,
-            "force": force,
+            # Corrected key/chord tracks live in the working-copy area, not
+            # the sidecar, so each analyze run regenerates these values.
+            "force": force or stage in ("key", "chords"),
             "analyzed_at": datetime.now(UTC).isoformat().replace("+00:00", "Z"),
         }
         if stage in DETECTED_SPLIT_STAGES:

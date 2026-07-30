@@ -135,7 +135,7 @@ def test_upgrade_keeps_v1_fields_and_adds_v2_analysis_skeleton() -> None:
 
     upgraded = upgrade(v1)
 
-    assert upgraded["schema_version"] == 16
+    assert upgraded["schema_version"] == 17
     assert upgraded["managed_region_ids"] == []
     assert upgraded["managed_track_guids"] == ["{AAAA}", "{BBBB}"]
     assert upgraded["config"] == {"reference_track_guid": REFERENCE_GUID}
@@ -144,13 +144,13 @@ def test_upgrade_keeps_v1_fields_and_adds_v2_analysis_skeleton() -> None:
             continue
         expected = {
             "value": None,
-            "human_verified": False,
             "input_hash": None,
             "settings_hash": None,
             "analyzed_at": None,
-            "verified_at": None,
         }
-        if stage in ("tempo", "key", "chords", "sections"):
+        if stage in ("tempo", "sections"):
+            expected["human_verified"] = False
+            expected["verified_at"] = None
             expected["detected"] = None
             expected["detected_input_hash"] = None
             expected["detected_settings_hash"] = None
@@ -159,28 +159,47 @@ def test_upgrade_keeps_v1_fields_and_adds_v2_analysis_skeleton() -> None:
     assert upgraded["analysis"]["provenance"]["tool"] == "vgt"
 
 
-def test_upgrade_backfills_detected_from_value_for_v2_chords() -> None:
-    """A v2 sidecar has no `detected` field on the chords stage -- the v2 -> v3
-    migration seeds it from `value` (best effort; if `value` was already a
-    human correction, the true original detection is unrecoverable)."""
-    v2 = {
-        "schema_version": 2,
+def test_upgrade_v16_chords_and_key_corrections_collapse_and_cli_analyzes(tmp_path: Path) -> None:
+    """A 7Rivers-shaped v16 sidecar keeps its effective values but sheds the
+    redundant chords/key sync metadata before the CLI refreshes both stages."""
+    project = _project_copy(tmp_path)
+    legacy = {
+        "schema_version": 16,
         "config": {"reference_track_guid": REFERENCE_GUID},
         "analysis": {
             "chords": {
-                "value": {"segments": [{"start_seconds": 0.0, "end_seconds": 1.0, "chord": "C"}]},
-                "human_verified": True,
-                "input_hash": "abc",
-                "settings_hash": "def",
-            }
+                "value": {"segments": [{"start_seconds": 0.0, "end_seconds": 1.0, "chord": "Dm"}]},
+                "detected": {"segments": [{"start_seconds": 0.0, "end_seconds": 1.0, "chord": "C"}]},
+                "input_hash": "chords-input", "settings_hash": "chords-settings",
+                "detected_input_hash": "detected-input", "detected_settings_hash": "detected-settings",
+                "human_verified": True, "verified_at": "2026-07-01T10:00:00Z",
+            },
+            "key": {
+                "value": {"root": "E", "scale": "minor"},
+                "detected": {"root": "D", "scale": "major"},
+                "input_hash": "key-input", "settings_hash": "key-settings",
+                "detected_input_hash": "detected-input", "detected_settings_hash": "detected-settings",
+                "human_verified": False, "verified_at": None,
+            },
         },
     }
+    upgraded = upgrade(legacy)
+    assert upgraded["schema_version"] == 17
+    assert upgraded["analysis"]["chords"] == {
+        "value": legacy["analysis"]["chords"]["value"], "input_hash": "chords-input",
+        "settings_hash": "chords-settings", "analyzed_at": None,
+    }
+    assert upgraded["analysis"]["key"] == {
+        "value": legacy["analysis"]["key"]["value"], "input_hash": "key-input",
+        "settings_hash": "key-settings", "analyzed_at": None,
+    }
 
-    upgraded = upgrade(v2)
-
-    chords = upgraded["analysis"]["chords"]
-    assert chords["detected"] == chords["value"]
-    assert chords["detected"] is not chords["value"]  # backfill copies, doesn't alias
+    project.with_suffix(".vgt").write_text(json.dumps(legacy))
+    assert main(["analyze", "--no-transcribe", str(project)]) == 0
+    persisted = read_sidecar(project)
+    assert persisted["schema_version"] == 17
+    assert persisted["analysis"]["chords"]["value"]["segments"][0]["chord"] == "C:maj"
+    assert persisted["analysis"]["key"]["value"] == {"root": "C", "scale": "major", "confidence": 1.0, "backend": "fixture"}
 
 
 def test_upgrade_marks_legacy_librosa_tempo_as_unknown_bar_phase() -> None:
@@ -188,7 +207,7 @@ def test_upgrade_marks_legacy_librosa_tempo_as_unknown_bar_phase() -> None:
         "backend": "librosa", "bpm": 120.0, "downbeat_offset_seconds": 0.25,
     }}}})
 
-    assert upgraded["schema_version"] == 16
+    assert upgraded["schema_version"] == 17
     assert upgraded["analysis"]["tempo"]["value"]["downbeat_detected"] is False
 
 
@@ -227,7 +246,7 @@ def test_upgrade_adds_v10_transcription_block_to_a_v8_sidecar() -> None:
 
     upgraded = upgrade(v8)
 
-    assert upgraded["schema_version"] == 16
+    assert upgraded["schema_version"] == 17
     assert upgraded["analysis"]["transcription"] == {"requested_targets": ["guitar"], "modes": {}, "targets": {}, "detection_cache": {}}
     # Unrelated v8 fields survive the upgrade untouched.
     assert upgraded["analysis"]["stems"]["artifact_namespace"] == "abc12345"
@@ -348,25 +367,6 @@ def test_upgrade_keeps_an_explicit_transcription_mode_over_the_legacy_declaratio
     assert upgraded["analysis"]["transcription"]["modes"] == {"guitar": "guitar"}
 
 
-def test_upgrade_does_not_clobber_an_existing_detected_field() -> None:
-    v3 = {
-        "schema_version": 3,
-        "analysis": {
-            "chords": {
-                "value": {"segments": [{"start_seconds": 0.0, "end_seconds": 1.0, "chord": "C"}]},
-                "detected": {"segments": [{"start_seconds": 0.0, "end_seconds": 1.0, "chord": "G"}]},
-                "human_verified": True,
-                "input_hash": "abc",
-                "settings_hash": "def",
-            }
-        },
-    }
-
-    upgraded = upgrade(v3)
-
-    assert upgraded["analysis"]["chords"]["detected"]["segments"][0]["chord"] == "G"
-
-
 def test_first_namespace_migrates_only_exact_known_legacy_analysis_artifacts(tmp_path: Path) -> None:
     project = tmp_path / "song.RPP"
     legacy_click = tmp_path / "song.vgt-tempo-click.wav"
@@ -444,13 +444,14 @@ def test_analyze_writes_v2_sidecar_with_skeleton_and_provenance(tmp_path: Path) 
 
     result = analyze(project)
 
-    assert result["schema_version"] == 16
+    assert result["schema_version"] == 17
     assert result["managed_track_guids"] == ["{AAAA}", "{BBBB}"]  # phase 0 fields intact
     for stage in ANALYSIS_STAGES:
         if stage == "transcription":
             continue
         assert result["analysis"][stage]["input_hash"] is not None
-        assert result["analysis"][stage]["human_verified"] is False
+        if stage in ("tempo", "sections"):
+            assert result["analysis"][stage]["human_verified"] is False
         assert result["analysis"][stage]["analyzed_at"] is not None
     transcription = result["analysis"]["transcription"]
     assert transcription["requested_targets"] == ["guitar"]
@@ -504,8 +505,7 @@ def test_analyze_writes_v2_sidecar_with_skeleton_and_provenance(tmp_path: Path) 
     chord_sheet = namespace_dir / chords["chord_sheet_path"]
     assert chord_sheet.is_file()
 
-    # No correction has been made yet, so `detected` mirrors `value` exactly.
-    assert result["analysis"]["chords"]["detected"] == chords
+    assert "detected" not in result["analysis"]["chords"]
 
     on_disk = read_sidecar(project)
     assert on_disk == result
@@ -519,11 +519,14 @@ def test_analyze_is_idempotent(tmp_path: Path) -> None:
     second = analyze(project)
 
     # `generation` (#138) is the sidecar commit protocol's monotonic conflict
-    # counter: every commit bumps it, even one that changes nothing else, so
-    # it is deliberately excluded from this equality check.
+    # counter. Chords and key also deliberately refresh on every analysis
+    # run, so their new analysis timestamps are excluded here.
     assert second["generation"] > first["generation"]
     first.pop("generation")
     second.pop("generation")
+    for stage in ("key", "chords"):
+        first["analysis"][stage].pop("analyzed_at")
+        second["analysis"][stage].pop("analyzed_at")
     assert first == second
 
 
@@ -556,7 +559,7 @@ def test_stage_cache_only_refreshes_the_stage_with_changed_settings(
 
     # "transcription" is deliberately skipped by the generic loop (it owns its
     # own per-target index, see analysis.py); it never calls its "detector".
-    assert calls == {"tempo": 2, "key": 1, "sections": 1, "chords": 1, "transcription": 0}
+    assert calls == {"tempo": 2, "key": 2, "sections": 1, "chords": 2, "transcription": 0}
 
 
 def test_chord_source_set_uses_only_the_measured_fusion_artifacts(tmp_path: Path) -> None:
@@ -671,7 +674,7 @@ def test_manual_correction_survives_rerun(tmp_path: Path) -> None:
     }
     assert result["analysis"]["tempo"]["human_verified"] is True
     # Untouched stages still refresh normally.
-    assert result["analysis"]["key"]["human_verified"] is False
+    assert result["analysis"]["key"]["value"]["backend"] == "fixture"
 
 
 def test_chords_fall_back_to_freshly_detected_beats_when_tempo_correction_omits_them(tmp_path: Path) -> None:
@@ -720,164 +723,6 @@ def test_synchronized_reaper_tempo_map_derives_the_chord_grid(monkeypatch: pytes
     )
 
     assert beats == [0.0, 0.5, 1.0, 1.5, 2.5, 3.5]
-
-
-def test_key_and_chord_corrections_survive_rerun(tmp_path: Path) -> None:
-    project = _project_copy(tmp_path)
-    _write_v1_sidecar(project)
-    analyze(project)
-
-    sidecar = read_sidecar(project)
-    sidecar["analysis"]["key"] = {
-        "value": {"root": "E", "scale": "minor", "confidence": 1.0, "backend": "human"},
-        "human_verified": True,
-        "input_hash": sidecar["analysis"]["key"]["input_hash"],
-        "settings_hash": sidecar["analysis"]["key"]["settings_hash"],
-    }
-    corrected_chords = {
-        "segments": [{"start_seconds": 0.0, "end_seconds": 2.0, "chord": "E:min"}],
-        "beat_times": [0.0, 1.0, 2.0],
-        "vocabulary": "maj_min",
-        "backend": "human",
-        "chord_sheet_path": sidecar["analysis"]["chords"]["value"]["chord_sheet_path"],
-    }
-    sidecar["analysis"]["chords"] = {
-        "value": corrected_chords,
-        "human_verified": True,
-        "input_hash": sidecar["analysis"]["chords"]["input_hash"],
-        "settings_hash": sidecar["analysis"]["chords"]["settings_hash"],
-    }
-    write_sidecar(project, sidecar)
-
-    result = analyze(project)
-
-    assert result["analysis"]["key"]["value"] == {
-        "root": "E",
-        "scale": "minor",
-        "confidence": 1.0,
-        "backend": "human",
-    }
-    assert result["analysis"]["key"]["human_verified"] is True
-    assert result["analysis"]["chords"]["value"] == corrected_chords
-    assert result["analysis"]["chords"]["human_verified"] is True
-    # The original detection (backfilled from `value` since this sidecar was
-    # written without a `detected` field) is preserved, not overwritten by
-    # the correction.
-    assert result["analysis"]["chords"]["detected"] == corrected_chords
-
-
-def test_key_migration_and_baseline_refresh_preserve_human_value(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """Schema 15 backfills legacy key evidence, then keeps it live without
-    replacing the REAPER-synchronized effective correction."""
-    legacy = upgrade({"schema_version": 14, "analysis": {"key": {
-        "value": {"root": "D", "scale": "major"}, "input_hash": "audio", "settings_hash": "settings",
-        "human_verified": False,
-    }}})
-    assert legacy["analysis"]["key"]["detected"] == {"root": "D", "scale": "major"}
-    assert legacy["analysis"]["key"]["detected_input_hash"] == "audio"
-
-    project = _project_copy(tmp_path)
-    _write_v1_sidecar(project)
-    analyze(project, stages=("key",))
-    sidecar = read_sidecar(project)
-    sidecar["analysis"]["key"]["value"] = {"root": "E", "scale": "minor"}
-    sidecar["analysis"]["key"]["human_verified"] = True
-    write_sidecar(project, sidecar)
-    monkeypatch.setitem(analysis_module._DETECTORS, "key", lambda *_args, **_kwargs: {"root": "F", "scale": "major"})
-
-    refreshed = analyze(project, stages=("key",), force=True)
-    assert refreshed["analysis"]["key"]["value"] == {"root": "E", "scale": "minor"}
-    assert refreshed["analysis"]["key"]["detected"] == {"root": "F", "scale": "major"}
-
-
-def test_analyze_style_chord_correction_preserves_original_detected(tmp_path: Path) -> None:
-    """Mirrors what `vgt_sync.lua` does for chords: overwrite only
-    `value.segments` and set `human_verified`, leaving `detected` (and every
-    other field the detector wrote) untouched -- the core guarantee #19
-    adds. A subsequent `analyze()` with unchanged audio/settings must not
-    recompute `detected` either -- it only tracks the current inputs, and
-    they haven't moved (see the sibling test below for the case where they
-    do)."""
-    project = _project_copy(tmp_path)
-    _write_v1_sidecar(project)
-    first = analyze(project)
-
-    original_detected = first["analysis"]["chords"]["detected"]
-    assert original_detected == first["analysis"]["chords"]["value"]
-
-    sidecar = read_sidecar(project)
-    corrected_segments = [{"start_seconds": 0.0, "end_seconds": 1.0, "chord": "C:maj"}]
-    sidecar["analysis"]["chords"]["value"]["segments"] = corrected_segments
-    sidecar["analysis"]["chords"]["human_verified"] = True
-    write_sidecar(project, sidecar)
-
-    result = analyze(project)
-
-    chords = result["analysis"]["chords"]
-    assert chords["value"]["segments"] == corrected_segments
-    assert chords["human_verified"] is True
-    assert chords["detected"] == original_detected
-    assert chords["detected"]["segments"] != corrected_segments
-
-
-def test_detected_keeps_refreshing_against_current_settings_once_value_is_human_verified(tmp_path: Path) -> None:
-    """Per #19's design leaning: `detected` is the machine baseline and stays
-    live -- even once `value` is human-verified and frozen, a settings change
-    still recomputes `detected` (while `value`/`human_verified` don't move).
-    The detector is deterministic given the same audio, so the recomputed
-    `detected.segments` come out identical -- what's observable is that the
-    recompute actually ran, tracked by `detected_settings_hash` moving to the
-    new settings hash instead of staying pinned to the stale one."""
-    project = _project_copy(tmp_path)
-    _write_v1_sidecar(project)
-    analyze(project)
-
-    sidecar = read_sidecar(project)
-    stale_detected_settings_hash = sidecar["analysis"]["chords"]["detected_settings_hash"]
-    corrected_segments = [{"start_seconds": 0.0, "end_seconds": 1.0, "chord": "C:maj"}]
-    sidecar["analysis"]["chords"]["value"]["segments"] = corrected_segments
-    sidecar["analysis"]["chords"]["human_verified"] = True
-    write_sidecar(project, sidecar)
-
-    # Same audio, but different chord-detector settings -- `detected` should
-    # track this even though `value` is frozen by the human correction.
-    result = analyze(project, settings={"chords": {"note": "force-recompute"}})
-
-    chords = result["analysis"]["chords"]
-    assert chords["value"]["segments"] == corrected_segments
-    assert chords["human_verified"] is True
-    assert chords["detected_settings_hash"] != stale_detected_settings_hash
-
-
-def test_refreshing_detected_after_verification_does_not_overwrite_chord_sheet_artifact(tmp_path: Path) -> None:
-    """The `chords.txt` chord-sheet artifact documents the effective,
-    human-corrected `value` (see README's Chords section), not the machine
-    baseline. Refreshing `detected` after `value` is human-verified must not
-    re-render that file with the raw new detection -- otherwise the on-disk
-    verification artifact would silently diverge from the corrected `value`
-    it's supposed to reflect, even though the JSON `value` itself stays
-    correct (#19 fix-cycle-2)."""
-    project = _project_copy(tmp_path)
-    _write_v1_sidecar(project)
-    first = analyze(project)
-
-    namespace = first["analysis"]["stems"]["artifact_namespace"]
-    chord_sheet = artifact_namespace_dir(project, namespace) / first["analysis"]["chords"]["value"]["chord_sheet_path"]
-    contents_before_correction = chord_sheet.read_text(encoding="utf-8")
-
-    sidecar = read_sidecar(project)
-    corrected_segments = [{"start_seconds": 0.0, "end_seconds": 1.0, "chord": "C:maj"}]
-    sidecar["analysis"]["chords"]["value"]["segments"] = corrected_segments
-    sidecar["analysis"]["chords"]["human_verified"] = True
-    write_sidecar(project, sidecar)
-
-    # Same audio, but different chord-detector settings -- forces `detected`
-    # to recompute even though `value` is frozen by the human correction.
-    result = analyze(project, settings={"chords": {"note": "force-recompute"}})
-
-    chords = result["analysis"]["chords"]
-    assert chords["detected_input_hash"]  # sanity: the refresh path did run
-    assert chord_sheet.read_text(encoding="utf-8") == contents_before_correction
 
 
 def test_section_rename_and_boundary_nudge_survive_rerun(tmp_path: Path) -> None:
@@ -947,7 +792,7 @@ def test_cli_analyze_preserves_local_results_when_lalal_is_unavailable(
     captured = capsys.readouterr()
     assert captured.out == ""
     sidecar = read_sidecar(project)
-    assert sidecar["schema_version"] == 16
+    assert sidecar["schema_version"] == 17
     assert sidecar["analysis"]["tempo"]["value"] is not None
     assert "stem separation unavailable; continuing with available sources" in captured.err
 

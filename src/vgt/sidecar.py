@@ -175,21 +175,21 @@ Schema versions:
       REAPER tempo-map sync action writes only `value` and marks it
       human-verified; `detected` retains the audio-derived tempo and beat
       grid as a separately refreshable baseline.
+ 17 -- `chords` and `key` return to ordinary cached stages. Their former
+      human-verification sidecar fields are removed: corrected tracks now
+      live durably in the `[clean]` working-copy area. Existing `value`s are
+      retained and their detected-baseline fields are discarded.
 
-Every stage entry has the same shape:
+Ordinary stages (`key` and `chords`) have this shape:
   {
     "value": <detector output, or null if never run>,
-    "human_verified": bool,   # true once a human has corrected/confirmed it
     "input_hash": str | null, # hash of the analyzed audio at last (re)compute
     "settings_hash": str | null,
     "analyzed_at": str | null, # UTC time at which this value was detected
-    "verified_at": str | null, # UTC time at which a human verified it
   }
-A human correction is applied by setting "value" and "human_verified": true;
-`refresh_stage` then leaves it untouched on every later re-run regardless of
-whether the input or settings hash changed.
 
-The `key`, `chords`, and `sections` stages additionally carry:
+The human-correctable `tempo` and `sections` stages additionally carry
+`human_verified` and `verified_at`. They also carry:
   {
     "detected": <machine-detected value, independent of human corrections>,
     "detected_input_hash": str | null,    # hash `detected` was last computed against
@@ -224,14 +224,14 @@ import uuid
 from . import transcription_profiles
 from .transcribe import effective_profile_name_for_target
 
-SCHEMA_VERSION = 16
+SCHEMA_VERSION = 17
 STEMS_LEASE_TIMEOUT = timedelta(minutes=30)
 
 ANALYSIS_STAGES = ("tempo", "key", "sections", "chords", "transcription")
 
 # Stages that carry the detected/value split (#19): a human correction to
 # `value` never overwrites the pristine machine detection kept in `detected`.
-DETECTED_SPLIT_STAGES = ("tempo", "key", "sections", "chords")
+DETECTED_SPLIT_STAGES = ("tempo", "sections")
 
 # `transcription` (like `stems`) owns a per-target index instead of the
 # generic value/input_hash/settings_hash shape every other stage in
@@ -323,16 +323,22 @@ def _migrate_legacy_analysis_artifacts(sidecar: dict[str, Any], project_path: Pa
 def _empty_stage() -> dict[str, Any]:
     return {
         "value": None,
-        "human_verified": False,
         "input_hash": None,
         "settings_hash": None,
         "analyzed_at": None,
+    }
+
+
+def _empty_verified_stage() -> dict[str, Any]:
+    return {
+        **_empty_stage(),
+        "human_verified": False,
         "verified_at": None,
     }
 
 
 def _empty_detected_split_stage() -> dict[str, Any]:
-    return {**_empty_stage(), "detected": None, "detected_input_hash": None, "detected_settings_hash": None}
+    return {**_empty_verified_stage(), "detected": None, "detected_input_hash": None, "detected_settings_hash": None}
 
 
 def _empty_stems_block() -> dict[str, Any]:
@@ -479,7 +485,14 @@ def upgrade(data: dict[str, Any]) -> dict[str, Any]:
                 merged["detected_settings_hash"] = merged["settings_hash"]
             analysis[stage] = merged
         else:
-            analysis[stage] = {**_empty_stage(), **(analysis.get(stage) or {})}
+            merged = {**_empty_stage(), **(analysis.get(stage) or {})}
+            if stage in ("chords", "key"):
+                for legacy_field in (
+                    "detected", "detected_input_hash", "detected_settings_hash",
+                    "human_verified", "verified_at",
+                ):
+                    merged.pop(legacy_field, None)
+            analysis[stage] = merged
     tempo_value = analysis["tempo"].get("value")
     if isinstance(tempo_value, dict) and "downbeat_detected" not in tempo_value:
         # Historical librosa payloads used their first beat as a fabricated
@@ -650,11 +663,7 @@ def release_stems_lease(project_path: str | Path, owner_id: str) -> dict[str, An
 
 
 def stage_is_current(stage: dict[str, Any], *, input_hash: str, settings_hash: str) -> bool:
-    """True if `stage`'s cached value still stands -- either a human verified it,
-    or the audio and settings that produced it are unchanged -- so a rerun would
-    leave it untouched."""
-    if stage.get("human_verified"):
-        return True
+    """True if the audio and settings that produced a cached value are unchanged."""
     return stage.get("input_hash") == input_hash and stage.get("settings_hash") == settings_hash
 
 
@@ -667,20 +676,12 @@ def refresh_stage(
     force: bool = False,
     analyzed_at: str | None = None,
 ) -> dict[str, Any]:
-    """Recompute a stage's cached value unless a human has verified it, or the
-    inputs/settings that produced the cached value haven't changed.
-
-    `force` recomputes even when the cache is current, but never overrides a
-    human-verified stage -- that correction is preserved regardless."""
-    if stage.get("human_verified"):
-        return stage
+    """Recompute an ordinary cached stage when its inputs or settings change."""
     if not force and stage_is_current(stage, input_hash=input_hash, settings_hash=settings_hash):
         return stage
     return {
         "value": compute(),
-        "human_verified": False,
         "input_hash": input_hash,
         "settings_hash": settings_hash,
         "analyzed_at": analyzed_at,
-        "verified_at": None,
     }
