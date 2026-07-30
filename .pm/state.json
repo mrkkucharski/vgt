@@ -1,10 +1,10 @@
 {
   "current_issue": 249,
-  "session_id": "1778f99b-0f35-4245-aee5-d40bd8a7b873",
-  "pid": 57983,
-  "process_started_at": "Thu Jul 30 07:44:41 2026",
-  "agent": "codex",
-  "started_at": "2026-07-30T05:44:39.981965+00:00",
+  "session_id": "c4191013-efc6-40f7-88d2-5361be101f2f",
+  "pid": 59587,
+  "process_started_at": "Thu Jul 30 07:50:27 2026",
+  "agent": "claude",
+  "started_at": "2026-07-30T05:50:26.064606+00:00",
   "scheduler_stalls": {},
   "budget": {
     "window_start": "2026-07-30T05:17:12.304618+00:00",
@@ -15,10 +15,10 @@
   "verification_followups": {
     "f0d8bfc9d2dc6da7a31609184e25c4d66d3986fd2340b33a83e98204fb86691e": "created"
   },
-  "role": "implement",
+  "role": "review",
   "branch": "issue-249-update-the-goal-contract-for-the-pyin-ba",
   "worktree_path": "/Users/marekkucharski/projects/.pm-worktrees/vgt/issue-249",
-  "pr_number": null,
+  "pr_number": 253,
   "followup_generation": {
     "fingerprint": "5db6b1c73bb96f303e62f679cdaedae02d1136c0f634d755cfa6b9c9be8655e5",
     "items": {
@@ -78,11 +78,11 @@
   "pending_transition": {
     "issue": 249,
     "target": "working",
-    "event": "agent.started",
+    "event": "agent.review_started",
     "detail": {
       "issue": 249,
-      "agent": "codex",
-      "branch": "issue-249-update-the-goal-contract-for-the-pyin-ba"
+      "agent": "claude",
+      "pr": 253
     },
     "cleanup": {}
   }
