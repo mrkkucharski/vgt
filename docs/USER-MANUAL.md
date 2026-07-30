@@ -19,12 +19,12 @@ checklist.
    `~/Library/Application Support/REAPER/Scripts/vgt`. In REAPER's Action
    List, use `ReaScript: Load` to register all four installed Lua files once:
    `vgt_initialize.lua` initializes and applies vgt-managed objects,
-   `vgt_sync.lua` saves chord, section, and key corrections;
+   `vgt_sync.lua` saves section corrections;
    `vgt_sync_tempo_map.lua` is the separate, confirmation-gated action for
    adopting a REAPER tempo-map correction; and
    `vgt_working_copy.lua` creates protected user-owned `[work]` copies of
-   generated reference MIDI and promotes finished copies into `[clean]`. This
-   step does not require retaining a source checkout. `--dry-run` previews
+   generated reference MIDI, chords, or key tracks and promotes finished copies
+   into `[clean]`. This step does not require retaining a source checkout. `--dry-run` previews
    paths without changing them and
    `--destination DIR` is useful for a custom REAPER resource location or
    automated test. The installer leaves identical files alone and asks before
@@ -44,10 +44,12 @@ checklist.
    guitar is requested by default.
 5. Run `vgt_initialize.lua` again to apply analysis and import available stems
    and reference MIDI tracks.
-6. Correct chords, sections, or key in REAPER, then run `vgt_sync.lua` from
-   the Action List. If you deliberately corrected the tempo map for this
-   reference, run the separate `vgt_sync_tempo_map.lua` action and confirm its
-   prompt.
+6. To keep a chord or key correction, select its `[vgt]` track, use
+   `vgt_working_copy.lua` to create a `[work]` copy, edit that copy, and
+   promote it into `[clean]`. To save a section correction, rename or move the
+   managed region and run `vgt_sync.lua` from the Action List. If you
+   deliberately corrected the tempo map for this reference, run the separate
+   `vgt_sync_tempo_map.lua` action and confirm its prompt.
 7. Inspect persisted state with `vgt status "Song.RPP"` or `--json`.
 
 `vgt [project.rpp]` and `vgt inspect [project.rpp]` are read-only. Without a
@@ -69,8 +71,8 @@ keep. vgt may add:
 | `[clean] <reference name>` | Initialization | User-content container for promoted finished tracks. Automatic initialize/apply may create, rename, recolour, and reposition the container track, but never touches anything inside it. |
 | `[work] <reference name>` | Initialization | User-content container for editable working copies. Automatic initialize/apply may create, rename, recolour, and reposition the container track, but never touches anything inside it. |
 | `[vgt] <reference name>` | Initialization | Folder when it has children; otherwise a plain track. |
-| `[vgt] Chords` | Chord analysis | Unmuted but silent text-item track; chord items are unlocked for editing. |
-| `[vgt] Key` | Valid key analysis | Unmuted, silent text-item track with one editable take name showing the effective root and scale. Use the strict `E minor` format (a pitch class followed by `major` or `minor`). |
+| `[vgt] Chords` | Chord analysis | Unmuted but silent text-item machine draft. Every `vgt analyze` regenerates it from audio; initialize/apply re-creates its vgt-managed track. Copy it into `[work]` before making a correction you want to keep. |
+| `[vgt] Key` | Valid key analysis | Unmuted, silent text-item machine draft with one take name showing the effective root and scale. Every `vgt analyze` regenerates it from audio; initialize/apply re-creates its vgt-managed track. Copy it into `[work]` before making a correction you want to keep. |
 | `[vgt] Beats` | Existing/human-edited tempo map, or detected beats with unknown bar phase | Unmuted, silent text-item track; beat items are locked. |
 | `[vgt] Click` | Tempo-click artifact exists | Muted audio track; unmute temporarily to check the beat grid. |
 | Vocals, Instrumental, Bass, Drums, Guitar, Backing | Standard separation | Unmuted, time-based audio tracks. |
@@ -132,18 +134,23 @@ instead of anchoring a tempo map to an arbitrary beat. It never overwrites
 another map or a human-edited vgt map, and refreshes a vgt map only when it can
 prove that the map is still untouched.
 
-To correct the key, rename the sole `[vgt] Key` item's take using exactly a
-pitch class and mode, for example `E minor` or `F# major`. Flats are accepted
-and normalized to their sharp pitch class; the mode must be lowercase `major`
-or `minor`. Keep exactly one key item. To correct chords, edit `[vgt] Chords` items: rename the take, move/resize,
-split, delete, or add items with a take name. Rename or move only vgt-created
-section regions. Then run `vgt_sync.lua` from REAPER's Action List. Sync preserves the
-machine-detected chord/section baselines while saving the effective edited
-values as human-verified. Re-applying before sync discards unsynchronized edits
-to vgt-managed objects.
+`[vgt] Chords` and `[vgt] Key` are disposable machine drafts. Each `vgt analyze`
+regenerates them from audio, and the next initialize/apply replaces their
+vgt-managed tracks. To keep a chord or key correction, select the generated
+track, run **Create working copy from selected tracks** in
+`vgt_working_copy.lua`, edit the resulting `[work]` copy, then use **Promote
+selected `[work]` tracks to `[clean]`**. The promoted `[clean]` track is
+user-owned and survives later analysis and apply. For a key copy, keep one item
+named with a pitch class and mode, such as `E minor` or `F# major`. For a chord
+copy, you can rename takes, move/resize, split, delete, or add named items.
 
-`vgt_sync.lua` rejects a missing, ambiguous, or invalid key label without
-changing the sidecar. It never reads tempo markers. To adopt a tempo correction,
+Rename or move only vgt-created section regions, then run `vgt_sync.lua` from
+REAPER's Action List. It preserves the machine-detected section baseline while
+saving the effective edited sections as human-verified. Re-applying before sync
+discards unsynchronized edits to vgt-managed regions.
+
+`vgt_sync.lua` synchronizes only sections; it does not read chord or key tracks
+and never reads tempo markers. To adopt a tempo correction,
 run `vgt_sync_tempo_map.lua` and explicitly confirm: it reads the live
 tempo/time-signature markers over the selected reference item only, stores a
 constant or piecewise reference-relative grid as human-verified, and never
@@ -584,8 +591,9 @@ There is no `vgt sync` read-back for MIDI.
 
 ## Working copies and promotion (`vgt_working_copy.lua`)
 
-Because every `[vgt]` object is regenerated on each apply, the reference MIDI is
-a draft to read, not an editing surface. `vgt_working_copy.lua` makes a
+Generated reference MIDI and the `[vgt] Chords` and `[vgt] Key` machine drafts
+are regenerated by analysis and re-created by initialize/apply, so they are
+references rather than editing surfaces. `vgt_working_copy.lua` makes a
 **user-owned** copy you can edit freely, side by side with the vgt references,
 that no later apply or sync will ever touch.
 
@@ -593,8 +601,8 @@ Install it with `vgt install-reascripts` (it ships alongside the other three
 actions) and run it from REAPER's Action List. It offers create and promote:
 
 - **Create working copy from selected tracks** — select the track(s) you want
-  to work with (typically the selected `[vgt] <Target> Ref — <Label> (MIDI)`, plus its stem and
-  `[vgt] Chords` for context), then run this. Each selected track is duplicated
+  to work with (for example, a `[vgt] <Target> Ref — <Label> (MIDI)`,
+  `[vgt] Chords`, or `[vgt] Key`), then run this. Each selected track is duplicated
   into the initialize-owned `[work]` container. The action puts a durable
   private working-copy marker on the copies; the copies are unmuted, unlocked,
   and immediately editable. If that container is absent, the action creates
@@ -739,7 +747,8 @@ never block closing an issue:
 - Project mutation uses REAPER's API, never RPP text editing.
 - Heavy analysis runs in the CLI, not inside REAPER.
 - vgt-owned audio is time-based and does not stretch with tempo-map changes.
-- Human-synchronized chord and section corrections survive analysis and apply.
+- Human-synchronized section corrections survive analysis and apply. Chord and
+  key corrections survive only when promoted into a user-owned `[clean]` copy.
 - Ordinary `--force` makes no LALAL charges; paid work is cached, checkpointed,
   and explicitly confirmed when forced or optional.
 - Transcription runs locally after separation, never triggers paid separation,
