@@ -16,7 +16,7 @@ a given instrument, and why* — the accumulated per-instrument knowledge.
 | --- | --- | --- | --- | --- |
 | `guitar` (acoustic) | Basic Pitch | `guitar-acoustic-clean` / `-detail` / `-strict-chords` | Yes — one acoustic stem, three rounds | [guitar-transcription-findings.md](guitar-transcription-findings.md) |
 | `guitar` (electric) | Basic Pitch | `guitar` | **No** — deliberately left at shared defaults | see guitar findings, "Changes applied" §1 |
-| `bass` | **pYIN** (monophonic tracker) | `bass` / `bass-pyin`; `bass-basic-pitch`, `bass-monophonic` retained for comparison | Yes — one stem, 11-variant sweep | [bass-transcription-findings.md](bass-transcription-findings.md) |
+| `bass` | **pYIN** (monophonic tracker) | `bass` / `bass-pyin`; `bass-basic-pitch`, `bass-monophonic` retained for comparison | Yes — one 7Rivers stem: shipped profile F 78.9%, octave errors 10.9%; earlier Basic Pitch experiments retained as evidence | [bass-transcription-findings.md](bass-transcription-findings.md) |
 | `drums` | DrumScript (default), ADTOF (opt-in) | `drums-clean`, `drums-adtof` | Yes — IDMT-SMT-Drums corpus + real-stem timing study | [drumscript-evaluation-findings.md](drumscript-evaluation-findings.md), [drums-transcription-timing-findings.md](drums-transcription-timing-findings.md), [drums-clean-profile.md](drums-clean-profile.md), [adtof-phase-0-feasibility-findings.md](adtof-phase-0-feasibility-findings.md) |
 | `vocals` | Basic Pitch | `vocals` | **No** — frequency window only | — |
 | `piano`, `strings`, `instrumental`, `backing`, `original` | Basic Pitch | `default` | **No** — full-range defaults | — |

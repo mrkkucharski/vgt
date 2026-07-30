@@ -394,17 +394,21 @@ the whole track: 966 notes, **22** simultaneous voices, two notes held for ~120
 seconds, and ≥17 voices sounding for 98% of the song. No combination of onset
 threshold, frame threshold, note-length floor, melodia setting, frequency
 ceiling, or cleanup ordering fixed it — the model's note *boundaries* are wrong,
-so no "keep one note" filter can recover the right note. Switching to a tracker
-took frame-level F-measure from 7% to 79% on that stem. The full comparison,
-including the two independent estimators used as a reference, is in
+so no "keep one note" filter can recover the right note. In the final shipped
+profile evaluation, switching to pYIN took frame-level F-measure from 7.2% to
+78.9% on that stem; 10.9% of graded frames were octave errors. These are
+relative measurements against an estimated CQT reference, not a general
+accuracy guarantee. The full comparison, including the two independent
+estimators used as a reference, is in
 [docs/bass-transcription-findings.md](bass-transcription-findings.md) — indexed,
 with every other instrument's evidence, from
 [docs/instrument-transcription-findings.md](instrument-transcription-findings.md).
 
 Because a tracker emits one line by construction, the `bass` profile needs no
 voice cap: its cleanup is only `merge_fragments`, `drop_isolated_notes`, and
-`clamp_sustain`. Its 35–330 Hz window is the tracker's fundamental search range,
-so a bass tuned below ~35 Hz needs a different profile.
+`clamp_sustain`. Its supported 35–330 Hz window is the tracker's fundamental
+search range. It excludes a five-string low B fundamental (30.9 Hz) and lower
+drop tunings, so material below 35 Hz needs a separately measured profile.
 
 This is still a **draft reference**. It tracks one pitch at a time, so a chord,
 a double-stop, or bleed from another instrument is resolved to a single note, and

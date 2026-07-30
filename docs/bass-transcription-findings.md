@@ -101,9 +101,11 @@ Two bass-specific factors make it worse than the guitar case:
 
 ## Parameter sweep
 
-Eleven inferences over the same stem, `basic-pitch[onnx]==0.4.0`, ONNX
-serialization, `--midi-tempo 120.004`. Scored against the **CQT** reference
-(scoring against pYIN would be circular for the pyin row).
+Eleven **Basic Pitch experiments** over the same stem, `basic-pitch[onnx]==0.4.0`,
+ONNX serialization, `--midi-tempo 120.004`. These historical rows explain why
+the old backend was retired; they are not production settings. Scored against
+the **CQT** reference (scoring against pYIN would be circular for the final
+shipped pYIN row).
 
 ### Raw detections, before any cleanup
 
@@ -206,7 +208,7 @@ Shipped settings, in `src/vgt/transcribe.py`:
 
 | Setting | Value | Why |
 | --- | --- | --- |
-| `BASS_PYIN_FREQUENCY_HZ` | 35–330 Hz | Fundamental search range. 35 Hz sits just below a 5-string's low B (30.9 Hz) while staying off the stem's rumble floor; 330 Hz covers a 24-fret 4-string's top. Both reference estimators put the real line at 29–43 MIDI, well inside. |
+| `BASS_PYIN_FREQUENCY_HZ` | 35–330 Hz | Fundamental search range. 35 Hz is **higher** than a five-string low B (30.9 Hz), so that fundamental and lower/drop-tuned material are unsupported by this production profile. 330 Hz covers a 24-fret 4-string's top. Both reference estimators put the measured line at 29–43 MIDI, well inside. |
 | `BASS_PYIN_MINIMUM_NOTE_LENGTH_MS` | 70 ms | Under a 32nd note at 120 BPM, so it discards tracker fragments only. |
 | `PYIN_MEDIAN_FILTER_FRAMES` | 5 (~58 ms) | Removes jitter without merging genuine adjacent semitones. |
 | `PYIN_HOP_LENGTH` | 256 @ 22050 Hz | ~11.6 ms frames. Onsets are quantized to this. |
@@ -218,6 +220,11 @@ in-process (no `uvx` subprocess, no model download), and works offline on first
 use.
 
 ### Result on the same stem
+
+This is the final production result, not one of the preceding Basic Pitch
+experiments. It is measured on one 7Rivers separated stem against the estimated
+CQT reference, so it is a relative comparison rather than a general accuracy
+guarantee.
 
 | | notes | maxpoly | max note | prec | rec | **F** |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |
@@ -263,9 +270,11 @@ found.
 ## Known limitations
 
 - **One stem, one instrument.** Same caveat the guitar findings carry. A synth
-  bass, a fretless, a heavily distorted bass, or a drop tuning below 35 Hz are
-  all unmeasured, and the frequency bounds plus median-filter width are the
-  settings most likely to need revisiting.
+  bass, a fretless, or a heavily distorted bass is unmeasured. Material below
+  35 Hz — including a five-string low B fundamental at 30.9 Hz and lower drop
+  tunings — is outside the configured production range, not merely unmeasured.
+  New reference measurements are required before changing that range or the
+  median-filter width.
 - **Chords and double-stops collapse to one note.** A tracker returns one pitch
   per frame by definition. Bleed from another instrument is also resolved to a
   single note rather than ignored.
