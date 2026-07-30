@@ -1536,9 +1536,10 @@ def _content_seed(source: Path, spec: TranscriptionSpec, salt: str) -> int:
 
 def _fake_notes(source: Path, spec: TranscriptionSpec, note_count: int = 4) -> list[tuple[float, float, int, int]]:
     """A short, deterministic note list: (start_s, end_s, pitch_midi, velocity)."""
-    windowed = isinstance(spec, (BasicPitchSpec, PyinSpec))
-    minimum_frequency_hz = spec.minimum_frequency_hz if windowed else None
-    maximum_frequency_hz = spec.maximum_frequency_hz if windowed else None
+    # Inline `isinstance` rather than a hoisted bool: only the inline form lets
+    # a type checker narrow the spec union before the attribute access.
+    minimum_frequency_hz = spec.minimum_frequency_hz if isinstance(spec, (BasicPitchSpec, PyinSpec)) else None
+    maximum_frequency_hz = spec.maximum_frequency_hz if isinstance(spec, (BasicPitchSpec, PyinSpec)) else None
     min_pitch = _hz_to_midi(minimum_frequency_hz or 82.4)  # standard-tuning low E as a fallback center
     max_pitch = _hz_to_midi(maximum_frequency_hz or 880.0)
     if max_pitch <= min_pitch:
