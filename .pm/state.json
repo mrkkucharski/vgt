@@ -1,48 +1,41 @@
 {
-  "current_issue": 275,
-  "session_id": "65b05f1c-ca81-46ab-addf-b7134e730b37",
-  "pid": 10883,
-  "process_started_at": "Thu Jul 30 21:20:41 2026",
+  "current_issue": 276,
+  "session_id": "8370bc36-9ec7-4d69-894b-fca3dab37195",
+  "pid": 11533,
+  "process_started_at": "Thu Jul 30 21:23:10 2026",
   "agent": "claude",
-  "started_at": "2026-07-30T19:20:39.558728+00:00",
+  "started_at": "2026-07-30T19:23:08.942101+00:00",
   "scheduler_stalls": {
     "blocked_issues": {
       "267": {
         "first_seen_at": "2026-07-30T07:58:58.709828+00:00",
-        "last_seen_at": "2026-07-30T19:19:25.216671+00:00",
-        "consecutive_passes": 585,
+        "last_seen_at": "2026-07-30T19:21:52.206577+00:00",
+        "consecutive_passes": 587,
         "title": "Measure the vocals transcription profile"
       },
       "266": {
         "first_seen_at": "2026-07-30T07:58:58.712103+00:00",
-        "last_seen_at": "2026-07-30T19:19:25.217629+00:00",
-        "consecutive_passes": 585,
+        "last_seen_at": "2026-07-30T19:21:52.207023+00:00",
+        "consecutive_passes": 587,
         "title": "Validate pYIN bass across songs and low tunings"
       },
       "265": {
         "first_seen_at": "2026-07-30T07:58:58.713113+00:00",
-        "last_seen_at": "2026-07-30T19:19:25.218524+00:00",
-        "consecutive_passes": 585,
+        "last_seen_at": "2026-07-30T19:21:52.207200+00:00",
+        "consecutive_passes": 587,
         "title": "Benchmark guitar profiles beyond 7Rivers"
       },
       "264": {
         "first_seen_at": "2026-07-30T07:58:58.714019+00:00",
-        "last_seen_at": "2026-07-30T19:19:25.219454+00:00",
-        "consecutive_passes": 585,
+        "last_seen_at": "2026-07-30T19:21:52.207354+00:00",
+        "consecutive_passes": 587,
         "title": "Validate chord decoding on additional annotated songs"
       },
       "263": {
         "first_seen_at": "2026-07-30T07:58:58.714756+00:00",
-        "last_seen_at": "2026-07-30T19:19:25.220340+00:00",
-        "consecutive_passes": 585,
+        "last_seen_at": "2026-07-30T19:21:52.207505+00:00",
+        "consecutive_passes": 587,
         "title": "Add a reproducible multi-song quality benchmark"
-      }
-    },
-    "deferred_passes": {
-      "budget": {
-        "first_seen_at": "2026-07-30T18:42:57.408124+00:00",
-        "last_seen_at": "2026-07-30T19:19:25.214693+00:00",
-        "consecutive_passes": 32
       }
     }
   },
@@ -57,10 +50,10 @@
   "verification_followups": {
     "f0d8bfc9d2dc6da7a31609184e25c4d66d3986fd2340b33a83e98204fb86691e": "created"
   },
-  "role": "review",
-  "branch": "issue-275-relax-the-downbeat-guard-apply-the-analy",
-  "worktree_path": "/Users/marekkucharski/projects/.pm-worktrees/vgt/issue-275",
-  "pr_number": 279,
+  "role": "implement",
+  "branch": "issue-276-infer-the-downbeat-from-chord-segment-bo",
+  "worktree_path": "/Users/marekkucharski/projects/.pm-worktrees/vgt/issue-276",
+  "pr_number": null,
   "followup_generation": {
     "fingerprint": "56fab22a68207d92fd436f13f543f0b36b631d49e9d321d132b6400ce7b7d97e",
     "items": {
@@ -123,13 +116,13 @@
     "273": 1
   },
   "pending_transition": {
-    "issue": 275,
+    "issue": 276,
     "target": "working",
-    "event": "agent.review_started",
+    "event": "agent.started",
     "detail": {
-      "issue": 275,
+      "issue": 276,
       "agent": "claude",
-      "pr": 279
+      "branch": "issue-276-infer-the-downbeat-from-chord-segment-bo"
     },
     "cleanup": {}
   }
