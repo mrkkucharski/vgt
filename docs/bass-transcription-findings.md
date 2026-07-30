@@ -5,7 +5,9 @@
 > which also carries the shared measurement method and the lessons that
 > generalize across instruments.
 
-Status: **implemented 2026-07-29/30.** `bass` no longer uses Basic Pitch at all.
+Status: **implemented 2026-07-29/30**, extended 2026-07-30 with re-articulation
+splitting (see that section — it is the one failure the F-measure below cannot
+see). `bass` no longer uses Basic Pitch at all.
 `src/vgt/pyin_notes.py` adds a `pyin` backend — a monophonic F0 tracker — and
 `bass` resolves to it by default, with a three-stage cleanup pipeline (merge →
 deblip → clamp). The two Basic Pitch profiles are retained under explicit names
@@ -212,6 +214,9 @@ Shipped settings, in `src/vgt/transcribe.py`:
 | `BASS_PYIN_MINIMUM_NOTE_LENGTH_MS` | 70 ms | Under a 32nd note at 120 BPM, so it discards tracker fragments only. |
 | `PYIN_MEDIAN_FILTER_FRAMES` | 5 (~58 ms) | Removes jitter without merging genuine adjacent semitones. |
 | `PYIN_HOP_LENGTH` | 256 @ 22050 Hz | ~11.6 ms frames. Onsets are quantized to this. |
+| `PYIN_REARTICULATION_SPAN_FRAMES` | 2 (~23 ms) | Window the envelope rise is measured over. See "Re-articulation" below for the sweep. |
+| `PYIN_REARTICULATION_RISE_DB` | 0.8 dB | Energy rise that marks the string being plucked again at an unchanged pitch. Deliberately low; the spacing rule supplies the precision. |
+| `PYIN_REARTICULATION_MINIMUM_SPACING_BEATS` | 0.375 | Closest two cuts inside one pitch run may fall. In beats, so it scales with tempo. |
 | `BASS_SUSTAIN_CLAMP_BARS` | 2.0 | A bass note ringing two bars is a tracker holding through a rest. In bars, not seconds, so slow material isn't clamped tighter. |
 | cleanup | merge → deblip → clamp | The ordered subset of the guitar pipeline that still applies; no ghost or voice-cap stage. |
 
@@ -233,6 +238,182 @@ guarantee.
 
 Output range is MIDI 28–50, against the 29–43 core both reference estimators
 found.
+
+## Re-articulation: the half of the part the tracker could not see
+
+Status: **implemented 2026-07-30**, `PYIN_ALGORITHM_VERSION` 1 → 2. Bumps
+`bass`'s `settings_hash`, so an existing bass transcription invalidates and
+re-transcribes once. No other target is touched.
+
+Reported by the user after hand-correcting the reference against the audio in
+REAPER: the transcript held one long note where the recording plays the same
+note several times. "Individual notes played on the same string" is exactly the
+failure — and the section above, with its 78.9% F-measure, cannot see it at all.
+
+### Why every metric above is blind to it
+
+An F0 tracker reports pitch. Playing one fret four times running does not change
+pitch, so it is one continuous F0 run, and `segment_notes`' "each maximal run of
+one pitch becomes a note" rule — the same rule that makes polyphony 1 by
+construction — glues those four notes into one. Every metric in this document is
+frame-level, asking *which pitch is sounding now*, and the right pitch is
+sounding the whole time. The before/after table below shows this directly: `hit`,
+`oct`, `wrong`, `miss`, `prec`, `rec` and `f` are unchanged **to the decimal**
+across a change that recovers a third of the notes in the part.
+
+Nor could the estimated reference have caught it. Both reference estimators
+(pYIN and CQT harmonic sum) are frame-level and share the blind spot precisely.
+This is the one thing in this document that an estimated reference could not
+have established, and it took a human annotation to see.
+
+### The reference
+
+The maintainer's hand-corrected `[clean] Bass Ref — default (MIDI)` track,
+parsed out of the RPP and committed as `tests/fixtures/bass_7rivers/` (numbers
+only, no audio — see that directory's README). **272 notes over the full
+178.6 s**, reviewed against the audio in REAPER.
+
+This is the project's first full-length hand annotation for any instrument, and
+it is what makes the rest of this section trustworthy rather than suggestive.
+An earlier prefix-only version of it (117 notes, 64.7 s) is what the first
+tuning was fitted to.
+
+**83% of the reference (225 of its 272 notes) sits inside a run of repeated
+notes on one pitch** — runs of 3 are the most common, and the longest is 9.
+This part is overwhelmingly rhythmic same-note playing, which is why
+re-articulation dominates its score and why the frame-level metrics say nothing
+useful about it.
+
+### Root cause and fix
+
+`pyin_notes._rearticulation_frames` recovers the missing onsets from the
+envelope rather than the pitch: each pluck restarts the decay, so log frame
+energy jumps. It reuses the per-frame RMS `track_f0` already returns for
+velocity, so it costs no second pass over the audio and no new dependency. A
+frame qualifies when energy has risen by `rise_db` over the previous
+`span_frames` frames *and* that rise is a local maximum.
+
+**Two thresholds, doing different jobs.** The rise threshold alone cannot work:
+a re-attack the maintainer marks is typically *faint* — median rise 0.66 dB,
+against 2.16 dB for an onset the tracker already found — so a threshold high
+enough to be self-sufficient misses two thirds of them, and one low enough to
+catch them fires everywhere. So `segment_notes` also enforces a **minimum
+spacing between cuts** inside one run, which is where the precision comes from:
+below a dotted sixteenth, two detections are far more often one attack found
+twice than two notes played. Dropping the threshold alone (1.0 → 0.8 dB) gains
+0.3 F; adding the spacing rule takes it to +2.4, improving both folds.
+
+The spacing is expressed in **beats**, not milliseconds, for the same reason
+`BASS_SUSTAIN_CLAMP_BARS` is: a fixed millisecond value would block genuine
+repeated notes at a fast tempo and permit double-triggers at a slow one.
+`PyinSpec` already carries `midi_tempo`, so this adds no new dependency.
+
+### Five detectors that did not work
+
+All measured against the full 272-note reference, scored through the real
+pipeline. This section exists so nobody re-runs them.
+
+| Approach | Best F | Why it failed |
+| --- | ---: | --- |
+| **Shipped** (envelope rise + spacing) | **75.6** | — |
+| Beat-grid-guided candidates | 74.2 | Real but small gain, and it would make the analyzed beat grid part of bass's cache identity — a tempo re-analysis would then invalidate every bass transcription. Not worth +1.0. |
+| Globally adaptive threshold | 72.0 | The outro's attacks are genuinely softer (median rise 0.95 dB vs 1.6–1.7 dB earlier), so local normalization looked obvious. It underperforms a constant threshold at every window/delta tried. |
+| Shorter / band-limited RMS envelope | 73.0 | pYIN's own 93 ms RMS window smears a 20 ms pluck across eight hops, so a sharper envelope looked obviously better. It is not: the smearing is useful smoothing, and every shorter window (256/512/1024) and band (80–800, 150–1500, 200–2500, 300–4000 Hz) scored lower. |
+| Decaying peak follower | 70.2 | The physically-motivated model — a plucked note decays, so a re-attack is energy departing upward from the decay. Worse at every release rate from 3 to 45 dB/s. A separated stem's decay is not clean enough. |
+| Mel-band spectral flux | 27 | A bass stem has almost no high-frequency content for flux to key on. Fires 237 times in 15 s, or 3. |
+
+The lesson is that the crude measure won. Four of the five alternatives were
+better-motivated *models* of the physics, and all four lost to differencing a
+smoothed energy envelope and then constraining where the results may land.
+
+### Sweep
+
+Scored through the real backend plus the shipped cleanup, onset F at a 50 ms
+tolerance, one-to-one nearest matching. Folds A/B are alternating 15 s blocks,
+so a row that wins only by fitting one passage shows as a gap between them.
+
+| span | rise dB | spacing (beats) | notes | P | R | **F** | foldA | foldB |
+| ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| — | off | — | 162 | 76.5 | 45.6 | **57.1** | 61.3 | 52.6 |
+| 2 | 1.0 | 0 (previous ship) | 255 | 75.7 | 71.0 | **73.2** | 76.9 | 69.5 |
+| 2 | 0.8 | 0 | 286 | 71.7 | 75.4 | 73.5 | 76.3 | 70.5 |
+| 2 | 0.7 | 0.3125 | 290 | 72.1 | 76.8 | 74.4 | 76.8 | 71.8 |
+| 2 | 0.7 | 0.5 | 266 | 76.3 | 74.6 | 75.5 | 77.5 | 73.3 |
+| 2 | 0.75 | 0.375 | 275 | 74.9 | 75.7 | 75.3 | 77.3 | 73.2 |
+| **2** | **0.8** | **0.375** | **268** | **76.1** | **75.0** | **75.6** | **77.4** | **73.6** |
+| 2 | 0.8 | 0.5 | 252 | 78.6 | 72.8 | 75.6 | 77.9 | 73.2 |
+| 2 | 0.9 | 0.375 | 249 | 78.7 | 72.1 | 75.2 | 78.1 | 72.2 |
+| 3 | 0.9 | 0.375 | 275 | 74.2 | 75.0 | 74.6 | 77.9 | 71.0 |
+
+Shipped: **span 2 (~23 ms), 0.8 dB, 0.375 beats.** The plateau runs 0.75–0.8 dB
+× 0.3125–0.5 beats at F 75.0–75.6; 0.375 beats is chosen over 0.5 for its higher
+recall at the same F, since recovering the played notes is the point. Both folds
+improve over both the no-split and the previous shipped row, so the gain is not
+one passage.
+
+### Result
+
+Through the real CLI (`vgt analyze --transcribe-only bass`) on the same stem:
+
+| | notes | matched | onset P | onset R | **onset F** |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| no splitting (`PYIN_ALGORITHM_VERSION` 1) | 162 | 124/272 | 76.5 | 45.6 | **57.1** |
+| first splitting (1.0 dB, no spacing) | 255 | 193/272 | 75.7 | 71.0 | **73.2** |
+| **shipped** (0.8 dB + 0.375-beat spacing) | **268** | **204/272** | **76.1** | **75.0** | **75.6** |
+
+Recall is the headline: the tracker found **46%** of the notes played and now
+finds 75%. Requiring the right pitch as well as the right time costs 0.8 points
+(F 74.8), so timing, not pitch, is what remains wrong.
+
+The output's note count now matches the reference closely (268 against 272), as
+does its duration profile — the six longest notes are 4.00/3.11/3.02/1.97/1.88/
+1.87 s against the reference's 4.00/3.72/3.04/1.97/1.88/1.88 s.
+
+Every frame-level figure is **unchanged** — same 78.9% F, 10.9% octave errors,
+28–50 range, polyphony 1 — as the argument above predicts.
+
+### Where it is still weakest
+
+Accuracy falls steadily through the song:
+
+| span | reference notes | detected | P | R | F |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| 0–60 s | 114 | 107 | 87.9 | 82.5 | **85.1** |
+| 60–120 s | 104 | 105 | 71.4 | 72.1 | **71.8** |
+| 120–180 s | 54 | 56 | 62.5 | 64.8 | **63.6** |
+
+Note *counts* track the reference closely in all three, so this is a timing and
+placement problem, not a count problem — the later sections play softer, more
+legato re-attacks, and the detector puts about the right number of notes in
+approximately the wrong places.
+
+### A cache bug this work exposed
+
+The first implementation added `rearticulation_*` to `PyinSpec` and therefore to
+`settings_hash`, but **not** to `transcription_variants.detection_identity`.
+Re-articulation splitting happens inside `segment_notes`, so it shapes the raw
+note list — a changed setting must invalidate the *detection* cache, not only
+the derived variant. It did not, so retuning the splitter and re-running printed
+`transcription — bass/default: unchanged, using cached result` and kept the old
+notes.
+
+It went unnoticed on the first change only because `PYIN_ALGORITHM_VERSION` went
+1 → 2 in the same commit, and that *is* in the detection identity. A project
+profile retuning `rearticulation_rise_db` would have silently done nothing —
+exactly the "tuning a silent no-op" failure `PyinSpec`'s docstring warns about.
+Fixed, with a test asserting each of the three settings moves `detection_hash`.
+
+### Known limitations of the split
+
+- **The spacing rule blocks fast repeated notes.** A dotted sixteenth is 188 ms
+  at 120 BPM, so genuine sixteenth-note repeats on one pitch cannot be split.
+  On this track that costs little — only 17 of 271 reference inter-onset gaps
+  are under 150 ms — but a busier bass part would need it lowered.
+- **A re-attack quieter than 0.8 dB is still missed**, and a swell inside one
+  held note louder than that is a spurious split. There is no articulation
+  model here, only an envelope threshold plus a spacing constraint.
+- **One track, one bassist.** The reference is 272 notes of one part in one
+  style. Nothing here is validated against a different player, tuning, or genre.
 
 ## Implementation notes worth keeping
 
@@ -284,7 +465,7 @@ found.
   column rather than folded into `wrong`.
 - **Project-local TOML profiles can retune pYIN.** A bass profile may extend
   `bass` or `bass-pyin` to adjust its frequency window, frame settings,
-  median filter, note floor, and cleanup recipe. Those output-changing values
+  median filter, note floor, re-articulation sensitivity, and cleanup recipe. Those output-changing values
   are part of its cache identity, so a changed profile refreshes its matching
   cached detection once.
 - **The reference is estimated, not annotated.** Two independent estimators
@@ -309,6 +490,11 @@ Pass several CSVs to compare variants side by side; when they share a filename
 the containing directory becomes the label, so a sweep laid out as
 `sweep/<variant>/bass_basic_pitch.csv` reads directly. `--cache` stores the
 computed reference (~40 s for a 3-minute stem) and reuses it across runs.
+
+Add `--onset-reference tests/fixtures/bass_7rivers/hand_corrected_notes.json`
+to score note *starts* against the hand annotation. That is the only table
+re-articulation splitting moves; the frame-level columns are unchanged by it by
+construction.
 
 **Use `--reference cqt` when scoring pyin-backed output** — the default `pyin`
 reference would be comparing the tracker to itself. `--agreement` reports how

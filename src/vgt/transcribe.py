@@ -229,6 +229,24 @@ PYIN_HOP_LENGTH = 256
 # dropouts without merging genuine adjacent semitones -- a real bass note is
 # many frames long at any playable tempo.
 PYIN_MEDIAN_FILTER_FRAMES = 5
+# Re-articulation splitting (see `pyin_notes._rearticulation_frames`). A pitch
+# tracker cannot tell one held note from four plucks of the same fret, so a
+# same-pitch run is cut wherever the frame envelope restarts. All three values
+# are swept in docs/bass-transcription-findings.md against the maintainer's
+# full-length hand-corrected bass reference.
+PYIN_REARTICULATION_SPAN_FRAMES = 2
+# Low on purpose. A re-attack inside a held note is faint -- median rise 0.66 dB
+# where an onset the tracker already found reads 2.16 dB -- so a self-sufficient
+# threshold misses most of them. The spacing rule below is what makes this
+# affordable; raising this without it costs recall for almost no precision.
+PYIN_REARTICULATION_RISE_DB = 0.8
+# How close together two cuts inside one pitch run may fall, as a fraction of a
+# beat. A dotted sixteenth: below it, two detections are far more often one
+# attack found twice than two notes played. Expressed musically for the same
+# reason `BASS_SUSTAIN_CLAMP_BARS` is -- a fixed millisecond value would block
+# genuine repeated notes at a fast tempo and permit double-triggers at a slow
+# one. The measured plateau runs 0.31-0.5 beats.
+PYIN_REARTICULATION_MINIMUM_SPACING_BEATS = 0.375
 
 # Bass, tracked monophonically. The frequency window is the *fundamental*
 # search range handed to pYIN, not a post-filter. Its supported production
@@ -287,6 +305,9 @@ class PyinSettings:
     frame_length: int = PYIN_FRAME_LENGTH
     hop_length: int = PYIN_HOP_LENGTH
     median_filter_frames: int = PYIN_MEDIAN_FILTER_FRAMES
+    rearticulation_span_frames: int = PYIN_REARTICULATION_SPAN_FRAMES
+    rearticulation_rise_db: float = PYIN_REARTICULATION_RISE_DB
+    rearticulation_minimum_spacing_beats: float = PYIN_REARTICULATION_MINIMUM_SPACING_BEATS
 
 
 @dataclass(frozen=True)
@@ -380,13 +401,18 @@ _BASS_MONOPHONIC_PROFILE = replace(
 #
 # 1. `merge_fragments` rejoins a held note the median filter split across a
 #    two-frame pitch wobble. First, for the same reason as the guitar
-#    pipeline: every later stage reasons about note lengths.
+#    pipeline: every later stage reasons about note lengths. `merge_touching`
+#    is off here and only here: the tracker emits touching same-pitch notes
+#    solely where it cut a re-articulation, so merging them would undo every
+#    split `segment_notes` just made. Measured on the 7Rivers bass stem this
+#    stage merges nothing else at all (0 of 167 same-pitch pairs), so the
+#    guard costs no repair it was actually performing.
 # 2. `drop_isolated_notes` removes a short run at a pitch nothing else in the
 #    part touches -- an octave slip the median filter was too narrow to catch.
 # 3. `clamp_sustain` caps a note the tracker held through a rest, after
 #    merging, since a chain of fragments is how such a note survives step 1.
 _BASS_PYIN_CLEANUP: tuple[CleanupStage, ...] = (
-    CleanupStage("merge_fragments", {"max_gap_s": GUITAR_FRAGMENT_MERGE_GAP_S}),
+    CleanupStage("merge_fragments", {"max_gap_s": GUITAR_FRAGMENT_MERGE_GAP_S, "merge_touching": False}),
     CleanupStage(
         "drop_isolated_notes",
         {
@@ -872,6 +898,13 @@ class PyinSpec:
     minimum_frequency_hz: float
     maximum_frequency_hz: float
     midi_tempo: float | None
+    rearticulation_span_frames: int = PYIN_REARTICULATION_SPAN_FRAMES
+    rearticulation_rise_db: float = PYIN_REARTICULATION_RISE_DB
+    # In beats, not seconds: `PyinTranscriber` resolves it against `midi_tempo`
+    # at call time. Keeping the musical value in the identity means a project
+    # whose tempo is re-detected invalidates for the right reason -- the
+    # spacing genuinely changed -- rather than because a derived number moved.
+    rearticulation_minimum_spacing_beats: float = PYIN_REARTICULATION_MINIMUM_SPACING_BEATS
     tempo_map: "TempoMapReference | None" = None
     cleanup: tuple[CleanupStage, ...] = ()
 
@@ -1174,6 +1207,9 @@ def pyin_spec_from_profile(
         minimum_frequency_hz=profile.minimum_frequency_hz,
         maximum_frequency_hz=profile.maximum_frequency_hz,
         midi_tempo=midi_tempo,
+        rearticulation_span_frames=profile.pyin.rearticulation_span_frames,
+        rearticulation_rise_db=profile.pyin.rearticulation_rise_db,
+        rearticulation_minimum_spacing_beats=profile.pyin.rearticulation_minimum_spacing_beats,
         tempo_map=tempo_map,
         cleanup=_instantiate_cleanup(profile.cleanup, sustain_clamp_s=sustain_clamp_s),
     )
@@ -2016,7 +2052,7 @@ def _note_comparison_metrics(notes: list[ParsedNote]) -> tuple[float | None, int
     return max(note.end_s - note.start_s for note in notes), maximum
 
 
-def _merge_fragments(notes: list[ParsedNote], max_gap_s: float) -> list[ParsedNote]:
+def _merge_fragments(notes: list[ParsedNote], max_gap_s: float, merge_touching: bool = True) -> list[ParsedNote]:
     """Rejoin a held note the model split in place.
 
     Two notes of the same pitch separated by no more than `max_gap_s` become
@@ -2029,6 +2065,15 @@ def _merge_fragments(notes: list[ParsedNote], max_gap_s: float) -> list[ParsedNo
     a split note's later fragment can carry the true peak when the model's
     confidence rose mid-note, and it keeps a reassembled note from being
     spuriously retired by the voice cap for looking quiet.
+
+    `merge_touching=False` excludes the zero-gap case, and exists for the
+    `pyin` pipeline: that backend emits two same-pitch notes sharing an exact
+    boundary *only* where it deliberately cut a re-articulation (see
+    `pyin_notes.segment_notes`), so merging them undoes the split rather than
+    repairing anything. Left on for Basic Pitch, whose touching same-pitch
+    notes are genuine fragmentation. Measured on the 7Rivers bass stem this is
+    not a nicety: unguarded, this stage put every split note back and the
+    change scored exactly the same as no change at all.
     """
     by_pitch: dict[int, list[ParsedNote]] = {}
     for note in notes:
@@ -2039,7 +2084,8 @@ def _merge_fragments(notes: list[ParsedNote], max_gap_s: float) -> list[ParsedNo
         pitch_notes.sort(key=lambda note: note.start_s)
         current = pitch_notes[0]
         for candidate in pitch_notes[1:]:
-            if candidate.start_s - current.end_s <= max_gap_s:
+            gap_s = candidate.start_s - current.end_s
+            if gap_s <= max_gap_s and (merge_touching or gap_s > 0):
                 current = replace(
                     current,
                     end_s=max(current.end_s, candidate.end_s),
@@ -2630,6 +2676,11 @@ class PyinTranscriber:
                 maximum_frequency_hz=spec.maximum_frequency_hz,
                 median_filter_frames=spec.median_filter_frames,
                 minimum_note_length_ms=spec.minimum_note_length_ms,
+                rearticulation_rise_db=spec.rearticulation_rise_db,
+                rearticulation_span_frames=spec.rearticulation_span_frames,
+                rearticulation_minimum_spacing_s=(
+                    spec.rearticulation_minimum_spacing_beats * 60.0 / (spec.midi_tempo or 120.0)
+                ),
             )
         except TranscriptionError:
             raise

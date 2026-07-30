@@ -151,6 +151,15 @@ def detection_identity(target: str, input_hash: str, spec: NoteSpec) -> dict[str
             "frame_length": spec.frame_length,
             "hop_length": spec.hop_length,
             "median_filter_frames": spec.median_filter_frames,
+            # Re-articulation splitting happens inside `segment_notes`, so it
+            # shapes the *raw* note list, not a cleanup derivation -- these
+            # belong here and not only in `settings_hash`. Omitting them let a
+            # profile retune the splitter and be served stale raw notes, which
+            # is precisely the "tuning a silent no-op" failure `PyinSpec`'s
+            # docstring warns about.
+            "rearticulation_span_frames": spec.rearticulation_span_frames,
+            "rearticulation_rise_db": spec.rearticulation_rise_db,
+            "rearticulation_minimum_spacing_beats": spec.rearticulation_minimum_spacing_beats,
         }
     return {
         **common,

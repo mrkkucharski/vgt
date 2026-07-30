@@ -252,6 +252,27 @@ target source content hash
 = detection_hash
 ```
 
+**Every setting the backend reads before cleanup belongs in `detection_hash`,
+not only in `settings_hash`.** These are two different questions — "is this the
+same variant?" and "can this reuse the cached raw notes?" — and a setting placed
+in only the first is a setting a user can retune to no effect. It fails
+silently: `vgt analyze` reports `unchanged, using cached result` and serves the
+old notes, which reads like an idempotency success rather than a bug.
+
+This has been got wrong once, on `bass`'s re-articulation settings (see
+docs/bass-transcription-findings.md, "A cache bug this work exposed"). It went
+unnoticed at first because the same change bumped `PYIN_ALGORITHM_VERSION`,
+which *is* in the detection identity, so the first re-run did refresh — masking
+the defect until a follow-up tuning change failed to take effect. Two rules
+follow:
+
+- When adding a backend setting, decide explicitly which layer it affects, and
+  add a test asserting that changing it moves `detection_hash` (or, for a
+  genuine cleanup-only setting, that it moves `cleanup_hash` and *not*
+  `detection_hash`).
+- Never verify such a change by bumping an algorithm version in the same
+  commit — the bump refreshes everything and proves nothing about the setting.
+
 Suggested artifact layout:
 
 ```text
