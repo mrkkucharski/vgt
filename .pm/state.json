@@ -1,10 +1,10 @@
 {
   "current_issue": 246,
-  "session_id": "a4df171b-ba18-4e49-ae90-e10dccb4083a",
-  "pid": 54271,
-  "process_started_at": "Thu Jul 30 07:17:17 2026",
-  "agent": "claude",
-  "started_at": "2026-07-30T05:17:15.216360+00:00",
+  "session_id": "8702ba36-2df5-41d5-8e7f-93bc04e85bac",
+  "pid": 56450,
+  "process_started_at": "Thu Jul 30 07:35:25 2026",
+  "agent": "codex",
+  "started_at": "2026-07-30T05:35:23.479064+00:00",
   "scheduler_stalls": {},
   "budget": {
     "window_start": "2026-07-30T05:17:12.304618+00:00",
@@ -15,10 +15,10 @@
   "verification_followups": {
     "f0d8bfc9d2dc6da7a31609184e25c4d66d3986fd2340b33a83e98204fb86691e": "created"
   },
-  "role": "implement",
+  "role": "review",
   "branch": "issue-246-fix-promote-misassigns-work-s-closing-ed",
   "worktree_path": "/Users/marekkucharski/projects/.pm-worktrees/vgt/issue-246",
-  "pr_number": null,
+  "pr_number": 248,
   "followup_generation": {
     "fingerprint": "fc3693350c67067c8a71d06b2b4651d2927bed37f834070a36b5f2db12c0b76a",
     "items": {}
@@ -61,11 +61,11 @@
   "pending_transition": {
     "issue": 246,
     "target": "working",
-    "event": "agent.started",
+    "event": "agent.review_started",
     "detail": {
       "issue": 246,
-      "agent": "claude",
-      "branch": "issue-246-fix-promote-misassigns-work-s-closing-ed"
+      "agent": "codex",
+      "pr": 248
     },
     "cleanup": {}
   }
