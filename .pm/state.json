@@ -1,48 +1,41 @@
 {
   "current_issue": 268,
-  "session_id": "d81af524-89e9-461a-b10b-442a508c88d5",
-  "pid": 81080,
-  "process_started_at": "Thu Jul 30 11:10:11 2026",
+  "session_id": "f5acb9a9-de65-4c89-9f28-b65da916132a",
+  "pid": 81624,
+  "process_started_at": "Thu Jul 30 11:15:01 2026",
   "agent": "claude",
-  "started_at": "2026-07-30T09:10:09.913464+00:00",
+  "started_at": "2026-07-30T09:14:59.526638+00:00",
   "scheduler_stalls": {
     "blocked_issues": {
       "267": {
         "first_seen_at": "2026-07-30T07:58:58.709828+00:00",
-        "last_seen_at": "2026-07-30T09:08:56.450752+00:00",
-        "consecutive_passes": 61,
+        "last_seen_at": "2026-07-30T09:13:43.583126+00:00",
+        "consecutive_passes": 65,
         "title": "Measure the vocals transcription profile"
       },
       "266": {
         "first_seen_at": "2026-07-30T07:58:58.712103+00:00",
-        "last_seen_at": "2026-07-30T09:08:56.451713+00:00",
-        "consecutive_passes": 61,
+        "last_seen_at": "2026-07-30T09:13:43.583925+00:00",
+        "consecutive_passes": 65,
         "title": "Validate pYIN bass across songs and low tunings"
       },
       "265": {
         "first_seen_at": "2026-07-30T07:58:58.713113+00:00",
-        "last_seen_at": "2026-07-30T09:08:56.452583+00:00",
-        "consecutive_passes": 61,
+        "last_seen_at": "2026-07-30T09:13:43.584194+00:00",
+        "consecutive_passes": 65,
         "title": "Benchmark guitar profiles beyond 7Rivers"
       },
       "264": {
         "first_seen_at": "2026-07-30T07:58:58.714019+00:00",
-        "last_seen_at": "2026-07-30T09:08:56.453479+00:00",
-        "consecutive_passes": 61,
+        "last_seen_at": "2026-07-30T09:13:43.584459+00:00",
+        "consecutive_passes": 65,
         "title": "Validate chord decoding on additional annotated songs"
       },
       "263": {
         "first_seen_at": "2026-07-30T07:58:58.714756+00:00",
-        "last_seen_at": "2026-07-30T09:08:56.454290+00:00",
-        "consecutive_passes": 61,
+        "last_seen_at": "2026-07-30T09:13:43.584719+00:00",
+        "consecutive_passes": 65,
         "title": "Add a reproducible multi-song quality benchmark"
-      }
-    },
-    "deferred_passes": {
-      "budget": {
-        "first_seen_at": "2026-07-30T08:46:34.456842+00:00",
-        "last_seen_at": "2026-07-30T09:08:56.448439+00:00",
-        "consecutive_passes": 20
       }
     }
   },
@@ -57,10 +50,10 @@
   "verification_followups": {
     "f0d8bfc9d2dc6da7a31609184e25c4d66d3986fd2340b33a83e98204fb86691e": "created"
   },
-  "role": "implement",
+  "role": "review",
   "branch": "issue-268-apply-has-no-recovery-when-interrupted-b",
   "worktree_path": "/Users/marekkucharski/projects/.pm-worktrees/vgt/issue-268",
-  "pr_number": null,
+  "pr_number": 269,
   "followup_generation": {
     "fingerprint": "56fab22a68207d92fd436f13f543f0b36b631d49e9d321d132b6400ce7b7d97e",
     "items": {
@@ -124,11 +117,11 @@
   "pending_transition": {
     "issue": 268,
     "target": "working",
-    "event": "agent.started",
+    "event": "agent.review_started",
     "detail": {
       "issue": 268,
       "agent": "claude",
-      "branch": "issue-268-apply-has-no-recovery-when-interrupted-b"
+      "pr": 269
     },
     "cleanup": {}
   }
