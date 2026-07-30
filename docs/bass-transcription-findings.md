@@ -273,8 +273,11 @@ found.
   tracker's remaining error mode is picking the wrong partial, not the wrong note
   class — a plausible next improvement, and the reason `oct` is a separate probe
   column rather than folded into `wrong`.
-- **Project-local TOML profiles cannot extend a pyin profile.** `extends` still
-  requires a Basic Pitch base, so the tracker's settings are builtin-only.
+- **Project-local TOML profiles can retune pYIN.** A bass profile may extend
+  `bass` or `bass-pyin` to adjust its frequency window, frame settings,
+  median filter, note floor, and cleanup recipe. Those output-changing values
+  are part of its cache identity, so a changed profile refreshes its matching
+  cached detection once.
 - **The reference is estimated, not annotated.** Two independent estimators
   agreeing at 85.9% is strong evidence, not ground truth. These figures are a
   reliable *relative* signal for ranking variants and should not be read as

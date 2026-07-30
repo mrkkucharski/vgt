@@ -11,9 +11,11 @@ from vgt.transcription_profiles import (
     resolved_cleanup_hash,
     resolved_detection_hash,
     resolved_settings_snapshot,
+    spec_from_resolved_profile,
     validate_profile_for_target,
     validate_project_profiles,
 )
+from vgt.transcribe import PyinSpec
 
 
 MINIMAL_PROFILE = """
@@ -262,6 +264,71 @@ frame_threshold = 0.75
     assert resolved.detection["frame_threshold"] == 0.75
 
 
+def test_resolve_pyin_profile_inherits_and_overrides_every_supported_detector_setting() -> None:
+    text = """
+schema_version = 1
+[profiles.low_bass]
+target = "bass"
+extends = "bass-pyin"
+[profiles.low_bass.detection]
+minimum_note_length_ms = 90
+minimum_frequency_hz = 25
+maximum_frequency_hz = 280
+sample_rate_hz = 24000
+frame_length = 4096
+hop_length = 512
+median_filter_frames = 7
+"""
+    resolved = resolve_profile("low_bass", parse_profiles_toml(text))
+
+    assert resolved.backend == "pyin"
+    assert resolved.detection == {
+        "minimum_note_length_ms": 90.0,
+        "minimum_frequency_hz": 25.0,
+        "maximum_frequency_hz": 280.0,
+        "sample_rate_hz": 24000,
+        "frame_length": 4096,
+        "hop_length": 512,
+        "median_filter_frames": 7,
+    }
+    assert [stage.name for stage in resolved.cleanup] == [
+        "merge_fragments", "drop_isolated_notes", "clamp_sustain",
+    ]
+
+
+@pytest.mark.parametrize("key, value", [
+    ("onset_threshold", "0.7"),
+    ("frame_threshold", "0.7"),
+    ("melodia_trick", "false"),
+    ("multiple_pitch_bends", "true"),
+])
+def test_pyin_profile_rejects_basic_pitch_only_detection_keys(key: str, value: str) -> None:
+    text = f"""
+schema_version = 1
+[profiles.x]
+target = "bass"
+extends = "bass-pyin"
+[profiles.x.detection]
+{key} = {value}
+"""
+    with pytest.raises(ProfileDefinitionError, match="pYIN.*unsupported detection"):
+        resolve_profile("x", parse_profiles_toml(text))
+
+
+def test_pyin_profile_rejects_even_median_filter_and_hop_larger_than_frame() -> None:
+    for override, error in (("median_filter_frames = 4", "odd"), ("frame_length = 256\nhop_length = 512", "hop_length")):
+        text = f"""
+schema_version = 1
+[profiles.x]
+target = "bass"
+extends = "bass-pyin"
+[profiles.x.detection]
+{override}
+"""
+        with pytest.raises(ProfileDefinitionError, match=error):
+            resolve_profile("x", parse_profiles_toml(text))
+
+
 def test_resolve_detects_inheritance_cycle() -> None:
     text = """
 schema_version = 1
@@ -463,3 +530,50 @@ maximum_frequency_hz = 80
     definitions = parse_profiles_toml(text)
     with pytest.raises(ProfileDefinitionError):
         resolve_profile("x", definitions)
+
+
+def test_pyin_spec_is_built_from_the_resolved_project_snapshot() -> None:
+    text = """
+schema_version = 1
+[profiles.low_bass]
+target = "bass"
+extends = "bass"
+[profiles.low_bass.detection]
+minimum_frequency_hz = 25
+frame_length = 4096
+hop_length = 512
+median_filter_frames = 7
+"""
+    resolved = resolve_profile("low_bass", parse_profiles_toml(text))
+
+    spec = spec_from_resolved_profile(resolved, midi_tempo=120.0, time_signature="4/4")
+
+    assert isinstance(spec, PyinSpec)
+    assert (spec.minimum_frequency_hz, spec.maximum_frequency_hz) == (25.0, 330.0)
+    assert (spec.frame_length, spec.hop_length, spec.median_filter_frames) == (4096, 512, 7)
+    assert "onset_threshold" not in spec.to_dict()
+
+
+def test_pyin_detection_and_cleanup_retunes_change_their_respective_hashes() -> None:
+    base = """
+schema_version = 1
+[profiles.x]
+target = "bass"
+extends = "bass-pyin"
+"""
+    detection_retune = base + """
+[profiles.x.detection]
+hop_length = 512
+"""
+    cleanup_retune = base + """
+[profiles.x.cleanup.clamp_sustain]
+max_bars = 1
+"""
+    original = resolve_profile("x", parse_profiles_toml(base))
+    detector = resolve_profile("x", parse_profiles_toml(detection_retune))
+    cleanup = resolve_profile("x", parse_profiles_toml(cleanup_retune))
+
+    assert resolved_detection_hash(original) != resolved_detection_hash(detector)
+    assert resolved_cleanup_hash(original) != resolved_cleanup_hash(detector)
+    assert resolved_detection_hash(original) == resolved_detection_hash(cleanup)
+    assert resolved_cleanup_hash(original) != resolved_cleanup_hash(cleanup)

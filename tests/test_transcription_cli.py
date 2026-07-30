@@ -17,6 +17,7 @@ import pytest
 from vgt.cli import main
 from vgt.sidecar import read_sidecar, write_sidecar
 from vgt.transcribe import AdtofSpec, FakeAdtofTranscriber, FakeTranscriber, TargetTranscriberRouter
+from vgt.transcription_profiles import profiles_path
 
 FIXTURE_DIR = Path(__file__).parents[1] / "test" / "Reaper Project"
 REFERENCE_GUID = "{75418143-1F31-B548-B7D2-96815CB0297D}"
@@ -110,6 +111,21 @@ def _init_project_with_drums(tmp_path: Path) -> Path:
 
     from vgt.sidecar import update_analysis
     update_analysis(project, add_drums_artifact)
+    return project
+
+
+def _init_project_with_bass(tmp_path: Path) -> Path:
+    project = _init_project(tmp_path)
+    _write_wav(project.parent / "bass.wav", b"fake-bass-stem-bytes")
+
+    def add_bass_artifact(current: dict) -> None:
+        current["stems"]["artifacts"]["bass"] = {"file": "bass.wav"}
+        requested = current["transcription"]["requested_targets"]
+        if "bass" not in requested:
+            requested.append("bass")
+
+    from vgt.sidecar import update_analysis
+    update_analysis(project, add_bass_artifact)
     return project
 
 
@@ -230,6 +246,51 @@ def test_variant_add_target_drums_rejects_an_unknown_profile(tmp_path: Path, cap
         "--name", "bogus", "--profile", "not-a-real-profile", str(project),
     ]) == 2
     assert "drums" in capsys.readouterr().err
+
+
+def test_bass_project_pyin_profiles_validate_show_and_reuse_detection_cache(tmp_path: Path, capsys) -> None:
+    project = _init_project_with_bass(tmp_path)
+    profiles_path(project).write_text("""
+schema_version = 1
+
+[profiles.low-bass]
+target = "bass"
+extends = "bass-pyin"
+[profiles.low-bass.detection]
+minimum_frequency_hz = 25
+frame_length = 4096
+hop_length = 512
+median_filter_frames = 7
+
+[profiles.low-bass-short]
+target = "bass"
+extends = "low-bass"
+[profiles.low-bass-short.cleanup.clamp_sustain]
+max_bars = 1
+""", encoding="utf-8")
+
+    assert main(["transcription", "profile", "validate", str(project)]) == 0
+    assert "2 project profile(s) valid." in capsys.readouterr().out
+    assert main(["transcription", "profile", "show", "low-bass", str(project)]) == 0
+    shown = json.loads(capsys.readouterr().out)
+    assert shown["backend"] == "pyin"
+    assert shown["detection"]["frame_length"] == 4096
+    assert "onset_threshold" not in shown["detection"]
+
+    assert main([
+        "transcription", "variant", "add", "bass",
+        "--name", "low", "--profile", "low-bass", str(project),
+    ]) == 0
+    low = json.loads(capsys.readouterr().out)
+    assert low["backend"] == "pyin"
+
+    assert main([
+        "transcription", "variant", "add", "bass",
+        "--name", "short", "--profile", "low-bass-short", str(project),
+    ]) == 0
+    short = json.loads(capsys.readouterr().out)
+    assert low["detection_hash"] == short["detection_hash"]
+    assert len(read_sidecar(project)["analysis"]["transcription"]["detection_cache"]) == 1
 
 
 def test_add_two_variants_share_detection_and_full_lifecycle(tmp_path: Path, capsys) -> None:
