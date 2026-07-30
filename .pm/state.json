@@ -1,10 +1,10 @@
 {
   "current_issue": 254,
-  "session_id": "0f8a7ee3-575a-4a5f-88c9-e4e77c63a490",
-  "pid": 64522,
-  "process_started_at": "Thu Jul 30 08:18:19 2026",
+  "session_id": "5244f7ef-868b-4255-975d-ae1becc4d523",
+  "pid": 67372,
+  "process_started_at": "Thu Jul 30 08:30:50 2026",
   "agent": "codex",
-  "started_at": "2026-07-30T06:18:17.321834+00:00",
+  "started_at": "2026-07-30T06:30:48.836653+00:00",
   "scheduler_stalls": {},
   "budget": {
     "window_start": "2026-07-30T05:17:12.304618+00:00",
@@ -17,10 +17,10 @@
   "verification_followups": {
     "f0d8bfc9d2dc6da7a31609184e25c4d66d3986fd2340b33a83e98204fb86691e": "created"
   },
-  "role": "implement",
+  "role": "review",
   "branch": "issue-254-remove-chords-key-human-verified-sidecar",
   "worktree_path": "/Users/marekkucharski/projects/.pm-worktrees/vgt/issue-254",
-  "pr_number": null,
+  "pr_number": 259,
   "followup_generation": {
     "fingerprint": "5db6b1c73bb96f303e62f679cdaedae02d1136c0f634d755cfa6b9c9be8655e5",
     "items": {
@@ -80,11 +80,11 @@
   "pending_transition": {
     "issue": 254,
     "target": "working",
-    "event": "agent.started",
+    "event": "agent.review_started",
     "detail": {
       "issue": 254,
       "agent": "codex",
-      "branch": "issue-254-remove-chords-key-human-verified-sidecar"
+      "pr": 259
     },
     "cleanup": {}
   }
