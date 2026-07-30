@@ -73,6 +73,12 @@ class CountingTranscriber(FakeTranscriber):
         return super().detect_raw(*args, **kwargs)
 
 
+class CountingPyinTranscriber(CountingTranscriber):
+    """Deterministic pYIN seam with independently observable raw detection."""
+
+    name = "pyin"
+
+
 class TempoSkewedDrumScriptFake(FakeTranscriber):
     """A long DrumScript grid with the observed 7Rivers failure signature.
 
@@ -1236,16 +1242,16 @@ def test_goal_contract_reconciles_two_guitar_variants_without_touching_working_c
     assert "The Seven Rivers (Full March - 3_00)" in original_user_state
 
 
-def test_goal_contract_reconciles_independent_guitar_bass_and_drum_targets(
+def test_goal_contract_reconciles_pyin_bass_basic_pitch_comparison_and_drum_targets(
     tmp_path: Path, deterministic_detectors: None,
 ) -> None:
     """Prove the delivered multi-target transcription contract end to end.
 
-    The two fake backends are deliberately distinct instances: guitar and
-    bass must use the Basic Pitch route (including its raw-detection cache),
-    while drums must use the DrumScript route.  Applying the resulting
-    sidecar through the real ReaScript fixture proves each MIDI track stays
-    adjacent to its own stem rather than following target request order.
+    The three deterministic fakes are deliberately distinct: default bass
+    must use pYIN, while its retained `bass-basic-pitch` comparison variant
+    and guitar use Basic Pitch, and drums use DrumScript. Applying the
+    resulting sidecar through the real ReaScript fixture proves each MIDI
+    track stays adjacent to its own stem rather than following request order.
     """
     project = _copy_project(tmp_path)
     state = _lua_state(project)
@@ -1259,46 +1265,70 @@ def test_goal_contract_reconciles_independent_guitar_bass_and_drum_targets(
     separator = CountingSeparator()
     separate(project, separator, guitar_type="electric")
     basic_pitch = CountingTranscriber()
+    pyin = CountingPyinTranscriber()
     drumscript = CountingTranscriber()
     router = TargetTranscriberRouter(
         basic_pitch=basic_pitch,
+        pyin=pyin,
         drumscript=drumscript,
         drumscript_targets=("drums",),
     )
 
     guitar_variant = add_variant(project, "guitar", label="lead", profile="default", router=router)
     bass_variant = add_variant(project, "bass", label="low-end", profile="default", router=router)
+    bass_basic_pitch_variant = add_variant(
+        project, "bass", label="comparison", profile="bass-basic-pitch", router=router,
+    )
     drums_variant = add_variant(project, "drums", label="kit", profile="default", router=router)
     sidecar = read_sidecar(project)
     targets = sidecar["analysis"]["transcription"]["targets"]
     guitar_id = targets["guitar"]["variant_order"][0]
-    bass_id = targets["bass"]["variant_order"][0]
+    bass_id, bass_basic_pitch_id = targets["bass"]["variant_order"]
     drums_id = targets["drums"]["variant_order"][0]
 
-    # Guitar and bass are independently detected through Basic Pitch; drums
-    # use the separate DrumScript backend and never create a raw-note cache.
+    # Default bass uses its dedicated tracker. Its Basic Pitch comparison
+    # remains available, but backend-specific identities must keep their raw
+    # detections distinct even though both read the same bass stem.
     assert separator.calls == 5
-    assert (basic_pitch.raw_calls, basic_pitch.calls, drumscript.calls) == (2, 0, 1)
-    assert guitar_variant["backend"] == bass_variant["backend"] == "basic-pitch"
+    assert (basic_pitch.raw_calls, basic_pitch.calls, pyin.raw_calls, pyin.calls, drumscript.calls) == (2, 0, 1, 0, 1)
+    assert guitar_variant["backend"] == "basic-pitch"
+    assert bass_variant["backend"] == "pyin"
+    assert bass_basic_pitch_variant["backend"] == "basic-pitch"
+    assert bass_variant["detection_hash"] != bass_basic_pitch_variant["detection_hash"]
     assert drums_variant["backend"] == "drumscript"
     assert "selected_variant_id" not in targets["guitar"]
     assert "selected_variant_id" not in targets["bass"]
     assert "selected_variant_id" not in targets["drums"]
     detection_cache = sidecar["analysis"]["transcription"]["detection_cache"]
-    assert set(detection_cache) == {guitar_variant["detection_hash"], bass_variant["detection_hash"]}
+    assert set(detection_cache) == {
+        guitar_variant["detection_hash"], bass_variant["detection_hash"], bass_basic_pitch_variant["detection_hash"],
+    }
 
     namespace_dir = artifact_namespace_dir(project, sidecar["analysis"]["stems"]["artifact_namespace"])
     guitar_midi = namespace_dir / guitar_variant["midi_file"]
     bass_midi = namespace_dir / bass_variant["midi_file"]
+    bass_notes = namespace_dir / bass_variant["notes_file"]
+    bass_raw = detection_cache[bass_variant["detection_hash"]]
+    bass_raw_paths = [namespace_dir / bass_raw[key] for key in ("raw_midi_file", "raw_notes_file")]
+    bass_basic_pitch_midi = namespace_dir / bass_basic_pitch_variant["midi_file"]
     drums_midi = namespace_dir / drums_variant["midi_file"]
-    assert guitar_midi.is_file() and bass_midi.is_file() and drums_midi.is_file()
+    assert guitar_midi.is_file() and bass_midi.is_file() and bass_notes.is_file() and bass_basic_pitch_midi.is_file() and drums_midi.is_file()
+    assert all(path.is_file() for path in bass_raw_paths)
+
+    # Reconciliation preserves both pYIN's detection/cleanup artifacts and
+    # the comparison candidate without another backend invocation.
+    analyze(project, stages=("transcription",), transcription_targets=("bass",), transcriber_router=router)
+    assert (basic_pitch.raw_calls, pyin.raw_calls) == (2, 1)
+    assert bass_midi.is_file() and bass_notes.is_file() and bass_basic_pitch_midi.is_file()
+    assert all(path.is_file() for path in bass_raw_paths)
 
     # Stem order is bass, drums, guitar in the fixture's managed block; MIDI
     # must follow each stem immediately, not the order variants were added.
     state, first_apply = _run_apply(project, state)
     names = first_apply.split("#", 1)[0].split("|")
+    assert names.index("[vgt] Bass Ref — low-end (MIDI)") == names.index("[vgt] Bass") + 1
+    assert names.index("[vgt] Bass Ref — comparison (MIDI)") == names.index("[vgt] Bass") + 2
     for stem, midi in (
-        ("[vgt] Bass", "[vgt] Bass Ref — low-end (MIDI)"),
         ("[vgt] Drums", "[vgt] Drums Ref — kit (MIDI)"),
         ("[vgt] Guitar", "[vgt] Guitar Ref — lead (MIDI)"),
     ):
@@ -1331,31 +1361,37 @@ end
         managed_regions=applied_sidecar["managed_region_ids"],
     )
 
-    # Discarding the bass candidate directly is target-local: it removes only
-    # bass's MIDI/cache and never touches guitar or drums' artifacts or
-    # user-owned working copies.
+    # Discarding the default pYIN candidate is target-local: it removes only
+    # its detection/cleanup artifacts and never touches its retained Basic
+    # Pitch comparison, guitar/drums artifacts, or user-owned working copies.
     discard_variant(project, "bass", bass_id)
-    assert not bass_midi.exists() and guitar_midi.is_file() and drums_midi.is_file()
+    assert not bass_midi.exists() and not bass_notes.exists()
+    assert not any(path.exists() for path in bass_raw_paths)
+    assert guitar_midi.is_file() and bass_basic_pitch_midi.is_file() and drums_midi.is_file()
     after_discard = read_sidecar(project)
     after_targets = after_discard["analysis"]["transcription"]["targets"]
-    assert after_targets["bass"]["variant_order"] == []
+    assert after_targets["bass"]["variant_order"] == [bass_basic_pitch_id]
     assert "selected_variant_id" not in after_targets["guitar"]
     assert "selected_variant_id" not in after_targets["drums"]
-    assert set(after_discard["analysis"]["transcription"]["detection_cache"]) == {guitar_variant["detection_hash"]}
+    assert set(after_discard["analysis"]["transcription"]["detection_cache"]) == {
+        guitar_variant["detection_hash"], bass_basic_pitch_variant["detection_hash"],
+    }
 
-    # Purging the discarded bass audit is similarly local: retained targets
+    # Purging the discarded pYIN audit is similarly local: retained targets
     # still have their artifacts and cache, while every user-owned object is
     # byte-for-byte identical to the snapshot taken after working copies.
     purge_discarded(project, "bass")
     after_purge = read_sidecar(project)
     assert after_purge["analysis"]["transcription"]["targets"]["bass"]["discarded_variants"] == []
-    assert guitar_midi.is_file() and drums_midi.is_file()
-    assert set(after_purge["analysis"]["transcription"]["detection_cache"]) == {guitar_variant["detection_hash"]}
+    assert guitar_midi.is_file() and bass_basic_pitch_midi.is_file() and drums_midi.is_file()
+    assert set(after_purge["analysis"]["transcription"]["detection_cache"]) == {
+        guitar_variant["detection_hash"], bass_basic_pitch_variant["detection_hash"],
+    }
     state, final_apply = _run_apply(project, state)
     final_names = final_apply.split("#", 1)[0].split("|")
     assert "[vgt] Bass Ref — low-end (MIDI)" not in final_names
     for name in (
-        "[vgt] Guitar Ref — lead (MIDI)", "[vgt] Drums Ref — kit (MIDI)",
+        "[vgt] Guitar Ref — lead (MIDI)", "[vgt] Bass Ref — comparison (MIDI)", "[vgt] Drums Ref — kit (MIDI)",
         "[work] Guitar Ref — lead (MIDI)", "[work] Bass Ref — low-end (MIDI)", "[work] Drums Ref — kit (MIDI)",
     ):
         assert final_names.count(name) == 1
@@ -1375,8 +1411,8 @@ def test_goal_contract_exercises_every_remaining_basic_pitch_target_end_to_end(
 ) -> None:
     """Keep every advertised non-drum target on the complete artifact path.
 
-    Guitar and bass already exercise this path above.  This deliberately adds
-    the remaining Basic Pitch targets in the opposite of their presentation
+    Guitar and the retained bass comparison already exercise this path above.
+    This deliberately adds the remaining Basic Pitch targets in the opposite of their presentation
     order, so the assertions cover sidecar source association and immutable
     artifact identity as well as the ReaScript's stem-adjacent ordering.  The
     original mix is the important exception: it has no generated stem and

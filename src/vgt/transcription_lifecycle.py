@@ -37,6 +37,7 @@ from .transcribe import (
     TranscriptionError,
     default_spec_for_target,
     backend_for_target_profile,
+    effective_profile_name_for_target,
     DRUM_TRANSCRIPTION_PROFILE_NAMES,
     drum_transcription_profile,
     production_transcriber_router,
@@ -220,7 +221,11 @@ def add_variant(
         )
     else:
         try:
-            resolved = validate_profile_for_target(profile, target, project_profiles)
+            # A requested `default` selects this target's default profile
+            # (pYIN for bass), rather than the global Basic Pitch preset.
+            resolved = validate_profile_for_target(
+                effective_profile_name_for_target(target, {target: profile}), target, project_profiles
+            )
         except ProfileDefinitionError as exc:
             raise VariantLifecycleError(str(exc)) from exc
         effective_profile = resolved.name
@@ -264,7 +269,9 @@ def add_variant(
     )
 
     active_router = router or production_transcriber_router()
-    transcriber = active_router.for_target(target, {target: profile})
+    # Route by the resolved profile, not the user's requested alias. In
+    # particular, `bass/default` resolves to the bass pYIN profile.
+    transcriber = active_router.for_target(target, {target: effective_profile})
 
     outcome = reconcile_variants(
         target=target,
