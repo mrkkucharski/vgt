@@ -720,6 +720,11 @@ def _profile_for_target(target: str, modes: Mapping[str, str] | None) -> Instrum
     only explicit CLI input is validated by :func:`validate_profile_for_target`.
     """
     profile_name = modes.get(target) if isinstance(modes, Mapping) else None
+    # `default` is the target-default selection, not an instruction to bypass
+    # that target's profile. This matters for bass, whose default is pYIN;
+    # the retained `bass-basic-pitch` profile remains the explicit opt-in.
+    if profile_name == "default":
+        return _INSTRUMENT_PROFILES.get(target, _DEFAULT_PROFILE)
     if profile_name in valid_profile_names_for_target(target):
         return _INSTRUMENT_PROFILES[profile_name]
     return _INSTRUMENT_PROFILES.get(target, _DEFAULT_PROFILE)
