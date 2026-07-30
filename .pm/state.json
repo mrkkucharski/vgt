@@ -1,40 +1,40 @@
 {
   "current_issue": 273,
-  "session_id": "419e234d-5337-41f1-9057-42d6763ce7a4",
-  "pid": 3469,
-  "process_started_at": "Thu Jul 30 20:08:25 2026",
+  "session_id": "9ee1aa05-f578-46ee-85cf-45c31ccc3de6",
+  "pid": 4669,
+  "process_started_at": "Thu Jul 30 20:15:32 2026",
   "agent": "claude",
-  "started_at": "2026-07-30T18:08:23.839519+00:00",
+  "started_at": "2026-07-30T18:15:30.364389+00:00",
   "scheduler_stalls": {
     "blocked_issues": {
       "267": {
         "first_seen_at": "2026-07-30T07:58:58.709828+00:00",
-        "last_seen_at": "2026-07-30T18:07:08.709817+00:00",
-        "consecutive_passes": 524,
+        "last_seen_at": "2026-07-30T18:14:15.606599+00:00",
+        "consecutive_passes": 530,
         "title": "Measure the vocals transcription profile"
       },
       "266": {
         "first_seen_at": "2026-07-30T07:58:58.712103+00:00",
-        "last_seen_at": "2026-07-30T18:07:08.711927+00:00",
-        "consecutive_passes": 524,
+        "last_seen_at": "2026-07-30T18:14:15.607494+00:00",
+        "consecutive_passes": 530,
         "title": "Validate pYIN bass across songs and low tunings"
       },
       "265": {
         "first_seen_at": "2026-07-30T07:58:58.713113+00:00",
-        "last_seen_at": "2026-07-30T18:07:08.712767+00:00",
-        "consecutive_passes": 524,
+        "last_seen_at": "2026-07-30T18:14:15.607667+00:00",
+        "consecutive_passes": 530,
         "title": "Benchmark guitar profiles beyond 7Rivers"
       },
       "264": {
         "first_seen_at": "2026-07-30T07:58:58.714019+00:00",
-        "last_seen_at": "2026-07-30T18:07:08.713357+00:00",
-        "consecutive_passes": 524,
+        "last_seen_at": "2026-07-30T18:14:15.607810+00:00",
+        "consecutive_passes": 530,
         "title": "Validate chord decoding on additional annotated songs"
       },
       "263": {
         "first_seen_at": "2026-07-30T07:58:58.714756+00:00",
-        "last_seen_at": "2026-07-30T18:07:08.713889+00:00",
-        "consecutive_passes": 524,
+        "last_seen_at": "2026-07-30T18:14:15.607948+00:00",
+        "consecutive_passes": 530,
         "title": "Add a reproducible multi-song quality benchmark"
       }
     }
@@ -48,10 +48,10 @@
   "verification_followups": {
     "f0d8bfc9d2dc6da7a31609184e25c4d66d3986fd2340b33a83e98204fb86691e": "created"
   },
-  "role": "implement",
+  "role": "review",
   "branch": "issue-273-reference-midi-items-must-ignore-the-pro",
   "worktree_path": "/Users/marekkucharski/projects/.pm-worktrees/vgt/issue-273",
-  "pr_number": null,
+  "pr_number": 277,
   "followup_generation": {
     "fingerprint": "56fab22a68207d92fd436f13f543f0b36b631d49e9d321d132b6400ce7b7d97e",
     "items": {
@@ -115,11 +115,11 @@
   "pending_transition": {
     "issue": 273,
     "target": "working",
-    "event": "agent.started",
+    "event": "agent.review_started",
     "detail": {
       "issue": 273,
       "agent": "claude",
-      "branch": "issue-273-reference-midi-items-must-ignore-the-pro"
+      "pr": 277
     },
     "cleanup": {}
   }
