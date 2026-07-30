@@ -33,7 +33,10 @@ from vgt.transcribe import (
     VALID_TARGETS,
     FakeTranscriber,
     FakeAdtofTranscriber,
+    PYIN_ALGORITHM_VERSION,
     ParsedNote,
+    PyinSpec,
+    PyinTranscriber,
     TargetTranscriberRouter,
     TranscriptionError,
     _apply_cleanup_stages,
@@ -77,11 +80,16 @@ def _write_source(tmp_path: Path, name: str = "guitar.wav", content: bytes = b"f
 def test_default_spec_applies_the_per_target_frequency_table() -> None:
     guitar = default_spec_for_target("guitar")
     bass = default_spec_for_target("bass")
+    legacy_bass = default_spec_for_target("bass", modes={"bass": "bass-basic-pitch"})
     vocals = default_spec_for_target("vocals")
     piano = default_spec_for_target("piano")
 
     assert (guitar.minimum_frequency_hz, guitar.maximum_frequency_hz) == (70.0, 1400.0)
-    assert (bass.minimum_frequency_hz, bass.maximum_frequency_hz) == (30.0, 400.0)
+    # Bass's window is the pyin tracker's fundamental search range, narrowed to
+    # the range two independent estimators measured on a real stem; the retired
+    # Basic Pitch profile keeps its original, wider window.
+    assert (bass.minimum_frequency_hz, bass.maximum_frequency_hz) == (35.0, 330.0)
+    assert (legacy_bass.minimum_frequency_hz, legacy_bass.maximum_frequency_hz) == (30.0, 400.0)
     assert (vocals.minimum_frequency_hz, vocals.maximum_frequency_hz) == (70.0, 1200.0)
     # Polyphonic/unpredictable targets get Basic Pitch's own full-range defaults.
     assert (piano.minimum_frequency_hz, piano.maximum_frequency_hz) == (None, None)
@@ -135,26 +143,60 @@ def test_default_spec_narrows_acoustic_guitar_and_enables_cleanup() -> None:
 
 
 def test_default_spec_mode_override_is_target_local() -> None:
-    bass = default_spec_for_target("bass", modes={"guitar": "guitar-acoustic"})
+    vocals = default_spec_for_target("vocals", modes={"guitar": "guitar-acoustic"})
 
-    assert (bass.minimum_frequency_hz, bass.maximum_frequency_hz) == (30.0, 400.0)
-    assert bass.cleanup == ()
+    assert (vocals.minimum_frequency_hz, vocals.maximum_frequency_hz) == (70.0, 1200.0)
+    assert vocals.cleanup == ()
 
 
-def test_bass_monophonic_profile_is_explicit_and_leaves_bass_default_unchanged() -> None:
-    default = default_spec_for_target("bass")
-    monophonic = default_spec_for_target("bass", modes={"bass": "bass-monophonic"})
+def test_bass_defaults_to_the_monophonic_pyin_tracker() -> None:
+    """Bass's default is a monophonic pitch tracker, not Basic Pitch.
 
-    assert default.cleanup == ()
-    assert _cleanup_names(monophonic) == ["force_monophony"]
+    Basic Pitch cannot produce a usable bass line at any setting -- see
+    `vgt.pyin_notes` for the measurement. The two Basic Pitch bass profiles
+    remain reachable by explicit selection so the old behaviour can still be
+    compared against, and must keep resolving to a `BasicPitchSpec`.
+    """
+    default = default_spec_for_target("bass", midi_tempo=120.0, time_signature="4/4")
+
+    assert isinstance(default, PyinSpec)
+    assert default.backend == "pyin"
+    assert default.algorithm_version == PYIN_ALGORITHM_VERSION
+    # No ghost-dropping or voice-capping stage: a tracker emits one line by
+    # construction, so those stages would have nothing to do.
+    assert _cleanup_names(default) == ["merge_fragments", "drop_isolated_notes", "clamp_sustain"]
+    # Two bars at 120 BPM 4/4.
+    assert _cleanup_params(default, "clamp_sustain")["max_duration_s"] == pytest.approx(4.0)
+
+    for name in ("bass-basic-pitch", "bass-monophonic"):
+        spec = default_spec_for_target("bass", modes={"bass": name})
+        assert isinstance(spec, BasicPitchSpec), name
+        assert (spec.minimum_frequency_hz, spec.maximum_frequency_hz) == (30.0, 400.0), name
+    assert _cleanup_names(default_spec_for_target("bass", modes={"bass": "bass-monophonic"})) == ["force_monophony"]
+    assert default_spec_for_target("bass", modes={"bass": "bass-basic-pitch"}).cleanup == ()
+
+
+def test_pyin_spec_omits_the_basic_pitch_only_settings_it_never_reads() -> None:
+    """A pyin variant's identity must not contain fields nothing consults.
+
+    This is the whole reason `PyinSpec` exists instead of reusing
+    `BasicPitchSpec` with a different `backend` string: an `onset_threshold` in
+    the hash would invite a project profile to "tune" a no-op.
+    """
+    payload = default_spec_for_target("bass", midi_tempo=120.0).to_dict()
+
+    for absent in ("onset_threshold", "frame_threshold", "melodia_trick", "multiple_pitch_bends", "package_pin", "serialization"):
+        assert absent not in payload, absent
+    for present in ("algorithm_version", "sample_rate_hz", "hop_length", "median_filter_frames"):
+        assert present in payload, present
 
 
 def test_default_spec_ignores_a_stored_profile_for_another_target() -> None:
     """A stale or malformed sidecar mode must retain the target default."""
     bass = default_spec_for_target("bass", modes={"bass": "guitar-acoustic"})
 
-    assert (bass.minimum_frequency_hz, bass.maximum_frequency_hz) == (30.0, 400.0)
-    assert bass.cleanup == ()
+    assert isinstance(bass, PyinSpec)
+    assert (bass.minimum_frequency_hz, bass.maximum_frequency_hz) == (35.0, 330.0)
 
 
 def test_default_spec_acoustic_sustain_clamp_scales_with_time_signature() -> None:
@@ -180,10 +222,10 @@ def test_bar_duration_seconds_defaults_to_4_4_when_signature_is_missing_or_malfo
 
 def test_default_spec_shares_the_common_defaults_across_targets() -> None:
     guitar = default_spec_for_target("guitar")
-    bass = default_spec_for_target("bass")
+    vocals = default_spec_for_target("vocals")
 
-    assert guitar.backend == bass.backend == "basic-pitch"
-    assert guitar.minimum_note_length_ms == bass.minimum_note_length_ms == 60.0
+    assert guitar.backend == vocals.backend == "basic-pitch"
+    assert guitar.minimum_note_length_ms == vocals.minimum_note_length_ms == 60.0
     assert guitar.melodia_trick is True
     assert guitar.multiple_pitch_bends is False
 
@@ -219,9 +261,21 @@ def test_spec_hash_is_unchanged_for_every_target_without_a_cleanup_pipeline() ->
     not just guitar-acoustic. `BasicPitchSpec.to_dict` reproduces the old
     five-field shape whenever `cleanup` is empty specifically to prevent
     that -- this pins the resulting hash against a hand-built pre-refactor
-    dict so a regression here (e.g. someone dropping the shim) is caught."""
-    for target in ("guitar", "bass", "vocals", "piano", "strings", "instrumental", "backing", "original"):
-        spec = default_spec_for_target(target)
+    dict so a regression here (e.g. someone dropping the shim) is caught.
+
+    `bass` is covered through its explicit `bass-basic-pitch` profile rather
+    than as a bare target: bass now defaults to the pyin backend, whose
+    `PyinSpec` has no pre-refactor shape to preserve. Keeping the retired
+    Basic Pitch bass profile in this list still proves that moving bass's
+    default did not disturb the legacy hash.
+    """
+    cases: list[tuple[str, dict[str, str] | None]] = [
+        (target, None)
+        for target in ("guitar", "vocals", "piano", "strings", "instrumental", "backing", "original")
+    ]
+    cases.append(("bass", {"bass": "bass-basic-pitch"}))
+    for target, modes in cases:
+        spec = default_spec_for_target(target, modes=modes)
         assert spec.cleanup == ()
         pre_refactor_dict = {
             "backend": spec.backend,
@@ -421,16 +475,23 @@ def test_router_threads_modes_and_time_signature_through_to_the_spec() -> None:
     assert _cleanup_params(spec, "clamp_sustain")["max_duration_s"] == pytest.approx(3.0)
 
 
-def test_production_router_sends_drums_to_drumscript_and_everything_else_to_basic_pitch() -> None:
+def test_production_router_sends_drums_to_drumscript_bass_to_pyin_and_the_rest_to_basic_pitch() -> None:
     router = production_transcriber_router()
 
     for target in VALID_TARGETS:
         if target == "drums":
             assert router.for_target(target).name == "drumscript"
             assert isinstance(router.for_target(target), DrumScriptTranscriber)
+        elif target == "bass":
+            assert router.for_target(target).name == "pyin"
+            assert isinstance(router.for_target(target), PyinTranscriber)
         else:
             assert router.for_target(target).name == "basic-pitch"
             assert isinstance(router.for_target(target), BasicPitchTranscriber)
+    assert isinstance(router.spec_for_target("bass", midi_tempo=120.0), PyinSpec)
+    # An explicit Basic Pitch bass profile routes back to Basic Pitch, so the
+    # backend follows the profile rather than the target name.
+    assert router.for_target("bass", {"bass": "bass-monophonic"}).name == "basic-pitch"
     assert isinstance(router.spec_for_target("drums", midi_tempo=120.0), DrumScriptSpec)
     assert router.for_target("drums", {"drums": "drums-adtof"}).name == "adtof"
     assert isinstance(router.for_target("drums", {"drums": "drums-adtof"}), AdtofTranscriber)
@@ -1166,3 +1227,114 @@ def test_transcribe_applies_guitar_cleanup_and_rewrites_both_artifacts(
     assert "60.0" not in csv_text  # the raw 60s end time must not survive
     midi_bytes = result.midi_path.read_bytes()
     assert midi_bytes[:4] == b"MThd"
+
+
+def _tone_wav(path: Path, frequency: float, duration: float = 1.2, sample_rate: int = 22050) -> Path:
+    """A pure sine at `frequency`, written with soundfile (a vgt dependency)."""
+    import math
+
+    import soundfile
+
+    samples = [
+        0.5 * math.sin(2 * math.pi * frequency * index / sample_rate)
+        for index in range(int(sample_rate * duration))
+    ]
+    soundfile.write(str(path), samples, sample_rate)
+    return path
+
+
+def test_pyin_transcriber_writes_a_valid_midi_csv_pair_for_a_bass_tone(tmp_path: Path) -> None:
+    """The real pyin backend end to end, on audio the test synthesizes itself.
+
+    98 Hz is an open bass G string (G2, MIDI 43). This exercises the in-process
+    path -- no subprocess, no `uvx`, no model download -- so it stays in the
+    normal offline suite rather than needing a marker.
+    """
+    source = _tone_wav(tmp_path / "bass.wav", 98.0)
+    spec = default_spec_for_target("bass", midi_tempo=120.0, time_signature="4/4")
+
+    result = PyinTranscriber().transcribe(source, tmp_path / "out", spec)
+
+    assert result.note_count >= 1
+    assert result.pitch_range_midi == (43, 43)
+    assert result.max_simultaneous_voices == 1
+    assert result.midi_path.read_bytes()[:4] == b"MThd"
+    header = result.notes_path.read_text(encoding="utf-8").splitlines()[0]
+    assert header == "start_time_s,end_time_s,pitch_midi,velocity,pitch_bend"
+
+
+def test_pyin_transcriber_applies_the_profiles_sustain_clamp(tmp_path: Path) -> None:
+    """A tone held past the clamp must be shortened, not emitted whole.
+
+    This is the drone failure mode the Basic Pitch bass profile had no defence
+    against: a tracker can also hold a note through a rest.
+    """
+    source = _tone_wav(tmp_path / "bass.wav", 98.0, duration=6.0)
+    # 2 bars at 240 BPM 4/4 is 2.0s, comfortably inside the 6s tone.
+    spec = default_spec_for_target("bass", midi_tempo=240.0, time_signature="4/4")
+    clamp_s = _cleanup_params(spec, "clamp_sustain")["max_duration_s"]
+
+    result = PyinTranscriber().transcribe(source, tmp_path / "out", spec)
+
+    assert clamp_s == pytest.approx(2.0)
+    assert result.max_note_duration_s <= clamp_s + 1e-6
+
+
+def test_pyin_transcriber_rejects_a_spec_from_another_backend(tmp_path: Path) -> None:
+    source = _tone_wav(tmp_path / "bass.wav", 98.0, duration=0.2)
+    guitar = default_spec_for_target("guitar")
+
+    with pytest.raises(TranscriptionError, match="requires a PyinSpec"):
+        PyinTranscriber().transcribe(source, tmp_path / "out", guitar)
+
+
+def test_pyin_transcriber_reports_unreadable_audio_as_a_transcription_error(tmp_path: Path) -> None:
+    """Failure must be a `TranscriptionError`, so one bad stem degrades that
+    target only instead of aborting the whole analysis run."""
+    source = tmp_path / "bass.wav"
+    source.write_bytes(b"not audio at all")
+    spec = default_spec_for_target("bass", midi_tempo=120.0)
+
+    with pytest.raises(TranscriptionError, match="pyin failed"):
+        PyinTranscriber().transcribe(source, tmp_path / "out", spec)
+
+
+def test_pyin_detection_identity_excludes_cleanup_so_retuning_it_reuses_the_track(tmp_path: Path) -> None:
+    """Two bass variants differing only in cleanup must share one F0 track.
+
+    The pitch track is the expensive part of this backend, so a `pyin` variant
+    has to join the same two-level cache Basic Pitch variants use rather than
+    re-running the tracker per cleanup recipe.
+    """
+    from dataclasses import replace as dataclass_replace
+
+    from vgt.transcription_variants import cleanup_hash, detection_hash
+
+    spec = default_spec_for_target("bass", midi_tempo=120.0, time_signature="4/4")
+    lighter = dataclass_replace(spec, cleanup=spec.cleanup[:1])
+
+    assert detection_hash("bass", "input-hash", spec) == detection_hash("bass", "input-hash", lighter)
+    assert cleanup_hash("raw-hash", "input-hash", spec) != cleanup_hash("raw-hash", "input-hash", lighter)
+
+
+def test_pyin_and_basic_pitch_bass_variants_never_share_a_detection_entry() -> None:
+    from vgt.transcription_variants import detection_hash
+
+    pyin = default_spec_for_target("bass", midi_tempo=120.0)
+    basic_pitch = default_spec_for_target("bass", modes={"bass": "bass-basic-pitch"}, midi_tempo=120.0)
+
+    assert detection_hash("bass", "input-hash", pyin) != detection_hash("bass", "input-hash", basic_pitch)
+
+
+def test_pyin_detection_identity_tracks_the_algorithm_version() -> None:
+    """An algorithm change must invalidate a cached track, since librosa's own
+    version is deliberately not part of the identity."""
+    from dataclasses import replace as dataclass_replace
+
+    from vgt.transcription_variants import detection_hash
+
+    spec = default_spec_for_target("bass", midi_tempo=120.0)
+    next_version = dataclass_replace(spec, algorithm_version=spec.algorithm_version + 1)
+
+    assert detection_hash("bass", "input-hash", spec) != detection_hash("bass", "input-hash", next_version)
+    assert spec_hash(spec) != spec_hash(next_version)

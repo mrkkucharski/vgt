@@ -15,6 +15,16 @@ uses a `[vgt]`-managed REAPER area for its reference annotations and stems —
 all non-destructively and idempotently. See `docs/USER-MANUAL.md` for scope
 and current user-visible behavior, including the LALAL-only stem workflow.
 
+**Before changing how any instrument is transcribed**, read
+`docs/instrument-transcription-findings.md`. It indexes the per-instrument
+evidence (which backend each target uses, how good it measurably is, what is
+still unmeasured), records the lessons that already generalize across
+instruments, and defines the measurement method and probe scripts a new
+instrument's investigation is expected to follow. Retuning a profile without
+measuring against a reference — or measuring with a metric that does not
+penalize over-detection — has produced wrong conclusions here before; that
+document exists to stop it recurring.
+
 ## Environment assumptions
 
 - **REAPER is installed on the machine.** You may assume a working REAPER

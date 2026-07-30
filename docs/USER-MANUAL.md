@@ -39,8 +39,9 @@ checklist.
    folders in that order.
 4. Run `vgt analyze "Song.RPP"` in a terminal. After any available separation,
    it also transcribes the requested stems locally: DrumScript transcribes
-   `drums`, and Basic Pitch transcribes every other target. This is free and
-   needs no confirmation; guitar is requested by default.
+   `drums`, a pYIN pitch tracker transcribes `bass`, and Basic Pitch
+   transcribes every other target. This is free and needs no confirmation;
+   guitar is requested by default.
 5. Run `vgt_initialize.lua` again to apply analysis and import available stems
    and reference MIDI tracks.
 6. Correct chords, sections, or key in REAPER, then run `vgt_sync.lua` from
@@ -211,7 +212,8 @@ full mix.
 | Target | Backend |
 | --- | --- |
 | `drums` | DrumScript (the default baseline); the opt-in `drums-adtof` variant profile uses ADTOF |
-| `guitar`, `bass`, `vocals`, `instrumental`, `backing`, `strings`, `piano`, `original` | Basic Pitch |
+| `bass` | pYIN, a monophonic pitch tracker (see [Bass](#pyin-bass) below) |
+| `guitar`, `vocals`, `instrumental`, `backing`, `strings`, `piano`, `original` | Basic Pitch |
 
 Guitar is the default requested target. Add other targets with repeatable
 `--transcribe`; this persists the target in the sidecar, so later analyses keep
@@ -233,17 +235,19 @@ vgt analyze --transcribe bass --transcribe drums "Song.RPP"
   persisted set.
 - `--mode <target>=<profile>` persists a transcription profile for one target;
   repeat it to select several. Current profiles are `default`, `guitar`,
-  `bass`, `bass-monophonic`, `vocals`, `guitar-acoustic`, and (for `drums`)
+  `bass`, `bass-pyin`, `bass-basic-pitch`, `bass-monophonic`, `vocals`,
+  `guitar-acoustic`, and (for `drums`)
   `drums-clean`, and `drums-adtof`. For example, `vgt analyze --mode guitar=guitar-acoustic
   "Song.RPP"` or `vgt analyze --mode drums=drums-clean "Song.RPP"` (see
   [DrumScript](#drumscript-drums) below). A stale mode from an older sidecar
   safely falls back to the target default, but a profile named explicitly on
   the command line must be valid.
-- `--mode bass=bass-monophonic` opts into a cleanup that allows only one
-  sounding bass note at a time. It is not the default because a separated bass
-  stem can contain bleed; use it only when that trade-off is right for the
-  stem. No equivalent vocals profile exists: LALAL vocals stems can contain
-  stacked backing vocals and harmonies.
+- `--mode bass=bass-basic-pitch` (or `bass-monophonic`) runs bass through Basic
+  Pitch instead of the pitch tracker. These are the pre-tracker profiles, kept
+  for comparison only — on a real stem Basic Pitch does not produce a usable
+  bass line at any setting (see [Bass](#pyin-bass)). No monophonic vocals
+  profile exists: LALAL vocals stems can contain stacked backing vocals and
+  harmonies, which are genuinely polyphonic.
 
 The guitar declaration (`--guitar electric|acoustic`) remains a stem-separation
 choice for LALAL. Existing acoustic declarations automatically retain the
@@ -350,7 +354,43 @@ transcription: 1 target, 2 retained variants
     detail  1060 notes, MIDI 40-88, guitar-acoustic-detail
 ```
 
-### Basic Pitch (guitar, bass, vocals, piano, strings, instrumental, backing, original mix)
+<a id="pyin-bass"></a>
+### pYIN (bass)
+
+Bass is transcribed by a monophonic pitch tracker rather than by Basic Pitch. It
+runs in-process through librosa, which vgt already depends on, so it needs no
+separate install, no `uvx` subprocess, and no model download — and it works
+offline on first use.
+
+The reason is measured, not stylistic. On a real separated bass stem Basic Pitch
+latches onto sustained low-frequency energy and emits a permanent chord under
+the whole track: 966 notes, **22** simultaneous voices, two notes held for ~120
+seconds, and ≥17 voices sounding for 98% of the song. No combination of onset
+threshold, frame threshold, note-length floor, melodia setting, frequency
+ceiling, or cleanup ordering fixed it — the model's note *boundaries* are wrong,
+so no "keep one note" filter can recover the right note. Switching to a tracker
+took frame-level F-measure from 7% to 79% on that stem. The full comparison,
+including the two independent estimators used as a reference, is in
+[docs/bass-transcription-findings.md](bass-transcription-findings.md) — indexed,
+with every other instrument's evidence, from
+[docs/instrument-transcription-findings.md](instrument-transcription-findings.md).
+
+Because a tracker emits one line by construction, the `bass` profile needs no
+voice cap: its cleanup is only `merge_fragments`, `drop_isolated_notes`, and
+`clamp_sustain`. Its 35–330 Hz window is the tracker's fundamental search range,
+so a bass tuned below ~35 Hz needs a different profile.
+
+This is still a **draft reference**. It tracks one pitch at a time, so a chord,
+a double-stop, or bleed from another instrument is resolved to a single note, and
+onsets are quantized to ~12 ms analysis frames rather than snapped to the beat
+grid. Only one stem has been measured; a synth, fretless, or heavily distorted
+bass may need its settings revisited.
+
+For the retired Basic Pitch behaviour, select `--mode bass=bass-basic-pitch` (or
+`bass-monophonic`). Those remain available for comparison, and an older sidecar
+naming them still resolves.
+
+### Basic Pitch (guitar, vocals, piano, strings, instrumental, backing, original mix)
 
 For a machine that must not build Basic Pitch's environment on first use,
 prepare it separately with Python 3.11:

@@ -50,9 +50,11 @@ from .transcribe import (
     BasicPitchSpec,
     CleanupStage,
     InstrumentProfile,
+    PyinSpec,
     TempoMapReference,
     TranscriptionError,
     VALID_TARGETS,
+    pyin_spec_from_profile,
     _bar_duration_seconds,  # noqa: SLF001 -- reuses the same bars->seconds conversion `default_spec_for_target` applies
     _INSTRUMENT_PROFILES,  # noqa: SLF001 -- this module is transcribe.py's one intended reader of the builtin registry
 )
@@ -371,7 +373,12 @@ def resolve_profile(name: str, project_profiles: Mapping[str, RawProfileDefiniti
         if name not in _INSTRUMENT_PROFILES:
             _fail(f"unknown profile {name!r}")
         base = _INSTRUMENT_PROFILES[name]
-        detection = _profile_detection_fields(base) if base.backend == "basic-pitch" else {}
+        if base.backend == "basic-pitch":
+            detection = _profile_detection_fields(base)
+        elif base.backend == "pyin":
+            detection = _pyin_detection_fields(base)
+        else:
+            detection = {}
         return ResolvedProfile(
             name=name, target=None, backend=base.backend, detection=detection,
             cleanup=tuple(base.cleanup), is_builtin=True, profile_definition_hash=None,
@@ -426,6 +433,27 @@ def resolve_profile(name: str, project_profiles: Mapping[str, RawProfileDefiniti
         name=name, target=target, backend="basic-pitch", detection=detection,
         cleanup=ordered_cleanup, is_builtin=False, profile_definition_hash=definition_hash,
     )
+
+
+def _pyin_detection_fields(profile: InstrumentProfile) -> dict[str, Any]:
+    """A pyin profile's detection settings, in the same `resolved.detection`
+    slot a Basic Pitch profile fills -- so `profile show`, `variant list`, and
+    the sidecar's `resolved_settings` describe what actually ran instead of an
+    empty table or, worse, Basic Pitch fields nothing consulted."""
+    settings = profile.pyin
+    fields: dict[str, Any] = {
+        "minimum_note_length_ms": profile.minimum_note_length_ms,
+        "minimum_frequency_hz": profile.minimum_frequency_hz,
+        "maximum_frequency_hz": profile.maximum_frequency_hz,
+    }
+    if settings is not None:
+        fields.update(
+            sample_rate_hz=settings.sample_rate_hz,
+            frame_length=settings.frame_length,
+            hop_length=settings.hop_length,
+            median_filter_frames=settings.median_filter_frames,
+        )
+    return fields
 
 
 def _profile_detection_fields(profile: InstrumentProfile) -> dict[str, Any]:
@@ -523,14 +551,27 @@ def spec_from_resolved_profile(
     midi_tempo: float | None = None,
     time_signature: str | None = None,
     tempo_map: TempoMapReference | None = None,
-) -> BasicPitchSpec:
-    """Build the `BasicPitchSpec` a resolved profile (builtin or
-    project-local) describes -- the bridge `transcription_profiles.py`'s
-    module docstring calls out as later-issue work: turning a
-    `ResolvedProfile` into the same spec shape `default_spec_for_target`
-    produces for a builtin-only selection, so `vgt.transcription_lifecycle`'s
-    `variant add` can run any resolved profile through
-    `vgt.transcription_variants.reconcile_variants` unchanged."""
+) -> BasicPitchSpec | PyinSpec:
+    """Build the spec a resolved profile (builtin or project-local) describes
+    -- the bridge `transcription_profiles.py`'s module docstring calls out as
+    later-issue work: turning a `ResolvedProfile` into the same spec shape
+    `default_spec_for_target` produces for a builtin-only selection, so
+    `vgt.transcription_lifecycle`'s `variant add` can run any resolved profile
+    through `vgt.transcription_variants.reconcile_variants` unchanged."""
+    if resolved.backend == "pyin":
+        # A pyin profile is builtin-only (a project TOML can only `extends` a
+        # Basic Pitch base, see `resolve_profile`), so its settings still live
+        # in the registry entry and are read straight back from it. Routing
+        # through the same builder `default_spec_for_target` uses keeps the two
+        # selection paths from drifting apart.
+        profile = _INSTRUMENT_PROFILES[resolved.name]
+        bar_seconds = _bar_duration_seconds(midi_tempo, time_signature)
+        return pyin_spec_from_profile(
+            profile,
+            midi_tempo=midi_tempo,
+            sustain_clamp_s=bar_seconds * profile.sustain_clamp_bars if bar_seconds else None,
+            tempo_map=tempo_map,
+        )
     if resolved.backend != "basic-pitch":
         raise ProfileDefinitionError(f"profile {resolved.name!r} is not a Basic Pitch profile and has no spec bridge")
     detection = resolved.detection

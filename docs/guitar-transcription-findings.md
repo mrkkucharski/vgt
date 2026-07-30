@@ -1,5 +1,10 @@
 # Guitar transcription findings
 
+> Part of the per-instrument transcription evidence indexed in
+> [instrument-transcription-findings.md](instrument-transcription-findings.md),
+> which also carries the shared measurement method and the lessons that
+> generalize across instruments.
+
 Status: **implemented 2026-07-22 through 2026-07-24** for `guitar_type:
 acoustic`, in three rounds. `src/vgt/transcribe.py` now applies the acoustic
 threshold overrides plus a five-stage cleanup pipeline (merge → deblip →
