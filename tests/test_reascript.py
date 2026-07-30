@@ -370,6 +370,78 @@ def test_reference_start_and_end_derives_from_the_single_file_backed_item_only()
     assert result.stdout == "10:14"
 
 
+def test_tempo_drift_warning_matches_the_hotel_california_and_7rivers_worked_examples() -> None:
+    """Issue #274's acceptance criteria are two concrete cases: Hotel
+    California Cover's pre-fix mismatch (project 150 vs analyzed 147.759 over
+    a 388s span) must warn, and 7Rivers (120 vs 120.004 over 178s) must not."""
+    script = APPLY_SCRIPT.read_text()
+    helpers_end = script.index("-- A canonical snapshot of every tempo/time-sig marker currently in the")
+    lua_program = "\n".join(
+        [
+            "reaper = {}",
+            "local messages = {}",
+            "function reaper.ShowConsoleMsg(message) table.insert(messages, message) end",
+            "local project_bpm = tonumber(arg[1])",
+            "function reaper.TimeMap_GetTimeSigAtTime(_, _) return 4, 4, project_bpm end",
+            script[:helpers_end],
+            "warn_if_tempo_disagrees({bpm = project_bpm==150 and 147.759 or 120.004}, 10,"
+            " 10 + (project_bpm==150 and 388 or 178))",
+            "io.write(#messages)",
+        ]
+    )
+    hotel_california = subprocess.run(
+        [LUA, "-", "150"], input=lua_program, text=True, capture_output=True, check=True
+    )
+    assert hotel_california.stdout == "1"
+    seven_rivers = subprocess.run(
+        [LUA, "-", "120"], input=lua_program, text=True, capture_output=True, check=True
+    )
+    assert seven_rivers.stdout == "0"
+
+
+def test_tempo_drift_warning_reports_both_tempos_drift_and_remedy() -> None:
+    script = APPLY_SCRIPT.read_text()
+    helpers_end = script.index("-- A canonical snapshot of every tempo/time-sig marker currently in the")
+    lua_program = "\n".join(
+        [
+            "reaper = {}",
+            "local messages = {}",
+            "function reaper.ShowConsoleMsg(message) table.insert(messages, message) end",
+            "function reaper.TimeMap_GetTimeSigAtTime(_, _) return 4, 4, 150 end",
+            script[:helpers_end],
+            "warn_if_tempo_disagrees({bpm = 147.759}, 10, 398)",
+            "io.write(messages[1])",
+        ]
+    )
+    result = subprocess.run([LUA, "-", "song.RPP"], input=lua_program, text=True, capture_output=True, check=True)
+    assert "150" in result.stdout
+    assert "147.759" in result.stdout
+    assert "5.8" in result.stdout
+    assert "#273" in result.stdout
+
+
+def test_tempo_drift_warning_compares_the_piecewise_span_covering_the_reference_start() -> None:
+    """A piecewise analyzed tempo must be compared per-span at the reference
+    start, never collapsed to a single global BPM (issue #274 notes)."""
+    script = APPLY_SCRIPT.read_text()
+    helpers_end = script.index("-- A canonical snapshot of every tempo/time-sig marker currently in the")
+    lua_program = "\n".join(
+        [
+            "reaper = {}",
+            "local messages = {}",
+            "function reaper.ShowConsoleMsg(message) table.insert(messages, message) end",
+            "function reaper.TimeMap_GetTimeSigAtTime(_, _) return 4, 4, 150 end",
+            script[:helpers_end],
+            "local tempo = {bpm = 150, mode = 'piecewise',"
+            " spans = {{start_seconds = 0, bpm = 150}, {start_seconds = 60, bpm = 90}}}",
+            "warn_if_tempo_disagrees(tempo, 10, 408)",
+            "io.write(#messages)",
+        ]
+    )
+    result = subprocess.run([LUA, "-", "song.RPP"], input=lua_program, text=True, capture_output=True, check=True)
+    assert result.stdout == "0"
+
+
 def test_apply_declares_and_persists_guitar_type_with_an_automation_override() -> None:
     script = APPLY_SCRIPT.read_text()
     assert 'reaper.GetExtState("vgt", "guitar_type")' in script
