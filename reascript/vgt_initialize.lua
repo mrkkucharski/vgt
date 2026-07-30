@@ -575,6 +575,15 @@ local function inventory_diagnostic(inventory)
     .. "; expected roles=" .. table.concat(inventory.expected_roles, ",")
 end
 
+local function collect_marked_tracks()
+  local tracks = {}
+  for index = 0, reaper.CountTracks(0) - 1 do
+    local track = reaper.GetTrack(0, index)
+    if track_is_marked_managed(track) then tracks[#tracks + 1] = track end
+  end
+  return tracks
+end
+
 local function validate_reconciliation_inventory(analysis)
   local inventory = reconciliation_inventory(analysis)
   if #inventory.roots > 1 then
@@ -586,10 +595,25 @@ local function validate_reconciliation_inventory(analysis)
     -- Evidence elsewhere in the project cannot authenticate this particular
     -- same-named folder.  Treating it as sufficient was still capable of
     -- appending beside an unauthenticated user folder after deleting an
-    -- unrelated old vgt track.
+    -- unrelated old vgt track.  A stale manifest is different: the root
+    -- candidate itself (not some other track) already carries its own
+    -- first-hand sidecar or P_EXT evidence, exactly the bar the
+    -- `authenticated` check below applies when there is no manifest at all.
+    -- That combination -- a self-authenticated root the manifest merely
+    -- disagrees with -- is the signature of an apply() that fully rebuilt
+    -- and marked the tree but was interrupted before its final
+    -- write_root_manifest (issue #268), not an ambiguous or foreign folder.
+    -- Resync the manifest from the live marks and proceed instead of
+    -- hard-stopping on a rebuild that already succeeded except for its last
+    -- write.
     if inventory.manifest_guid ~= "" and not root.manifest_match then
-      error("managed-root manifest disagrees with the live [vgt] root; no project mutation was made. "
-        .. inventory_diagnostic(inventory))
+      if not (root.sidecar_match or root.ext_state_match) then
+        error("managed-root manifest disagrees with the live [vgt] root; no project mutation was made. "
+          .. inventory_diagnostic(inventory))
+      end
+      write_root_manifest(root.track, collect_marked_tracks())
+      inventory = reconciliation_inventory(analysis)
+      root = inventory.roots[1]
     end
     local authenticated = root.sidecar_match or root.ext_state_match or root.manifest_match
     if not authenticated then
