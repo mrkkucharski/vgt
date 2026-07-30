@@ -39,8 +39,9 @@ checklist.
    folders in that order.
 4. Run `vgt analyze "Song.RPP"` in a terminal. After any available separation,
    it also transcribes the requested stems locally: DrumScript transcribes
-   `drums`, and Basic Pitch transcribes every other target. This is free and
-   needs no confirmation; guitar is requested by default.
+   `drums`, a pYIN pitch tracker transcribes `bass`, and Basic Pitch
+   transcribes every other target. This is free and needs no confirmation;
+   guitar is requested by default.
 5. Run `vgt_initialize.lua` again to apply analysis and import available stems
    and reference MIDI tracks.
 6. Correct chords, sections, or key in REAPER, then run `vgt_sync.lua` from
