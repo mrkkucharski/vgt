@@ -1,40 +1,40 @@
 {
   "current_issue": 274,
-  "session_id": "45221a8f-fd48-47e3-b9bf-22065cd6cd43",
-  "pid": 6623,
-  "process_started_at": "Thu Jul 30 20:27:30 2026",
+  "session_id": "f1438399-87de-4864-b247-51a516c994d6",
+  "pid": 7491,
+  "process_started_at": "Thu Jul 30 20:32:19 2026",
   "agent": "claude",
-  "started_at": "2026-07-30T18:27:29.451293+00:00",
+  "started_at": "2026-07-30T18:32:16.781790+00:00",
   "scheduler_stalls": {
     "blocked_issues": {
       "267": {
         "first_seen_at": "2026-07-30T07:58:58.709828+00:00",
-        "last_seen_at": "2026-07-30T18:26:13.958838+00:00",
-        "consecutive_passes": 540,
+        "last_seen_at": "2026-07-30T18:31:01.448667+00:00",
+        "consecutive_passes": 544,
         "title": "Measure the vocals transcription profile"
       },
       "266": {
         "first_seen_at": "2026-07-30T07:58:58.712103+00:00",
-        "last_seen_at": "2026-07-30T18:26:13.959381+00:00",
-        "consecutive_passes": 540,
+        "last_seen_at": "2026-07-30T18:31:01.449076+00:00",
+        "consecutive_passes": 544,
         "title": "Validate pYIN bass across songs and low tunings"
       },
       "265": {
         "first_seen_at": "2026-07-30T07:58:58.713113+00:00",
-        "last_seen_at": "2026-07-30T18:26:13.959571+00:00",
-        "consecutive_passes": 540,
+        "last_seen_at": "2026-07-30T18:31:01.449244+00:00",
+        "consecutive_passes": 544,
         "title": "Benchmark guitar profiles beyond 7Rivers"
       },
       "264": {
         "first_seen_at": "2026-07-30T07:58:58.714019+00:00",
-        "last_seen_at": "2026-07-30T18:26:13.959721+00:00",
-        "consecutive_passes": 540,
+        "last_seen_at": "2026-07-30T18:31:01.449387+00:00",
+        "consecutive_passes": 544,
         "title": "Validate chord decoding on additional annotated songs"
       },
       "263": {
         "first_seen_at": "2026-07-30T07:58:58.714756+00:00",
-        "last_seen_at": "2026-07-30T18:26:13.959863+00:00",
-        "consecutive_passes": 540,
+        "last_seen_at": "2026-07-30T18:31:01.449525+00:00",
+        "consecutive_passes": 544,
         "title": "Add a reproducible multi-song quality benchmark"
       }
     }
@@ -50,10 +50,10 @@
   "verification_followups": {
     "f0d8bfc9d2dc6da7a31609184e25c4d66d3986fd2340b33a83e98204fb86691e": "created"
   },
-  "role": "implement",
+  "role": "review",
   "branch": "issue-274-warn-when-the-project-tempo-disagrees-wi",
   "worktree_path": "/Users/marekkucharski/projects/.pm-worktrees/vgt/issue-274",
-  "pr_number": null,
+  "pr_number": 278,
   "followup_generation": {
     "fingerprint": "56fab22a68207d92fd436f13f543f0b36b631d49e9d321d132b6400ce7b7d97e",
     "items": {
@@ -118,11 +118,11 @@
   "pending_transition": {
     "issue": 274,
     "target": "working",
-    "event": "agent.started",
+    "event": "agent.review_started",
     "detail": {
       "issue": 274,
       "agent": "claude",
-      "branch": "issue-274-warn-when-the-project-tempo-disagrees-wi"
+      "pr": 278
     },
     "cleanup": {}
   }
