@@ -231,11 +231,12 @@ PYIN_HOP_LENGTH = 256
 PYIN_MEDIAN_FILTER_FRAMES = 5
 
 # Bass, tracked monophonically. The frequency window is the *fundamental*
-# search range handed to pYIN, not a post-filter: 35 Hz sits just below a
-# 5-string's low B (30.9 Hz is reachable but drop-tuned; 35 Hz keeps the
-# tracker off the stem's rumble floor), and 330 Hz covers a 24-fret 4-string's
-# top. On the 7Rivers stem two independent estimators put the actual line at
-# MIDI 29-43, comfortably inside this.
+# search range handed to pYIN, not a post-filter. Its supported production
+# range is 35–330 Hz: 35 Hz is higher than a five-string low B (30.9 Hz), so
+# that fundamental and lower/drop-tuned material are outside this profile's
+# measured coverage. The upper bound covers a 24-fret 4-string's top. On the
+# 7Rivers stem two independent estimators put the actual line at MIDI 29–43,
+# comfortably inside the configured range.
 BASS_PYIN_FREQUENCY_HZ = (35.0, 330.0)
 # 70 ms at 120 BPM is well under a 32nd note, so this only discards tracker
 # fragments, never a played note.
@@ -358,7 +359,7 @@ _GUITAR_PROFILE = replace(
 # docs/bass-transcription-findings.md).
 _BASS_BASIC_PITCH_PROFILE = replace(
     _DEFAULT_PROFILE, name="bass-basic-pitch", minimum_frequency_hz=30.0, maximum_frequency_hz=400.0
-)  # 5-string low B is 30.9 Hz
+)  # Retired comparison profile; its 30 Hz floor includes low B, but establishes no production support.
 # A bass is a single-line source.  `force_monophony` was the original attempt
 # at exploiting that, and it is retained for comparison, but it resolves an
 # overlap by *velocity* -- and a bass ghost harmonic is routinely louder than

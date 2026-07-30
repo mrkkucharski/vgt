@@ -28,8 +28,10 @@ because the 120 s drone then wins every overlap forever.
 
 A bass is a single-line source, so the right tool is a monophonic F0 tracker,
 not a polyphonic model with a "keep one note" filter bolted on. pYIN scores
-**84%** on the same stem with 2% octave error, and needs no new dependency:
-librosa is already a hard requirement of vgt.
+**78.9% frame F-measure** on the shipped `bass` profile, with **10.9% octave
+errors** on graded frames. This is the final 7Rivers evaluation against the
+estimated CQT reference, not an absolute accuracy claim or an earlier
+experiment's result. librosa is already a hard requirement of vgt.
 
 Two independent estimators agree on what that stem actually plays -- pYIN
 (time-domain autocorrelation) and a CQT harmonic-sum estimator
