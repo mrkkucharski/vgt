@@ -42,7 +42,14 @@ from .sidecar import (
     stage_is_current,
     update_analysis,
 )
-from .tempo import TempoDetectionError, build_tempo_grid, click_artifact_path, detect_beats, render_click
+from .tempo import (
+    TempoDetectionError,
+    build_tempo_grid,
+    click_artifact_path,
+    detect_beats,
+    infer_downbeat_from_chords,
+    render_click,
+)
 from .transcribe import (
     Transcriber,
     TranscriberRouter,
@@ -489,6 +496,45 @@ def detect_chords(
     return chords_value
 
 
+def _apply_chord_inferred_downbeat(project_path: Path, analysis: dict[str, Any]) -> None:
+    """After the chords stage runs, recover a bar phase from its segment
+    boundaries if the tempo stage still has none (issue #276).
+
+    Only runs when the tempo stage hasn't already established a downbeat and
+    hasn't been human-verified -- a human's correction (whatever it is) is
+    never second-guessed, and a beat-tracker-detected downbeat is never
+    overwritten. `infer_downbeat_from_chords` itself is conservative about
+    when it returns a value at all; this just wires its result back into the
+    tempo stage's persisted `value`/`detected` (mirroring how
+    `_refresh_stage_with_detected` keeps them in lockstep pre-verification)
+    so the existing tempo-map path picks it up unchanged.
+    """
+    tempo_stage = analysis["tempo"]
+    tempo_value = tempo_stage.get("value")
+    if (
+        not isinstance(tempo_value, dict)
+        or tempo_value.get("downbeat_detected") is True
+        or tempo_stage.get("human_verified")
+    ):
+        return
+    chords_value = analysis["chords"].get("value")
+    beat_times = tempo_value.get("beat_times")
+    if not isinstance(chords_value, dict) or not beat_times:
+        return
+    inferred = infer_downbeat_from_chords(beat_times, chords_value.get("segments") or [], tempo_value.get("time_signature"))
+    if inferred is None:
+        return
+    tempo_value.update(inferred)
+    tempo_stage["detected"] = copy.deepcopy(tempo_value)
+    update_analysis(
+        project_path,
+        lambda current: (
+            current["tempo"].__setitem__("value", copy.deepcopy(tempo_value)),
+            current["tempo"].__setitem__("detected", copy.deepcopy(tempo_value)),
+        ),
+    )
+
+
 _DETECTORS: dict[str, Callable[..., Any]] = {
     "tempo": detect_tempo,
     "key": detect_key,
@@ -693,6 +739,8 @@ def analyze(
             project_path,
             lambda current, stage=stage: current.__setitem__(stage, copy.deepcopy(analysis[stage])),
         )
+        if stage == "chords":
+            _apply_chord_inferred_downbeat(project_path, analysis)
     emit("writing sidecar")
     analysis["provenance"] = {
         "tool": "vgt",

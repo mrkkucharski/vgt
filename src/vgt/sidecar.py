@@ -179,6 +179,13 @@ Schema versions:
       human-verification sidecar fields are removed: corrected tracks now
       live durably in the `[clean]` working-copy area. Existing `value`s are
       retained and their detected-baseline fields are discarded.
+ 18 -- Tempo values gain `downbeat_source`: `"beat_tracker"` when
+      `downbeat_detected` came from the beat tracker itself, `"chords"` when
+      `vgt analyze` instead inferred it from chord segment boundaries after
+      the beat tracker reported none (#276), or `null` when there is still no
+      bar phase. Legacy values migrate to `"beat_tracker"` when
+      `downbeat_detected` is already `true` (nothing else could have set it
+      before this schema existed), else `null`.
 
 Ordinary stages (`key` and `chords`) have this shape:
   {
@@ -224,7 +231,7 @@ import uuid
 from . import transcription_profiles
 from .transcribe import effective_profile_name_for_target
 
-SCHEMA_VERSION = 17
+SCHEMA_VERSION = 18
 STEMS_LEASE_TIMEOUT = timedelta(minutes=30)
 
 ANALYSIS_STAGES = ("tempo", "key", "sections", "chords", "transcription")
@@ -499,6 +506,11 @@ def upgrade(data: dict[str, Any]) -> dict[str, Any]:
         # offset. Other legacy backends did not persist enough information to
         # safely distinguish their prior downbeat semantics, so retain them.
         tempo_value["downbeat_detected"] = tempo_value.get("backend") != "librosa"
+    if isinstance(tempo_value, dict) and "downbeat_source" not in tempo_value:
+        # Schema 18: nothing before this schema could have inferred a
+        # downbeat from chords, so a legacy detected downbeat always came
+        # from the beat tracker.
+        tempo_value["downbeat_source"] = "beat_tracker" if tempo_value.get("downbeat_detected") is True else None
     analysis.setdefault("provenance", {"tool": "vgt", "version": None, "settings": {}})
     stems = {**_empty_stems_block(), **(analysis.get("stems") or {})}
     stems["operations"] = dict(stems.get("operations") or {})

@@ -135,7 +135,7 @@ def test_upgrade_keeps_v1_fields_and_adds_v2_analysis_skeleton() -> None:
 
     upgraded = upgrade(v1)
 
-    assert upgraded["schema_version"] == 17
+    assert upgraded["schema_version"] == 18
     assert upgraded["managed_region_ids"] == []
     assert upgraded["managed_track_guids"] == ["{AAAA}", "{BBBB}"]
     assert upgraded["config"] == {"reference_track_guid": REFERENCE_GUID}
@@ -184,7 +184,7 @@ def test_upgrade_v16_chords_and_key_corrections_collapse_and_cli_analyzes(tmp_pa
         },
     }
     upgraded = upgrade(legacy)
-    assert upgraded["schema_version"] == 17
+    assert upgraded["schema_version"] == 18
     assert upgraded["analysis"]["chords"] == {
         "value": legacy["analysis"]["chords"]["value"], "input_hash": "chords-input",
         "settings_hash": "chords-settings", "analyzed_at": None,
@@ -197,7 +197,7 @@ def test_upgrade_v16_chords_and_key_corrections_collapse_and_cli_analyzes(tmp_pa
     project.with_suffix(".vgt").write_text(json.dumps(legacy))
     assert main(["analyze", "--no-transcribe", str(project)]) == 0
     persisted = read_sidecar(project)
-    assert persisted["schema_version"] == 17
+    assert persisted["schema_version"] == 18
     assert persisted["analysis"]["chords"]["value"]["segments"][0]["chord"] == "C:maj"
     assert persisted["analysis"]["key"]["value"] == {"root": "C", "scale": "major", "confidence": 1.0, "backend": "fixture"}
 
@@ -207,7 +207,7 @@ def test_upgrade_marks_legacy_librosa_tempo_as_unknown_bar_phase() -> None:
         "backend": "librosa", "bpm": 120.0, "downbeat_offset_seconds": 0.25,
     }}}})
 
-    assert upgraded["schema_version"] == 17
+    assert upgraded["schema_version"] == 18
     assert upgraded["analysis"]["tempo"]["value"]["downbeat_detected"] is False
 
 
@@ -246,7 +246,7 @@ def test_upgrade_adds_v10_transcription_block_to_a_v8_sidecar() -> None:
 
     upgraded = upgrade(v8)
 
-    assert upgraded["schema_version"] == 17
+    assert upgraded["schema_version"] == 18
     assert upgraded["analysis"]["transcription"] == {"requested_targets": ["guitar"], "modes": {}, "targets": {}, "detection_cache": {}}
     # Unrelated v8 fields survive the upgrade untouched.
     assert upgraded["analysis"]["stems"]["artifact_namespace"] == "abc12345"
@@ -444,7 +444,7 @@ def test_analyze_writes_v2_sidecar_with_skeleton_and_provenance(tmp_path: Path) 
 
     result = analyze(project)
 
-    assert result["schema_version"] == 17
+    assert result["schema_version"] == 18
     assert result["managed_track_guids"] == ["{AAAA}", "{BBBB}"]  # phase 0 fields intact
     for stage in ANALYSIS_STAGES:
         if stage == "transcription":
@@ -528,6 +528,98 @@ def test_analyze_is_idempotent(tmp_path: Path) -> None:
         first["analysis"][stage].pop("analyzed_at")
         second["analysis"][stage].pop("analyzed_at")
     assert first == second
+
+
+def test_analyze_infers_downbeat_from_chord_boundaries_when_beat_tracker_finds_none(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Issue #276: the beat tracker reporting no downbeat must not be the end
+    of the road -- chord segment boundaries landing cleanly on 4-beat bar
+    lines should let `vgt analyze` recover the bar phase on its own."""
+    project = _project_copy(tmp_path)
+    _write_v1_sidecar(project)
+    beat_times = [float(i) for i in range(40)]
+
+    def tempo(project: Path, _source: Path, _settings: dict, _analysis: dict, namespace: str, **_kwargs) -> dict:
+        artifact = artifact_namespace_dir(project, namespace) / "tempo-click.wav"
+        artifact.parent.mkdir(parents=True, exist_ok=True)
+        artifact.write_bytes(b"RIFFfixture")
+        return {
+            "bpm": 120.0,
+            "time_signature": "4/4",
+            "mode": "constant",
+            "backend": "fixture",
+            "downbeat_detected": False,
+            "downbeat_offset_seconds": None,
+            "downbeat_source": None,
+            "beat_times": beat_times,
+            "click_artifact_path": artifact.name,
+        }
+
+    def chords(_source: Path, beat_times: list[float], _settings: dict, **_kwargs) -> dict:
+        bar_starts = [0, 8, 16, 24, 32]  # every change lands on a 4-beat bar line
+        segments = [
+            {"start_seconds": beat_times[start], "end_seconds": beat_times[start + 4], "chord": "C:maj"}
+            for start in bar_starts
+        ]
+        return {"segments": segments, "vocabulary": "maj_min", "backend": "fixture", "beat_times": beat_times}
+
+    monkeypatch.setitem(analysis_module._DETECTORS, "tempo", tempo)
+    monkeypatch.setattr(analysis_module, "_detect_chords", chords)
+    monkeypatch.setattr(analysis_module, "_tempo_beat_times", lambda *_args: beat_times)
+
+    result = analyze(project)
+
+    tempo_value = result["analysis"]["tempo"]["value"]
+    assert tempo_value["downbeat_detected"] is True
+    assert tempo_value["downbeat_offset_seconds"] == 0.0
+    assert tempo_value["downbeat_source"] == "chords"
+    assert result["analysis"]["tempo"]["detected"]["downbeat_source"] == "chords"
+
+
+def test_analyze_does_not_overwrite_a_beat_tracker_detected_downbeat_with_chords(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A downbeat the tempo backend already detected must never be
+    second-guessed by chord-derived inference, even if chords would suggest a
+    different phase."""
+    project = _project_copy(tmp_path)
+    _write_v1_sidecar(project)
+    beat_times = [float(i) for i in range(40)]
+
+    def tempo(project: Path, _source: Path, _settings: dict, _analysis: dict, namespace: str, **_kwargs) -> dict:
+        artifact = artifact_namespace_dir(project, namespace) / "tempo-click.wav"
+        artifact.parent.mkdir(parents=True, exist_ok=True)
+        artifact.write_bytes(b"RIFFfixture")
+        return {
+            "bpm": 120.0,
+            "time_signature": "4/4",
+            "mode": "constant",
+            "backend": "madmom",
+            "downbeat_detected": True,
+            "downbeat_offset_seconds": beat_times[2],
+            "downbeat_source": "beat_tracker",
+            "beat_times": beat_times,
+            "click_artifact_path": artifact.name,
+        }
+
+    def chords(_source: Path, beat_times: list[float], _settings: dict, **_kwargs) -> dict:
+        bar_starts = [0, 8, 16, 24, 32]  # would suggest phase 0, not phase 2
+        segments = [
+            {"start_seconds": beat_times[start], "end_seconds": beat_times[start + 4], "chord": "C:maj"}
+            for start in bar_starts
+        ]
+        return {"segments": segments, "vocabulary": "maj_min", "backend": "fixture", "beat_times": beat_times}
+
+    monkeypatch.setitem(analysis_module._DETECTORS, "tempo", tempo)
+    monkeypatch.setattr(analysis_module, "_detect_chords", chords)
+    monkeypatch.setattr(analysis_module, "_tempo_beat_times", lambda *_args: beat_times)
+
+    result = analyze(project)
+
+    tempo_value = result["analysis"]["tempo"]["value"]
+    assert tempo_value["downbeat_offset_seconds"] == beat_times[2]
+    assert tempo_value["downbeat_source"] == "beat_tracker"
 
 
 def test_stage_cache_only_refreshes_the_stage_with_changed_settings(
@@ -671,6 +763,7 @@ def test_manual_correction_survives_rerun(tmp_path: Path) -> None:
         "downbeat_offset_seconds": 0.25,
         "time_signature": "4/4",
         "downbeat_detected": True,
+        "downbeat_source": "beat_tracker",
     }
     assert result["analysis"]["tempo"]["human_verified"] is True
     # Untouched stages still refresh normally.
@@ -792,7 +885,7 @@ def test_cli_analyze_preserves_local_results_when_lalal_is_unavailable(
     captured = capsys.readouterr()
     assert captured.out == ""
     sidecar = read_sidecar(project)
-    assert sidecar["schema_version"] == 17
+    assert sidecar["schema_version"] == 18
     assert sidecar["analysis"]["tempo"]["value"] is not None
     assert "stem separation unavailable; continuing with available sources" in captured.err
 
