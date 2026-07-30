@@ -349,11 +349,20 @@ maximum_frequency_hz = 280
 frame_length = 4096
 hop_length = 512
 median_filter_frames = 7
+rearticulation_rise_db = 1.2
+rearticulation_minimum_spacing_beats = 0.25
 ```
 
 pYIN accepts only `minimum_note_length_ms`, the two frequency bounds,
-`sample_rate_hz`, `frame_length`, `hop_length`, and
-`median_filter_frames`; Basic Pitch-only thresholds and toggles are rejected.
+`sample_rate_hz`, `frame_length`, `hop_length`, `median_filter_frames`,
+`rearticulation_span_frames`, `rearticulation_rise_db`, and
+`rearticulation_minimum_spacing_beats`; Basic Pitch-only thresholds and toggles
+are rejected. Raise `rearticulation_rise_db` if a part is being split into more
+notes than were played, lower it if repeated notes on one string still arrive as
+a single held note, and set it to `0` to turn splitting off entirely. Lower
+`rearticulation_minimum_spacing_beats` (0.375 by default, a dotted sixteenth)
+for a part that genuinely repeats notes faster than that — it is the floor on
+how close two splits inside one held pitch may fall.
 Cleanup stages retain their canonical order even when TOML declares them in a
 different order. Changing a detection setting invalidates that profile's raw
 cache once; changing only cleanup reuses the raw pYIN detection and derives a
@@ -410,6 +419,16 @@ estimators used as a reference, is in
 [docs/bass-transcription-findings.md](bass-transcription-findings.md) — indexed,
 with every other instrument's evidence, from
 [docs/instrument-transcription-findings.md](instrument-transcription-findings.md).
+
+A tracker reports pitch, and playing one fret several times running does not
+change pitch — so the raw tracker emitted one held note wherever a string was
+plucked repeatedly, finding only **46%** of the notes actually played. vgt cuts
+those runs where the frame energy restarts, and requires a minimum musical
+spacing between cuts, which takes onset F-measure from 57.1% to 75.6% against a
+full-length hand-corrected reference. Every frame-level figure is
+unchanged by this, because a frame-level metric cannot see the difference; the
+measurement and its limits are in the findings doc. Adjust it per project with
+`rearticulation_rise_db` (above).
 
 Because a tracker emits one line by construction, the `bass` profile needs no
 voice cap: its cleanup is only `merge_fragments`, `drop_isolated_notes`, and

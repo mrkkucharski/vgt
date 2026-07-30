@@ -85,6 +85,9 @@ _PYIN_DETECTION_FIELDS: tuple[str, ...] = (
     "frame_length",
     "hop_length",
     "median_filter_frames",
+    "rearticulation_span_frames",
+    "rearticulation_rise_db",
+    "rearticulation_minimum_spacing_beats",
 )
 
 
@@ -156,6 +159,11 @@ _DETECTION_VALIDATORS: dict[str, Any] = {
     "frame_length": _validate_positive_int,
     "hop_length": _validate_positive_int,
     "median_filter_frames": _validate_positive_int,
+    "rearticulation_span_frames": _validate_positive_int,
+    # 0 disables re-articulation splitting, so this is the one detection
+    # number a profile may legitimately set to zero.
+    "rearticulation_rise_db": _validate_non_negative_number,
+    "rearticulation_minimum_spacing_beats": _validate_non_negative_number,
 }
 
 # Per-stage accepted parameter keys and their validators. Only the five
@@ -163,7 +171,7 @@ _DETECTION_VALIDATORS: dict[str, Any] = {
 # `CANONICAL_CLEANUP_STAGE_ORDER`'s docstring): `force_monophony` is a
 # builtin-only, bass-specific single-stage pipeline with no tuning surface.
 _STAGE_VALIDATORS: dict[str, dict[str, Any]] = {
-    "merge_fragments": {"max_gap_s": _validate_positive_number},
+    "merge_fragments": {"max_gap_s": _validate_positive_number, "merge_touching": _validate_bool},
     "drop_isolated_notes": {
         "max_duration_s": _validate_positive_number,
         "neighbour_window_s": _validate_positive_number,
@@ -498,6 +506,9 @@ def _pyin_detection_fields(profile: InstrumentProfile) -> dict[str, Any]:
             frame_length=settings.frame_length,
             hop_length=settings.hop_length,
             median_filter_frames=settings.median_filter_frames,
+            rearticulation_span_frames=settings.rearticulation_span_frames,
+            rearticulation_rise_db=settings.rearticulation_rise_db,
+            rearticulation_minimum_spacing_beats=settings.rearticulation_minimum_spacing_beats,
         )
     return fields
 
@@ -614,6 +625,9 @@ def spec_from_resolved_profile(
             frame_length=detection["frame_length"],
             hop_length=detection["hop_length"],
             median_filter_frames=detection["median_filter_frames"],
+            rearticulation_span_frames=detection["rearticulation_span_frames"],
+            rearticulation_rise_db=detection["rearticulation_rise_db"],
+            rearticulation_minimum_spacing_beats=detection["rearticulation_minimum_spacing_beats"],
             minimum_note_length_ms=detection["minimum_note_length_ms"],
             minimum_frequency_hz=detection["minimum_frequency_hz"],
             maximum_frequency_hz=detection["maximum_frequency_hz"],

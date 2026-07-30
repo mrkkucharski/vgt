@@ -16,7 +16,7 @@ a given instrument, and why* — the accumulated per-instrument knowledge.
 | --- | --- | --- | --- | --- |
 | `guitar` (acoustic) | Basic Pitch | `guitar-acoustic-clean` / `-detail` / `-strict-chords` | Yes — one acoustic stem, three rounds | [guitar-transcription-findings.md](guitar-transcription-findings.md) |
 | `guitar` (electric) | Basic Pitch | `guitar` | **No** — deliberately left at shared defaults | see guitar findings, "Changes applied" §1 |
-| `bass` | **pYIN** (monophonic tracker) | `bass` / `bass-pyin`; `bass-basic-pitch`, `bass-monophonic` retained for comparison | Yes — one 7Rivers stem: shipped profile F 78.9%, octave errors 10.9%; earlier Basic Pitch experiments retained as evidence | [bass-transcription-findings.md](bass-transcription-findings.md) |
+| `bass` | **pYIN** (monophonic tracker) + re-articulation split | `bass` / `bass-pyin`; `bass-basic-pitch`, `bass-monophonic` retained for comparison | Yes — one 7Rivers stem: frame F 78.9%, octave errors 10.9%; **onset F 75.6% against a 272-note full-length hand annotation** (57.1% before splitting); earlier Basic Pitch experiments retained as evidence | [bass-transcription-findings.md](bass-transcription-findings.md) |
 | `drums` | DrumScript (default), ADTOF (opt-in) | `drums-clean`, `drums-adtof` | Yes — IDMT-SMT-Drums corpus + real-stem timing study | [drumscript-evaluation-findings.md](drumscript-evaluation-findings.md), [drums-transcription-timing-findings.md](drums-transcription-timing-findings.md), [drums-clean-profile.md](drums-clean-profile.md), [adtof-phase-0-feasibility-findings.md](adtof-phase-0-feasibility-findings.md) |
 | `vocals` | Basic Pitch | `vocals` | **No** — frequency window only | — |
 | `piano`, `strings`, `instrumental`, `backing`, `original` | Basic Pitch | `default` | **No** — full-range defaults | — |
@@ -27,7 +27,7 @@ which is exactly what this index exists to make visible.
 
 ## What has been learned so far
 
-Four findings have held across more than one instrument, and are the things to
+Six findings have held across more than one instrument, and are the things to
 check first on a new one.
 
 **1. `frame_threshold` and `melodia_trick` must move together.** Raising the
@@ -58,6 +58,31 @@ Conversely, do **not** apply a monophonic tool to `vocals`: LALAL vocals stems
 routinely carry stacked backing vocals and harmonies that are genuinely
 polyphonic.
 
+**5. A metric can be blind to a whole failure mode, and the strongest evidence
+is the metric you do not have.** Bass's frame-level F-measure — the number step 3
+below tells you to trust — cannot distinguish one held note from four repeated
+plucks of the same fret, because the right pitch is sounding either way. Across a
+change that recovered a third of the notes in the part, every frame-level column
+was unchanged *to the decimal*. Both reference estimators shared the blind spot
+exactly, because both are frame-level. What exposed it was a human listening in
+REAPER and hand-correcting the MIDI. Before concluding a target is fine, ask what
+its metric would look like if a specific musical failure were present — and if
+the answer is "identical", that failure is unmeasured, not absent. Repeated notes
+are the case to check on any monophonic target; drums avoid it only because their
+metric is onset-based to begin with.
+
+**6. On a real stem the crude measure keeps winning.** Bass re-articulation was
+attacked with five detectors: a decaying peak follower (models a plucked
+string's physics), a locally adaptive threshold (models the passage getting
+quieter), sharper and band-limited envelopes (models the attack being brief),
+beat-grid-guided candidates (models the part being rhythmic), and mel-band
+spectral flux. All five lost to differencing a heavily smoothed energy envelope
+and then constraining *where* the results may land. Two of them lost to the
+feature they were meant to improve: pYIN's own 93 ms RMS window beat every
+sharper envelope, because the smearing is useful smoothing. Prefer the simple
+feature plus a structural constraint, and make the better-motivated model earn
+its place against a measurement.
+
 A corollary that cost real time: **the cleanup pipeline's order is load-bearing on
 every instrument.** `clamp_sustain` must precede anything that resolves overlaps
 or counts voices, because a runaway drone otherwise dominates the decision.
@@ -71,11 +96,26 @@ The recipe that produced both the guitar and bass findings, in order:
 1. **Quantify the complaint before changing anything.** Note count, note-length
    distribution, peak *and median* polyphony, and pitch range against what the
    instrument can physically play. Record it as the baseline row.
-2. **Establish a reference you did not transcribe with.** Neither instrument had
-   hand annotations. Guitar used vgt's own detected chords (a relative signal
-   only); bass used two estimators from different algorithm families — pYIN
-   (time-domain) and a CQT harmonic sum (frequency-domain) — and reported their
-   85.9% agreement, so neither one's failure modes explain the other's.
+2. **Establish a reference you did not transcribe with.** Guitar used vgt's own
+   detected chords (a relative signal only); bass originally used two estimators
+   from different algorithm families — pYIN (time-domain) and a CQT harmonic sum
+   (frequency-domain) — and reported their 85.9% agreement, so neither one's
+   failure modes explain the other's.
+
+   **Ask the maintainer for a hand-corrected track before assuming an estimated
+   reference is the best available.** Bass now has one: 272 notes over the full
+   track, hand-corrected in REAPER, committed as numbers-only fixtures. It cost
+   an afternoon of the maintainer's time and it settled questions no estimator
+   could (see finding 5). Two practical notes learned doing it:
+
+   - **A prefix is enough to start.** The first tuning was fitted to 15.7 s and
+     picked the same settings the eventual full-length reference picks. Begin
+     measuring against whatever exists rather than waiting for completeness.
+   - **Re-check every claim when the annotation grows, and expect to retract
+     some.** An interim 30.6 s snapshot showed held-out precision collapsing,
+     which was written up as a real limitation; at 117 notes it was visibly
+     small-sample noise. Report the sample size next to the number, and treat a
+     conclusion drawn from a few dozen events as provisional.
 3. **Pick a metric that penalizes over-detection.** This is the most important
    step and the easiest to get wrong. "Is a correct note sounding?" scores a
    22-voice mess at 90.8% because something is always right. Report precision
@@ -100,9 +140,14 @@ Evaluation-only. Neither runs a backend nor writes into a vgt project.
 | Script | For | Headline metrics |
 | --- | --- | --- |
 | `scripts/guitar_transcription_probe.py` | polyphonic targets | polyphony, fragmentation, harmonic-ghost share, chord agreement (`%ct-on` / `%ct-t`) |
-| `scripts/bass_transcription_probe.py` | monophonic targets | polyphony, frame precision / recall / F against a pYIN or CQT reference, octave-error share |
+| `scripts/bass_transcription_probe.py` | monophonic targets | polyphony, frame precision / recall / F against a pYIN or CQT reference, octave-error share; `--onset-reference` adds onset P/R/F against a hand annotation |
 | `scripts/drumscript_benchmark.py` | drums | onset F-measure against IDMT-SMT-Drums annotations |
 | `scripts/drum_midi_score.py` | drums | scores an event JSON or MIDI against a reference |
+
+`--onset-reference` is separate from the frame metrics for the reason finding 5
+gives: it is the only column that moves when note *boundaries* change at an
+unchanged pitch, and it needs a real annotation because no estimator derived from
+the stem can supply one. `tests/fixtures/bass_7rivers/` holds bass's — 272 notes, the full track.
 
 The two note-based probes report deliberately different things, because the
 question differs: for a polyphonic instrument the useful question is how much of a

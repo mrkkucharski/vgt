@@ -278,6 +278,9 @@ sample_rate_hz = 24000
 frame_length = 4096
 hop_length = 512
 median_filter_frames = 7
+rearticulation_span_frames = 3
+rearticulation_rise_db = 1.5
+rearticulation_minimum_spacing_beats = 0.5
 """
     resolved = resolve_profile("low_bass", parse_profiles_toml(text))
 
@@ -290,6 +293,9 @@ median_filter_frames = 7
         "frame_length": 4096,
         "hop_length": 512,
         "median_filter_frames": 7,
+        "rearticulation_span_frames": 3,
+        "rearticulation_rise_db": 1.5,
+        "rearticulation_minimum_spacing_beats": 0.5,
     }
     assert [stage.name for stage in resolved.cleanup] == [
         "merge_fragments", "drop_isolated_notes", "clamp_sustain",

@@ -38,12 +38,34 @@ tracker is being compared to itself. Use `--reference cqt` for that, and use
 
 Computing a reference costs ~40 s for a 3-minute stem, so pass `--cache FILE`
 to reuse it across runs and across variants.
+
+Onset scoring, and why it is a separate mode
+--------------------------------------------
+Everything above is *frame*-level: it asks which pitch was sounding at each
+instant. That question is structurally blind to a re-articulation. Playing the
+same fret four times running sounds the same pitch throughout, so a transcript
+that emits one held note and one that emits four score **identically** -- the
+frame metrics literally cannot tell them apart, and the tracker's maximal-run
+segmentation was getting this wrong on every repeated note.
+
+`--onset-reference NOTES.json` scores note *starts* instead, against a
+hand-annotated note list, and is the only metric here that moves when
+re-articulation splitting changes. It needs a real annotation because no
+estimator derived from the stem can supply one: the estimators this probe
+builds are frame-level too and share exactly the same blind spot.
+
+    uv run python scripts/bass_transcription_probe.py NOTES.csv --stem bass.wav \
+      --onset-reference tests/fixtures/bass_7rivers/hand_corrected_notes.json
+
+Scoring is restricted to the annotation's window, so a partially annotated song
+does not count every unannotated note as a false positive.
 """
 
 from __future__ import annotations
 
 import argparse
 import csv
+import json
 import statistics
 from pathlib import Path
 
@@ -235,6 +257,70 @@ def score(notes: list[Note], reference, voiced, rms, *, sample_rate: int, hop: i
     }
 
 
+# A detected onset this close to an annotated one counts as the same note. One
+# pYIN frame is ~11.6 ms and the annotation was placed by ear against a
+# waveform, so anything tighter would measure the annotator's mouse.
+ONSET_TOLERANCE_S = 0.05
+
+
+def load_onset_reference(path: Path) -> tuple[list[float], tuple[float, float]]:
+    """Read a hand-annotated note list, returning `(onsets, window)`.
+
+    The window is the span the human actually annotated -- see the fixture's
+    README on why it is usually a prefix of the song rather than all of it.
+    Times are relative to the same origin the scored CSV uses (the stem start),
+    which `stem_offset_s` restores.
+    """
+    data = json.loads(path.read_text(encoding="utf-8"))
+    offset = float(data.get("stem_offset_s", 0.0))
+    onsets = sorted(offset + float(note[0]) for note in data["notes"])
+    low, high = (offset + float(bound) for bound in data["window_s"])
+    return onsets, (low, high)
+
+
+def score_onsets(notes: list[Note], reference: list[float], window: tuple[float, float]) -> dict[str, float]:
+    """Match detected note starts to annotated ones, one to one, nearest first.
+
+    One-to-one matching is the point: without it, a transcript that shattered
+    one played note into six fragments would score six matches for it and read
+    as *better* than a correct one. Each annotated onset consumes at most one
+    detection, and every unconsumed detection is a false positive -- so
+    over-splitting shows up as falling precision, exactly as over-detection
+    does in the frame metrics above.
+    """
+    low, high = window
+    detected = sorted(start for start, _end, _pitch, _velocity in notes if low - ONSET_TOLERANCE_S <= start <= high + ONSET_TOLERANCE_S)
+    graded = [onset for onset in reference if low - 1e-6 <= onset <= high + 1e-6]
+    taken = [False] * len(detected)
+    matched = 0
+    for onset in graded:
+        best, best_distance = None, ONSET_TOLERANCE_S
+        for index, start in enumerate(detected):
+            if taken[index]:
+                continue
+            if abs(start - onset) <= best_distance:
+                best, best_distance = index, abs(start - onset)
+        if best is not None:
+            taken[best] = True
+            matched += 1
+    precision = matched / len(detected) if detected else 0.0
+    recall = matched / len(graded) if graded else 0.0
+    return {
+        "det": len(detected),
+        "ref": len(graded),
+        "match": matched,
+        "oprec": 100 * precision,
+        "orec": 100 * recall,
+        "of": 100 * (2 * precision * recall / (precision + recall) if precision + recall else 0.0),
+    }
+
+
+ONSET_COLUMNS = (
+    ("det", "{:>5.0f}"), ("ref", "{:>5.0f}"), ("match", "{:>6.0f}"),
+    ("oprec", "{:>6.1f}"), ("orec", "{:>6.1f}"), ("of", "{:>6.1f}"),
+)
+
+
 COLUMNS = (
     ("notes", "{:>5.0f}"), ("med_ms", "{:>7.0f}"), ("max_s", "{:>7.1f}"),
     ("maxpoly", "{:>8.0f}"), ("medpoly", "{:>8.0f}"), ("lo", "{:>4.0f}"), ("hi", "{:>4.0f}"),
@@ -265,6 +351,8 @@ def main() -> None:
     parser.add_argument("--cache", type=Path, help="npz file to store/reuse the computed reference")
     parser.add_argument("--agreement", action="store_true",
                         help="also report how often the two reference estimators agree")
+    parser.add_argument("--onset-reference", type=Path,
+                        help="hand-annotated note list (JSON) to additionally score note starts against")
     args = parser.parse_args()
 
     import numpy as np
@@ -326,6 +414,23 @@ def main() -> None:
     print()
     print("hit/oct/wrong/miss are shares of graded frames; prec/rec/f count every extra")
     print("simultaneous pitch as a false positive. Read f, not rec.")
+
+    if args.onset_reference:
+        onsets, window = load_onset_reference(args.onset_reference)
+        print()
+        print(f"onset reference {args.onset_reference}")
+        print(f"annotated window {window[0]:.3f}-{window[1]:.3f} s ({len(onsets)} notes); "
+              f"matching tolerance {1000 * ONSET_TOLERANCE_S:.0f} ms")
+        header = f"{'variant':<28}" + "".join(f"{name:>{len(fmt.format(0))}}" for name, fmt in ONSET_COLUMNS)
+        print()
+        print(header)
+        print("-" * len(header))
+        for path in args.notes:
+            row = score_onsets(load_notes(path), onsets, window)
+            print(f"{label_for(path, args.notes):<28}" + "".join(fmt.format(row[name]) for name, fmt in ONSET_COLUMNS))
+        print()
+        print("det/ref/match are note counts inside the annotated window; oprec/orec/of are")
+        print("onset precision/recall/F. This is the only table re-articulation splitting moves.")
 
 
 if __name__ == "__main__":
