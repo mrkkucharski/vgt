@@ -18,6 +18,7 @@ from vgt.sidecar import (
     upgrade,
     write_sidecar,
 )
+from vgt.transcription_variants import detection_cache_root
 from vgt.transcribe import (
     FakeTranscriber,
     TargetTranscriberRouter,
@@ -1552,3 +1553,105 @@ def test_forget_drums_removes_only_its_vgt_midi_and_event_artifacts(tmp_path: Pa
     assert "drums" not in result["analysis"]["transcription"]["targets"]
     assert paths[0].is_file() and paths[1].is_file()
     assert not paths[2].exists() and not paths[3].exists()
+
+
+def _detection_groups(project: Path, namespace: str) -> set[str]:
+    """Raw detection group directories present on disk."""
+    root = detection_cache_root(artifact_namespace_dir(project, namespace))
+    return {entry.name for entry in root.iterdir() if entry.is_dir()} if root.is_dir() else set()
+
+
+def test_analyze_releases_a_raw_detection_group_a_retune_stranded(tmp_path: Path) -> None:
+    """A routine re-analysis must collect the cache group it just orphaned.
+
+    Reconciling a target at a new identity repoints its variant at a new
+    detection hash, leaving the previous group unreferenced but still on disk
+    (~700 KB of raw MIDI/CSV per group on a real stem). Before this, only
+    `--forget-transcription` and `variant discard` ever collected it, so
+    retuning a profile -- or switching a target's backend, as bass did -- leaked
+    a group every time.
+    """
+    project = _project_copy(tmp_path)
+    _write_v1_sidecar(project)
+    sidecar = read_sidecar(project)
+    _add_fake_stem(project, sidecar, "guitar", b"guitar-audio")
+    write_sidecar(project, sidecar)
+    router = TargetTranscriberRouter(FakeTranscriber(), FakeTranscriber())
+
+    first = analyze(project, stages=("transcription",), transcription_targets=("guitar",), transcriber_router=router)
+    namespace = first["analysis"]["stems"]["artifact_namespace"]
+    original_hash = _default_variant(first["analysis"]["transcription"]["targets"]["guitar"])["detection_hash"]
+    assert _detection_groups(project, namespace) == {original_hash}
+
+    # Change guitar's detection identity the same way a retune would.
+    set_transcription_modes(project, {"guitar": "guitar-acoustic-strict-chords"})
+    second = analyze(project, stages=("transcription",), transcription_targets=("guitar",), transcriber_router=router)
+    retuned_hash = _default_variant(second["analysis"]["transcription"]["targets"]["guitar"])["detection_hash"]
+
+    assert retuned_hash != original_hash
+    assert set(second["analysis"]["transcription"]["detection_cache"]) == {retuned_hash}
+    assert _detection_groups(project, namespace) == {retuned_hash}
+    # Durable, not just in the returned dict.
+    assert set(read_sidecar(project)["analysis"]["transcription"]["detection_cache"]) == {retuned_hash}
+
+
+def test_analyze_keeps_a_group_belonging_to_a_target_that_did_not_run(tmp_path: Path) -> None:
+    """`--transcribe-only bass` must not collect guitar's detection group.
+
+    The sweep reference-counts against the complete targets index, not just the
+    targets reconciled in this run -- otherwise running one target would throw
+    away every other target's cached detection and force a re-run next time.
+    """
+    project = _project_copy(tmp_path)
+    _write_v1_sidecar(project)
+    sidecar = read_sidecar(project)
+    for target in ("guitar", "bass"):
+        _add_fake_stem(project, sidecar, target, f"{target}-audio".encode())
+    write_sidecar(project, sidecar)
+    router = TargetTranscriberRouter(FakeTranscriber(), FakeTranscriber())
+
+    both = analyze(
+        project, stages=("transcription",), transcription_targets=("guitar", "bass"), transcriber_router=router
+    )
+    namespace = both["analysis"]["stems"]["artifact_namespace"]
+    targets = both["analysis"]["transcription"]["targets"]
+    guitar_hash = _default_variant(targets["guitar"])["detection_hash"]
+    bass_hash = _default_variant(targets["bass"])["detection_hash"]
+    assert _detection_groups(project, namespace) == {guitar_hash, bass_hash}
+
+    only_bass = analyze(
+        project, stages=("transcription",), transcription_targets=("bass",), transcriber_router=router, force=True
+    )
+
+    assert set(only_bass["analysis"]["transcription"]["detection_cache"]) == {guitar_hash, bass_hash}
+    assert _detection_groups(project, namespace) == {guitar_hash, bass_hash}
+
+
+def test_analyze_keeps_every_group_a_retained_sibling_variant_still_references(tmp_path: Path) -> None:
+    """Reconciling the default variant must not collect a group that another
+    retained variant of the same target still points at."""
+    from vgt.transcription_lifecycle import add_variant
+
+    project = _project_copy(tmp_path)
+    _write_v1_sidecar(project)
+    sidecar = read_sidecar(project)
+    _add_fake_stem(project, sidecar, "guitar", b"guitar-audio")
+    write_sidecar(project, sidecar)
+    router = TargetTranscriberRouter(FakeTranscriber(), FakeTranscriber())
+
+    analyze(project, stages=("transcription",), transcription_targets=("guitar",), transcriber_router=router)
+    add_variant(project, "guitar", label="strict", profile="guitar-acoustic-strict-chords", router=router)
+    before = read_sidecar(project)
+    namespace = before["analysis"]["stems"]["artifact_namespace"]
+    hashes = {
+        variant["detection_hash"]
+        for variant in before["analysis"]["transcription"]["targets"]["guitar"]["variants"].values()
+    }
+    assert len(hashes) == 2
+
+    after = analyze(
+        project, stages=("transcription",), transcription_targets=("guitar",), transcriber_router=router, force=True
+    )
+
+    assert set(after["analysis"]["transcription"]["detection_cache"]) == hashes
+    assert _detection_groups(project, namespace) == hashes

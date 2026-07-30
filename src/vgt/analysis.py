@@ -618,6 +618,32 @@ def analyze(
                         ),
                     ),
                 )
+            # Reconciling a target at a new identity strands its previous raw
+            # detection group: the variant now points at the new hash, so the
+            # old entry is unreferenced but its ~700 KB of raw MIDI/CSV stays on
+            # disk forever. Retuning a profile, or switching a target's backend
+            # outright (bass basic-pitch -> pyin), both do this, and until now
+            # only `--forget-transcription` and `variant discard` ever collected
+            # it. Sweep here too, so a routine re-analysis cannot leak.
+            #
+            # This runs once after every target in this run is reconciled, not
+            # per target, and reference-counts against the *complete* targets
+            # index -- `--transcribe-only bass` must not collect a guitar
+            # variant's group just because guitar did not run.
+            kept_cache, removed = garbage_collect_raw_cache(
+                namespace_dir=artifact_namespace_dir(project_path, namespace),
+                detection_cache=analysis["transcription"].get("detection_cache") or {},
+                targets=analysis["transcription"]["targets"],
+            )
+            if removed:
+                analysis["transcription"]["detection_cache"] = kept_cache
+                emit(f"transcription — released {len(removed)} unreferenced raw detection group(s)")
+                update_analysis(
+                    project_path,
+                    lambda current: current["transcription"].__setitem__(
+                        "detection_cache", copy.deepcopy(kept_cache)
+                    ),
+                )
             continue
         stage_settings = settings.get(stage, {})
         settings_hash = _hash_settings(stage_settings)
