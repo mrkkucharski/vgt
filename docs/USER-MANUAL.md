@@ -327,6 +327,32 @@ and reordering cleanup stages are rejected. All output-changing settings,
 including spectral FFT/hop values, are recorded in the resolved variant
 snapshot and hashes.
 
+Bass profiles may extend `bass` or `bass-pyin` and tune the pYIN tracker
+without exposing Basic Pitch-only settings:
+
+```toml
+[profiles.low-bass]
+target = "bass"
+extends = "bass-pyin"
+description = "Five-string, low-tuned bass"
+
+[profiles.low-bass.detection]
+minimum_frequency_hz = 25
+maximum_frequency_hz = 280
+frame_length = 4096
+hop_length = 512
+median_filter_frames = 7
+```
+
+pYIN accepts only `minimum_note_length_ms`, the two frequency bounds,
+`sample_rate_hz`, `frame_length`, `hop_length`, and
+`median_filter_frames`; Basic Pitch-only thresholds and toggles are rejected.
+Cleanup stages retain their canonical order even when TOML declares them in a
+different order. Changing a detection setting invalidates that profile's raw
+cache once; changing only cleanup reuses the raw pYIN detection and derives a
+new result. This one-time, local cache invalidation is expected and costs no
+network or paid work.
+
 If a backend's execution or output validation fails, `drums` (or any other
 target) is recorded with `status: error` and analysis continues for every
 other requested target. There is no automatic fallback between backends: a

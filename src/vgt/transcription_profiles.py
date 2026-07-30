@@ -51,10 +51,10 @@ from .transcribe import (
     CleanupStage,
     InstrumentProfile,
     PyinSpec,
+    PYIN_ALGORITHM_VERSION,
     TempoMapReference,
     TranscriptionError,
     VALID_TARGETS,
-    pyin_spec_from_profile,
     _bar_duration_seconds,  # noqa: SLF001 -- reuses the same bars->seconds conversion `default_spec_for_target` applies
     _INSTRUMENT_PROFILES,  # noqa: SLF001 -- this module is transcribe.py's one intended reader of the builtin registry
 )
@@ -64,11 +64,10 @@ TOML_SCHEMA_VERSION = 1
 _TOP_LEVEL_KEYS = {"schema_version", "profiles"}
 _PROFILE_KEYS = {"target", "extends", "description", "detection", "cleanup"}
 
-# The seven Basic Pitch detector fields a project profile may override. Kept
-# separate from `InstrumentProfile`'s dataclass fields so this module's
-# accepted-key set is explicit and doesn't silently grow if that dataclass
-# gains an unrelated field later.
-_DETECTION_FIELDS: tuple[str, ...] = (
+# Backend-specific fields are deliberately explicit.  A pYIN profile must not
+# accept a Basic Pitch knob which its backend never reads: doing so would make
+# an apparent retune a silent no-op and poison its cache identity.
+_BASIC_PITCH_DETECTION_FIELDS: tuple[str, ...] = (
     "onset_threshold",
     "frame_threshold",
     "minimum_note_length_ms",
@@ -76,6 +75,16 @@ _DETECTION_FIELDS: tuple[str, ...] = (
     "maximum_frequency_hz",
     "melodia_trick",
     "multiple_pitch_bends",
+)
+
+_PYIN_DETECTION_FIELDS: tuple[str, ...] = (
+    "minimum_note_length_ms",
+    "minimum_frequency_hz",
+    "maximum_frequency_hz",
+    "sample_rate_hz",
+    "frame_length",
+    "hop_length",
+    "median_filter_frames",
 )
 
 
@@ -143,6 +152,10 @@ _DETECTION_VALIDATORS: dict[str, Any] = {
     "maximum_frequency_hz": _validate_positive_number,
     "melodia_trick": _validate_bool,
     "multiple_pitch_bends": _validate_bool,
+    "sample_rate_hz": _validate_positive_int,
+    "frame_length": _validate_positive_int,
+    "hop_length": _validate_positive_int,
+    "median_filter_frames": _validate_positive_int,
 }
 
 # Per-stage accepted parameter keys and their validators. Only the five
@@ -359,6 +372,34 @@ def _validate_resolved_detection(detection: Mapping[str, Any], name: str) -> Non
         _fail(f"profile {name!r} has minimum_frequency_hz >= maximum_frequency_hz ({minimum} >= {maximum})")
 
 
+def _validate_detection_keys_for_backend(
+    chain: list[RawProfileDefinition], *, backend: str, name: str,
+) -> None:
+    """Reject a detector setting that belongs to a different backend.
+
+    Parsing accepts the union so a project-profile inheritance chain can be
+    parsed before its builtin parent is known.  Once resolved, however, every
+    key has an unambiguous backend and can receive a useful error.
+    """
+    allowed = _PYIN_DETECTION_FIELDS if backend == "pyin" else _BASIC_PITCH_DETECTION_FIELDS
+    for definition in chain:
+        unsupported = sorted(set(definition.detection) - set(allowed))
+        if unsupported:
+            kind = "pYIN" if backend == "pyin" else "Basic Pitch"
+            _fail(
+                f"profile {definition.name!r} extends a {kind} profile but has unsupported "
+                f"detection parameter(s): {unsupported}"
+            )
+
+
+def _validate_resolved_pyin_detection(detection: Mapping[str, Any], name: str) -> None:
+    _validate_resolved_detection(detection, name)
+    if detection["hop_length"] > detection["frame_length"]:
+        _fail(f"profile {name!r} has hop_length greater than frame_length")
+    if detection["median_filter_frames"] % 2 == 0:
+        _fail(f"profile {name!r} has an even median_filter_frames; pYIN requires an odd frame count")
+
+
 def resolve_profile(name: str, project_profiles: Mapping[str, RawProfileDefinition] | None = None) -> ResolvedProfile:
     """Resolve `name` through its `extends` chain to an immutable settings
     snapshot. `name` may be a builtin registered in
@@ -399,17 +440,19 @@ def resolve_profile(name: str, project_profiles: Mapping[str, RawProfileDefiniti
     if current not in _INSTRUMENT_PROFILES:
         _fail(f"profile {chain[-1].name!r} extends unknown parent {current!r}")
     base = _INSTRUMENT_PROFILES[current]
-    if base.backend != "basic-pitch":
-        _fail(f"profile {name!r} extends {current!r}, which is not a Basic Pitch profile")
+    if base.backend not in {"basic-pitch", "pyin"}:
+        _fail(f"profile {name!r} extends {current!r}, whose backend does not support project overrides")
 
     target = chain[0].target
     for defn in chain:
         if defn.target != target:
             _fail(f"profile {defn.name!r} targets {defn.target!r}, incompatible with {name!r}'s target {target!r}")
     if target == "drums":
-        _fail(f"profile {name!r} targets 'drums', which uses the fixed DrumScript backend, not Basic Pitch overrides")
+        _fail(f"profile {name!r} targets 'drums', which uses the fixed DrumScript backend, not project overrides")
 
-    detection = _profile_detection_fields(base)
+    _validate_detection_keys_for_backend(chain, backend=base.backend, name=name)
+
+    detection = _pyin_detection_fields(base) if base.backend == "pyin" else _profile_detection_fields(base)
     cleanup_by_name = _seed_cleanup_by_name(base)
     for defn in reversed(chain):
         for key, value in defn.detection.items():
@@ -422,7 +465,10 @@ def resolve_profile(name: str, project_profiles: Mapping[str, RawProfileDefiniti
             params.update({key: value for key, value in override.items() if key != "enabled"})
             cleanup_by_name[stage_name] = params
 
-    _validate_resolved_detection(detection, name)
+    if base.backend == "pyin":
+        _validate_resolved_pyin_detection(detection, name)
+    else:
+        _validate_resolved_detection(detection, name)
     ordered_cleanup = tuple(
         CleanupStage(stage_name, cleanup_by_name[stage_name])
         for stage_name in CANONICAL_CLEANUP_STAGE_ORDER
@@ -430,7 +476,7 @@ def resolve_profile(name: str, project_profiles: Mapping[str, RawProfileDefiniti
     )
     definition_hash = _hash(chain[0].raw)
     return ResolvedProfile(
-        name=name, target=target, backend="basic-pitch", detection=detection,
+        name=name, target=target, backend=base.backend, detection=detection,
         cleanup=ordered_cleanup, is_builtin=False, profile_definition_hash=definition_hash,
     )
 
@@ -559,18 +605,21 @@ def spec_from_resolved_profile(
     `vgt.transcription_lifecycle`'s `variant add` can run any resolved profile
     through `vgt.transcription_variants.reconcile_variants` unchanged."""
     if resolved.backend == "pyin":
-        # A pyin profile is builtin-only (a project TOML can only `extends` a
-        # Basic Pitch base, see `resolve_profile`), so its settings still live
-        # in the registry entry and are read straight back from it. Routing
-        # through the same builder `default_spec_for_target` uses keeps the two
-        # selection paths from drifting apart.
-        profile = _INSTRUMENT_PROFILES[resolved.name]
-        bar_seconds = _bar_duration_seconds(midi_tempo, time_signature)
-        return pyin_spec_from_profile(
-            profile,
+        detection = resolved.detection
+        cleanup = _instantiate_resolved_cleanup(resolved.cleanup, midi_tempo=midi_tempo, time_signature=time_signature)
+        return PyinSpec(
+            backend="pyin",
+            algorithm_version=PYIN_ALGORITHM_VERSION,
+            sample_rate_hz=detection["sample_rate_hz"],
+            frame_length=detection["frame_length"],
+            hop_length=detection["hop_length"],
+            median_filter_frames=detection["median_filter_frames"],
+            minimum_note_length_ms=detection["minimum_note_length_ms"],
+            minimum_frequency_hz=detection["minimum_frequency_hz"],
+            maximum_frequency_hz=detection["maximum_frequency_hz"],
             midi_tempo=midi_tempo,
-            sustain_clamp_s=bar_seconds * profile.sustain_clamp_bars if bar_seconds else None,
             tempo_map=tempo_map,
+            cleanup=cleanup,
         )
     if resolved.backend != "basic-pitch":
         raise ProfileDefinitionError(f"profile {resolved.name!r} is not a Basic Pitch profile and has no spec bridge")
