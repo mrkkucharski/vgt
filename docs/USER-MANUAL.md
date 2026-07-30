@@ -371,7 +371,9 @@ ceiling, or cleanup ordering fixed it — the model's note *boundaries* are wron
 so no "keep one note" filter can recover the right note. Switching to a tracker
 took frame-level F-measure from 7% to 79% on that stem. The full comparison,
 including the two independent estimators used as a reference, is in
-[docs/bass-transcription-findings.md](bass-transcription-findings.md).
+[docs/bass-transcription-findings.md](bass-transcription-findings.md) — indexed,
+with every other instrument's evidence, from
+[docs/instrument-transcription-findings.md](instrument-transcription-findings.md).
 
 Because a tracker emits one line by construction, the `bass` profile needs no
 voice cap: its cleanup is only `merge_fragments`, `drop_isolated_notes`, and
