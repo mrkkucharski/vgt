@@ -399,6 +399,56 @@ def test_tempo_drift_warning_matches_the_hotel_california_and_7rivers_worked_exa
     assert seven_rivers.stdout == "0"
 
 
+def test_apply_tempo_map_anchors_on_the_first_beat_without_claiming_bar_phase() -> None:
+    """Issue #275: a beat-only result (no downbeat) must still get the
+    analyzed BPM applied -- REAPER's own marker 0 carries the rate from time
+    0 -- but the second marker must anchor on the first detected beat and
+    must NOT claim bar phase (measurepos/beatpos must be -1/-1, matching the
+    non-claiming form the piecewise span markers already use), unlike the
+    downbeat-detected case which legitimately marks bar 1 beat 1."""
+    script = APPLY_SCRIPT.read_text()
+    helpers_end = script.index("-- Projected drift threshold (issue #274)")
+    lua_program = "\n".join(
+        [
+            "reaper = {}",
+            "local calls = {}",
+            "function reaper.CountTempoTimeSigMarkers(_) return 1 end",
+            "function reaper.DeleteTempoTimeSigMarker(_, _) end",
+            "function reaper.SetTempoTimeSigMarker(_, ptidx, timepos, measurepos, beatpos, bpm, num, den, lin)"
+            "  table.insert(calls, {ptidx=ptidx, timepos=timepos, measurepos=measurepos, beatpos=beatpos, bpm=bpm}) end",
+            script[:helpers_end],
+            "local tempo = {bpm = 147.759, time_signature = '4/4', beat_times = {0.42, 1.17, 1.92}}",
+            "apply_tempo_map(tempo, 10, 0.42, false)",
+            "local anchor = calls[2]",
+            "io.write(anchor.timepos, ':', anchor.measurepos, ':', anchor.beatpos, ':', anchor.bpm)",
+        ]
+    )
+    result = subprocess.run([LUA, "-", "song.RPP"], input=lua_program, text=True, capture_output=True, check=True)
+    assert result.stdout == "10.42:-1:-1:147.759"
+
+
+def test_apply_tempo_map_still_claims_bar_phase_at_a_real_downbeat() -> None:
+    script = APPLY_SCRIPT.read_text()
+    helpers_end = script.index("-- Projected drift threshold (issue #274)")
+    lua_program = "\n".join(
+        [
+            "reaper = {}",
+            "local calls = {}",
+            "function reaper.CountTempoTimeSigMarkers(_) return 1 end",
+            "function reaper.DeleteTempoTimeSigMarker(_, _) end",
+            "function reaper.SetTempoTimeSigMarker(_, ptidx, timepos, measurepos, beatpos, bpm, num, den, lin)"
+            "  table.insert(calls, {ptidx=ptidx, timepos=timepos, measurepos=measurepos, beatpos=beatpos, bpm=bpm}) end",
+            script[:helpers_end],
+            "local tempo = {bpm = 120, time_signature = '4/4', downbeat_offset_seconds = 0.25}",
+            "apply_tempo_map(tempo, 10, 0.25, true)",
+            "local anchor = calls[2]",
+            "io.write(anchor.timepos, ':', anchor.measurepos, ':', anchor.beatpos, ':', anchor.bpm)",
+        ]
+    )
+    result = subprocess.run([LUA, "-", "song.RPP"], input=lua_program, text=True, capture_output=True, check=True)
+    assert result.stdout == "10.25:0:0:120"
+
+
 def test_tempo_drift_warning_reports_both_tempos_drift_and_remedy() -> None:
     script = APPLY_SCRIPT.read_text()
     helpers_end = script.index("-- A canonical snapshot of every tempo/time-sig marker currently in the")
@@ -463,7 +513,7 @@ def test_phase1_apply_reads_analysis_and_uses_only_reaper_api() -> None:
     assert "managed[region_id]" in script
     assert "reaper.DeleteProjectMarker(0, region_id, true)" in script
     assert '"managed_region_ids"' in script
-    assert "tempo.downbeat_detected ~= true" in script
+    assert "tempo.downbeat_detected == true" in script
     assert "type(tempo.beat_times) == \"table\"" in script
 
 

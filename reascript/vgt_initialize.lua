@@ -312,15 +312,19 @@ local function prior_tempo_data_fingerprint()
 end
 
 -- A canonical snapshot of the *analyzed* tempo data itself (bpm, downbeat
--- offset, time signature, piecewise spans) -- independent of where the
--- reference track happens to sit in the timeline. Comparing this against the
--- fingerprint recorded for the live map is how a re-apply tells "the
--- detected/corrected tempo actually changed" apart from "nothing changed,
--- don't needlessly rewrite (and thereby re-shift any beat-attached
--- reference items) an already-current map".
+-- offset, first beat, time signature, piecewise spans) -- independent of
+-- where the reference track happens to sit in the timeline. Comparing this
+-- against the fingerprint recorded for the live map is how a re-apply tells
+-- "the detected/corrected tempo actually changed" apart from "nothing
+-- changed, don't needlessly rewrite (and thereby re-shift any beat-attached
+-- reference items) an already-current map". The first beat time is included
+-- alongside the downbeat offset because a beat-only result (issue #275)
+-- anchors its map on beat_times[1] rather than the downbeat, so a shift in
+-- that value must also be recognized as a data change worth refreshing.
 local function tempo_data_fingerprint(tempo)
+  local first_beat = type(tempo.beat_times) == "table" and tonumber(tempo.beat_times[1]) or 0
   local parts = {
-    string.format("%.6f:%s:%s:%.6f", tonumber(tempo.bpm) or 0, tostring(tempo.time_signature or ""), tostring(tempo.downbeat_detected == true), tonumber(tempo.downbeat_offset_seconds) or 0),
+    string.format("%.6f:%s:%s:%.6f:%.6f", tonumber(tempo.bpm) or 0, tostring(tempo.time_signature or ""), tostring(tempo.downbeat_detected == true), tonumber(tempo.downbeat_offset_seconds) or 0, first_beat or 0),
   }
   if type(tempo.spans) == "table" then
     for _, span in ipairs(tempo.spans) do
@@ -992,22 +996,30 @@ local function is_single_default_tempo_marker()
   return ok and math.abs(time) < 0.000001 and math.abs(bpm - 120) < 0.001 and numerator == 4 and denominator == 4
 end
 
-local function apply_tempo_map(tempo, reference_start)
+-- `claim_bar_phase` distinguishes an anchor at a genuine downbeat (bar 1,
+-- beat 1 -- REAPER is told measurepos=0/beatpos=0, so bar numbering
+-- downstream is meaningful) from an anchor at a beat with no known bar
+-- position (issue #275: measurepos=beatpos=-1, the same "don't claim a
+-- position" form the piecewise span markers below already use, so REAPER
+-- just continues counting bars/beats from wherever marker 0's phase implies
+-- rather than asserting this point is a bar start).
+local function apply_tempo_map(tempo, reference_start, anchor_offset, claim_bar_phase)
   local bpm = tonumber(tempo.bpm)
   if not bpm or bpm <= 0 then return false end
   local numerator, denominator = parse_time_signature(tempo.time_signature)
   -- On a refresh, clear every marker vgt previously wrote first (index 0 can
   -- only be updated, never deleted) so the new map is built from a clean
-  -- slate -- otherwise a stale marker left at the old downbeat/span times
+  -- slate -- otherwise a stale marker left at the old anchor/span times
   -- would linger and make the map internally inconsistent.
   for index = reaper.CountTempoTimeSigMarkers(0) - 1, 1, -1 do
     reaper.DeleteTempoTimeSigMarker(0, index)
   end
   -- Update the one default marker, then put explicit markers at the analyzed
-  -- downbeat / piecewise boundaries.  REAPER owns the map construction.
+  -- anchor / piecewise boundaries.  REAPER owns the map construction.
   reaper.SetTempoTimeSigMarker(0, 0, 0, -1, -1, bpm, numerator, denominator, false)
-  local downbeat = reference_start + (tonumber(tempo.downbeat_offset_seconds) or 0)
-  reaper.SetTempoTimeSigMarker(0, -1, downbeat, 0, 0, bpm, numerator, denominator, false)
+  local anchor = reference_start + (tonumber(anchor_offset) or 0)
+  local measure_beat = claim_bar_phase and 0 or -1
+  reaper.SetTempoTimeSigMarker(0, -1, anchor, measure_beat, measure_beat, bpm, numerator, denominator, false)
   if tempo.mode == "piecewise" and type(tempo.spans) == "table" then
     for _, span in ipairs(tempo.spans) do
       local span_bpm = tonumber(span.bpm)
@@ -1083,19 +1095,23 @@ local function current_tempo_fingerprint()
 end
 
 -- Deterministically predicts what current_tempo_fingerprint() would read
--- immediately after a clean apply_tempo_map(tempo, reference_start) call --
--- the same marker time/bpm/timesig values, in the same write order -- without
--- touching REAPER at all. Comparing this against the live fingerprint on a
--- later apply is how an interrupted tempo mutation (#139) is told apart from
--- a genuinely partial write or a user edit made since: see the tempo
+-- immediately after a clean apply_tempo_map(tempo, reference_start,
+-- anchor_offset, claim_bar_phase) call -- the same marker time/bpm/timesig
+-- values, in the same write order -- without touching REAPER at all.
+-- claim_bar_phase itself never appears here: current_tempo_fingerprint only
+-- records time/bpm/timesig, not measurepos/beatpos, so the two anchor forms
+-- are indistinguishable at this level -- only anchor_offset (which caller
+-- computed it from) matters. Comparing this against the live fingerprint on
+-- a later apply is how an interrupted tempo mutation (#139) is told apart
+-- from a genuinely partial write or a user edit made since: see the tempo
 -- transaction recovery in apply() below.
-local function predicted_tempo_fingerprint(tempo, reference_start)
+local function predicted_tempo_fingerprint(tempo, reference_start, anchor_offset)
   local bpm = tonumber(tempo.bpm)
   if not bpm or bpm <= 0 then return nil end
   local numerator, denominator = parse_time_signature(tempo.time_signature)
   local parts = {string.format("%.6f:%.3f:%d:%d", 0, bpm, numerator, denominator)}
-  local downbeat = reference_start + (tonumber(tempo.downbeat_offset_seconds) or 0)
-  parts[#parts + 1] = string.format("%.6f:%.3f:%d:%d", downbeat, bpm, numerator, denominator)
+  local anchor = reference_start + (tonumber(anchor_offset) or 0)
+  parts[#parts + 1] = string.format("%.6f:%.3f:%d:%d", anchor, bpm, numerator, denominator)
   if tempo.mode == "piecewise" and type(tempo.spans) == "table" then
     for _, span in ipairs(tempo.spans) do
       local span_bpm = tonumber(span.bpm)
@@ -1644,6 +1660,18 @@ local function apply()
   local tempo_data_fp = ""
   if type(tempo) == "table" and tonumber(tempo.bpm) then
     tempo_data_fp = tempo_data_fingerprint(tempo)
+    -- A downbeat anchors bar 1/beat 1 for real (claim_bar_phase = true). A
+    -- beat-only result (issue #275) still fixes the tempo *rate* -- BPM is
+    -- phase-free -- but must not claim bar phase, so it anchors on the first
+    -- detected beat instead and tells apply_tempo_map not to mark it as a
+    -- measure start.
+    local claim_bar_phase = tempo.downbeat_detected == true
+    local anchor_offset
+    if claim_bar_phase then
+      anchor_offset = tonumber(tempo.downbeat_offset_seconds) or 0
+    else
+      anchor_offset = (type(tempo.beat_times) == "table" and tonumber(tempo.beat_times[1])) or 0
+    end
     local prior_map_fingerprint = prior_tempo_map_fingerprint()
     local map_untouched = tempo_map_applied and prior_map_fingerprint ~= "" and current_tempo_fingerprint() == prior_map_fingerprint
 
@@ -1659,7 +1687,7 @@ local function apply()
       clear_tempo_txn()
       if pending_txn.target_data_fp == tempo_data_fp then
         local live_fp = current_tempo_fingerprint()
-        local predicted_fp = predicted_tempo_fingerprint(tempo, reference_start)
+        local predicted_fp = predicted_tempo_fingerprint(tempo, reference_start, anchor_offset)
         if live_fp == predicted_fp or (pending_txn.completed_fp ~= "" and live_fp == pending_txn.completed_fp) then
           -- The interrupted run's mutation is provably complete (the live
           -- map matches exactly what it must have produced): mirror that
@@ -1688,13 +1716,6 @@ local function apply()
       offer_beats_track(insert_at + 1, tempo, reference_start, reference_end, managed_tracks)
     elseif recovered then
       -- Already resolved above; nothing further to do for tempo this run.
-    elseif tempo.downbeat_detected ~= true then
-      -- A beat-only result has no trustworthy bar phase. Keep the detected
-      -- grid visible, but never create or refresh a bar-aligned REAPER map.
-      tempo_map_applied = false
-      tempo_map_fingerprint = ""
-      tempo_data_fp = ""
-      offer_beats_track(insert_at + 1, tempo, reference_start, reference_end, managed_tracks)
     elseif map_untouched and tempo_data_fp == prior_tempo_data_fingerprint() then
       -- Live map still matches what vgt wrote, and the tempo data hasn't
       -- changed either -- nothing to do. Rewriting an unchanged map would
@@ -1706,7 +1727,7 @@ local function apply()
       -- Record the transaction before touching a single marker, so a crash
       -- between here and this run's own write_settings can be recovered.
       write_tempo_txn(prior_map_fingerprint, tempo_data_fp, "")
-      if apply_tempo_map(tempo, reference_start) then
+      if apply_tempo_map(tempo, reference_start, anchor_offset, claim_bar_phase) then
         tempo_map_fingerprint = current_tempo_fingerprint()
         write_tempo_txn(prior_map_fingerprint, tempo_data_fp, tempo_map_fingerprint)
         -- Rewriting the map can shift any beat-attached reference item;
@@ -1728,7 +1749,7 @@ local function apply()
     elseif is_single_default_tempo_marker() then
       local prior_fp = current_tempo_fingerprint()
       write_tempo_txn(prior_fp, tempo_data_fp, "")
-      tempo_map_applied = apply_tempo_map(tempo, reference_start)
+      tempo_map_applied = apply_tempo_map(tempo, reference_start, anchor_offset, claim_bar_phase)
       if tempo_map_applied then
         tempo_map_fingerprint = current_tempo_fingerprint()
         write_tempo_txn(prior_fp, tempo_data_fp, tempo_map_fingerprint)
