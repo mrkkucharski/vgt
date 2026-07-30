@@ -786,6 +786,37 @@ def test_promote_appends_into_a_populated_clean_container() -> None:
     )
 
 
+def test_promote_refuses_when_both_closing_edges_would_move_at_once() -> None:
+    """Promoting [work]'s own closing child while an unselected sibling
+    remains needs to reassign that sibling's flag (0 -> -1); appending into a
+    populated [clean] needs to reopen its own unselected closing child (-1 ->
+    0). Doing both in the same promote would touch two different foreign
+    tracks' folder structure for one user action, so refuse atomically
+    (issue #246) rather than silently pick one of the two edits."""
+    script = WORKING_COPY_SCRIPT.read_text()
+    helpers_end = script.index("local function choose_action")
+    tracks = (
+        "{{name='[clean] Song',guid='{C}',values={I_FOLDERDEPTH=1},ext={['P_EXT:vgt_container']='clean'},items={}}, "
+        "{name='Old clean',guid='{OLD}',values={I_FOLDERDEPTH=-1},ext={keep='yes'},items={'keep'},selected=false}, "
+        "{name='[work] Song',guid='{W}',values={I_FOLDERDEPTH=1},ext={['P_EXT:vgt_container']='work'},items={}}, "
+        "{name='User reclaimed',guid='{R}',values={I_FOLDERDEPTH=0},ext={['P_EXT:vgt_working_copy']='1',keep='reclaimed'},items={'keep'},selected=false}, "
+        "{name='[work] Draft',guid='{D}',values={I_FOLDERDEPTH=-1},ext={['P_EXT:vgt_working_copy']='1'},items={'draft'},selected=true}}"
+    )
+    lua_program = "\n".join([
+        _promote_mock(tracks), script[:helpers_end],
+        "promote(); io.write(tostring(__message),'|',tostring(__dirty),'|'); "
+        "for _, t in ipairs(__tracks) do io.write(t.name, ':', t.values.I_FOLDERDEPTH, ':', t.ext.keep or '', ';') end",
+    ])
+    assert _run(lua_program).stdout == (
+        "Promotion would need to alter both [work]'s and [clean]'s existing closing tracks at once, so nothing was changed.|nil|"
+        "[clean] Song:1:;"
+        "Old clean:-1:yes;"
+        "[work] Song:1:;"
+        "User reclaimed:0:reclaimed;"
+        "[work] Draft:-1:;"
+    )
+
+
 def test_working_copy_uses_reaper_api_and_never_touches_the_sidecar_or_rpp_text() -> None:
     script = WORKING_COPY_SCRIPT.read_text()
     assert "reaper.SetTrackStateChunk" in script
