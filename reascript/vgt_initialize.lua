@@ -1239,6 +1239,24 @@ local function valid_midi_artifact(record, target, variant_id, artifact_namespac
   return path
 end
 
+-- Reference MIDI is authored at the analyzed tempo, not the project's. There
+-- is no ReaScript accessor for a take's IGNTEMPO flag, so this rewrites the
+-- item chunk directly: "IGNTEMPO 0 <bpm> <num> <den>" (follow the project
+-- tempo map) becomes "IGNTEMPO 1 <midi_tempo> <num> <den>" (ignore it,
+-- always play at the tempo the notes were written against). Time signature
+-- is left as REAPER wrote it; only the tempo value changes.
+local function set_take_ignores_project_tempo(item, midi_tempo)
+  local ok, chunk = reaper.GetItemStateChunk(item, "", false)
+  if not ok then return false end
+  local tempo = tonumber(midi_tempo)
+  if not tempo or tempo <= 0 then tempo = 120.0 end
+  local new_chunk, count = chunk:gsub("IGNTEMPO 0 %S+ (%d+) (%d+)", function(num, den)
+    return string.format("IGNTEMPO 1 %.6f %s %s", tempo, num, den)
+  end, 1)
+  if count ~= 1 then return false end
+  return reaper.SetItemStateChunk(item, new_chunk, false)
+end
+
 local function transcription_definition(target)
   local definition = nil
   for _, candidate in ipairs(TRANSCRIPTION_TARGETS) do
@@ -1284,6 +1302,12 @@ local function add_reference_midi_variant(index, target, variant_id, variant, re
   reaper.SetMediaItemInfo_Value(item, "C_BEATATTACHMODE", 0)
   local take = reaper.AddTakeToMediaItem(item)
   reaper.SetMediaItemTake_Source(take, source)
+  -- The item's D_POSITION stays BEAT-0 (position doesn't move); only the
+  -- take's own tempo timebase changes, so a project tempo that disagrees
+  -- with the analyzed BPM no longer rate-scales this item's notes.
+  if not set_take_ignores_project_tempo(item, variant.midi_tempo) then
+    warn(warning_subject .. ": could not make MIDI take ignore project tempo map")
+  end
   managed_tracks[#managed_tracks + 1] = midi_track
   return index + 1, true
 end

@@ -345,6 +345,8 @@ function reaper.GetSetMediaItemInfo_String(i,_,value) i.notes=value end
 function reaper.AddTakeToMediaItem(i) i.take={{}}; return i.take end
 function reaper.GetSetMediaItemTakeInfo_String(t,_,value) t.name=value end
 function reaper.SetMediaItemTake_Source(t,s) t.source=s end
+function reaper.GetItemStateChunk(i, _, _) i.chunk = i.chunk or 'IGNTEMPO 0 120 4 4'; return true, i.chunk end
+function reaper.SetItemStateChunk(i, chunk, _) i.chunk = chunk; return true end
 function reaper.PCM_Source_CreateFromFile(path) return {{path=path}} end
 function reaper.GetMediaSourceLength(_) return _G.midi_source_length or 1 end
 function reaper.CountProjectMarkers() return #regions end

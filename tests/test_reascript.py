@@ -485,6 +485,8 @@ def _click_track_lua_mock(rpp_path: Path) -> str:
             "function reaper.AddTakeToMediaItem(item) local take = {}; item.take = take; return take end",
             "function reaper.GetSetMediaItemTakeInfo_String(take, key, value) if key == 'P_NAME' then take.name = value end end",
             "function reaper.SetMediaItemTake_Source(take, source) take.source = source end",
+            "function reaper.GetItemStateChunk(item, _, _) item.chunk = item.chunk or '<ITEM>\\nIGNTEMPO 0 120 4 4\\n>'; return true, item.chunk end",
+            "function reaper.SetItemStateChunk(item, chunk, _) item.chunk = chunk; return true end",
             "_G.__items = items",
             "_G.__tracks = tracks",
         ]
@@ -749,6 +751,83 @@ def test_drumscript_record_imports_channel_10_polyphony_immediately_after_drums(
     # the simultaneous channel-10 hits.
     assert midi_path.read_bytes() == drum_midi
     assert b"\x00\x99\x24\x64\x00\x99\x26\x64" in midi_path.read_bytes()
+
+
+def test_reference_midi_ignores_the_project_tempo_map_at_its_own_analyzed_bpm(tmp_path: Path) -> None:
+    """Reference MIDI is authored at the analyzed tempo, not the project's --
+    see issue #273. The item's take must set IGNTEMPO 1 at that tempo so a
+    project tempo that disagrees with the analysis doesn't rate-scale playback.
+    The item's own position/BEAT-0 status is untouched."""
+    rpp = tmp_path / "song.RPP"
+    namespace = tmp_path / "vgt" / "song-abc123"
+    (namespace / "transcription").mkdir(parents=True)
+    (namespace / "transcription" / "guitar.mid").write_bytes(b"MThd")
+    script = APPLY_SCRIPT.read_text()
+    helpers_end = script.index("local function remove_previous_managed_regions()")
+    lua_program = "\n".join([
+        _click_track_lua_mock(rpp),
+        "function reaper.ShowConsoleMsg(message) io.stderr:write(message) end",
+        script[:helpers_end],
+        "local managed_tracks = {}",
+        "add_stem_tracks(0, {artifact_namespace = 'song-abc123', artifacts = {}},"
+        " {targets = {guitar = {status = 'transcribed', midi_file = 'transcription/guitar.mid', midi_tempo = 147.759}}},"
+        " 4, managed_tracks)",
+        "io.write(__items[1].chunk, ':', __items[1].values.D_POSITION, ':', __items[1].values.C_BEATATTACHMODE)",
+    ])
+    result = subprocess.run([LUA, "-", str(rpp)], input=lua_program, text=True, capture_output=True, check=True)
+    chunk, position, beat_mode = result.stdout.rsplit(":", 2)
+    assert "IGNTEMPO 1 147.759000 4 4" in chunk
+    assert "IGNTEMPO 0" not in chunk
+    assert position == "4"
+    assert beat_mode == "0"
+    assert result.stderr == ""
+
+
+def test_reference_midi_defaults_the_ignored_tempo_to_120_when_midi_tempo_is_missing(tmp_path: Path) -> None:
+    """Matches `_write_midi(..., spec.midi_tempo or 120.0, ...)` in transcribe.py:
+    when the sidecar carries no midi_tempo the notes were authored at 120, so
+    the take must ignore the project tempo map at that same fallback."""
+    rpp = tmp_path / "song.RPP"
+    namespace = tmp_path / "vgt" / "song-abc123"
+    (namespace / "transcription").mkdir(parents=True)
+    (namespace / "transcription" / "guitar.mid").write_bytes(b"MThd")
+    script = APPLY_SCRIPT.read_text()
+    helpers_end = script.index("local function remove_previous_managed_regions()")
+    lua_program = "\n".join([
+        _click_track_lua_mock(rpp), script[:helpers_end], "local managed_tracks = {}",
+        "add_stem_tracks(0, {artifact_namespace = 'song-abc123', artifacts = {}},"
+        " {targets = {guitar = {status = 'transcribed', midi_file = 'transcription/guitar.mid'}}},"
+        " 4, managed_tracks)",
+        "io.write(__items[1].chunk)",
+    ])
+    result = subprocess.run([LUA, "-", str(rpp)], input=lua_program, text=True, capture_output=True, check=True)
+    assert "IGNTEMPO 1 120.000000 4 4" in result.stdout
+
+
+def test_reference_midi_warns_but_keeps_the_track_when_the_chunk_cannot_be_rewritten(tmp_path: Path) -> None:
+    """REAPER's chunk API can fail; that must not drop the reference track --
+    it just stays tempo-map-following and gets a warning, same as any other
+    skip-with-warning path in this importer."""
+    rpp = tmp_path / "song.RPP"
+    namespace = tmp_path / "vgt" / "song-abc123"
+    (namespace / "transcription").mkdir(parents=True)
+    (namespace / "transcription" / "guitar.mid").write_bytes(b"MThd")
+    script = APPLY_SCRIPT.read_text()
+    helpers_end = script.index("local function remove_previous_managed_regions()")
+    lua_program = "\n".join([
+        _click_track_lua_mock(rpp),
+        "function reaper.ShowConsoleMsg(message) io.stderr:write(message) end",
+        "function reaper.GetItemStateChunk(item, _, _) return false, '' end",
+        script[:helpers_end],
+        "local managed_tracks = {}",
+        "add_stem_tracks(0, {artifact_namespace = 'song-abc123', artifacts = {}},"
+        " {targets = {guitar = {status = 'transcribed', midi_file = 'transcription/guitar.mid', midi_tempo = 147.759}}},"
+        " 4, managed_tracks)",
+        "io.write(#managed_tracks, ':', #__tracks, ':', __items[1].values.D_POSITION)",
+    ])
+    result = subprocess.run([LUA, "-", str(rpp)], input=lua_program, text=True, capture_output=True, check=True)
+    assert result.stdout == "1:1:4"
+    assert "could not make MIDI take ignore project tempo map" in result.stderr
 
 
 def test_removal_touches_only_the_recorded_vgt_drum_reference(tmp_path: Path) -> None:
