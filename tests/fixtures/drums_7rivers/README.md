@@ -37,6 +37,12 @@ directly comparable.
   evidence source (analogous to `TableOnsetEvidenceSource`) to test the fix
   without decoding audio.
 
+- **`project_grid.json`** — the recorded constant-tempo project grid used for
+  the real reference: 120.004 BPM, with a 0.085333 s downbeat anchor.  The
+  `beat_count` covers the full raw-event fixture.  It lets the combined
+  regression exercise production's grid reconciliation before cleanup without
+  opening the project or REAPER.
+
 ## Provenance & scope
 
 Derived from the maintainer's own recording ("The Seven Rivers"). Committed as

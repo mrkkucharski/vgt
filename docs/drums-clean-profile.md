@@ -139,6 +139,34 @@ reads through an `OnsetEvidenceSource`:
   offline (there is no real audio to analyze in tests) and available to any
   caller that wants the deliberately safe fallback path.
 
+## Combined 7Rivers offline regression baseline
+
+`tests/test_drum_cleanup_combined_7rivers_regression.py` runs the actual
+production order over the committed symbolic fixtures: reconcile raw
+DrumScript events to `project_grid.json`, then apply all five `drums-clean`
+stages using the committed onset-strength envelope. It trims both candidate and
+score to the corrected MIDI's 0–79.018 s coverage window, so unannotated
+later-song events cannot distort the result. It requires no audio, model,
+network, REAPER, or live project.
+
+Current baseline (2026-07-30) is 339 retained notes from 350 reconciled raw
+notes in that window, with 6 suppressed events. The score is:
+
+| Instrument | Precision | Recall | F1 | Matched notes | Median timing error |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| closed hi-hat | 0.407 | 0.588 | 0.481 | 77 | +15.9 ms |
+| open hi-hat | 0.000 | 0.000 | 0.000 | 0 | — |
+| kick | 0.543 | 0.505 | 0.524 | 50 | +15.1 ms |
+| snare | 0.808 | 0.583 | 0.677 | 42 | +15.6 ms |
+| **global** | **0.499** | **0.531** | **0.514** | **169** | **+15.7 ms** |
+
+The bounds protect matched-hit retention relative to the reconciled candidate,
+non-inflated final note count, conservative suppression, per-instrument/global
+quality floors, and ≤25 ms global median timing drift. They intentionally do
+not assert an exact generated note list: this is a regression guard for the
+combined behavior, not a claim that the reference is perfect classification
+ground truth.
+
 ## Compatibility
 
 `DrumScriptSpec.to_dict()` reproduces the exact pre-#177 five-field shape

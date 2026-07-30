@@ -1,0 +1,6 @@
+{
+  "tempo_bpm": 120.004,
+  "downbeat_offset_sec": 0.085333,
+  "beat_count": 400,
+  "description": "Recorded 7Rivers project tempo and downbeat grid used to author the drum reference. The test derives these constant-tempo beat times from the recorded values."
+}
