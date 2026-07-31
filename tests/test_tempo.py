@@ -249,3 +249,19 @@ def test_infer_downbeat_from_chords_returns_none_when_grid_shorter_than_bar() ->
     segments = _segments([0])
 
     assert infer_downbeat_from_chords(beat_times, segments, "4/4") is None
+
+
+def test_infer_downbeat_from_chords_ignores_segments_missing_start_seconds() -> None:
+    """A malformed chord segment (e.g. from a hand-edited sidecar) must be
+    skipped, not crash the whole analyze() run with a KeyError."""
+    beat_times = [float(i) for i in range(400)]
+    segments = _segments([0, 8, 16, 32, 40, 48, 56, 64, 80, 88, 96])
+    segments.append({"end_seconds": 12.0, "chord": "C:maj"})  # no start_seconds
+
+    result = infer_downbeat_from_chords(beat_times, segments, "4/4")
+
+    assert result == {
+        "downbeat_detected": True,
+        "downbeat_offset_seconds": 0.0,
+        "downbeat_source": "chords",
+    }

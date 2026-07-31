@@ -211,6 +211,42 @@ def test_upgrade_marks_legacy_librosa_tempo_as_unknown_bar_phase() -> None:
     assert upgraded["analysis"]["tempo"]["value"]["downbeat_detected"] is False
 
 
+def test_upgrade_attributes_a_legacy_beat_tracker_downbeat_to_the_beat_tracker() -> None:
+    """A legacy value with a real `backend` on record did go through
+    `detect_beats`, so it is the normal, expected "beat_tracker" case."""
+    upgraded = upgrade({"schema_version": 15, "analysis": {"tempo": {"value": {
+        "backend": "madmom", "bpm": 120.0, "downbeat_detected": True, "downbeat_offset_seconds": 0.25,
+    }}}})
+
+    assert upgraded["analysis"]["tempo"]["value"]["downbeat_source"] == "beat_tracker"
+
+
+def test_upgrade_does_not_attribute_a_reaper_tempo_map_downbeat_to_the_beat_tracker() -> None:
+    """A tempo map adopted from REAPER (issue #276 review) never went through
+    `detect_beats` -- schema 18 must not claim otherwise."""
+    upgraded = upgrade({"schema_version": 16, "analysis": {"tempo": {
+        "human_verified": True,
+        "value": {"source": "reaper-tempo-map", "mode": "piecewise", "bpm": 120.0, "spans": []},
+    }}})
+
+    tempo_value = upgraded["analysis"]["tempo"]["value"]
+    assert tempo_value["downbeat_detected"] is True  # pre-existing schema-11 heuristic, unchanged by this fix
+    assert tempo_value["downbeat_source"] is None
+
+
+def test_upgrade_backfills_downbeat_source_onto_the_detected_baseline_too() -> None:
+    """The `detected` baseline is documented to mirror `value`'s tempo-grid
+    shape; a legacy sidecar's `detected` must gain `downbeat_source` on
+    upgrade the same way `value` does, not be left out."""
+    upgraded = upgrade({"schema_version": 16, "analysis": {"tempo": {
+        "human_verified": True,
+        "value": {"bpm": 118.0, "downbeat_offset_seconds": 0.25, "time_signature": "4/4"},
+        "detected": {"backend": "madmom", "bpm": 120.0, "downbeat_detected": True, "downbeat_offset_seconds": 0.1},
+    }}})
+
+    assert upgraded["analysis"]["tempo"]["detected"]["downbeat_source"] == "beat_tracker"
+
+
 def test_upgrade_backfills_detected_from_value_for_v4_sections() -> None:
     """Same v2 -> v3 chords backfill, applied to sections for the v4 -> v5
     migration (#33): a v4 sidecar has no `detected` field on the sections
@@ -577,6 +613,66 @@ def test_analyze_infers_downbeat_from_chord_boundaries_when_beat_tracker_finds_n
     assert result["analysis"]["tempo"]["detected"]["downbeat_source"] == "chords"
 
 
+def test_chord_inferred_downbeat_does_not_clobber_a_correction_that_lands_mid_run(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Regression (issue #276 review): if a human tempo correction (e.g. via
+    the REAPER tempo-map sync action) lands on disk while the chords stage is
+    still computing -- after this run's own tempo stage turn already
+    persisted no-downbeat, before the chord-inference patch fires -- that
+    correction must survive, not be silently overwritten by a stale
+    in-memory chord-inferred downbeat that never saw it."""
+    project = _project_copy(tmp_path)
+    _write_v1_sidecar(project)
+    beat_times = [float(i) for i in range(40)]
+
+    def tempo(project: Path, _source: Path, _settings: dict, _analysis: dict, namespace: str, **_kwargs) -> dict:
+        artifact = artifact_namespace_dir(project, namespace) / "tempo-click.wav"
+        artifact.parent.mkdir(parents=True, exist_ok=True)
+        artifact.write_bytes(b"RIFFfixture")
+        return {
+            "bpm": 120.0,
+            "time_signature": "4/4",
+            "mode": "constant",
+            "backend": "fixture",
+            "downbeat_detected": False,
+            "downbeat_offset_seconds": None,
+            "downbeat_source": None,
+            "beat_times": beat_times,
+            "click_artifact_path": artifact.name,
+        }
+
+    def chords(_source: Path, beat_times: list[float], _settings: dict, **_kwargs) -> dict:
+        # Simulate a concurrent writer landing a human correction on disk
+        # while this stage is "still running" -- before its own result (and
+        # the chord-inference patch riding along with it) is persisted.
+        sidecar = read_sidecar(project)
+        sidecar["analysis"]["tempo"]["human_verified"] = True
+        sidecar["analysis"]["tempo"]["value"] = {
+            "bpm": 90.0, "downbeat_offset_seconds": 3.0, "time_signature": "3/4",
+        }
+        write_sidecar(project, sidecar)
+
+        bar_starts = [0, 8, 16, 24, 32]  # would otherwise infer phase 0
+        segments = [
+            {"start_seconds": beat_times[start], "end_seconds": beat_times[start + 4], "chord": "C:maj"}
+            for start in bar_starts
+        ]
+        return {"segments": segments, "vocabulary": "maj_min", "backend": "fixture", "beat_times": beat_times}
+
+    monkeypatch.setitem(analysis_module._DETECTORS, "tempo", tempo)
+    monkeypatch.setattr(analysis_module, "_detect_chords", chords)
+    monkeypatch.setattr(analysis_module, "_tempo_beat_times", lambda *_args: beat_times)
+
+    result = analyze(project)
+
+    tempo_value = result["analysis"]["tempo"]["value"]
+    assert tempo_value["bpm"] == 90.0
+    assert tempo_value["downbeat_offset_seconds"] == 3.0
+    assert tempo_value["time_signature"] == "3/4"
+    assert result["analysis"]["tempo"]["human_verified"] is True
+
+
 def test_analyze_does_not_overwrite_a_beat_tracker_detected_downbeat_with_chords(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -763,7 +859,9 @@ def test_manual_correction_survives_rerun(tmp_path: Path) -> None:
         "downbeat_offset_seconds": 0.25,
         "time_signature": "4/4",
         "downbeat_detected": True,
-        "downbeat_source": "beat_tracker",
+        # Hand-authored correction with no `backend` on record: never went
+        # through `detect_beats`, so its provenance isn't "beat_tracker".
+        "downbeat_source": None,
     }
     assert result["analysis"]["tempo"]["human_verified"] is True
     # Untouched stages still refresh normally.

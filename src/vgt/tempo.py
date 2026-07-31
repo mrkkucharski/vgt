@@ -12,12 +12,12 @@ This module isolates both backends behind `detect_beats`/`build_tempo_grid`:
 
 from __future__ import annotations
 
-import bisect
 import math
 from pathlib import Path
 from typing import Any
 import statistics
 
+from .chords import nearest_grid_index
 from .sidecar import artifact_namespace_dir
 
 # A global constant-BPM fit's RMS residual, as a fraction of one beat
@@ -204,11 +204,10 @@ def build_tempo_grid(
 
 # Chord-inference thresholds (issue #276): deliberately strict, since a wrong
 # bar phase silently makes the ruler look authoritative -- worse than no bar
-# phase at all (see module docstring's "Respect the project" cousin, the
-# conservatism invariant in docs/AGENTS.md). Every threshold below is tuned
-# against Hotel California Cover (a clean case: every chord change lands on a
-# bar line, error ~0) and 7Rivers (already-detected downbeat, so inference
-# must not run over it -- but happens to agree when checked by hand).
+# phase at all. Every threshold below is tuned against Hotel California Cover
+# (a clean case: every chord change lands on a bar line, error ~0) and
+# 7Rivers (already-detected downbeat, so inference must not run over it --
+# but happens to agree when checked by hand).
 MIN_CHORD_CHANGES_FOR_DOWNBEAT_INFERENCE = 4
 MAX_MEAN_BAR_PHASE_ERROR = 0.15
 MIN_BAR_PHASE_MARGIN = 0.15
@@ -248,16 +247,18 @@ def infer_downbeat_from_chords(
     if numerator is None or len(beat_times) < numerator:
         return None
 
-    change_times = sorted({segment["start_seconds"] for segment in chord_segments if isinstance(segment, dict)})
+    change_times = sorted(
+        {
+            segment["start_seconds"]
+            for segment in chord_segments
+            if isinstance(segment, dict) and isinstance(segment.get("start_seconds"), (int, float))
+        }
+    )
     grid = sorted(beat_times)
     beat_indices: list[int] = []
     for time in change_times:
-        idx = bisect.bisect_left(grid, time)
-        candidates = [i for i in (idx - 1, idx) if 0 <= i < len(grid)]
-        if not candidates:
-            continue
-        best = min(candidates, key=lambda i: abs(grid[i] - time))
-        if abs(grid[best] - time) <= 1e-4:  # chord boundaries are beat-snapped (chords.py)
+        best = nearest_grid_index(time, grid)
+        if best is not None and abs(grid[best] - time) <= 1e-4:  # chord boundaries are beat-snapped (chords.py)
             beat_indices.append(best)
     if len(beat_indices) < MIN_CHORD_CHANGES_FOR_DOWNBEAT_INFERENCE:
         return None
@@ -270,12 +271,11 @@ def infer_downbeat_from_chords(
             errors.append(min(frac, 1.0 - frac))
         return sum(errors) / len(errors)
 
-    phases_by_fit = sorted(range(numerator), key=mean_error)
-    best_phase = phases_by_fit[0]
-    best_error = mean_error(best_phase)
+    errors_by_phase = sorted((mean_error(phase), phase) for phase in range(numerator))
+    best_error, best_phase = errors_by_phase[0]
     if best_error > MAX_MEAN_BAR_PHASE_ERROR:
         return None
-    if numerator > 1 and mean_error(phases_by_fit[1]) - best_error < MIN_BAR_PHASE_MARGIN:
+    if numerator > 1 and errors_by_phase[1][0] - best_error < MIN_BAR_PHASE_MARGIN:
         return None
 
     return {

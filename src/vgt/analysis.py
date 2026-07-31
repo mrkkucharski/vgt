@@ -496,20 +496,30 @@ def detect_chords(
     return chords_value
 
 
-def _apply_chord_inferred_downbeat(project_path: Path, analysis: dict[str, Any]) -> None:
-    """After the chords stage runs, recover a bar phase from its segment
+def _apply_chord_inferred_downbeat(current: dict[str, Any], analysis: dict[str, Any]) -> None:
+    """Recover a bar phase from this run's freshly detected chord segment
     boundaries if the tempo stage still has none (issue #276).
 
+    Called from inside the chords stage's own atomic sidecar update, against
+    `current["tempo"]` -- the sidecar just reread from disk under lock, not
+    the in-memory `analysis` snapshot from earlier in this `analyze()` call.
+    That matters: a concurrent writer (e.g. a human adopting a REAPER tempo
+    map via `vgt_sync_tempo_map.lua` while key/sections/chords are still
+    detecting) may have set `human_verified`/`downbeat_detected` on disk since
+    this run's own tempo stage turn. Re-checking the fresh read here, in the
+    same lock/write as the chords stage, is what keeps that correction from
+    being second-guessed by a stale in-memory value -- checking the in-memory
+    snapshot instead would have missed exactly that race.
+
     Only runs when the tempo stage hasn't already established a downbeat and
-    hasn't been human-verified -- a human's correction (whatever it is) is
-    never second-guessed, and a beat-tracker-detected downbeat is never
-    overwritten. `infer_downbeat_from_chords` itself is conservative about
-    when it returns a value at all; this just wires its result back into the
-    tempo stage's persisted `value`/`detected` (mirroring how
+    hasn't been human-verified -- a beat-tracker-detected downbeat is never
+    overwritten either. `infer_downbeat_from_chords` itself is conservative
+    about when it returns a value at all; this just wires its result back
+    into the tempo stage's persisted `value`/`detected` (mirroring how
     `_refresh_stage_with_detected` keeps them in lockstep pre-verification)
     so the existing tempo-map path picks it up unchanged.
     """
-    tempo_stage = analysis["tempo"]
+    tempo_stage = current["tempo"]
     tempo_value = tempo_stage.get("value")
     if (
         not isinstance(tempo_value, dict)
@@ -526,13 +536,6 @@ def _apply_chord_inferred_downbeat(project_path: Path, analysis: dict[str, Any])
         return
     tempo_value.update(inferred)
     tempo_stage["detected"] = copy.deepcopy(tempo_value)
-    update_analysis(
-        project_path,
-        lambda current: (
-            current["tempo"].__setitem__("value", copy.deepcopy(tempo_value)),
-            current["tempo"].__setitem__("detected", copy.deepcopy(tempo_value)),
-        ),
-    )
 
 
 _DETECTORS: dict[str, Callable[..., Any]] = {
@@ -735,12 +738,24 @@ def analyze(
         # Merge only this detector's result.  A separator may be refreshing a
         # paid-operation checkpoint concurrently; never replace its stems
         # block with the snapshot this analysis run started with.
-        update_analysis(
-            project_path,
-            lambda current, stage=stage: current.__setitem__(stage, copy.deepcopy(analysis[stage])),
-        )
         if stage == "chords":
-            _apply_chord_inferred_downbeat(project_path, analysis)
+            # Folded into one atomic update: recovering a bar phase from this
+            # stage's chord segments has to react to the on-disk `tempo` state
+            # reread under the very same lock as this write, not to a
+            # separate, later lock acquisition (see
+            # `_apply_chord_inferred_downbeat`'s docstring for the race that
+            # a second `update_analysis` call here would reopen).
+            def persist_chords_and_downbeat(current: dict[str, Any], stage: str = stage) -> None:
+                current.__setitem__(stage, copy.deepcopy(analysis[stage]))
+                _apply_chord_inferred_downbeat(current, analysis)
+
+            persisted = update_analysis(project_path, persist_chords_and_downbeat)
+            analysis["tempo"] = copy.deepcopy(persisted["analysis"]["tempo"])
+        else:
+            update_analysis(
+                project_path,
+                lambda current, stage=stage: current.__setitem__(stage, copy.deepcopy(analysis[stage])),
+            )
     emit("writing sidecar")
     analysis["provenance"] = {
         "tool": "vgt",
