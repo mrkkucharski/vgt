@@ -16,6 +16,7 @@ a given instrument, and why* — the accumulated per-instrument knowledge.
 | --- | --- | --- | --- | --- |
 | `guitar` (acoustic) | Basic Pitch | `guitar-acoustic-clean` / `-detail` / `-strict-chords` | Yes — one acoustic stem, three rounds | [guitar-transcription-findings.md](guitar-transcription-findings.md) |
 | `guitar` (electric) | Basic Pitch | `guitar` | **No** — deliberately left at shared defaults | see guitar findings, "Changes applied" §1 |
+| `guitar` (strum onsets) | Classical onset candidates (evaluation only) | — | **Rejected** — best 7Rivers F1 24.0%, precision 17.1%; no variant shipped | [strum-transcription-findings.md](strum-transcription-findings.md) |
 | `bass` | **pYIN** (monophonic tracker) + re-articulation split | `bass` / `bass-pyin`; `bass-basic-pitch`, `bass-monophonic` retained for comparison | Yes — one 7Rivers stem: frame F 78.9%, octave errors 10.9%; **onset F 75.6% against a 272-note full-length hand annotation** (57.1% before splitting); earlier Basic Pitch experiments retained as evidence | [bass-transcription-findings.md](bass-transcription-findings.md) |
 | `drums` | DrumScript (default), ADTOF (opt-in) | `drums-clean`, `drums-adtof` | Yes — IDMT-SMT-Drums corpus + real-stem timing study | [drumscript-evaluation-findings.md](drumscript-evaluation-findings.md), [drums-transcription-timing-findings.md](drums-transcription-timing-findings.md), [drums-clean-profile.md](drums-clean-profile.md), [adtof-phase-0-feasibility-findings.md](adtof-phase-0-feasibility-findings.md) |
 | `vocals` | Basic Pitch | `vocals` | **No** — frequency window only | — |
@@ -143,6 +144,7 @@ Evaluation-only. Neither runs a backend nor writes into a vgt project.
 | `scripts/bass_transcription_probe.py` | monophonic targets | polyphony, frame precision / recall / F against a pYIN or CQT reference, octave-error share; `--onset-reference` adds onset P/R/F against a hand annotation |
 | `scripts/drumscript_benchmark.py` | drums | onset F-measure against IDMT-SMT-Drums annotations |
 | `scripts/drum_midi_score.py` | drums | scores an event JSON or MIDI against a reference |
+| `scripts/strum_detection_probe.py` | guitar strum onsets | classical onset precision / recall / F1 against a hand-stroke reference; candidate variants are evaluation-only |
 
 `--onset-reference` is separate from the frame metrics for the reason finding 5
 gives: it is the only column that moves when note *boundaries* change at an
