@@ -1,4 +1,4 @@
-<REAPER_PROJECT 0.1 "7.74/macOS-arm64" 1785425027 0
+<REAPER_PROJECT 0.1 "7.74/macOS-arm64" 1785477795 0
   <NOTES 0 2
   >
   RIPPLE 0 0
@@ -19,9 +19,9 @@
   VIDEO_CONFIG 0 0 65792
   PANMODE 3
   PANLAWFLAGS 3
-  CURSOR 4
-  ZOOM 2.71228311421199 0 0
-  VZOOMEX 6 0
+  CURSOR 14.46649464416576
+  ZOOM 61.45234363035744 773 0
+  VZOOMEX 6 568
   USE_REC_CFG 0
   RECMODE 1
   SMPTESYNC 0 30 100 40 1000 300 0 0 1 0 0
@@ -67,7 +67,7 @@
   >
   GLOBAL_AUTO -1
   TEMPO 120 4 4 0
-  PLAYRATE 1 1 0.25 4
+  PLAYRATE 0.562 1 0.25 4
   SELECTION 0 0
   SELECTION2 0 0
   MASTERAUTOMODE 0
@@ -182,6 +182,29 @@
         PATTERN 0 169
         PATTERNSTR ABBB
         MULT 1
+      >
+    >
+    <ITEM
+      POSITION 4.82524902636621
+      SNAPOFFS 0
+      LENGTH 178.56
+      LOOP 1
+      ALLTAKES 0
+      FADEIN 1 0.01 0 1 0 0 0
+      FADEOUT 1 0.01 0 1 0 0 0
+      MUTE 0 0
+      BEAT 0
+      SEL 0
+      IGUID {51E4CDA5-121F-954C-BFEE-9016B633F784}
+      IID 24688
+      NAME ""
+      VOLPAN 1 0 1 -1
+      SOFFS 0
+      PLAYRATE 1 1 0 -1 0 0.0025
+      CHANMODE 0
+      GUID {5FAF442B-7EFF-E141-98B1-D093438B1885}
+      <SOURCE WAVE
+        FILE "vgt/6a7745be/stems/guitar.wav"
       >
     >
   >
@@ -2843,29 +2866,6 @@
     >
     MIDIOUT -1
     MAINSEND 1 0
-    <ITEM
-      POSITION 4
-      SNAPOFFS 0
-      LENGTH 178.56
-      LOOP 1
-      ALLTAKES 0
-      FADEIN 1 0.01 0 1 0 0 0
-      FADEOUT 1 0.01 0 1 0 0 0
-      MUTE 0 0
-      BEAT 0
-      SEL 0
-      IGUID {51E4CDA5-121F-954C-BFEE-9016B633F784}
-      IID 24688
-      NAME ""
-      VOLPAN 1 0 1 -1
-      SOFFS 0
-      PLAYRATE 1 1 0 -1 0 0.0025
-      CHANMODE 0
-      GUID {5FAF442B-7EFF-E141-98B1-D093438B1885}
-      <SOURCE WAVE
-        FILE "vgt/6a7745be/stems/guitar.wav"
-      >
-    >
   >
   <TRACK {C5645612-7F66-2948-9422-B6C8EEF1837D}
     NAME "[clean] Drums Ref — default (MIDI)"
@@ -4323,7 +4323,7 @@
     AUTOMODE 0
     PANLAWFLAGS 3
     VOLPAN 1.37878064076581 0 -1 -1 1
-    MUTESOLO 1 0 0
+    MUTESOLO 0 0 0
     IPHASE 0
     PLAYOFFS 0 1
     ISBUS 1 1
@@ -4346,41 +4346,36 @@
     MIDIOUT -1
     MAINSEND 1 0
   >
-  <TRACK {0618676C-EABA-5C41-96B0-D0CE6873E646}
-    NAME "[work] Bass"
+  <TRACK {376EE660-EC03-A34F-8DC6-925D511A2AA7}
+    NAME "[work] Guitar"
     PEAKCOL 16576
     BEAT -1
     AUTOMODE 0
     PANLAWFLAGS 3
     VOLPAN 1 0 -1 -1 1
-    MUTESOLO 0 0 0
+    MUTESOLO 0 2 0
     IPHASE 0
     PLAYOFFS 0 1
-    ISBUS 2 -1
+    ISBUS 0 0
     BUSCOMP 0 0 0 0 0
     SHOWINMIX 1 0.6667 0.5 1 0.5 0 0 0 0
     FIXEDLANES 9 0 0 0 0
     LANEREC -1 -1 -1 0
-    SEL 0
+    SEL 1
     REC 0 0 1 0 0 0 0 0
     VU 64
-    TRACKHEIGHT 53 0 0 0 0 0 0
+    TRACKHEIGHT 252 0 0 0 0 0 0
     INQ 0 0 0 0.5 100 0 0 100
     NCHAN 2
     FX 1
-    TRACKID {0618676C-EABA-5C41-96B0-D0CE6873E646}
+    TRACKID {376EE660-EC03-A34F-8DC6-925D511A2AA7}
     PERF 0
     <EXT
-      vgt_role stem:bass
+      vgt_role stem:guitar
       vgt_working_copy 1
     >
     MIDIOUT -1
     MAINSEND 1 0
-    <FXCHAIN
-      SHOW 0
-      LASTSEL 0
-      DOCKED 0
-    >
     <ITEM
       POSITION 4
       SNAPOFFS 0
@@ -4391,17 +4386,213 @@
       FADEOUT 1 0.01 0 1 0 0 0
       MUTE 0 0
       BEAT 0
-      SEL 0
-      IGUID {4C0E694B-0FED-D14B-A977-470BEE174937}
-      IID 26474
+      SEL 1
+      IGUID {9C0599EF-A220-4844-A46D-1402FBEAFAD3}
+      IID 30487
       NAME ""
-      VOLPAN 1 0 3.608779 -1
+      VOLPAN 1 0 1 -1
       SOFFS 0
       PLAYRATE 1 1 0 -1 0 0.0025
       CHANMODE 0
-      GUID {39934C7C-C65D-C442-97E2-3B2E04B815CA}
+      GUID {C534FB9A-5D53-A540-B257-3885235738DE}
       <SOURCE WAVE
-        FILE "vgt/6a7745be/stems/bass.wav"
+        FILE "vgt/6a7745be/stems/guitar.wav"
+      >
+    >
+  >
+  <TRACK {7BAFF525-0106-6642-9DB7-3315DB40DBF6}
+    NAME "strum reference"
+    PEAKCOL 16576
+    BEAT -1
+    AUTOMODE 0
+    PANLAWFLAGS 3
+    VOLPAN 1 0 -1 -1 1
+    MUTESOLO 0 2 0
+    IPHASE 0
+    PLAYOFFS 0 1
+    ISBUS 2 -1
+    BUSCOMP 0 0 0 0 0
+    SHOWINMIX 1 0.6667 0.5 1 0.5 0 0 0 0
+    FIXEDLANES 9 0 0 0 0
+    SEL 0
+    REC 0 5056 1 0 0 0 0 0
+    VU 64
+    TRACKHEIGHT 93 0 0 0 0 0 0
+    INQ 0 0 0 0.5 100 0 0 100
+    NCHAN 2
+    FX 1
+    TRACKID {7BAFF525-0106-6642-9DB7-3315DB40DBF6}
+    PERF 0
+    MIDIOUT -1
+    MAINSEND 1 0
+    <FXCHAIN
+      WNDRECT 32 209 647 662
+      SHOW 0
+      LASTSEL 0
+      DOCKED 0
+    >
+    <ITEM
+      POSITION 4.01927019099363
+      SNAPOFFS 0
+      LENGTH 23.86554522232706
+      LOOP 0
+      ALLTAKES 0
+      FADEIN 1 0 0 1 0 0 0
+      FADEOUT 1 0 0 1 0 0 0
+      MUTE 0 0
+      SEL 0
+      IGUID {F9CF05F8-1359-4E43-A6DF-0BFA8C3B975E}
+      IID 30489
+      NAME "13-strum reference-MIDI"
+      VOLPAN 1 0 1 -1
+      SOFFS 0 0
+      PLAYRATE 1 1 0 -1 0 0.0025
+      CHANMODE 0
+      GUID {831E402A-33A4-DB41-9F55-30BBEDAC2731}
+      <SOURCE MIDI
+        HASDATA 1 960 QN
+        CCINTERP 32
+        POOLEDEVTS {4127384C-9F25-644D-B314-2F461D5D5CD1}
+        E 173 90 3d 60
+        E 33 80 3d 00
+        E 953 90 3d 60
+        E 34 80 3d 00
+        E 410 90 3d 60
+        E 35 80 3d 00
+        E 413 90 3d 60
+        E 35 80 3d 00
+        E 916 90 3d 60
+        E 31 80 3d 00
+        E 453 90 3d 60
+        E 47 80 3d 00
+        E 441 90 3d 60
+        E 34 80 3d 00
+        E 973 90 3d 60
+        E 28 80 3d 00
+        E 397 90 3d 60
+        E 41 80 3d 00
+        E 461 90 3d 60
+        E 33 80 3d 00
+        E 923 90 3d 60
+        E 39 80 3d 00
+        E 378 90 3d 60
+        E 41 80 3d 00
+        E 436 90 3d 60
+        E 40 80 3d 00
+        E 977 90 3d 60
+        E 33 80 3d 00
+        E 377 90 3d 60
+        E 36 80 3d 00
+        E 453 90 3d 60
+        E 31 80 3d 00
+        E 966 90 3d 60
+        E 41 80 3d 00
+        E 373 90 3d 60
+        E 37 80 3d 00
+        E 504 90 3d 60
+        E 38 80 3d 00
+        E 897 90 3d 60
+        E 37 80 3d 00
+        E 459 90 3d 60
+        E 25 80 3d 00
+        E 507 90 3d 60
+        E 28 80 3d 00
+        E 908 90 3d 60
+        E 38 80 3d 00
+        E 414 90 3d 60
+        E 42 80 3d 00
+        E 429 90 3d 60
+        E 39 80 3d 00
+        E 962 90 3d 60
+        E 32 80 3d 00
+        E 436 90 3d 60
+        E 28 80 3d 00
+        E 491 90 3d 60
+        E 29 80 3d 00
+        E 877 90 3d 60
+        E 26 80 3d 00
+        E 452 90 3d 60
+        E 25 80 3d 00
+        E 474 90 3d 60
+        E 25 80 3d 00
+        E 958 90 3d 60
+        E 22 80 3d 00
+        E 429 90 3d 60
+        E 21 80 3d 00
+        E 485 90 3d 60
+        E 26 80 3d 00
+        E 908 90 3d 60
+        E 27 80 3d 00
+        E 467 90 3d 60
+        E 30 80 3d 00
+        E 408 90 3d 60
+        E 29 80 3d 00
+        E 932 90 3d 60
+        E 34 80 3d 00
+        E 443 90 3d 60
+        E 24 80 3d 00
+        E 526 90 3d 60
+        E 27 80 3d 00
+        E 899 90 3d 60
+        E 30 80 3d 00
+        E 404 90 3d 60
+        E 29 80 3d 00
+        E 470 90 3d 60
+        E 30 80 3d 00
+        E 963 90 3d 60
+        E 39 80 3d 00
+        E 430 90 3d 60
+        E 36 80 3d 00
+        E 463 90 3d 60
+        E 52 80 3d 00
+        E 880 90 3d 60
+        E 17 80 3d 00
+        E 462 90 3d 60
+        E 36 80 3d 00
+        E 435 90 3d 60
+        E 30 80 3d 00
+        E 1055 90 3d 60
+        E 22 80 3d 00
+        E 327 90 3d 60
+        E 34 80 3d 00
+        E 481 90 3d 60
+        E 18 80 3d 00
+        E 935 90 3d 60
+        E 13 80 3d 00
+        E 480 90 3d 60
+        E 11 80 3d 00
+        E 464 90 3d 60
+        E 13 80 3d 00
+        E 972 90 3d 60
+        E 7 80 3d 00
+        E 453 90 3d 60
+        E 7 80 3d 00
+        e 482 90 3d 60
+        e 10 80 3d 00
+        E 921 90 3d 60
+        E 10 80 3d 00
+        E 480 90 3d 60
+        E 10 80 3d 00
+        E 431 90 3d 60
+        E 7 80 3d 00
+        E 991 90 3d 60
+        E 9 80 3d 00
+        E 470 90 3d 60
+        E 8 80 3d 00
+        E 473 90 3d 60
+        E 7 80 3d 00
+        E 5377 b0 7b 00
+        CCINTERP 32
+        CHASE_CC_TAKEOFFS 1
+        GUID {7A9CAEA8-2322-EF4C-8EE0-9AD649DDEAF5}
+        IGNTEMPO 0 120 4 4
+        SRCCOLOR 203
+        EVTFILTER 0 -1 -1 -1 -1 0 0 0 0 -1 -1 -1 -1 0 -1 0 -1 -1
+        VELLANE -1 51 0 0 1
+        CFGEDITVIEW 28918.483551 0.07204 61 12 0 0 0 0 0 0.5
+        KEYSNAP 0
+        TRACKSEL -252
+        CFGEDIT 1 1 0 1 0 0 1 1 1 0 1 0.125 48 62 1440 819 1 0 0 0 0 0 0 0 0 0.5 0 0 1 64
       >
     >
   >
@@ -15801,7 +15992,7 @@
     SHOWINMIX 1 0.6667 0.5 1 0.5 0 0 0 0
     FIXEDLANES 9 0 0 0 0
     LANEREC -1 -1 -1 0
-    SEL 1
+    SEL 0
     REC 0 0 1 0 0 0 0 0
     VU 64
     TRACKHEIGHT 0 1 0 0 0 0 0
@@ -16115,12 +16306,12 @@
       FADEOUT 1 0.01 0 1 0 0 0
       MUTE 0 0
       BEAT 0
-      SEL 1
+      SEL 0
       IGUID {2D2E6A74-C282-844E-B1DE-2176715E1D7B}
       IID 27755
       NAME ""
       VOLPAN 1 0 1 -1
-      SOFFS 0 0
+      SOFFS 0
       PLAYRATE 1 1 0 -1 0 0.0025
       CHANMODE 0
       GUID {AC5CED90-C7F8-924F-96EA-957E1D0ACC74}
@@ -16668,11 +16859,11 @@
         CCINTERP 32
         CHASE_CC_TAKEOFFS 1
         GUID {45F636D0-E8A3-AF4D-8281-1BCA2ECE4C8C}
-        IGNTEMPO 1 120.004000 4 4
+        IGNTEMPO 1 120.004 4 4
         SRCCOLOR 169
         EVTFILTER 0 -1 -1 -1 -1 0 0 0 0 -1 -1 -1 -1 0 -1 0 -1 -1
         VELLANE -1 51 0 0 1
-        CFGEDITVIEW 149624.58732 0.050522 77 12 0 0 0 0 0 0.5
+        CFGEDITVIEW -3840.128 0.01465 77 12 0 0 0 0 0 0.5
         KEYSNAP 0
         TRACKSEL -252
         CFGEDIT 1 1 0 1 0 0 1 1 1 0 1 0.125 48 62 1440 819 1 0 0 0 0 0 0 0 0 0.5 0 0 1 64
@@ -16778,7 +16969,7 @@
       IID 27757
       NAME ""
       VOLPAN 1 0 1 -1
-      SOFFS 0 0
+      SOFFS 0
       PLAYRATE 1 1 0 -1 0 0.0025
       CHANMODE 0
       GUID {037FAF44-FA00-0648-B179-558CF1C440C0}
@@ -18108,7 +18299,7 @@
         CCINTERP 32
         CHASE_CC_TAKEOFFS 1
         GUID {52726427-BC86-584E-B6D8-6E477DFB34B9}
-        IGNTEMPO 1 120.004080 4 4
+        IGNTEMPO 1 120.00408 4 4
         SRCCOLOR 170
         EVTFILTER 0 -1 -1 -1 -1 0 0 0 0 -1 -1 -1 -1 0 -1 0 -1 -1
       >
@@ -18159,7 +18350,7 @@
       IID 27758
       NAME ""
       VOLPAN 1 0 1 -1
-      SOFFS 0 0
+      SOFFS 0
       PLAYRATE 1 1 0 -1 0 0.0025
       CHANMODE 0
       GUID {37630E3D-727D-8545-ABFF-FC86B41E0DE4}
@@ -19545,7 +19736,7 @@
         CCINTERP 32
         CHASE_CC_TAKEOFFS 1
         GUID {A0CDDA4D-2090-1541-A243-8222323E9FA5}
-        IGNTEMPO 1 120.004000 4 4
+        IGNTEMPO 1 120.004 4 4
         SRCCOLOR 171
         EVTFILTER 0 -1 -1 -1 -1 0 0 0 0 -1 -1 -1 -1 0 -1 0 -1 -1
       >
@@ -19650,7 +19841,7 @@
       IID 27760
       NAME ""
       VOLPAN 1 0 1 -1
-      SOFFS 0 0
+      SOFFS 0
       PLAYRATE 1 1 0 -1 0 0.0025
       CHANMODE 0
       GUID {761F00CF-6057-5A45-99BC-4A2D179298E4}
@@ -20624,7 +20815,7 @@
         CCINTERP 32
         CHASE_CC_TAKEOFFS 1
         GUID {6813F240-54F8-0F4A-9838-9D7D618C42EA}
-        IGNTEMPO 1 120.004000 4 4
+        IGNTEMPO 1 120.004 4 4
         SRCCOLOR 172
         EVTFILTER 0 -1 -1 -1 -1 0 0 0 0 -1 -1 -1 -1 0 -1 0 -1 -1
       >
@@ -20675,7 +20866,7 @@
       IID 27761
       NAME ""
       VOLPAN 1 0 1 -1
-      SOFFS 0 0
+      SOFFS 0
       PLAYRATE 1 1 0 -1 0 0.0025
       CHANMODE 0
       GUID {984E97C5-8D9D-2541-A95E-C3AEBAFF9257}
@@ -21813,7 +22004,7 @@
         CCINTERP 32
         CHASE_CC_TAKEOFFS 1
         GUID {B7D6B268-43D3-DF40-BE33-71A3B813E932}
-        IGNTEMPO 1 120.004000 4 4
+        IGNTEMPO 1 120.004 4 4
         SRCCOLOR 173
         EVTFILTER 0 -1 -1 -1 -1 0 0 0 0 -1 -1 -1 -1 0 -1 0 -1 -1
       >
@@ -21864,7 +22055,7 @@
       IID 27762
       NAME ""
       VOLPAN 1 0 1 -1
-      SOFFS 0 0
+      SOFFS 0
       PLAYRATE 1 1 0 -1 0 0.0025
       CHANMODE 0
       GUID {0449F67F-63C4-7942-A418-9430CE8D515C}
@@ -22838,7 +23029,7 @@
         CCINTERP 32
         CHASE_CC_TAKEOFFS 1
         GUID {E4151E3C-8D20-F343-BABA-7E72F1447BA8}
-        IGNTEMPO 1 120.004000 4 4
+        IGNTEMPO 1 120.004 4 4
         SRCCOLOR 174
         EVTFILTER 0 -1 -1 -1 -1 0 0 0 0 -1 -1 -1 -1 0 -1 0 -1 -1
       >
@@ -22889,7 +23080,7 @@
       IID 27763
       NAME ""
       VOLPAN 1 0 1 -1
-      SOFFS 0 0
+      SOFFS 0
       PLAYRATE 1 1 0 -1 0 0.0025
       CHANMODE 0
       GUID {7AE6EE4F-D547-2B43-A981-DD3970EC053F}
@@ -23463,7 +23654,7 @@
         CCINTERP 32
         CHASE_CC_TAKEOFFS 1
         GUID {1FB0DEEE-2670-E243-854E-B90F54967FD9}
-        IGNTEMPO 1 120.004000 4 4
+        IGNTEMPO 1 120.004 4 4
         SRCCOLOR 175
         EVTFILTER 0 -1 -1 -1 -1 0 0 0 0 -1 -1 -1 -1 0 -1 0 -1 -1
       >
