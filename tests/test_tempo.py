@@ -5,7 +5,14 @@ from pathlib import Path
 
 import pytest
 
-from vgt.tempo import TempoDetectionError, _MIN_SPAN_BEATS, _piecewise_spans, build_tempo_grid, detect_beats
+from vgt.tempo import (
+    TempoDetectionError,
+    _MIN_SPAN_BEATS,
+    _piecewise_spans,
+    build_tempo_grid,
+    detect_beats,
+    infer_downbeat_from_chords,
+)
 
 FIXTURE_SOURCE = Path(__file__).parents[1] / "test" / "Reaper Project" / "Media" / "Paris Metro Punk.mp3"
 
@@ -27,6 +34,7 @@ def test_build_tempo_grid_reports_constant_mode_for_steady_beats() -> None:
     assert grid["time_signature"] == "4/4"
     assert grid["downbeat_detected"] is True
     assert grid["downbeat_offset_seconds"] == beat_times[0]
+    assert grid["downbeat_source"] == "beat_tracker"
     assert grid["residual_seconds"] < 1e-6
 
 
@@ -48,6 +56,7 @@ def test_build_tempo_grid_reports_piecewise_mode_for_a_tempo_change() -> None:
     assert grid["time_signature"] == "4/4"
     assert grid["downbeat_detected"] is False
     assert grid["downbeat_offset_seconds"] is None
+    assert grid["downbeat_source"] is None
 
 
 def test_build_tempo_grid_uses_time_signature_hint_when_downbeats_unknown() -> None:
@@ -69,6 +78,7 @@ def test_build_tempo_grid_reads_downbeats_when_available() -> None:
     assert grid["time_signature"] == "3/4"
     assert grid["downbeat_detected"] is True
     assert grid["downbeat_offset_seconds"] == beat_times[0]
+    assert grid["downbeat_source"] == "beat_tracker"
 
 
 def test_piecewise_spans_never_split_below_the_minimum_span_size() -> None:
@@ -166,3 +176,92 @@ def test_detect_beats_normalizes_a_terminal_fallback_failure(
 
     with pytest.raises(TempoDetectionError, match="librosa fallback failed"):
         detect_beats(source)
+
+
+def _segments(bars: list[int], beats_per_bar: int = 4) -> list[dict[str, object]]:
+    """Chord segments whose start times fall on the given bar (beat-index / beats_per_bar) boundaries."""
+    return [{"start_seconds": bar * beats_per_bar, "end_seconds": bar * beats_per_bar + 1, "chord": "C:maj"} for bar in bars]
+
+
+def test_infer_downbeat_from_chords_reads_bar_lines_from_chord_changes() -> None:
+    """Mirrors the Hotel California Cover table in issue #276: chord changes
+    land on beat indices 0, 32, 64, 128, 160, 192, 224, 256, 320, 352, 384 --
+    every one an exact multiple of 4 beats -- so phase 0 fits with zero error."""
+    beat_times = [float(i) for i in range(400)]
+    segments = _segments([0, 8, 16, 32, 40, 48, 56, 64, 80, 88, 96])
+
+    result = infer_downbeat_from_chords(beat_times, segments, "4/4")
+
+    assert result == {
+        "downbeat_detected": True,
+        "downbeat_offset_seconds": 0.0,
+        "downbeat_source": "chords",
+    }
+
+
+def test_infer_downbeat_from_chords_anchors_on_the_winning_phase() -> None:
+    """Chord changes offset by 2 beats from every bar line (phase 2 of 4) must
+    anchor there, not at beat 0."""
+    beat_times = [float(i) for i in range(200)]
+    segments = _segments([bar for bar in range(1, 40)], beats_per_bar=1)
+    # Shift every boundary by 2 beats so bar lines actually sit at phase 2.
+    segments = [
+        {"start_seconds": s["start_seconds"] * 4 + 2, "end_seconds": s["start_seconds"] * 4 + 3, "chord": "C:maj"}
+        for s in segments
+    ]
+
+    result = infer_downbeat_from_chords(beat_times, segments, "4/4")
+
+    assert result is not None
+    assert result["downbeat_offset_seconds"] == 2.0
+    assert result["downbeat_source"] == "chords"
+
+
+def test_infer_downbeat_from_chords_returns_none_with_too_few_chord_changes() -> None:
+    beat_times = [float(i) for i in range(20)]
+    segments = _segments([0, 2, 4])  # below the minimum evidence count
+
+    assert infer_downbeat_from_chords(beat_times, segments, "4/4") is None
+
+
+def test_infer_downbeat_from_chords_returns_none_for_syncopated_harmonic_rhythm() -> None:
+    """Chord changes evenly spread across every possible phase (no single one
+    fits tightly, or clearly beats the others) must leave the downbeat
+    undetected rather than guess."""
+    beat_times = [float(i) for i in range(200)]
+    # 12 consecutive beat indices cover each of the 4 possible phases equally
+    # often, so every phase scores the same (poor) mean error.
+    segments = _segments(list(range(12)), beats_per_bar=1)
+
+    assert infer_downbeat_from_chords(beat_times, segments, "4/4") is None
+
+
+def test_infer_downbeat_from_chords_returns_none_without_a_usable_time_signature() -> None:
+    beat_times = [float(i) for i in range(200)]
+    segments = _segments([0, 8, 16, 32, 40])
+
+    assert infer_downbeat_from_chords(beat_times, segments, None) is None
+    assert infer_downbeat_from_chords(beat_times, segments, "garbage") is None
+
+
+def test_infer_downbeat_from_chords_returns_none_when_grid_shorter_than_bar() -> None:
+    beat_times = [0.0, 1.0]  # fewer beats than the 4/4 bar needs
+    segments = _segments([0])
+
+    assert infer_downbeat_from_chords(beat_times, segments, "4/4") is None
+
+
+def test_infer_downbeat_from_chords_ignores_segments_missing_start_seconds() -> None:
+    """A malformed chord segment (e.g. from a hand-edited sidecar) must be
+    skipped, not crash the whole analyze() run with a KeyError."""
+    beat_times = [float(i) for i in range(400)]
+    segments = _segments([0, 8, 16, 32, 40, 48, 56, 64, 80, 88, 96])
+    segments.append({"end_seconds": 12.0, "chord": "C:maj"})  # no start_seconds
+
+    result = infer_downbeat_from_chords(beat_times, segments, "4/4")
+
+    assert result == {
+        "downbeat_detected": True,
+        "downbeat_offset_seconds": 0.0,
+        "downbeat_source": "chords",
+    }

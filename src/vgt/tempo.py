@@ -12,10 +12,12 @@ This module isolates both backends behind `detect_beats`/`build_tempo_grid`:
 
 from __future__ import annotations
 
+import math
 from pathlib import Path
 from typing import Any
 import statistics
 
+from .chords import nearest_grid_index
 from .sidecar import artifact_namespace_dir
 
 # A global constant-BPM fit's RMS residual, as a fraction of one beat
@@ -171,6 +173,11 @@ def build_tempo_grid(
     grid: dict[str, Any] = {
         "downbeat_detected": downbeat_detected,
         "downbeat_offset_seconds": round(downbeat_times[0], 6) if downbeat_detected and downbeat_times else None,
+        # Provenance (issue #276): distinguishes a beat-tracker-detected
+        # downbeat from one later inferred from chord segment boundaries
+        # (see `infer_downbeat_from_chords`), so a consumer can tell the two
+        # apart. `None` until something actually establishes a bar phase.
+        "downbeat_source": "beat_tracker" if downbeat_detected else None,
         "time_signature": time_signature,
         "backend": backend,
         "beat_count": len(beat_times),
@@ -193,6 +200,89 @@ def build_tempo_grid(
             ],
         )
     return grid
+
+
+# Chord-inference thresholds (issue #276): deliberately strict, since a wrong
+# bar phase silently makes the ruler look authoritative -- worse than no bar
+# phase at all. Every threshold below is tuned against Hotel California Cover
+# (a clean case: every chord change lands on a bar line, error ~0) and
+# 7Rivers (already-detected downbeat, so inference must not run over it --
+# but happens to agree when checked by hand).
+MIN_CHORD_CHANGES_FOR_DOWNBEAT_INFERENCE = 4
+MAX_MEAN_BAR_PHASE_ERROR = 0.15
+MIN_BAR_PHASE_MARGIN = 0.15
+
+
+def _time_signature_numerator(time_signature: str | None) -> int | None:
+    if not time_signature or "/" not in time_signature:
+        return None
+    try:
+        numerator = int(time_signature.split("/", 1)[0])
+    except ValueError:
+        return None
+    return numerator if numerator >= 2 else None
+
+
+def infer_downbeat_from_chords(
+    beat_times: list[float],
+    chord_segments: list[dict[str, Any]],
+    time_signature: str | None,
+) -> dict[str, Any] | None:
+    """Recover a bar phase from chord segment boundaries when the beat
+    tracker reported none (issue #276).
+
+    Chord changes tend to land on bar lines, so each of `time_signature`'s
+    candidate downbeat phases (which of the first N beats is beat 1) is
+    scored by how well chord-change beat indices land on multiples of N beats
+    from that phase. The winner is accepted only when it fits tightly (small
+    mean error) and clearly beats every other phase (a wide margin) --
+    syncopated harmonic rhythm or too few chord changes will not pass both,
+    so this correctly returns `None` and leaves the bar phase unknown rather
+    than guess.
+
+    Returns `{"downbeat_detected": True, "downbeat_offset_seconds": ...,
+    "downbeat_source": "chords"}` on a confident fit, `None` otherwise.
+    """
+    numerator = _time_signature_numerator(time_signature)
+    if numerator is None or len(beat_times) < numerator:
+        return None
+
+    change_times = sorted(
+        {
+            segment["start_seconds"]
+            for segment in chord_segments
+            if isinstance(segment, dict) and isinstance(segment.get("start_seconds"), (int, float))
+        }
+    )
+    grid = sorted(beat_times)
+    beat_indices: list[int] = []
+    for time in change_times:
+        best = nearest_grid_index(time, grid)
+        if best is not None and abs(grid[best] - time) <= 1e-4:  # chord boundaries are beat-snapped (chords.py)
+            beat_indices.append(best)
+    if len(beat_indices) < MIN_CHORD_CHANGES_FOR_DOWNBEAT_INFERENCE:
+        return None
+
+    def mean_error(phase: int) -> float:
+        errors = []
+        for index in beat_indices:
+            bar_position = (index - phase) / numerator
+            frac = bar_position - math.floor(bar_position)
+            errors.append(min(frac, 1.0 - frac))
+        return sum(errors) / len(errors)
+
+    errors_by_phase = sorted((mean_error(phase), phase) for phase in range(numerator))
+    best_error, best_phase = errors_by_phase[0]
+    if best_error > MAX_MEAN_BAR_PHASE_ERROR:
+        return None
+    if numerator > 1 and errors_by_phase[1][0] - best_error < MIN_BAR_PHASE_MARGIN:
+        return None
+
+    return {
+        "downbeat_detected": True,
+        "downbeat_offset_seconds": round(grid[best_phase], 6),
+        "downbeat_source": "chords",
+    }
 
 
 def click_artifact_path(project_path: Path, namespace: str) -> Path:

@@ -365,11 +365,21 @@ def _template_chords_fused(
     return segments, contributors
 
 
+def nearest_grid_index(time: float, grid: list[float]) -> int | None:
+    """Index of the nearest point on the shared beat grid to `time` (grid
+    must be sorted), or `None` if `grid` is empty. Shared with
+    `tempo.infer_downbeat_from_chords`, which needs the index (to test
+    whether it lands on a bar line) rather than the snapped value itself."""
+    idx = bisect.bisect_left(grid, time)
+    candidates = [i for i in (idx - 1, idx) if 0 <= i < len(grid)]
+    if not candidates:
+        return None
+    return min(candidates, key=lambda i: abs(grid[i] - time))
+
+
 def _snap_to_grid(time: float, grid: list[float]) -> float:
     """Nearest point on the shared beat grid to `time` (grid must be sorted)."""
-    idx = bisect.bisect_left(grid, time)
-    candidates = [grid[i] for i in (idx - 1, idx) if 0 <= i < len(grid)]
-    return min(candidates, key=lambda t: abs(t - time))
+    return grid[nearest_grid_index(time, grid)]
 
 
 def _snap_segments_to_grid(

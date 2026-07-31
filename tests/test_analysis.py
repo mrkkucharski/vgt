@@ -135,7 +135,7 @@ def test_upgrade_keeps_v1_fields_and_adds_v2_analysis_skeleton() -> None:
 
     upgraded = upgrade(v1)
 
-    assert upgraded["schema_version"] == 17
+    assert upgraded["schema_version"] == 18
     assert upgraded["managed_region_ids"] == []
     assert upgraded["managed_track_guids"] == ["{AAAA}", "{BBBB}"]
     assert upgraded["config"] == {"reference_track_guid": REFERENCE_GUID}
@@ -184,7 +184,7 @@ def test_upgrade_v16_chords_and_key_corrections_collapse_and_cli_analyzes(tmp_pa
         },
     }
     upgraded = upgrade(legacy)
-    assert upgraded["schema_version"] == 17
+    assert upgraded["schema_version"] == 18
     assert upgraded["analysis"]["chords"] == {
         "value": legacy["analysis"]["chords"]["value"], "input_hash": "chords-input",
         "settings_hash": "chords-settings", "analyzed_at": None,
@@ -197,7 +197,7 @@ def test_upgrade_v16_chords_and_key_corrections_collapse_and_cli_analyzes(tmp_pa
     project.with_suffix(".vgt").write_text(json.dumps(legacy))
     assert main(["analyze", "--no-transcribe", str(project)]) == 0
     persisted = read_sidecar(project)
-    assert persisted["schema_version"] == 17
+    assert persisted["schema_version"] == 18
     assert persisted["analysis"]["chords"]["value"]["segments"][0]["chord"] == "C:maj"
     assert persisted["analysis"]["key"]["value"] == {"root": "C", "scale": "major", "confidence": 1.0, "backend": "fixture"}
 
@@ -207,8 +207,60 @@ def test_upgrade_marks_legacy_librosa_tempo_as_unknown_bar_phase() -> None:
         "backend": "librosa", "bpm": 120.0, "downbeat_offset_seconds": 0.25,
     }}}})
 
-    assert upgraded["schema_version"] == 17
+    assert upgraded["schema_version"] == 18
     assert upgraded["analysis"]["tempo"]["value"]["downbeat_detected"] is False
+
+
+def test_upgrade_attributes_a_legacy_beat_tracker_downbeat_to_the_beat_tracker() -> None:
+    """A legacy value with a real `backend` on record did go through
+    `detect_beats`, so it is the normal, expected "beat_tracker" case."""
+    upgraded = upgrade({"schema_version": 15, "analysis": {"tempo": {"value": {
+        "backend": "madmom", "bpm": 120.0, "downbeat_detected": True, "downbeat_offset_seconds": 0.25,
+    }}}})
+
+    assert upgraded["analysis"]["tempo"]["value"]["downbeat_source"] == "beat_tracker"
+
+
+def test_upgrade_does_not_attribute_a_reaper_tempo_map_downbeat_to_the_beat_tracker() -> None:
+    """A tempo map adopted from REAPER (issue #276 review) never went through
+    `detect_beats` -- schema 18 must not claim otherwise."""
+    upgraded = upgrade({"schema_version": 16, "analysis": {"tempo": {
+        "human_verified": True,
+        "value": {"source": "reaper-tempo-map", "mode": "piecewise", "bpm": 120.0, "spans": []},
+    }}})
+
+    tempo_value = upgraded["analysis"]["tempo"]["value"]
+    assert tempo_value["downbeat_detected"] is True  # pre-existing schema-11 heuristic, unchanged by this fix
+    assert tempo_value["downbeat_source"] is None
+
+
+def test_upgrade_backfills_downbeat_source_onto_the_detected_baseline_too() -> None:
+    """The `detected` baseline is documented to mirror `value`'s tempo-grid
+    shape; a legacy sidecar's `detected` must gain `downbeat_source` on
+    upgrade the same way `value` does, not be left out."""
+    upgraded = upgrade({"schema_version": 16, "analysis": {"tempo": {
+        "human_verified": True,
+        "value": {"bpm": 118.0, "downbeat_offset_seconds": 0.25, "time_signature": "4/4"},
+        "detected": {"backend": "madmom", "bpm": 120.0, "downbeat_detected": True, "downbeat_offset_seconds": 0.1},
+    }}})
+
+    assert upgraded["analysis"]["tempo"]["detected"]["downbeat_source"] == "beat_tracker"
+
+
+def test_upgrade_does_not_attribute_a_backfilled_reaper_tempo_map_detected_to_the_beat_tracker() -> None:
+    """Reviewer finding on #276: a legacy sidecar with no `detected` at all
+    gets one backfilled by copying `value` verbatim (the schema-2/4
+    best-effort backfill), so a human/REAPER-authored `value` with no
+    `backend` produces a `detected` that is just as un-machine-computed as
+    `value` -- it must get the same `null` provenance, not "beat_tracker"."""
+    upgraded = upgrade({"schema_version": 10, "analysis": {"tempo": {
+        "human_verified": True,
+        "value": {"source": "reaper-tempo-map", "mode": "piecewise", "bpm": 120.0, "spans": []},
+    }}})
+
+    tempo = upgraded["analysis"]["tempo"]
+    assert tempo["value"]["downbeat_source"] is None
+    assert tempo["detected"]["downbeat_source"] is None
 
 
 def test_upgrade_backfills_detected_from_value_for_v4_sections() -> None:
@@ -246,7 +298,7 @@ def test_upgrade_adds_v10_transcription_block_to_a_v8_sidecar() -> None:
 
     upgraded = upgrade(v8)
 
-    assert upgraded["schema_version"] == 17
+    assert upgraded["schema_version"] == 18
     assert upgraded["analysis"]["transcription"] == {"requested_targets": ["guitar"], "modes": {}, "targets": {}, "detection_cache": {}}
     # Unrelated v8 fields survive the upgrade untouched.
     assert upgraded["analysis"]["stems"]["artifact_namespace"] == "abc12345"
@@ -444,7 +496,7 @@ def test_analyze_writes_v2_sidecar_with_skeleton_and_provenance(tmp_path: Path) 
 
     result = analyze(project)
 
-    assert result["schema_version"] == 17
+    assert result["schema_version"] == 18
     assert result["managed_track_guids"] == ["{AAAA}", "{BBBB}"]  # phase 0 fields intact
     for stage in ANALYSIS_STAGES:
         if stage == "transcription":
@@ -528,6 +580,158 @@ def test_analyze_is_idempotent(tmp_path: Path) -> None:
         first["analysis"][stage].pop("analyzed_at")
         second["analysis"][stage].pop("analyzed_at")
     assert first == second
+
+
+def test_analyze_infers_downbeat_from_chord_boundaries_when_beat_tracker_finds_none(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Issue #276: the beat tracker reporting no downbeat must not be the end
+    of the road -- chord segment boundaries landing cleanly on 4-beat bar
+    lines should let `vgt analyze` recover the bar phase on its own."""
+    project = _project_copy(tmp_path)
+    _write_v1_sidecar(project)
+    beat_times = [float(i) for i in range(40)]
+
+    def tempo(project: Path, _source: Path, _settings: dict, _analysis: dict, namespace: str, **_kwargs) -> dict:
+        artifact = artifact_namespace_dir(project, namespace) / "tempo-click.wav"
+        artifact.parent.mkdir(parents=True, exist_ok=True)
+        artifact.write_bytes(b"RIFFfixture")
+        return {
+            "bpm": 120.0,
+            "time_signature": "4/4",
+            "mode": "constant",
+            "backend": "fixture",
+            "downbeat_detected": False,
+            "downbeat_offset_seconds": None,
+            "downbeat_source": None,
+            "beat_times": beat_times,
+            "click_artifact_path": artifact.name,
+        }
+
+    def chords(_source: Path, beat_times: list[float], _settings: dict, **_kwargs) -> dict:
+        bar_starts = [0, 8, 16, 24, 32]  # every change lands on a 4-beat bar line
+        segments = [
+            {"start_seconds": beat_times[start], "end_seconds": beat_times[start + 4], "chord": "C:maj"}
+            for start in bar_starts
+        ]
+        return {"segments": segments, "vocabulary": "maj_min", "backend": "fixture", "beat_times": beat_times}
+
+    monkeypatch.setitem(analysis_module._DETECTORS, "tempo", tempo)
+    monkeypatch.setattr(analysis_module, "_detect_chords", chords)
+    monkeypatch.setattr(analysis_module, "_tempo_beat_times", lambda *_args: beat_times)
+
+    result = analyze(project)
+
+    tempo_value = result["analysis"]["tempo"]["value"]
+    assert tempo_value["downbeat_detected"] is True
+    assert tempo_value["downbeat_offset_seconds"] == 0.0
+    assert tempo_value["downbeat_source"] == "chords"
+    assert result["analysis"]["tempo"]["detected"]["downbeat_source"] == "chords"
+
+
+def test_chord_inferred_downbeat_does_not_clobber_a_correction_that_lands_mid_run(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Regression (issue #276 review): if a human tempo correction (e.g. via
+    the REAPER tempo-map sync action) lands on disk while the chords stage is
+    still computing -- after this run's own tempo stage turn already
+    persisted no-downbeat, before the chord-inference patch fires -- that
+    correction must survive, not be silently overwritten by a stale
+    in-memory chord-inferred downbeat that never saw it."""
+    project = _project_copy(tmp_path)
+    _write_v1_sidecar(project)
+    beat_times = [float(i) for i in range(40)]
+
+    def tempo(project: Path, _source: Path, _settings: dict, _analysis: dict, namespace: str, **_kwargs) -> dict:
+        artifact = artifact_namespace_dir(project, namespace) / "tempo-click.wav"
+        artifact.parent.mkdir(parents=True, exist_ok=True)
+        artifact.write_bytes(b"RIFFfixture")
+        return {
+            "bpm": 120.0,
+            "time_signature": "4/4",
+            "mode": "constant",
+            "backend": "fixture",
+            "downbeat_detected": False,
+            "downbeat_offset_seconds": None,
+            "downbeat_source": None,
+            "beat_times": beat_times,
+            "click_artifact_path": artifact.name,
+        }
+
+    def chords(_source: Path, beat_times: list[float], _settings: dict, **_kwargs) -> dict:
+        # Simulate a concurrent writer landing a human correction on disk
+        # while this stage is "still running" -- before its own result (and
+        # the chord-inference patch riding along with it) is persisted.
+        sidecar = read_sidecar(project)
+        sidecar["analysis"]["tempo"]["human_verified"] = True
+        sidecar["analysis"]["tempo"]["value"] = {
+            "bpm": 90.0, "downbeat_offset_seconds": 3.0, "time_signature": "3/4",
+        }
+        write_sidecar(project, sidecar)
+
+        bar_starts = [0, 8, 16, 24, 32]  # would otherwise infer phase 0
+        segments = [
+            {"start_seconds": beat_times[start], "end_seconds": beat_times[start + 4], "chord": "C:maj"}
+            for start in bar_starts
+        ]
+        return {"segments": segments, "vocabulary": "maj_min", "backend": "fixture", "beat_times": beat_times}
+
+    monkeypatch.setitem(analysis_module._DETECTORS, "tempo", tempo)
+    monkeypatch.setattr(analysis_module, "_detect_chords", chords)
+    monkeypatch.setattr(analysis_module, "_tempo_beat_times", lambda *_args: beat_times)
+
+    result = analyze(project)
+
+    tempo_value = result["analysis"]["tempo"]["value"]
+    assert tempo_value["bpm"] == 90.0
+    assert tempo_value["downbeat_offset_seconds"] == 3.0
+    assert tempo_value["time_signature"] == "3/4"
+    assert result["analysis"]["tempo"]["human_verified"] is True
+
+
+def test_analyze_does_not_overwrite_a_beat_tracker_detected_downbeat_with_chords(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A downbeat the tempo backend already detected must never be
+    second-guessed by chord-derived inference, even if chords would suggest a
+    different phase."""
+    project = _project_copy(tmp_path)
+    _write_v1_sidecar(project)
+    beat_times = [float(i) for i in range(40)]
+
+    def tempo(project: Path, _source: Path, _settings: dict, _analysis: dict, namespace: str, **_kwargs) -> dict:
+        artifact = artifact_namespace_dir(project, namespace) / "tempo-click.wav"
+        artifact.parent.mkdir(parents=True, exist_ok=True)
+        artifact.write_bytes(b"RIFFfixture")
+        return {
+            "bpm": 120.0,
+            "time_signature": "4/4",
+            "mode": "constant",
+            "backend": "madmom",
+            "downbeat_detected": True,
+            "downbeat_offset_seconds": beat_times[2],
+            "downbeat_source": "beat_tracker",
+            "beat_times": beat_times,
+            "click_artifact_path": artifact.name,
+        }
+
+    def chords(_source: Path, beat_times: list[float], _settings: dict, **_kwargs) -> dict:
+        bar_starts = [0, 8, 16, 24, 32]  # would suggest phase 0, not phase 2
+        segments = [
+            {"start_seconds": beat_times[start], "end_seconds": beat_times[start + 4], "chord": "C:maj"}
+            for start in bar_starts
+        ]
+        return {"segments": segments, "vocabulary": "maj_min", "backend": "fixture", "beat_times": beat_times}
+
+    monkeypatch.setitem(analysis_module._DETECTORS, "tempo", tempo)
+    monkeypatch.setattr(analysis_module, "_detect_chords", chords)
+    monkeypatch.setattr(analysis_module, "_tempo_beat_times", lambda *_args: beat_times)
+
+    result = analyze(project)
+
+    tempo_value = result["analysis"]["tempo"]["value"]
+    assert tempo_value["downbeat_offset_seconds"] == beat_times[2]
+    assert tempo_value["downbeat_source"] == "beat_tracker"
 
 
 def test_stage_cache_only_refreshes_the_stage_with_changed_settings(
@@ -671,6 +875,9 @@ def test_manual_correction_survives_rerun(tmp_path: Path) -> None:
         "downbeat_offset_seconds": 0.25,
         "time_signature": "4/4",
         "downbeat_detected": True,
+        # Hand-authored correction with no `backend` on record: never went
+        # through `detect_beats`, so its provenance isn't "beat_tracker".
+        "downbeat_source": None,
     }
     assert result["analysis"]["tempo"]["human_verified"] is True
     # Untouched stages still refresh normally.
@@ -792,7 +999,7 @@ def test_cli_analyze_preserves_local_results_when_lalal_is_unavailable(
     captured = capsys.readouterr()
     assert captured.out == ""
     sidecar = read_sidecar(project)
-    assert sidecar["schema_version"] == 17
+    assert sidecar["schema_version"] == 18
     assert sidecar["analysis"]["tempo"]["value"] is not None
     assert "stem separation unavailable; continuing with available sources" in captured.err
 
