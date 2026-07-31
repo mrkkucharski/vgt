@@ -184,13 +184,15 @@ Schema versions:
       `vgt analyze` instead inferred it from chord segment boundaries after
       the beat tracker reported none (#276), or `null` when there is still no
       bar phase (or the bar phase's true origin can't be established). A
-      legacy `value` migrates to `"beat_tracker"` only when `downbeat_detected`
-      is already `true` *and* a `backend` is on record and it wasn't adopted
-      from a REAPER tempo map (`source: "reaper-tempo-map"`) -- both of those
-      bypass `detect_beats` entirely, so nothing before this schema could have
-      set `downbeat_detected` on their behalf via the beat tracker. A legacy
-      `detected` baseline is always machine-computed, so it migrates using the
-      plain `"beat_tracker"`-if-detected heuristic.
+      legacy `value` *or* `detected` migrates to `"beat_tracker"` only when
+      `downbeat_detected` is already `true` *and* a `backend` is on record and
+      it wasn't adopted from a REAPER tempo map (`source: "reaper-tempo-map"`)
+      -- both of those bypass `detect_beats` entirely, so nothing before this
+      schema could have set `downbeat_detected` on their behalf via the beat
+      tracker. The same rule applies to a legacy `detected`, not just `value`:
+      the schema-2/schema-4 best-effort backfill above can copy a human- or
+      REAPER-authored `value` verbatim into an absent `detected`, so a legacy
+      `detected` is not reliably machine-computed either.
 
 Ordinary stages (`key` and `chords`) have this shape:
   {
@@ -505,32 +507,38 @@ def upgrade(data: dict[str, Any]) -> dict[str, Any]:
                 ):
                     merged.pop(legacy_field, None)
             analysis[stage] = merged
+    def _migrate_downbeat_provenance(tempo_like: dict[str, Any], *, human_verified: bool) -> None:
+        if "downbeat_detected" not in tempo_like:
+            # Historical librosa payloads used their first beat as a
+            # fabricated offset. Other legacy backends did not persist enough
+            # information to safely distinguish their prior downbeat
+            # semantics, so retain them.
+            tempo_like["downbeat_detected"] = tempo_like.get("backend") != "librosa"
+        if "downbeat_source" not in tempo_like:
+            # Schema 18: a value adopted from a REAPER tempo map, or
+            # hand-authored as a verified correction with no `backend` on
+            # record, never went through `detect_beats` -- only claim
+            # "beat_tracker" when a backend detection actually ran. This
+            # applies to `detected` too: the pre-schema-16 best-effort
+            # backfill above (`merged["detected"] = deepcopy(merged["value"])`)
+            # can copy exactly such a human/REAPER-authored `value` verbatim
+            # into `detected`, so `detected` is not reliably machine-computed
+            # for a legacy sidecar.
+            adopted_without_detection = tempo_like.get("source") == "reaper-tempo-map" or (
+                human_verified and "backend" not in tempo_like
+            )
+            if adopted_without_detection:
+                tempo_like["downbeat_source"] = None
+            else:
+                tempo_like["downbeat_source"] = "beat_tracker" if tempo_like.get("downbeat_detected") is True else None
+
+    tempo_human_verified = bool(analysis["tempo"].get("human_verified"))
     tempo_value = analysis["tempo"].get("value")
-    if isinstance(tempo_value, dict) and "downbeat_detected" not in tempo_value:
-        # Historical librosa payloads used their first beat as a fabricated
-        # offset. Other legacy backends did not persist enough information to
-        # safely distinguish their prior downbeat semantics, so retain them.
-        tempo_value["downbeat_detected"] = tempo_value.get("backend") != "librosa"
-    if isinstance(tempo_value, dict) and "downbeat_source" not in tempo_value:
-        # Schema 18: a value adopted from a REAPER tempo map, or hand-authored
-        # as a verified correction with no `backend` on record, never went
-        # through `detect_beats` -- only claim "beat_tracker" when a backend
-        # detection actually ran.
-        adopted_without_detection = tempo_value.get("source") == "reaper-tempo-map" or (
-            bool(analysis["tempo"].get("human_verified")) and "backend" not in tempo_value
-        )
-        if adopted_without_detection:
-            tempo_value["downbeat_source"] = None
-        else:
-            tempo_value["downbeat_source"] = "beat_tracker" if tempo_value.get("downbeat_detected") is True else None
+    if isinstance(tempo_value, dict):
+        _migrate_downbeat_provenance(tempo_value, human_verified=tempo_human_verified)
     tempo_detected = analysis["tempo"].get("detected")
     if isinstance(tempo_detected, dict):
-        if "downbeat_detected" not in tempo_detected:
-            tempo_detected["downbeat_detected"] = tempo_detected.get("backend") != "librosa"
-        if "downbeat_source" not in tempo_detected:
-            # `detected` is always machine-computed, never human-authored or
-            # REAPER-adopted, so the plain beat-tracker heuristic applies as-is.
-            tempo_detected["downbeat_source"] = "beat_tracker" if tempo_detected.get("downbeat_detected") is True else None
+        _migrate_downbeat_provenance(tempo_detected, human_verified=tempo_human_verified)
     analysis.setdefault("provenance", {"tool": "vgt", "version": None, "settings": {}})
     stems = {**_empty_stems_block(), **(analysis.get("stems") or {})}
     stems["operations"] = dict(stems.get("operations") or {})

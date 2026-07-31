@@ -247,6 +247,22 @@ def test_upgrade_backfills_downbeat_source_onto_the_detected_baseline_too() -> N
     assert upgraded["analysis"]["tempo"]["detected"]["downbeat_source"] == "beat_tracker"
 
 
+def test_upgrade_does_not_attribute_a_backfilled_reaper_tempo_map_detected_to_the_beat_tracker() -> None:
+    """Reviewer finding on #276: a legacy sidecar with no `detected` at all
+    gets one backfilled by copying `value` verbatim (the schema-2/4
+    best-effort backfill), so a human/REAPER-authored `value` with no
+    `backend` produces a `detected` that is just as un-machine-computed as
+    `value` -- it must get the same `null` provenance, not "beat_tracker"."""
+    upgraded = upgrade({"schema_version": 10, "analysis": {"tempo": {
+        "human_verified": True,
+        "value": {"source": "reaper-tempo-map", "mode": "piecewise", "bpm": 120.0, "spans": []},
+    }}})
+
+    tempo = upgraded["analysis"]["tempo"]
+    assert tempo["value"]["downbeat_source"] is None
+    assert tempo["detected"]["downbeat_source"] is None
+
+
 def test_upgrade_backfills_detected_from_value_for_v4_sections() -> None:
     """Same v2 -> v3 chords backfill, applied to sections for the v4 -> v5
     migration (#33): a v4 sidecar has no `detected` field on the sections
