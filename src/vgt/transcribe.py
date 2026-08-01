@@ -1675,6 +1675,7 @@ def _write_midi(
     """Write a minimal, valid single-track Standard MIDI File (format 0)
     containing `notes`, with no external MIDI library (none is a vgt
     dependency, and this issue must add none)."""
+    path.parent.mkdir(parents=True, exist_ok=True)
     ticks_per_beat = 480
     tempo_uspb = int(round(60_000_000 / tempo_bpm)) if tempo_bpm else 500_000
 
@@ -2541,6 +2542,7 @@ def _write_parsed_notes_csv(path: Path, notes: list[ParsedNote]) -> None:
     """Rewrite the note-events CSV after guitar cleanup, preserving each
     surviving note's real pitch-bend series (unlike `_write_notes_csv`, used
     only by `FakeTranscriber`, which fabricates one)."""
+    path.parent.mkdir(parents=True, exist_ok=True)
     lines = ["start_time_s,end_time_s,pitch_midi,velocity,pitch_bend"]
     for note in notes:
         bend = [str(value) for value in note.pitch_bend]

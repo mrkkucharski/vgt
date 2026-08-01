@@ -298,6 +298,8 @@ max_bars = 1
     ]) == 0
     low = json.loads(capsys.readouterr().out)
     assert low["backend"] == "pyin"
+    assert low["effective_profile"] == "low-bass"
+    assert low["resolved_settings"]["detection"]["frame_length"] == 4096
 
     assert main([
         "transcription", "variant", "add", "bass",

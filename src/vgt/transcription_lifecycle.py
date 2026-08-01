@@ -237,8 +237,12 @@ def add_variant(
         try:
             # A requested `default` selects this target's default profile
             # (pYIN for bass), rather than the global Basic Pitch preset.
+            # Project-local names are not in the builtin registry, so they
+            # must reach the resolver directly rather than being folded back
+            # to the target default by `effective_profile_name_for_target`.
+            selected_profile = profile if profile in project_profiles else effective_profile_name_for_target(target, {target: profile})
             resolved = validate_profile_for_target(
-                effective_profile_name_for_target(target, {target: profile}), target, project_profiles
+                selected_profile, target, project_profiles
             )
         except ProfileDefinitionError as exc:
             raise VariantLifecycleError(str(exc)) from exc
