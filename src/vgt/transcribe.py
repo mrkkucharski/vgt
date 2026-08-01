@@ -349,6 +349,9 @@ class InstrumentProfile:
     # includes that stage. Per-profile because a bass ring-out worth keeping is
     # not the same length as an acoustic guitar's.
     sustain_clamp_bars: float = GUITAR_SUSTAIN_CLAMP_BARS
+    # Optional analysis-only input frontend. The variant layer renders this
+    # into a derived WAV; it never changes a separated stem artifact.
+    audio_frontend: Mapping[str, Any] = field(default_factory=lambda: {"stages": []})
 
 
 _DEFAULT_PROFILE = InstrumentProfile(
@@ -567,6 +570,19 @@ _GUITAR_ACOUSTIC_STRICT_CHORDS_PROFILE = replace(
     minimum_note_length_ms=GUITAR_ACOUSTIC_STRICT_MINIMUM_NOTE_LENGTH_MS,
 )
 
+# The measured 7Rivers winner: retain half of the harmonic component before
+# Basic Pitch, while preserving the raw clean profile as explicit opt-out.
+_GUITAR_HARMONIC_PROFILE = replace(
+    _GUITAR_ACOUSTIC_CLEAN_PROFILE,
+    name="guitar-harmonic",
+    audio_frontend={
+        "stages": [
+            {"type": "hpss_blend", "component": "harmonic", "wet": 0.5,
+             "margin": 1.0, "n_fft": 2048, "hop_length": 512}
+        ]
+    },
+)
+
 _INSTRUMENT_PROFILES: dict[str, InstrumentProfile] = {
     "default": _DEFAULT_PROFILE,
     "guitar": _GUITAR_PROFILE,
@@ -579,6 +595,7 @@ _INSTRUMENT_PROFILES: dict[str, InstrumentProfile] = {
     "guitar-acoustic-detail": _GUITAR_ACOUSTIC_DETAIL_PROFILE,
     "guitar-acoustic-clean": _GUITAR_ACOUSTIC_CLEAN_PROFILE,
     "guitar-acoustic-strict-chords": _GUITAR_ACOUSTIC_STRICT_CHORDS_PROFILE,
+    "guitar-harmonic": _GUITAR_HARMONIC_PROFILE,
 }
 VALID_PROFILE_NAMES: tuple[str, ...] = tuple(_INSTRUMENT_PROFILES)
 
@@ -708,6 +725,7 @@ _PROFILE_NAMES_BY_TARGET["guitar"] = (
     "guitar-acoustic-detail",
     "guitar-acoustic-clean",
     "guitar-acoustic-strict-chords",
+    "guitar-harmonic",
 )
 _PROFILE_NAMES_BY_TARGET["bass"] = (
     "default",
@@ -769,6 +787,8 @@ def _profile_for_target(target: str, modes: Mapping[str, str] | None) -> Instrum
     only explicit CLI input is validated by :func:`validate_profile_for_target`.
     """
     profile_name = modes.get(target) if isinstance(modes, Mapping) else None
+    if target == "guitar" and (profile_name is None or profile_name not in valid_profile_names_for_target(target)):
+        return _GUITAR_HARMONIC_PROFILE
     # `default` is the target-default selection, not an instruction to bypass
     # that target's profile. This matters for bass, whose default is pYIN;
     # the retained `bass-basic-pitch` profile remains the explicit opt-in.

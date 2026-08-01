@@ -54,6 +54,12 @@ def test_guitar_acoustic_alias_matches_clean_resolved_identity() -> None:
     assert resolved_cleanup_hash(alias) == resolved_cleanup_hash(clean)
 
 
+def test_guitar_harmonic_builtin_exposes_its_analysis_frontend() -> None:
+    harmonic = resolve_profile("guitar-harmonic")
+    assert harmonic.audio_frontend["stages"][0]["component"] == "harmonic"
+    assert harmonic.audio_frontend["stages"][0]["wet"] == 0.5
+
+
 def test_unknown_builtin_profile_is_rejected() -> None:
     with pytest.raises(ProfileDefinitionError):
         resolve_profile("guitar-acoustic-does-not-exist")

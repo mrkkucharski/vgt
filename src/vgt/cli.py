@@ -234,6 +234,7 @@ def _resolved_profile_dict(resolved: Any) -> dict[str, Any]:
         "profile_definition_hash": resolved.profile_definition_hash,
         "detection": resolved_detection_identity(resolved),
         "cleanup": resolved_cleanup_identity(resolved),
+        "audio_frontend": resolved.audio_frontend,
     }
 
 

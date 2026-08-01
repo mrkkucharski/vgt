@@ -220,7 +220,8 @@ full mix.
 | --- | --- |
 | `drums` | DrumScript with analysis-only gentle HPSS by default; explicit `default` opts out to the raw stem, and `drums-adtof` uses ADTOF |
 | `bass` | pYIN, a monophonic pitch tracker (see [Bass](#pyin-bass) below) |
-| `guitar`, `vocals`, `instrumental`, `backing`, `strings`, `piano`, `original` | Basic Pitch |
+| `guitar` | Basic Pitch with analysis-only harmonic HPSS by default; explicit `default` opts out to raw guitar |
+| `vocals`, `instrumental`, `backing`, `strings`, `piano`, `original` | Basic Pitch |
 
 Guitar is the default requested target. Add other targets with repeatable
 `--transcribe`; this persists the target in the sidecar, so later analyses keep
@@ -243,7 +244,7 @@ vgt analyze --transcribe bass --transcribe drums "Song.RPP"
 - `--mode <target>=<profile>` persists a transcription profile for one target;
   repeat it to select several. Current profiles are `default`, `guitar`,
   `bass`, `bass-pyin`, `bass-basic-pitch`, `bass-monophonic`, `vocals`,
-  `guitar-acoustic`, and (for `drums`)
+  `guitar-acoustic`, `guitar-harmonic`, and (for `drums`)
   `drums-clean`, `drums-hpss-gentle`, and `drums-adtof`. For example, `vgt analyze --mode guitar=guitar-acoustic
   "Song.RPP"` or `vgt analyze --mode drums=drums-clean "Song.RPP"` (see
   [DrumScript](#drumscript-drums) below). A stale mode from an older sidecar
@@ -349,6 +350,11 @@ it blends 35% percussive HPSS into an analysis-only WAV and applies the existing
 `drums-clean` event cleanup. The raw `stems/drums.wav` is never changed. Opt out
 for a raw-stem DrumScript run with `--mode drums=default`, or create a raw
 comparison variant with `--profile default`.
+
+Guitar transcription likewise uses `guitar-harmonic` by default: 50% harmonic
+HPSS feeds an analysis-only WAV into the acoustic-clean profile. The raw guitar
+stem is unchanged; use `--mode guitar=default` or `--profile default` to opt
+out to the raw, tuned guitar path.
 
 Use `vgt transcription profile validate "Song.RPP"`, then add it with
 `vgt transcription variant add guitar --name "my clean" --profile

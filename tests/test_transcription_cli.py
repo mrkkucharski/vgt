@@ -82,12 +82,17 @@ def test_profile_list_and_show_and_validate(tmp_path: Path, capsys) -> None:
     listing = capsys.readouterr().out
     assert "guitar-acoustic-clean (builtin)" in listing
     assert "guitar-acoustic-detail (builtin)" in listing
+    assert "guitar-harmonic (builtin)" in listing
 
     assert main(["transcription", "profile", "show", "guitar-acoustic-clean", str(project)]) == 0
     shown = json.loads(capsys.readouterr().out)
     assert shown["name"] == "guitar-acoustic-clean"
     assert shown["is_builtin"] is True
     assert any(stage["name"] == "drop_harmonic_ghosts" for stage in shown["cleanup"])
+
+    assert main(["transcription", "profile", "show", "guitar-harmonic", str(project)]) == 0
+    harmonic = json.loads(capsys.readouterr().out)
+    assert harmonic["audio_frontend"]["stages"][0]["wet"] == 0.5
 
     assert main(["transcription", "profile", "validate", str(project)]) == 0
     assert "0 project profile(s) valid." in capsys.readouterr().out

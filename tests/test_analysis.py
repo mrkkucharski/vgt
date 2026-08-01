@@ -60,6 +60,11 @@ def _add_fake_stem(project: Path, sidecar: dict, target: str, content: bytes) ->
         "file": filename,
         "sha256": hashlib.sha256(content).hexdigest(),
     }
+    if target == "guitar":
+        # This helper deliberately writes opaque bytes, not audio. Tests that
+        # use it exercise cache/orchestration and explicitly opt out of the
+        # analysis frontend; the default itself is covered with decodable WAVs.
+        sidecar["analysis"]["transcription"].setdefault("modes", {})["guitar"] = "default"
 
 
 def _write_v1_sidecar(project: Path) -> Path:

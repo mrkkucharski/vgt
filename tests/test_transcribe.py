@@ -84,7 +84,7 @@ def test_default_spec_applies_the_per_target_frequency_table() -> None:
     vocals = default_spec_for_target("vocals")
     piano = default_spec_for_target("piano")
 
-    assert (guitar.minimum_frequency_hz, guitar.maximum_frequency_hz) == (70.0, 1400.0)
+    assert (guitar.minimum_frequency_hz, guitar.maximum_frequency_hz) == (80.0, 1200.0)
     # Bass's window is the pyin tracker's fundamental search range, narrowed to
     # the range two independent estimators measured on a real stem; the retired
     # Basic Pitch profile keeps its original, wider window.
@@ -95,18 +95,19 @@ def test_default_spec_applies_the_per_target_frequency_table() -> None:
     assert (piano.minimum_frequency_hz, piano.maximum_frequency_hz) == (None, None)
 
 
-def test_default_spec_leaves_unrecognised_and_unset_guitar_at_the_generic_defaults() -> None:
-    """Stored modes from a retired registry entry safely use the default."""
+def test_guitar_harmonic_is_default_and_explicit_default_is_raw_opt_out() -> None:
+    """Stored stale modes safely use the harmonic default."""
     unset = default_spec_for_target("guitar")
     electric = default_spec_for_target("guitar", modes={"guitar": "electric"})
+    raw = default_spec_for_target("guitar", modes={"guitar": "default"})
 
     for spec in (unset, electric):
-        assert (spec.minimum_frequency_hz, spec.maximum_frequency_hz) == (70.0, 1400.0)
-        assert spec.onset_threshold == 0.5
-        assert spec.frame_threshold == 0.3
-        assert spec.minimum_note_length_ms == 60.0
-        assert spec.melodia_trick is True
-        assert spec.cleanup == ()
+        assert (spec.minimum_frequency_hz, spec.maximum_frequency_hz) == (80.0, 1200.0)
+        assert spec.onset_threshold == 0.6
+        assert spec.frame_threshold == 0.65
+        assert "drop_harmonic_ghosts" in _cleanup_names(spec)
+    assert (raw.minimum_frequency_hz, raw.maximum_frequency_hz) == (70.0, 1400.0)
+    assert raw.cleanup == ()
 
 
 def test_default_spec_narrows_acoustic_guitar_and_enables_cleanup() -> None:
@@ -225,8 +226,9 @@ def test_default_spec_shares_the_common_defaults_across_targets() -> None:
     vocals = default_spec_for_target("vocals")
 
     assert guitar.backend == vocals.backend == "basic-pitch"
-    assert guitar.minimum_note_length_ms == vocals.minimum_note_length_ms == 60.0
-    assert guitar.melodia_trick is True
+    assert guitar.minimum_note_length_ms == 100.0
+    assert vocals.minimum_note_length_ms == 60.0
+    assert guitar.melodia_trick is False
     assert guitar.multiple_pitch_bends is False
 
 
@@ -271,8 +273,9 @@ def test_spec_hash_is_unchanged_for_every_target_without_a_cleanup_pipeline() ->
     """
     cases: list[tuple[str, dict[str, str] | None]] = [
         (target, None)
-        for target in ("guitar", "vocals", "piano", "strings", "instrumental", "backing", "original")
+        for target in ("vocals", "piano", "strings", "instrumental", "backing", "original")
     ]
+    cases.append(("guitar", {"guitar": "default"}))
     cases.append(("bass", {"bass": "bass-basic-pitch"}))
     for target, modes in cases:
         spec = default_spec_for_target(target, modes=modes)
@@ -361,7 +364,7 @@ def test_drumscript_clean_profile_shares_the_gentle_defaults_backend_spec() -> N
     assert spec_hash(clean_spec) == spec_hash(default_spec)
     # Every other target's identity is untouched by drums selecting a clean profile.
     guitar_spec = default_spec_for_target("guitar", modes={"drums": "drums-clean"})
-    assert guitar_spec.cleanup == ()
+    assert guitar_spec.to_dict() == default_spec_for_target("guitar").to_dict()
 
 
 def test_every_drumscript_profile_carries_the_analysis_beat_grid_in_its_identity() -> None:

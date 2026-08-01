@@ -448,7 +448,7 @@ def resolve_profile(name: str, project_profiles: Mapping[str, RawProfileDefiniti
             detection = {}
         return ResolvedProfile(
             name=name, target=None, backend=base.backend, detection=detection,
-            cleanup=tuple(base.cleanup), audio_frontend={"stages": []}, is_builtin=True, profile_definition_hash=None,
+            cleanup=tuple(base.cleanup), audio_frontend=dict(base.audio_frontend), is_builtin=True, profile_definition_hash=None,
         )
 
     chain: list[RawProfileDefinition] = []
@@ -495,7 +495,7 @@ def resolve_profile(name: str, project_profiles: Mapping[str, RawProfileDefiniti
 
     detection = _pyin_detection_fields(base) if base.backend == "pyin" else _profile_detection_fields(base)
     cleanup_by_name = _seed_cleanup_by_name(base)
-    frontend = {"stages": []}
+    frontend = dict(base.audio_frontend)
     for defn in reversed(chain):
         for key, value in defn.detection.items():
             detection[key] = value

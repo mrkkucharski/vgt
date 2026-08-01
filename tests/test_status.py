@@ -71,7 +71,7 @@ def test_status_reports_analysis_corrections_artifacts_and_json(tmp_path: Path, 
     assert "Last human correction: unknown" in text
     assert "click: present" in text
     assert "transcription (basic-pitch[onnx]==0.4.0): 3 requested" in text
-    assert "guitar   872 notes, MIDI 40-76, profile guitar, transcribed 2026-07-19T10:05:00Z" in text
+    assert "guitar   872 notes, MIDI 40-76, profile guitar-harmonic, transcribed 2026-07-19T10:05:00Z" in text
     assert "bass     error - basic-pitch exited with status 1, profile bass" in text
     assert "vocals   skipped - no vocals stem available, profile vocals" in text
 
@@ -95,7 +95,7 @@ def test_status_reports_analysis_corrections_artifacts_and_json(tmp_path: Path, 
     assert transcription["backend"] == "basic-pitch"
     assert transcription["targets"]["guitar"]["status"] == "transcribed"
     assert transcription["targets"]["guitar"]["requested_mode"] is None
-    assert transcription["targets"]["guitar"]["effective_profile"] == "guitar"
+    assert transcription["targets"]["guitar"]["effective_profile"] == "guitar-harmonic"
     assert transcription["targets"]["guitar"]["note_count"] == 872
     assert transcription["targets"]["bass"]["status"] == "error"
     assert transcription["targets"]["vocals"]["status"] == "skipped-missing-source"

@@ -58,6 +58,7 @@ from .transcribe import (
     drum_transcription_profile,
     events_artifact_name,
     effective_profile_name_for_target,
+    instrument_profile,
     midi_artifact_name,
     notes_artifact_name,
     production_transcriber_router,
@@ -325,6 +326,13 @@ def _refresh_target(
                 "audio_frontend": audio_frontend,
             }
         )
+    elif target == "guitar":
+        # Mirror drums: a no-mode run selects the measured frontend default,
+        # while an explicit `guitar=default` keeps the raw input path.
+        effective_profile = effective_profile_name_for_target(target, modes)
+        profile = modes.get(target) or effective_profile
+        audio_frontend = dict(instrument_profile(effective_profile).audio_frontend)
+        resolved_settings = (variants.get(target_variant_id) or {}).get("resolved_settings") or {"detection": {}, "cleanup": []}
     else:
         profile = modes.get(target) or (variants.get(target_variant_id) or {}).get("requested_profile") or "default"
         effective_profile = (
