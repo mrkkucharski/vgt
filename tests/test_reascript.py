@@ -1443,12 +1443,12 @@ def test_transcription_import_source_and_opt_in_verifier_are_present() -> None:
     assert TRANSCRIPTION_VERIFY_SCRIPT.is_file()
 
 
-def test_analysis_audio_variant_has_target_lookup_in_scope() -> None:
-    """Lua locals begin scope at their declaration, so this must be forward-declared."""
+def test_analysis_audio_cache_artifacts_are_never_imported_as_tracks() -> None:
     script = APPLY_SCRIPT.read_text()
-    forward = script.index("local transcription_definition\n\nlocal function add_analysis_audio_variant")
-    lookup = script.index("transcription_definition = function(target)")
-    assert forward < lookup
+    assert "add_analysis_audio_variant" not in script
+    assert "valid_analysis_audio" not in script
+    assert "variant-audio:" not in script
+    assert '" Analysis — "' not in script
 
 
 def test_variant_transcriptions_import_in_order_with_neutral_color(tmp_path: Path) -> None:
@@ -1457,9 +1457,13 @@ def test_variant_transcriptions_import_in_order_with_neutral_color(tmp_path: Pat
     `selected_variant_id` pointer a pre-migration sidecar might still carry."""
     rpp = tmp_path / "song.RPP"
     namespace = tmp_path / "vgt" / "song-abc123"
+    frontend_hash = "a" * 64
     (namespace / "transcription" / "guitar").mkdir(parents=True)
     for variant_id in ("detail", "clean"):
         (namespace / "transcription" / "guitar" / f"{variant_id}.mid").write_bytes(b"MThd")
+    analysis_wav = namespace / "transcription" / "cache" / "audio-frontends" / frontend_hash / "analysis.wav"
+    analysis_wav.parent.mkdir(parents=True)
+    analysis_wav.write_bytes(b"RIFF....WAVE")
     guitar_wav = namespace / "stems" / "guitar.wav"
     guitar_wav.parent.mkdir()
     guitar_wav.write_bytes(b"RIFF....WAVE")
@@ -1467,7 +1471,7 @@ def test_variant_transcriptions_import_in_order_with_neutral_color(tmp_path: Pat
     helpers_end = script.index("local function remove_previous_managed_regions()")
     lua_program = "\n".join([
         _click_track_lua_mock(rpp), script[:helpers_end], "local managed_tracks = {}",
-        "add_stem_tracks(0, {artifact_namespace = 'song-abc123', artifacts = {guitar = {file = 'vgt/song-abc123/stems/guitar.wav', size_bytes = 12, duration_seconds = 1}}}, {targets = {guitar = {selected_variant_id = 'clean', variant_order = {'detail', 'clean'}, variants = {detail = {label = 'Detail', status = 'transcribed', midi_file = 'transcription/guitar/detail.mid'}, clean = {label = 'Clean', status = 'transcribed', midi_file = 'transcription/guitar/clean.mid'}}}}}, 2, managed_tracks)",
+        f"add_stem_tracks(0, {{artifact_namespace = 'song-abc123', artifacts = {{guitar = {{file = 'vgt/song-abc123/stems/guitar.wav', size_bytes = 12, duration_seconds = 1}}}}}}, {{targets = {{guitar = {{selected_variant_id = 'clean', variant_order = {{'detail', 'clean'}}, variants = {{detail = {{label = 'Detail', status = 'transcribed', midi_file = 'transcription/guitar/detail.mid', analysis_audio_file = 'transcription/cache/audio-frontends/{frontend_hash}/analysis.wav'}}, clean = {{label = 'Clean', status = 'transcribed', midi_file = 'transcription/guitar/clean.mid'}}}}}}}}}}, 2, managed_tracks)",
         "for _, track in ipairs(__tracks) do io.write(track.name, ':', track.mute, ':', tostring(track.values.I_CUSTOMCOLOR), ';') end",
     ])
     result = subprocess.run([LUA, "-", str(rpp)], input=lua_program, text=True, capture_output=True, check=True)

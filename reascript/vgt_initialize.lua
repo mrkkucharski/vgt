@@ -532,7 +532,6 @@ local function reconciliation_inventory(analysis)
         if type(record) == "table" and type(record.variant_order) == "table" then
           for _, variant_id in ipairs(record.variant_order) do
             roles[#roles + 1] = "variant:" .. name .. ":" .. tostring(variant_id)
-            roles[#roles + 1] = "variant-audio:" .. name .. ":" .. tostring(variant_id)
           end
         else
           roles[#roles + 1] = "variant:" .. name .. ":legacy"
@@ -1305,45 +1304,6 @@ local function valid_midi_artifact(record, target, variant_id, artifact_namespac
   return path
 end
 
--- Analysis frontends are cache artifacts, never replacements for a stem.  A
--- variant may point at one only inside its own content-addressed cache path.
-local function valid_analysis_audio(record, artifact_namespace)
-  if type(record) ~= "table" or type(record.analysis_audio_file) ~= "string" then return nil end
-  local relative = record.analysis_audio_file
-  if not relative:match("^transcription/cache/audio%-frontends/[a-f0-9]+/analysis%.wav$") then return nil end
-  if not artifact_namespace or artifact_namespace == "" or artifact_namespace:find("[\\/]") or artifact_namespace:find("%.%.") then return nil end
-  local path = project_dir() .. "vgt/" .. artifact_namespace .. "/" .. relative
-  local file = io.open(path, "rb")
-  if not file then return nil end
-  local header = file:read(12) or ""
-  file:close()
-  if header:sub(1, 4) ~= "RIFF" or header:sub(9, 12) ~= "WAVE" then return nil end
-  return path
-end
-
--- Forward declaration: analysis-audio variants are defined before the MIDI
--- helpers, while the target lookup is shared with those helpers below.
-local transcription_definition
-
-local function add_analysis_audio_variant(index, target, variant_id, variant, reference_start, managed_tracks, artifact_namespace)
-  local path = valid_analysis_audio(variant, artifact_namespace)
-  if not path then return index end
-  local definition = transcription_definition(target)
-  if not definition then return index end
-  local source = reaper.PCM_Source_CreateFromFile(path)
-  if not source then return index end
-  local label = type(variant.label) == "string" and variant.label or tostring(variant_id)
-  local track = add_locked_track(index, PREFIX .. " " .. definition.label .. " Analysis — " .. label .. " (Audio)", true, "variant-audio:" .. target .. ":" .. variant_id)
-  local item = reaper.AddMediaItemToTrack(track)
-  reaper.SetMediaItemInfo_Value(item, "D_POSITION", reference_start)
-  reaper.SetMediaItemInfo_Value(item, "D_LENGTH", reaper.GetMediaSourceLength(source))
-  reaper.SetMediaItemInfo_Value(item, "C_BEATATTACHMODE", 0)
-  local take = reaper.AddTakeToMediaItem(item)
-  reaper.SetMediaItemTake_Source(take, source)
-  managed_tracks[#managed_tracks + 1] = track
-  return index + 1
-end
-
 -- Reference MIDI is authored at the analyzed tempo, not the project's. There
 -- is no ReaScript accessor for a take's IGNTEMPO flag, so this rewrites the
 -- item chunk directly: "IGNTEMPO 0 <bpm> <num> <den>" (follow the project
@@ -1362,7 +1322,7 @@ local function set_take_ignores_project_tempo(item, midi_tempo)
   return reaper.SetItemStateChunk(item, new_chunk, false)
 end
 
-transcription_definition = function(target)
+local function transcription_definition(target)
   local definition = nil
   for _, candidate in ipairs(TRANSCRIPTION_TARGETS) do
     if candidate.target == target then definition = candidate break end
@@ -1429,7 +1389,6 @@ local function add_reference_midi_tracks(index, target, transcription, reference
       if not seen[variant_id] then
         seen[variant_id] = true
         local variant = record.variants[variant_id]
-        index = add_analysis_audio_variant(index, target, variant_id, variant, reference_start, managed_tracks, artifact_namespace)
         -- Only migration-produced records retain flat status and the legacy path.
         local allow_legacy_path = record.status ~= nil and type(variant) == "table"
           and variant.midi_file == "transcription/" .. target .. ".mid"

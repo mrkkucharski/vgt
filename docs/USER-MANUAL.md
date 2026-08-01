@@ -341,9 +341,9 @@ extends = "guitar-acoustic-clean"
 stages = [{ type = "bandpass", low_hz = 70, high_hz = 5000, order = 4 }]
 ```
 
-Processed-input variants appear as muted `[vgt] … Analysis … (Audio)` tracks
-beside their MIDI in REAPER. They are experimental candidates, never a replacement
-for the raw stem.
+Processed-input WAVs are temporary, content-addressed transcription cache
+artifacts. They are never loaded into REAPER; only the resulting MIDI variant
+appears beside the original stem.
 
 Drum transcription uses the built-in `raw` profile by default and feeds the
 unaltered `stems/drums.wav` to DrumScript. The optional `hpss` profile blends
