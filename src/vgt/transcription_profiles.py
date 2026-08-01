@@ -57,12 +57,15 @@ from .transcribe import (
     VALID_TARGETS,
     _bar_duration_seconds,  # noqa: SLF001 -- reuses the same bars->seconds conversion `default_spec_for_target` applies
     _INSTRUMENT_PROFILES,  # noqa: SLF001 -- this module is transcribe.py's one intended reader of the builtin registry
+    DRUM_TRANSCRIPTION_PROFILE_NAMES,
+    drum_transcription_profile,
 )
+from .audio_frontend import AudioFrontendError, canonical_recipe
 
-TOML_SCHEMA_VERSION = 1
+TOML_SCHEMA_VERSION = 2
 
 _TOP_LEVEL_KEYS = {"schema_version", "profiles"}
-_PROFILE_KEYS = {"target", "extends", "description", "detection", "cleanup"}
+_PROFILE_KEYS = {"target", "extends", "description", "detection", "cleanup", "audio_frontend"}
 
 # Backend-specific fields are deliberately explicit.  A pYIN profile must not
 # accept a Basic Pitch knob which its backend never reads: doing so would make
@@ -234,6 +237,7 @@ class RawProfileDefinition:
     description: str | None
     detection: dict[str, Any]
     cleanup: dict[str, dict[str, Any]]  # stage name -> {"enabled": bool, **params}
+    audio_frontend: dict[str, Any]
     raw: dict[str, Any] = field(repr=False)
 
 
@@ -251,6 +255,7 @@ class ResolvedProfile:
     backend: str
     detection: dict[str, Any]
     cleanup: tuple[CleanupStage, ...]
+    audio_frontend: dict[str, Any]
     is_builtin: bool
     profile_definition_hash: str | None  # project profile's own raw-definition hash; None for a pure builtin
 
@@ -282,8 +287,8 @@ def parse_profiles_toml(text: str) -> dict[str, RawProfileDefinition]:
         _fail(f"unknown top-level key(s) in profiles file: {sorted(unknown)}")
 
     schema_version = data.get("schema_version")
-    if schema_version != TOML_SCHEMA_VERSION:
-        _fail(f"profiles file schema_version must be {TOML_SCHEMA_VERSION}, got {schema_version!r}")
+    if schema_version not in {1, TOML_SCHEMA_VERSION}:
+        _fail(f"profiles file schema_version must be 1 or {TOML_SCHEMA_VERSION}, got {schema_version!r}")
 
     profiles_table = data.get("profiles", {})
     if not isinstance(profiles_table, dict):
@@ -346,10 +351,15 @@ def _parse_one(name: str, table: dict[str, Any]) -> RawProfileDefinition:
                 _fail(f"profile {name!r}'s cleanup.{stage_name} has an unsupported parameter {key!r}")
             params[key] = validator(value, f"profile {name!r}'s cleanup.{stage_name}.{key}")
         cleanup[stage_name] = {"enabled": enabled, **params}
+    frontend_value = table.get("audio_frontend", {"stages": []})
+    try:
+        audio_frontend = canonical_recipe(frontend_value)
+    except AudioFrontendError as exc:
+        _fail(f"profile {name!r} has invalid audio_frontend: {exc}")
 
     return RawProfileDefinition(
         name=name, target=target, extends=extends, description=description,
-        detection=detection, cleanup=cleanup, raw=table,
+        detection=detection, cleanup=cleanup, audio_frontend=audio_frontend, raw=table,
     )
 
 
@@ -430,7 +440,7 @@ def resolve_profile(name: str, project_profiles: Mapping[str, RawProfileDefiniti
             detection = {}
         return ResolvedProfile(
             name=name, target=None, backend=base.backend, detection=detection,
-            cleanup=tuple(base.cleanup), is_builtin=True, profile_definition_hash=None,
+            cleanup=tuple(base.cleanup), audio_frontend={"stages": []}, is_builtin=True, profile_definition_hash=None,
         )
 
     chain: list[RawProfileDefinition] = []
@@ -445,6 +455,21 @@ def resolve_profile(name: str, project_profiles: Mapping[str, RawProfileDefiniti
         chain.append(defn)
         current = defn.extends
 
+    if current in DRUM_TRANSCRIPTION_PROFILE_NAMES:
+        target = chain[0].target
+        if target != "drums" or any(defn.target != "drums" for defn in chain):
+            _fail(f"drum profile {current!r} may only be extended by a drums profile")
+        if any(defn.detection or defn.cleanup for defn in chain):
+            _fail("project drum profiles may currently override audio_frontend only")
+        frontend = {"stages": []}
+        for defn in reversed(chain):
+            if defn.audio_frontend["stages"]:
+                frontend = defn.audio_frontend
+        return ResolvedProfile(
+            name=name, target="drums", backend=drum_transcription_profile({"drums": current}).backend,
+            detection={"drum_profile": current}, cleanup=(), audio_frontend=frontend,
+            is_builtin=False, profile_definition_hash=_hash(chain[0].raw),
+        )
     if current not in _INSTRUMENT_PROFILES:
         _fail(f"profile {chain[-1].name!r} extends unknown parent {current!r}")
     base = _INSTRUMENT_PROFILES[current]
@@ -456,12 +481,13 @@ def resolve_profile(name: str, project_profiles: Mapping[str, RawProfileDefiniti
         if defn.target != target:
             _fail(f"profile {defn.name!r} targets {defn.target!r}, incompatible with {name!r}'s target {target!r}")
     if target == "drums":
-        _fail(f"profile {name!r} targets 'drums', which uses the fixed DrumScript backend, not project overrides")
+        _fail(f"profile {name!r} targets 'drums' but does not extend a built-in drum profile")
 
     _validate_detection_keys_for_backend(chain, backend=base.backend, name=name)
 
     detection = _pyin_detection_fields(base) if base.backend == "pyin" else _profile_detection_fields(base)
     cleanup_by_name = _seed_cleanup_by_name(base)
+    frontend = {"stages": []}
     for defn in reversed(chain):
         for key, value in defn.detection.items():
             detection[key] = value
@@ -472,6 +498,8 @@ def resolve_profile(name: str, project_profiles: Mapping[str, RawProfileDefiniti
             params = dict(cleanup_by_name.get(stage_name) or _STAGE_DEFAULT_PARAMS.get(stage_name, {}))
             params.update({key: value for key, value in override.items() if key != "enabled"})
             cleanup_by_name[stage_name] = params
+        if defn.audio_frontend["stages"]:
+            frontend = defn.audio_frontend
 
     if base.backend == "pyin":
         _validate_resolved_pyin_detection(detection, name)
@@ -485,7 +513,7 @@ def resolve_profile(name: str, project_profiles: Mapping[str, RawProfileDefiniti
     definition_hash = _hash(chain[0].raw)
     return ResolvedProfile(
         name=name, target=target, backend=base.backend, detection=detection,
-        cleanup=ordered_cleanup, is_builtin=False, profile_definition_hash=definition_hash,
+        cleanup=ordered_cleanup, audio_frontend=frontend, is_builtin=False, profile_definition_hash=definition_hash,
     )
 
 
@@ -574,7 +602,7 @@ def resolved_cleanup_hash(resolved: ResolvedProfile) -> str:
 def resolved_settings_snapshot(resolved: ResolvedProfile) -> dict[str, Any]:
     """The sidecar-ready `resolved_settings` shape (schema v13's
     `targets[target].variants[id].resolved_settings`, see sidecar.py)."""
-    return {"detection": dict(resolved.detection), "cleanup": resolved_cleanup_identity(resolved)}
+    return {"detection": dict(resolved.detection), "cleanup": resolved_cleanup_identity(resolved), "audio_frontend": resolved.audio_frontend}
 
 
 def _instantiate_resolved_cleanup(

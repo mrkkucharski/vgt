@@ -199,13 +199,25 @@ def add_variant(
     tempo_map = tempo_map_reference(tempo_value if isinstance(tempo_value, dict) else None)
 
     if target == "drums":
-        if profile not in DRUM_TRANSCRIPTION_PROFILE_NAMES:
-            raise VariantLifecycleError(
-                f"profile for 'drums' must be one of {DRUM_TRANSCRIPTION_PROFILE_NAMES}, got {profile!r}"
-            )
-        drum_profile = drum_transcription_profile({target: profile})
-        effective_profile = profile
-        profile_definition_hash = None
+        if profile in project_profiles:
+            try:
+                resolved = validate_profile_for_target(profile, target, project_profiles)
+            except ProfileDefinitionError as exc:
+                raise VariantLifecycleError(str(exc)) from exc
+            drum_base = resolved.detection["drum_profile"]
+            drum_profile = drum_transcription_profile({target: drum_base})
+            effective_profile = resolved.name
+            profile_definition_hash = resolved.profile_definition_hash
+            audio_frontend = resolved.audio_frontend
+        else:
+            if profile not in DRUM_TRANSCRIPTION_PROFILE_NAMES:
+                raise VariantLifecycleError(
+                    f"profile for 'drums' must be one of {DRUM_TRANSCRIPTION_PROFILE_NAMES}, got {profile!r}"
+                )
+            drum_profile = drum_transcription_profile({target: profile})
+            effective_profile = profile
+            profile_definition_hash = None
+            audio_frontend = {"stages": []}
         resolved_settings = (
             {"backend": drum_profile.backend}
             if drum_profile.cleanup_profile is None
@@ -214,9 +226,11 @@ def add_variant(
                 **DRUM_CLEANUP_PROFILES[drum_profile.cleanup_profile].as_identity(),
             }
         )
+        resolved_settings["audio_frontend"] = audio_frontend
+        routing_modes = {target: drum_profile.name}
         spec = default_spec_for_target(
-            target, backend=backend_for_target_profile(target, {target: profile}), midi_tempo=midi_tempo,
-            time_signature=time_signature, modes={target: profile}, beat_times=beat_times,
+            target, backend=backend_for_target_profile(target, {target: drum_profile.name}), midi_tempo=midi_tempo,
+            time_signature=time_signature, modes={target: drum_profile.name}, beat_times=beat_times,
             downbeat_offset_s=downbeat_offset_s, tempo_map=tempo_map,
         )
     else:
@@ -232,6 +246,8 @@ def add_variant(
         profile_definition_hash = resolved.profile_definition_hash
         resolved_settings = resolved_settings_snapshot(resolved)
         spec = spec_from_resolved_profile(resolved, midi_tempo=midi_tempo, time_signature=time_signature, tempo_map=tempo_map)
+        audio_frontend = resolved.audio_frontend
+        routing_modes = {target: effective_profile}
 
     namespace = ensure_artifact_namespace(sidecar, project_path)
 
@@ -266,12 +282,13 @@ def add_variant(
         profile_definition_hash=profile_definition_hash,
         spec=spec,
         resolved_settings=resolved_settings,
+        audio_frontend=audio_frontend,
     )
 
     active_router = router or production_transcriber_router()
     # Route by the resolved profile, not the user's requested alias. In
     # particular, `bass/default` resolves to the bass pYIN profile.
-    transcriber = active_router.for_target(target, {target: effective_profile})
+    transcriber = active_router.for_target(target, routing_modes)
 
     outcome = reconcile_variants(
         target=target,

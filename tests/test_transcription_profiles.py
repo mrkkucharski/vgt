@@ -84,7 +84,22 @@ def test_parse_rejects_unknown_top_level_key() -> None:
 
 def test_parse_rejects_wrong_schema_version() -> None:
     with pytest.raises(ProfileDefinitionError):
-        parse_profiles_toml("schema_version = 2\n[profiles]\n")
+        parse_profiles_toml("schema_version = 3\n[profiles]\n")
+
+
+def test_project_profile_resolves_audio_frontend_and_drum_base() -> None:
+    text = '''
+schema_version = 2
+[profiles.clean-drums]
+target = "drums"
+extends = "drums-clean"
+[profiles.clean-drums.audio_frontend]
+stages = [{ type = "hpss_blend", component = "percussive", wet = 0.6 }]
+'''
+    resolved = resolve_profile("clean-drums", parse_profiles_toml(text))
+    assert resolved.backend == "drumscript"
+    assert resolved.detection["drum_profile"] == "drums-clean"
+    assert resolved.audio_frontend["stages"][0]["type"] == "hpss_blend"
 
 
 def test_parse_rejects_unknown_profile_key() -> None:

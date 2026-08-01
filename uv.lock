@@ -1831,6 +1831,7 @@ dependencies = [
     { name = "httpx" },
     { name = "librosa" },
     { name = "numpy" },
+    { name = "scipy" },
     { name = "soundfile" },
 ]
 
@@ -1855,6 +1856,7 @@ requires-dist = [
     { name = "madmom", marker = "extra == 'madmom'", specifier = ">=0.16.1" },
     { name = "msaf", marker = "extra == 'msaf'", specifier = ">=0.1.80" },
     { name = "numpy", specifier = ">=1.22,<2" },
+    { name = "scipy", specifier = ">=1.8" },
     { name = "setuptools", marker = "extra == 'madmom'", specifier = "<81" },
     { name = "soundfile", specifier = ">=0.12" },
 ]

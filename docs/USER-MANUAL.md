@@ -326,6 +326,24 @@ spectral_freq_tolerance_semitones = 0.5
 spectral_independent_energy_ratio = 1.5
 ```
 
+Analysis-frontends for a transcription experiment use schema version 2 and
+derive an aligned, cached WAV without altering the LALAL stem. For example:
+
+```toml
+schema_version = 2
+
+[profiles.guitar-bandpass]
+target = "guitar"
+extends = "guitar-acoustic-clean"
+
+[profiles.guitar-bandpass.audio_frontend]
+stages = [{ type = "bandpass", low_hz = 70, high_hz = 5000, order = 4 }]
+```
+
+Processed-input variants appear as muted `[vgt] … Analysis … (Audio)` tracks
+beside their MIDI in REAPER. They are experimental candidates, never a replacement
+for the raw stem.
+
 Use `vgt transcription profile validate "Song.RPP"`, then add it with
 `vgt transcription variant add guitar --name "my clean" --profile
 my-clean-guitar "Song.RPP"`. Profiles inherit from built-ins; only overrides

@@ -71,6 +71,7 @@ from .transcribe import (
     spec_hash,
     validate_target,
 )
+from .audio_frontend import canonical_recipe, frontend_hash, frontend_relative_path, render
 
 CACHE_BACKEND_DIR = "basic-pitch"
 
@@ -93,6 +94,7 @@ class VariantRequest:
     profile_definition_hash: str | None
     spec: TranscriptionSpec
     resolved_settings: dict[str, Any]
+    audio_frontend: dict[str, Any] = field(default_factory=lambda: {"stages": []})
 
 
 @dataclass
@@ -227,6 +229,10 @@ def _atomic_replace(local_path: Path, final_path: Path) -> None:
     tmp_final.replace(final_path)
 
 
+def variant_settings_hash(request: VariantRequest) -> str:
+    return _hash({"spec": request.spec.to_dict(), "audio_frontend": canonical_recipe(request.audio_frontend)})
+
+
 def _base_variant_fields(request: VariantRequest, target: str) -> dict[str, Any]:
     spec = request.spec
     return {
@@ -241,9 +247,10 @@ def _base_variant_fields(request: VariantRequest, target: str) -> dict[str, Any]
         "package_pin": None if isinstance(spec, PyinSpec) else spec.package_pin,
         "serialization": spec.serialization if isinstance(spec, BasicPitchSpec) else None,
         "source_role": target,
-        "settings_hash": spec_hash(spec),
+        "settings_hash": variant_settings_hash(request),
         "resolved_settings": request.resolved_settings,
         "midi_tempo": spec.midi_tempo,
+        "audio_frontend": canonical_recipe(request.audio_frontend),
     }
 
 
@@ -344,7 +351,7 @@ def _transcribed_basic_pitch_variant(
 def _transcribed_drumscript_variant(
     request: VariantRequest, target: str, input_hash: str, result: TranscriptionResult
 ) -> dict[str, Any]:
-    settings_hash = spec_hash(request.spec)
+    settings_hash = variant_settings_hash(request)
     return {
         **_base_variant_fields(request, target),
         "input_hash": input_hash,
@@ -411,7 +418,7 @@ def _reconcile_drumscript_variant(
     force: bool,
     emit: Callable[[str], None],
 ) -> tuple[dict[str, Any], int]:
-    settings_hash = spec_hash(request.spec)
+    settings_hash = variant_settings_hash(request)
     if not force and _existing_drumscript_current(existing, input_hash=input_hash, settings_hash=settings_hash):
         emit(f"transcription — {target}/{request.label}: unchanged, using cached result")
         return existing, 0
@@ -547,37 +554,63 @@ def reconcile_variants(
             commit_variant(request.variant_id, _missing_source_variant(request, target))
         return ReconcileOutcome(variants=variants, detection_cache=detection_cache_state, backend_invocations=0)
 
-    groups: dict[str, list[VariantRequest]] = {}
+    # A frontend is a cached analysis input, not a replacement stem.  Its
+    # bytes, rather than the raw stem's bytes, key inference; records retain
+    # both identities so provenance remains auditable.
+    contexts: dict[str, tuple[Path, str, str | None]] = {}
     for request in requests:
+        recipe = canonical_recipe(request.audio_frontend)
+        if recipe["stages"]:
+            key = frontend_hash(input_hash, recipe)
+            relative = frontend_relative_path(key)
+            rendered = namespace_dir / relative
+            if not rendered.is_file():
+                render(source, rendered, recipe)
+            processed_hash = hashlib.sha256(rendered.read_bytes()).hexdigest()
+            contexts[request.variant_id] = (rendered, processed_hash, relative)
+        else:
+            contexts[request.variant_id] = (source, input_hash, None)
+
+    def with_frontend(record: dict[str, Any], request: VariantRequest) -> dict[str, Any]:
+        _processed, processed_hash, relative = contexts[request.variant_id]
+        record["source_input_hash"] = input_hash
+        record["analysis_input_hash"] = processed_hash
+        record["analysis_audio_file"] = relative
+        record["input_hash"] = processed_hash
+        return record
+
+    groups: dict[tuple[str, str, Path], list[VariantRequest]] = {}
+    for request in requests:
+        processed_source, processed_hash, _relative = contexts[request.variant_id]
         if isinstance(request.spec, (DrumScriptSpec, AdtofSpec)):
             record, count = _reconcile_drumscript_variant(
                 request,
                 target=target,
                 transcriber=transcriber,
-                source=source,
-                input_hash=input_hash,
+                source=processed_source,
+                input_hash=processed_hash,
                 namespace_dir=namespace_dir,
                 existing=existing_variants.get(request.variant_id),
                 force=force,
                 emit=say,
             )
             invocations += count
-            commit_variant(request.variant_id, record)
+            commit_variant(request.variant_id, with_frontend(record, request))
             continue
         if not isinstance(request.spec, (BasicPitchSpec, PyinSpec)):
             raise TranscriptionError(f"unsupported spec type for variant {request.variant_id!r}: {type(request.spec)!r}")
-        groups.setdefault(detection_hash(target, input_hash, request.spec), []).append(request)
+        groups.setdefault((detection_hash(target, processed_hash, request.spec), processed_hash, processed_source), []).append(request)
 
     spectral_cache: dict[tuple[int, int], Any] = {}
 
-    for detection_hash_value, group_requests in groups.items():
+    for (detection_hash_value, processed_hash, processed_source), group_requests in groups.items():
         raw_notes_hash, raw_notes_path, raw_error, invoked = _obtain_raw_group(
             detection_hash_value=detection_hash_value,
             representative_spec=group_requests[0].spec,  # type: ignore[arg-type]
             target=target,
             transcriber=transcriber,
-            source=source,
-            input_hash=input_hash,
+            source=processed_source,
+            input_hash=processed_hash,
             namespace_dir=namespace_dir,
             detection_cache=detection_cache_state,
             force=force,
@@ -589,7 +622,7 @@ def reconcile_variants(
 
         if raw_error is not None:
             for request in group_requests:
-                commit_variant(request.variant_id, _error_variant(request, target, input_hash, detection_hash_value, raw_error))
+                commit_variant(request.variant_id, with_frontend(_error_variant(request, target, processed_hash, detection_hash_value, raw_error), request))
             continue
 
         assert raw_notes_hash is not None and raw_notes_path is not None
@@ -598,10 +631,10 @@ def reconcile_variants(
         for request in group_requests:
             spec = request.spec
             assert isinstance(spec, (BasicPitchSpec, PyinSpec))
-            variant_cleanup_hash = cleanup_hash(raw_notes_hash, input_hash, spec)
+            variant_cleanup_hash = cleanup_hash(raw_notes_hash, processed_hash, spec)
             existing = existing_variants.get(request.variant_id)
             if not force and _existing_basic_pitch_current(
-                existing, input_hash=input_hash, detection_hash_value=detection_hash_value, cleanup_hash_value=variant_cleanup_hash
+                existing, input_hash=processed_hash, detection_hash_value=detection_hash_value, cleanup_hash_value=variant_cleanup_hash
             ):
                 say(f"transcription — {target}/{request.label}: unchanged, using cached result")
                 commit_variant(request.variant_id, existing)
@@ -614,22 +647,22 @@ def reconcile_variants(
                     spec,
                     midi_path=namespace_dir / variant_midi_name(target, request.variant_id),
                     notes_path=namespace_dir / variant_notes_name(target, request.variant_id),
-                    source=source,
+                    source=processed_source,
                     spectral_cache=spectral_cache,
                 )
             except TranscriptionError as exc:
                 say(f"transcription error for {target}/{request.label}: {exc}")
                 commit_variant(
                     request.variant_id,
-                    _error_variant(request, target, input_hash, detection_hash_value, str(exc), cleanup_hash_value=variant_cleanup_hash),
+                    with_frontend(_error_variant(request, target, processed_hash, detection_hash_value, str(exc), cleanup_hash_value=variant_cleanup_hash), request),
                 )
                 continue
             say(f"transcribed {target}/{request.label}: {result.note_count} notes")
             commit_variant(
                 request.variant_id,
-                _transcribed_basic_pitch_variant(
-                    request, target, input_hash, detection_hash_value, variant_cleanup_hash, raw_notes_hash, result
-                ),
+                with_frontend(_transcribed_basic_pitch_variant(
+                    request, target, processed_hash, detection_hash_value, variant_cleanup_hash, raw_notes_hash, result
+                ), request),
             )
 
     return ReconcileOutcome(variants=variants, detection_cache=detection_cache_state, backend_invocations=invocations)
