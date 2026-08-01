@@ -319,6 +319,26 @@ def test_audio_onset_evidence_source_is_a_safe_no_op_for_an_unreadable_file(tmp_
     assert evidence.available is False
 
 
+@pytest.mark.parametrize(("center", "expected"), [(True, True), (False, False)])
+def test_audio_onset_evidence_source_controls_librosa_centering(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, center: bool, expected: bool,
+) -> None:
+    import librosa
+
+    observed: list[bool] = []
+    monkeypatch.setattr(librosa, "load", lambda *_args, **_kwargs: ([0.0, 1.0], 48_000))
+
+    def fake_onset_strength(**kwargs):
+        observed.append(kwargs["center"])
+        return [0.0, 1.0, 0.0]
+
+    monkeypatch.setattr(librosa.onset, "onset_strength", fake_onset_strength)
+
+    AudioOnsetEvidenceSource(tmp_path / "unused.wav", center=center)
+
+    assert observed == [expected]
+
+
 def _synthetic_envelope_with_one_dominant_transient() -> tuple[list[float], float, int, list[int], list[int]]:
     """A deterministic onset-strength envelope shaped like the reported
     7Rivers failure mode: mostly quiet background, many moderate (but

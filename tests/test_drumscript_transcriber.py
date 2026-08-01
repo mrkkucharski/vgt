@@ -67,13 +67,13 @@ def _run_writing(events, midi: bytes = _midi(), stdout: str = "useful stdout"):
     return fake_run
 
 
-def _transcribe(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, events, midi: bytes = _midi()):
+def _transcribe(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, events, midi: bytes = _midi(), spec=None):
     source = tmp_path / "drums.wav"
     source.write_bytes(b"not decoded by this unit test")
     monkeypatch.setattr("shutil.which", lambda _cmd: "/usr/bin/uvx")
     monkeypatch.setattr(subprocess, "run", _run_writing(events, midi))
     monkeypatch.setattr("vgt.transcribe._source_duration_seconds", lambda _source: 10.0)
-    return DrumScriptTranscriber().transcribe(source, tmp_path / "destination", _spec())
+    return DrumScriptTranscriber().transcribe(source, tmp_path / "destination", spec or _spec())
 
 
 def test_quantized_events_fall_back_to_nearby_audio_onsets_without_a_grid() -> None:
@@ -103,6 +103,49 @@ def test_audio_fallback_never_moves_unquantized_backend_events() -> None:
 
     assert count == 0
     assert aligned == events
+
+
+def test_transcriber_uses_uncentered_audio_evidence_for_quantized_fallback(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    centers: list[bool] = []
+
+    class Evidence:
+        def __init__(self, _source: Path, *, center: bool = True) -> None:
+            centers.append(center)
+
+        def evidence_near(self, time_sec: float, _window_s: float) -> OnsetEvidence:
+            return OnsetEvidence(time_sec=time_sec + 0.02, strength=1.0)
+
+    monkeypatch.setattr("vgt.transcribe.AudioOnsetEvidenceSource", Evidence)
+    events = [{"time_sec": index * 0.25, "instruments": ["kick"]} for index in range(8)]
+
+    result = _transcribe(tmp_path, monkeypatch, events)
+
+    assert centers == [False]
+    assert result.first_event_s == pytest.approx(0.02)
+
+
+def test_clean_profile_reuses_uncentered_fallback_evidence(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    centers: list[bool] = []
+
+    class Evidence:
+        def __init__(self, _source: Path, *, center: bool = True) -> None:
+            centers.append(center)
+
+        def evidence_near(self, time_sec: float, _window_s: float) -> OnsetEvidence:
+            return OnsetEvidence(time_sec=time_sec + 0.02, strength=1.0)
+
+    monkeypatch.setattr("vgt.transcribe.AudioOnsetEvidenceSource", Evidence)
+    events = [{"time_sec": index * 0.25, "instruments": ["kick"]} for index in range(8)]
+    spec = default_spec_for_target("drums", backend="drumscript", modes={"drums": "hpss"})
+
+    result = _transcribe(tmp_path, monkeypatch, events, spec=spec)
+
+    assert centers == [False]
+    assert result.first_event_s == pytest.approx(0.04)
 
 
 def test_argv_is_pinned_isolated_and_never_enables_full_song(tmp_path: Path) -> None:

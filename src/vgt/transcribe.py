@@ -79,7 +79,7 @@ DRUMSCRIPT_PACKAGE_PIN = "drumscript==0.1.6"
 # runtime.
 DRUMSCRIPT_RUNTIME_VERSION = "python==3.12"
 DRUMSCRIPT_CLASSIFIER_MODE = "standard-polyphonic"
-DRUMSCRIPT_TIMING_ALIGNMENT_VERSION = "quantized-audio-onsets-v1"
+DRUMSCRIPT_TIMING_ALIGNMENT_VERSION = "quantized-audio-onsets-uncentered-v2"
 DRUMSCRIPT_AUDIO_ALIGNMENT_MAX_WINDOW_S = 0.12
 DRUMSCRIPT_AUDIO_ALIGNMENT_MIN_STRENGTH = 0.30
 ADTOF_PACKAGE_PIN = "adtof-pytorch @ git+https://github.com/xavriley/ADTOF-pytorch.git@85c192e78f716ea0b111cc8a5ee4a8f6a3a4f8a9"
@@ -2888,11 +2888,13 @@ class DrumScriptTranscriber:
                 raw_events, reconciliation = reconcile_event_times(
                     raw_events, beat_grid=spec.beat_grid, beat_period_s=_fitted_beat_period_s(spec)
                 )
+                fallback_evidence: AudioOnsetEvidenceSource | None = None
                 if reconciliation is not None:
                     emit(f"drum events {reconciliation.describe()}")
                 else:
+                    fallback_evidence = AudioOnsetEvidenceSource(source, center=False)
                     raw_events, aligned_count = _align_quantized_drumscript_events_to_audio(
-                        raw_events, AudioOnsetEvidenceSource(source)
+                        raw_events, fallback_evidence
                     )
                     if aligned_count:
                         emit(f"drum events aligned {aligned_count} quantized onsets to nearby audio")
@@ -2932,7 +2934,10 @@ class DrumScriptTranscriber:
                 else:
                     cleanup_profile = DRUM_CLEANUP_PROFILES[spec.cleanup_profile]
                     cleaned = apply_drum_cleanup(
-                        raw_events, profile=cleanup_profile, evidence_source=AudioOnsetEvidenceSource(source), beat_grid=spec.beat_grid
+                        raw_events,
+                        profile=cleanup_profile,
+                        evidence_source=fallback_evidence or AudioOnsetEvidenceSource(source),
+                        beat_grid=spec.beat_grid,
                     )
                     notes = cleaned_events_to_midi_notes(cleaned, instrument_pitch=DRUMSCRIPT_INSTRUMENTS)
                     _write_midi(midi_path, notes, tempo_bpm, channel=9, tempo_map=spec.tempo_map)

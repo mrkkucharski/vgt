@@ -25,6 +25,60 @@ current shipped timing path.
   REAPER require the maintainer's ears and project; they are non-blocking
   manual checks, not autonomous acceptance criteria.
 
+## Follow-up (2026-08-01): corrected-tempo projects without a beat array
+
+A real `Perfect - Chcemy byc soba` project exposed a second DrumScript timing
+case. After the maintainer synchronized a manually corrected REAPER tempo map,
+the effective tempo value intentionally no longer contained the detector's old
+`beat_times`. DrumScript still returned a uniformly quantized clock (about
+232 ms per slot, from its own 64.6 BPM estimate), but vgt had no trusted beat
+array with which to reconcile its phase. ADTOF remained aligned because it
+emits frame-level audio times rather than DrumScript's internal rhythm grid.
+
+VGT now recognizes that narrow fallback case: only when no project beat grid
+is available and the backend timestamps prove uniformly quantized, each
+distinct DrumScript slot may move to one strong, unambiguous nearby audio
+onset. Unquantized output, weak evidence, ambiguous peaks, and the established
+project-grid path remain unchanged. The first implementation used librosa's
+default centered onset envelope, however, so the recovered timestamps retained
+the STFT half-window latency. On the real stem:
+
+| Evidence timestamps | Median offset from nearby ADTOF events |
+| --- | ---: |
+| centered onset envelope | **+20.1 ms** |
+| uncentered onset envelope | **−3.1 ms** |
+
+The fallback therefore uses `center=False`, and a cleanup profile in that same
+no-grid path reuses the uncentered evidence instead of moving corrected events
+late again. Cleanup following the normal trusted-grid path deliberately keeps
+its historical centered evidence, so the measured 7Rivers behavior is not
+silently retuned. The alignment algorithm version is part of the DrumScript
+spec identity, so old centered artifacts cannot be reused from cache.
+
+### Potential DrumScript improvements
+
+The VGT correction is sufficient for current projects, but it reconstructs
+performed timing after DrumScript has quantized it. Cleaner upstream interfaces
+would be:
+
+1. Make rhythmic quantization optional for machine-readable MIDI/JSON output.
+2. Emit each classifier onset's pre-quantization timestamp alongside the
+   quantized score position and document which one is authoritative for audio
+   synchronization.
+3. Accept an external tempo/beat grid, or at least a tempo and phase anchor, so
+   callers that already analyzed the project do not have to accept a second,
+   potentially half-tempo beat estimate.
+4. Record the detected grid, phase, subdivision, and every quantization delta
+   in JSON. That would make timing errors auditable instead of requiring vgt to
+   infer the hidden grid from repeated timestamp differences.
+5. Separate onset classification from notation/score formatting so downstream
+   applications can consume frame-level detections without importing score
+   assumptions.
+
+These changes would improve timing fidelity and observability, but they would
+not address DrumScript's separate over-detection and instrument-classification
+limitations described below.
+
 ## What was compared
 
 Four tracks in the project's `[work]` folder, all sourced from the same

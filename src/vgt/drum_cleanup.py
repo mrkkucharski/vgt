@@ -283,9 +283,14 @@ class AudioOnsetEvidenceSource:
     _BASELINE_RADIUS_S = 0.5  # local ambient-loudness/spread window (seconds, each side)
     _PROMINENCE_SCALE_MAD_MULTIPLE = 8.0  # multiple of local MAD treated as "a clear hit's excess"
 
-    def __init__(self, source: Path, *, hop_length: int = 512) -> None:
+    def __init__(self, source: Path, *, hop_length: int = 512, center: bool = True) -> None:
         self._source = source
         self._hop_length = hop_length
+        # Keep the historical centered envelope for cleanup profiles. The
+        # DrumScript no-grid fallback explicitly disables centering because
+        # it consumes the returned time as an authored onset, where librosa's
+        # half-window delay would otherwise remain audible and visible.
+        self._center = center
         self._envelope = None
         self._baseline = None
         self._prominence_scale = None
@@ -297,7 +302,9 @@ class AudioOnsetEvidenceSource:
             import librosa
 
             y, sr = librosa.load(str(self._source), sr=None, mono=True)
-            envelope = librosa.onset.onset_strength(y=y, sr=sr, hop_length=self._hop_length)
+            envelope = librosa.onset.onset_strength(
+                y=y, sr=sr, hop_length=self._hop_length, center=self._center
+            )
         except Exception:
             return
         if envelope is None or len(envelope) == 0 or not float(max(envelope)) > 0:
