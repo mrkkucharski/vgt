@@ -100,6 +100,12 @@ colour.
 major/minor chords. Once available, instrumental, guitar, and backing stems
 also inform chord detection.
 
+The always-available section fallback looks for changes in the longer-term
+character of the music: it pools short-time chroma/timbre descriptors, measures
+novelty over several seconds of context, and suppresses nearby weaker phrase
+changes. Its generic regions remain a draft for human correction; see
+`docs/section-detection-findings.md` for the measured tuning and limitations.
+
 Artifacts live under `vgt/<stable-id>/` beside the project:
 
 - `tempo-click.wav` — compare by unmuting `[vgt] Click`.

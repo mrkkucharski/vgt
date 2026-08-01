@@ -19,13 +19,18 @@ from typing import Any
 
 from .sidecar import artifact_namespace_dir
 
-# Segments shorter than this are merged into a neighbor -- avoids spurious
-# boundaries from novelty jitter producing sub-bar "sections".
-_MIN_SECTION_SECONDS = 4.0
-# Checkerboard kernel half-width, in analysis frames (hop_length=512 @ typical
-# sample rates -> roughly a few seconds of context on each side of a boundary
-# candidate).
-_KERNEL_HALF_WIDTH = 32
+# Region boundaries describe changes in the character of the music, rather
+# than every phrase-scale fluctuation. Pool the frame-level descriptors before
+# computing novelty so the checkerboard operates at that structural timescale.
+_ANALYSIS_FRAME_RATE_HZ = 2.0
+_KERNEL_CONTEXT_SECONDS = 8.0
+_PEAK_LOCAL_WINDOW_SECONDS = 4.0
+_PEAK_DELTA = 0.10
+# After local candidates are found, retain the strongest set whose neighboring
+# boundaries are at least this far apart. This is separate from peak detection:
+# using one large window for both used to let an early weak peak suppress a
+# later, stronger section change.
+_MIN_SECTION_SECONDS = 15.0
 # Cosine similarity above which a segment is folded into an existing label
 # cluster rather than starting a new one.
 _LABEL_SIMILARITY_THRESHOLD = 0.85
@@ -95,26 +100,56 @@ def _novelty_curve(features: Any, half_width: int) -> Any:
     return novelty
 
 
-def _pick_boundaries(novelty: Any, frame_times: Any, duration: float, min_gap_seconds: float) -> list[float]:
+def _pick_boundaries(
+    novelty: Any,
+    frame_times: Any,
+    duration: float,
+    min_gap_seconds: float,
+    *,
+    peak_window_seconds: float = _PEAK_LOCAL_WINDOW_SECONDS,
+    delta: float = _PEAK_DELTA,
+) -> list[float]:
     import librosa
     import numpy as np
 
     hop = float(frame_times[1] - frame_times[0]) if len(frame_times) > 1 else 1.0
-    distance = max(1, int(round(min_gap_seconds / hop)))
+    window = max(1, int(round(peak_window_seconds / hop)))
     peak_frames = librosa.util.peak_pick(
-        novelty, pre_max=distance, post_max=distance, pre_avg=distance, post_avg=distance, delta=0.05, wait=distance
+        novelty,
+        pre_max=window,
+        post_max=window,
+        pre_avg=window,
+        post_avg=window,
+        delta=delta,
+        wait=window,
     )
-    peak_times = [float(frame_times[i]) for i in sorted(int(p) for p in peak_frames)]
+    # Non-maximum suppression is strength-first. Chronologically accepting the
+    # first candidate made weak phrase changes hide stronger nearby structural
+    # changes for the full minimum-gap window.
+    ranked_frames = sorted((int(frame) for frame in peak_frames), key=lambda frame: -novelty[frame])
+    retained: list[float] = []
+    for frame in ranked_frames:
+        candidate = float(frame_times[frame])
+        if candidate < min_gap_seconds or duration - candidate < min_gap_seconds:
+            continue
+        if all(abs(candidate - other) >= min_gap_seconds for other in retained):
+            retained.append(candidate)
+    return [0.0, *sorted(retained), duration]
 
-    boundaries = [0.0]
-    for candidate in peak_times:
-        if candidate - boundaries[-1] >= min_gap_seconds:
-            boundaries.append(candidate)
-    if duration - boundaries[-1] >= min_gap_seconds:
-        boundaries.append(duration)
-    else:
-        boundaries[-1] = duration
-    return boundaries if len(boundaries) >= 2 else [0.0, duration]
+
+def _pool_features(features: Any, frame_times: Any, sample_rate: int, hop_length: int, frame_rate: float) -> tuple[Any, Any]:
+    """Mean-pool frame descriptors onto a stable, sample-rate-independent
+    structural grid."""
+    import numpy as np
+
+    pool_width = max(1, int(round(sample_rate / (hop_length * frame_rate))))
+    pooled_features = []
+    pooled_times = []
+    for start in range(0, features.shape[1], pool_width):
+        stop = min(features.shape[1], start + pool_width)
+        pooled_features.append(features[:, start:stop].mean(axis=1))
+        pooled_times.append(float(frame_times[start:stop].mean()))
+    return np.asarray(pooled_features).T, np.asarray(pooled_times)
 
 
 def _label_segments(features: Any, frame_times: Any, boundaries: list[float], threshold: float) -> list[str]:
@@ -173,8 +208,12 @@ def _librosa_sections(source: Path, settings: dict[str, Any]) -> tuple[list[floa
     # MFCC contribute comparably.
     features = (features - features.mean(axis=1, keepdims=True)) / (features.std(axis=1, keepdims=True) + 1e-9)
     frame_times = librosa.frames_to_time(np.arange(features.shape[1]), sr=sr, hop_length=hop_length)
+    features, frame_times = _pool_features(
+        features, frame_times, sr, hop_length, _ANALYSIS_FRAME_RATE_HZ
+    )
 
-    novelty = _novelty_curve(features, _KERNEL_HALF_WIDTH)
+    kernel_half_width = max(1, round(_KERNEL_CONTEXT_SECONDS * _ANALYSIS_FRAME_RATE_HZ))
+    novelty = _novelty_curve(features, kernel_half_width)
     boundaries = _pick_boundaries(novelty, frame_times, duration, min_section_seconds)
     labels = _label_segments(features, frame_times, boundaries, label_similarity_threshold)
     return boundaries, labels

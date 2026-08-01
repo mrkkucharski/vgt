@@ -10,6 +10,8 @@ from vgt.sections import (
     SectionDetectionError,
     _label_segments,
     _novelty_curve,
+    _pick_boundaries,
+    _pool_features,
     detect_sections,
 )
 
@@ -30,6 +32,37 @@ def test_novelty_curve_peaks_near_feature_change() -> None:
     boundary_frame = 40  # where block A ends and block B begins
     window = range(boundary_frame - 5, boundary_frame + 5)
     assert max(novelty[i] for i in window) == pytest.approx(novelty.max())
+
+
+def test_pool_features_uses_a_sample_rate_independent_frame_grid() -> None:
+    features = np.arange(8, dtype=float).reshape(1, 8)
+    frame_times = np.arange(8, dtype=float)
+
+    pooled, pooled_times = _pool_features(
+        features, frame_times, sample_rate=8, hop_length=1, frame_rate=2.0
+    )
+
+    assert pooled.tolist() == [[1.5, 5.5]]
+    assert pooled_times.tolist() == [1.5, 5.5]
+
+
+def test_pick_boundaries_keeps_strongest_well_spaced_structural_peaks() -> None:
+    novelty = np.zeros(41)
+    novelty[10] = 0.6  # a weaker phrase change near the structural peak
+    novelty[14] = 1.0
+    novelty[30] = 0.8
+    frame_times = np.arange(41, dtype=float)
+
+    boundaries = _pick_boundaries(
+        novelty,
+        frame_times,
+        duration=40.0,
+        min_gap_seconds=6.0,
+        peak_window_seconds=2.0,
+        delta=0.1,
+    )
+
+    assert boundaries == [0.0, 14.0, 30.0, 40.0]
 
 
 def test_label_segments_reuses_label_for_similar_recurring_segments() -> None:
@@ -130,3 +163,22 @@ def test_detect_sections_on_real_fixture_covers_the_track_end_to_end() -> None:
         assert later["start_seconds"] > earlier["start_seconds"]
     for section in sections:
         assert section["backend"] in {"msaf", "librosa"}
+
+    # The corrected 7Rivers timeline has eight interior boundaries. The old
+    # fallback found all of them but surrounded them with fourteen false
+    # phrase-scale peaks (23 regions total). Keep both count and one-to-one
+    # matching in the regression so a blunt low-count cap cannot pass it.
+    if sections[0]["backend"] == "librosa":
+        reference = [15.979, 47.998, 63.998, 87.997, 103.497, 127.996, 144.192, 163.495]
+        predicted = [float(section["start_seconds"]) for section in sections[1:]]
+        unmatched = set(range(len(predicted)))
+        true_positives = 0
+        for expected in reference:
+            candidates = [index for index in unmatched if abs(predicted[index] - expected) <= 4.0]
+            if candidates:
+                match = min(candidates, key=lambda index: abs(predicted[index] - expected))
+                unmatched.remove(match)
+                true_positives += 1
+        assert len(sections) <= 10
+        assert true_positives >= 5
+        assert len(predicted) - true_positives <= 3
