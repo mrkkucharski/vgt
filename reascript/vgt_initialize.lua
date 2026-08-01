@@ -292,48 +292,6 @@ local function read_managed_region_ids()
   return ids
 end
 
-local function prior_tempo_map_applied()
-  local body = read_sidecar_body() or ""
-  -- This flag is vgt's record that the current map was created during an
-  -- earlier eligible apply.  We never blindly rewrite that map on re-apply --
-  -- see prior_tempo_map_fingerprint / current_tempo_fingerprint below, which
-  -- decide whether it is still safe to do so.
-  return body:match('"tempo_map_applied"%s*:%s*true') ~= nil
-end
-
-local function prior_tempo_map_fingerprint()
-  local body = read_sidecar_body() or ""
-  return body:match('"tempo_map_fingerprint"%s*:%s*"(.-)"') or ""
-end
-
-local function prior_tempo_data_fingerprint()
-  local body = read_sidecar_body() or ""
-  return body:match('"tempo_data_fingerprint"%s*:%s*"(.-)"') or ""
-end
-
--- A canonical snapshot of the *analyzed* tempo data itself (bpm, downbeat
--- offset, first beat, time signature, piecewise spans) -- independent of
--- where the reference track happens to sit in the timeline. Comparing this
--- against the fingerprint recorded for the live map is how a re-apply tells
--- "the detected/corrected tempo actually changed" apart from "nothing
--- changed, don't needlessly rewrite (and thereby re-shift any beat-attached
--- reference items) an already-current map". The first beat time is included
--- alongside the downbeat offset because a beat-only result (issue #275)
--- anchors its map on beat_times[1] rather than the downbeat, so a shift in
--- that value must also be recognized as a data change worth refreshing.
-local function tempo_data_fingerprint(tempo)
-  local first_beat = type(tempo.beat_times) == "table" and tonumber(tempo.beat_times[1]) or 0
-  local parts = {
-    string.format("%.6f:%s:%s:%.6f:%.6f", tonumber(tempo.bpm) or 0, tostring(tempo.time_signature or ""), tostring(tempo.downbeat_detected == true), tonumber(tempo.downbeat_offset_seconds) or 0, first_beat or 0),
-  }
-  if type(tempo.spans) == "table" then
-    for _, span in ipairs(tempo.spans) do
-      parts[#parts + 1] = string.format("%.6f:%.6f:%.6f", tonumber(span.start_seconds) or 0, tonumber(span.end_seconds) or 0, tonumber(span.bpm) or 0)
-    end
-  end
-  return table.concat(parts, ";")
-end
-
 -- The Python `vgt analyze` stage adds a top-level "analysis"
 -- object to the sidecar. This action is the sole writer of the sidecar's
 -- other fields, so it must round-trip that object verbatim on re-apply
@@ -980,59 +938,6 @@ local function reference_start_and_end(reference)
   return 0, 0
 end
 
-local function parse_time_signature(value)
-  local numerator, denominator = tostring(value or "4/4"):match("^(%d+)%s*/%s*(%d+)$")
-  return tonumber(numerator) or 4, tonumber(denominator) or 4
-end
-
-local function is_single_default_tempo_marker()
-  local count = reaper.CountTempoTimeSigMarkers(0)
-  -- A fresh REAPER project has no *explicit* marker, but its project-settings
-  -- tempo is semantically the single default marker described by the rule.
-  if count == 0 then
-    local numerator, denominator, bpm = reaper.TimeMap_GetTimeSigAtTime(0, 0)
-    return math.abs(bpm - 120) < 0.001 and numerator == 4 and denominator == 4
-  end
-  if count ~= 1 then return false end
-  local ok, time, _, _, bpm, numerator, denominator = reaper.GetTempoTimeSigMarker(0, 0)
-  return ok and math.abs(time) < 0.000001 and math.abs(bpm - 120) < 0.001 and numerator == 4 and denominator == 4
-end
-
--- `claim_bar_phase` distinguishes an anchor at a genuine downbeat (bar 1,
--- beat 1 -- REAPER is told measurepos=0/beatpos=0, so bar numbering
--- downstream is meaningful) from an anchor at a beat with no known bar
--- position (issue #275: measurepos=beatpos=-1, the same "don't claim a
--- position" form the piecewise span markers below already use, so REAPER
--- just continues counting bars/beats from wherever marker 0's phase implies
--- rather than asserting this point is a bar start).
-local function apply_tempo_map(tempo, reference_start, anchor_offset, claim_bar_phase)
-  local bpm = tonumber(tempo.bpm)
-  if not bpm or bpm <= 0 then return false end
-  local numerator, denominator = parse_time_signature(tempo.time_signature)
-  -- On a refresh, clear every marker vgt previously wrote first (index 0 can
-  -- only be updated, never deleted) so the new map is built from a clean
-  -- slate -- otherwise a stale marker left at the old anchor/span times
-  -- would linger and make the map internally inconsistent.
-  for index = reaper.CountTempoTimeSigMarkers(0) - 1, 1, -1 do
-    reaper.DeleteTempoTimeSigMarker(0, index)
-  end
-  -- Update the one default marker, then put explicit markers at the analyzed
-  -- anchor / piecewise boundaries.  REAPER owns the map construction.
-  reaper.SetTempoTimeSigMarker(0, 0, 0, -1, -1, bpm, numerator, denominator, false)
-  local anchor = reference_start + (tonumber(anchor_offset) or 0)
-  local measure_beat = claim_bar_phase and 0 or -1
-  reaper.SetTempoTimeSigMarker(0, -1, anchor, measure_beat, measure_beat, bpm, numerator, denominator, false)
-  if tempo.mode == "piecewise" and type(tempo.spans) == "table" then
-    for _, span in ipairs(tempo.spans) do
-      local span_bpm = tonumber(span.bpm)
-      if span_bpm and span_bpm > 0 then
-        reaper.SetTempoTimeSigMarker(0, -1, reference_start + (tonumber(span.start_seconds) or 0), -1, -1, span_bpm, numerator, denominator, false)
-      end
-    end
-  end
-  return true
-end
-
 -- Projected drift threshold (issue #274): below this, a project/analyzed
 -- tempo mismatch is inaudible noise over the reference span; above it, it is
 -- the kind of accumulated error that visibly desyncs anything authored
@@ -1061,9 +966,8 @@ end
 
 -- Read-only guardrail (issue #273/#274): compares the project's own tempo at
 -- the reference start against the analyzed tempo and warns when the
--- projected drift across the reference span would be audible. Never writes
--- a tempo marker -- that stays gated by the apply_tempo_map decision tree
--- above, regardless of what this finds.
+-- projected drift across the reference span would be audible. Applying
+-- analysis never writes the project's tempo/time-signature markers.
 local function warn_if_tempo_disagrees(tempo, reference_start, reference_end)
   local analyzed_bpm = analyzed_bpm_at_reference_start(tempo)
   if not analyzed_bpm or analyzed_bpm <= 0 then return end
@@ -1080,82 +984,7 @@ local function warn_if_tempo_disagrees(tempo, reference_start, reference_end)
   end
 end
 
--- A canonical snapshot of every tempo/time-sig marker currently in the
--- project, in REAPER's own marker order. Comparing this against the
--- fingerprint recorded the last time vgt wrote the map is how a re-apply
--- tells "still exactly what vgt left it as" apart from "user has since
--- edited it by hand" -- only the former is safe to overwrite.
-local function current_tempo_fingerprint()
-  local parts = {}
-  for index = 0, reaper.CountTempoTimeSigMarkers(0) - 1 do
-    local ok, time, _, _, bpm, numerator, denominator = reaper.GetTempoTimeSigMarker(0, index)
-    if ok then
-      parts[#parts + 1] = string.format("%.6f:%.3f:%d:%d", time, bpm, numerator, denominator)
-    end
-  end
-  return table.concat(parts, ";")
-end
-
--- Deterministically predicts what current_tempo_fingerprint() would read
--- immediately after a clean apply_tempo_map(tempo, reference_start,
--- anchor_offset, claim_bar_phase) call -- the same marker time/bpm/timesig
--- values, in the same write order -- without touching REAPER at all.
--- claim_bar_phase itself never appears here: current_tempo_fingerprint only
--- records time/bpm/timesig, not measurepos/beatpos, so the two anchor forms
--- are indistinguishable at this level -- only anchor_offset (which caller
--- computed it from) matters. Comparing this against the live fingerprint on
--- a later apply is how an interrupted tempo mutation (#139) is told apart
--- from a genuinely partial write or a user edit made since: see the tempo
--- transaction recovery in apply() below.
-local function predicted_tempo_fingerprint(tempo, reference_start, anchor_offset)
-  local bpm = tonumber(tempo.bpm)
-  if not bpm or bpm <= 0 then return nil end
-  local numerator, denominator = parse_time_signature(tempo.time_signature)
-  local parts = {string.format("%.6f:%.3f:%d:%d", 0, bpm, numerator, denominator)}
-  local anchor = reference_start + (tonumber(anchor_offset) or 0)
-  parts[#parts + 1] = string.format("%.6f:%.3f:%d:%d", anchor, bpm, numerator, denominator)
-  if tempo.mode == "piecewise" and type(tempo.spans) == "table" then
-    for _, span in ipairs(tempo.spans) do
-      local span_bpm = tonumber(span.bpm)
-      if span_bpm and span_bpm > 0 then
-        parts[#parts + 1] = string.format("%.6f:%.3f:%d:%d", reference_start + (tonumber(span.start_seconds) or 0), span_bpm, numerator, denominator)
-      end
-    end
-  end
-  return table.concat(parts, ";")
-end
-
--- Durable (project-scoped, survives a Lua-level crash the same way
--- record_region_ids_ext_state does -- see its comment above) record of an
--- in-flight tempo mutation, written *before* the first marker is touched.
--- `prior_fp` is the live tempo fingerprint immediately before mutation
--- began; `target_data_fp` is the tempo-data fingerprint (tempo.py's
--- detected/corrected values, not marker geometry) this transaction intends
--- to realize; `completed_fp` is filled in once the mutation itself has
--- finished, right before write_settings mirrors the result into the
--- sidecar. A crash at any point leaves exactly one of these three states
--- behind, and apply()'s recovery step below can tell which.
-local PROJ_EXT_TEMPO_KEY = "tempo_txn"
-
-local function write_tempo_txn(prior_fp, target_data_fp, completed_fp)
-  reaper.SetProjExtState(0, PROJ_EXT_SECTION, PROJ_EXT_TEMPO_KEY, table.concat({prior_fp or "", target_data_fp or "", completed_fp or ""}, "|"))
-end
-
-local function read_tempo_txn()
-  local _, value = reaper.GetProjExtState(0, PROJ_EXT_SECTION, PROJ_EXT_TEMPO_KEY)
-  if not value or value == "" then return nil end
-  local prior_fp, target_data_fp, completed_fp = value:match("^(.-)|(.-)|(.*)$")
-  if not prior_fp then return nil end
-  return {prior_fp = prior_fp, target_data_fp = target_data_fp, completed_fp = completed_fp}
-end
-
--- Empty clears the key outright (SetProjExtState's documented behavior for
--- an empty value), matching record_region_ids_ext_state's convention above.
-local function clear_tempo_txn()
-  reaper.SetProjExtState(0, PROJ_EXT_SECTION, PROJ_EXT_TEMPO_KEY, "")
-end
-
-local function add_beat_markers(track, tempo, reference_start, reference_end)
+local function add_beat_items(track, tempo, reference_start, reference_end)
   if type(tempo.beat_times) == "table" then
     for beat, offset in ipairs(tempo.beat_times) do
       local time = reference_start + (tonumber(offset) or -1)
@@ -1184,7 +1013,7 @@ local function offer_beats_track(index, tempo, reference_start, reference_end, m
   -- This is an item-label-only track, so it does not need muting. Keeping it
   -- unmuted ensures its beat labels remain readable in REAPER.
   local beats = add_locked_track(index, BEATS_NAME, false, "beats")
-  add_beat_markers(beats, tempo, reference_start, reference_end)
+  add_beat_items(beats, tempo, reference_start, reference_end)
   managed_tracks[#managed_tracks + 1] = beats
 end
 
@@ -1501,7 +1330,7 @@ local function add_sections(sections, reference_start)
   return region_ids
 end
 
-local function write_settings(managed_tracks, managed_region_ids, reference, tempo_map_applied, tempo_map_fingerprint, tempo_data_fp, guitar_type)
+local function write_settings(managed_tracks, managed_region_ids, reference, guitar_type)
   local guids = {}
   for _, track in ipairs(managed_tracks) do guids[#guids + 1] = '"' .. reaper.GetTrackGUID(track) .. '"' end
   local region_ids = {}
@@ -1544,8 +1373,7 @@ local function write_settings(managed_tracks, managed_region_ids, reference, tem
       schema_version, analysis_field, generation + 1,
       table.concat(guids, ", "), table.concat(region_ids, ", "),
       escaped(track_name(reference)), reaper.GetTrackGUID(reference),
-      escaped(PREFIX .. " " .. track_name(reference)), tempo_map_applied and "true" or "false",
-      escaped(tempo_map_fingerprint or ""), escaped(tempo_data_fp or ""), escaped(guitar_type)))
+      escaped(PREFIX .. " " .. track_name(reference)), "false", "", "", escaped(guitar_type)))
     file:close()
 
     if read_generation(read_sidecar_body() or "") == generation then
@@ -1648,7 +1476,7 @@ local function apply()
   -- Persist root identity as soon as it exists. A crash before sidecar commit
   -- can therefore still be recovered without treating the next run as new.
   write_root_manifest(folder, {folder})
-  -- Tentatively open a folder; if nothing ends up nested under it (no tempo,
+  -- Tentatively open a folder; if nothing ends up nested under it (no beats,
   -- click, stems, chords, or sections to add), it is flattened back to a
   -- plain track below rather than left as a folder with no children.
   reaper.SetMediaTrackInfo_Value(folder, "I_FOLDERDEPTH", 1)
@@ -1657,114 +1485,10 @@ local function apply()
   local reference_start, reference_end = reference_start_and_end(reference)
   local tempo = analysis and analysis.tempo and analysis.tempo.value
   local artifact_namespace = analysis and analysis.stems and analysis.stems.artifact_namespace
-  local tempo_map_applied = prior_tempo_map_applied()
-  local tempo_map_fingerprint = ""
-  local tempo_data_fp = ""
   if type(tempo) == "table" and tonumber(tempo.bpm) then
-    tempo_data_fp = tempo_data_fingerprint(tempo)
-    -- A downbeat anchors bar 1/beat 1 for real (claim_bar_phase = true). A
-    -- beat-only result (issue #275) still fixes the tempo *rate* -- BPM is
-    -- phase-free -- but must not claim bar phase, so it anchors on the first
-    -- detected beat instead and tells apply_tempo_map not to mark it as a
-    -- measure start.
-    local claim_bar_phase = tempo.downbeat_detected == true
-    local anchor_offset
-    if claim_bar_phase then
-      anchor_offset = tonumber(tempo.downbeat_offset_seconds) or 0
-    else
-      anchor_offset = (type(tempo.beat_times) == "table" and tonumber(tempo.beat_times[1])) or 0
-    end
-    local prior_map_fingerprint = prior_tempo_map_fingerprint()
-    local map_untouched = tempo_map_applied and prior_map_fingerprint ~= "" and current_tempo_fingerprint() == prior_map_fingerprint
-
-    -- Recover from a tempo mutation interrupted after write_tempo_txn below
-    -- but before this run's own write_settings could mirror the result into
-    -- the sidecar (#139). The transaction is proof only of what *this*
-    -- vgt run intended and last observed -- it is consumed (cleared) the
-    -- moment it is read, whether or not recovery actually applies, so a
-    -- second crash never replays a stale decision.
-    local recovered = false
-    local pending_txn = read_tempo_txn()
-    if pending_txn then
-      clear_tempo_txn()
-      if pending_txn.target_data_fp == tempo_data_fp then
-        local live_fp = current_tempo_fingerprint()
-        local predicted_fp = predicted_tempo_fingerprint(tempo, reference_start, anchor_offset)
-        if live_fp == predicted_fp or (pending_txn.completed_fp ~= "" and live_fp == pending_txn.completed_fp) then
-          -- The interrupted run's mutation is provably complete (the live
-          -- map matches exactly what it must have produced): mirror that
-          -- into the sidecar below without touching REAPER again.
-          tempo_map_applied = true
-          tempo_map_fingerprint = live_fp
-          tempo_data_fp = pending_txn.target_data_fp
-          recovered = true
-        end
-        -- Otherwise the live map cannot be proven to belong to this
-        -- transaction -- a genuinely partial write, or a user edit made
-        -- after the interruption -- so fall through to the normal decision
-        -- tree, which treats an unrecognized live map non-invasively.
-      end
-      -- A mismatched target_data_fp means the analyzed tempo data itself
-      -- changed since the interrupted run; same non-invasive fallback.
-    end
-
-    if analysis.tempo.human_verified == true then
-      -- A dedicated sync action may adopt a user-owned live map as analysis
-      -- evidence. That never transfers map ownership to vgt: subsequent
-      -- applies must remain read-only with respect to tempo markers.
-      tempo_map_applied = false
-      tempo_map_fingerprint = ""
-      tempo_data_fp = ""
-      offer_beats_track(insert_at + 1, tempo, reference_start, reference_end, managed_tracks)
-    elseif recovered then
-      -- Already resolved above; nothing further to do for tempo this run.
-    elseif map_untouched and tempo_data_fp == prior_tempo_data_fingerprint() then
-      -- Live map still matches what vgt wrote, and the tempo data hasn't
-      -- changed either -- nothing to do. Rewriting an unchanged map would
-      -- needlessly re-shift any beat-attached reference items.
-      tempo_map_fingerprint = prior_map_fingerprint
-    elseif map_untouched then
-      -- The live map is byte-for-byte what vgt wrote last time, but the
-      -- detected/corrected tempo data has since changed -- safe to refresh.
-      -- Record the transaction before touching a single marker, so a crash
-      -- between here and this run's own write_settings can be recovered.
-      write_tempo_txn(prior_map_fingerprint, tempo_data_fp, "")
-      if apply_tempo_map(tempo, reference_start, anchor_offset, claim_bar_phase) then
-        tempo_map_fingerprint = current_tempo_fingerprint()
-        write_tempo_txn(prior_map_fingerprint, tempo_data_fp, tempo_map_fingerprint)
-        -- Rewriting the map can shift any beat-attached reference item;
-        -- re-read its position so chords/sections/beats placed below land
-        -- exactly where the reference audio now actually sits.
-        reference_start, reference_end = reference_start_and_end(reference)
-      else
-        tempo_map_applied = false
-        tempo_data_fp = ""
-        clear_tempo_txn()
-      end
-    elseif tempo_map_applied then
-      -- Either the user has since edited the map vgt wrote, or an older
-      -- sidecar recorded no fingerprint to check against. Either way we
-      -- cannot prove the map is still ours, so it is never touched again;
-      -- offer the latest tempo data non-invasively instead.
-      tempo_data_fp = ""
-      offer_beats_track(insert_at + 1, tempo, reference_start, reference_end, managed_tracks)
-    elseif is_single_default_tempo_marker() then
-      local prior_fp = current_tempo_fingerprint()
-      write_tempo_txn(prior_fp, tempo_data_fp, "")
-      tempo_map_applied = apply_tempo_map(tempo, reference_start, anchor_offset, claim_bar_phase)
-      if tempo_map_applied then
-        tempo_map_fingerprint = current_tempo_fingerprint()
-        write_tempo_txn(prior_fp, tempo_data_fp, tempo_map_fingerprint)
-        reference_start, reference_end = reference_start_and_end(reference)
-      else
-        tempo_data_fp = ""
-        clear_tempo_txn()
-      end
-    else
-      tempo_data_fp = ""
-      offer_beats_track(insert_at + 1, tempo, reference_start, reference_end, managed_tracks)
-    end
-
+    -- The analyzed grid is always presented as an owned label track. It must
+    -- never claim the user's project ruler or create measure/tempo markers.
+    offer_beats_track(insert_at + 1, tempo, reference_start, reference_end, managed_tracks)
     warn_if_tempo_disagrees(tempo, reference_start, reference_end)
   end
 
@@ -1803,12 +1527,8 @@ local function apply()
     reaper.SetMediaTrackInfo_Value(folder, "I_FOLDERDEPTH", 0)
   end
 
-  write_settings(managed_tracks, managed_region_ids, reference, tempo_map_applied, tempo_map_fingerprint, tempo_data_fp, guitar_type)
+  write_settings(managed_tracks, managed_region_ids, reference, guitar_type)
   write_root_manifest(folder, managed_tracks)
-  -- The sidecar now durably records whatever this run decided about tempo;
-  -- any transaction it left behind (finalized above, or fresh from this same
-  -- run) is stale from here on (#139).
-  clear_tempo_txn()
   reaper.MarkProjectDirty(0)
   reaper.UpdateArrange()
   reaper.PreventUIRefresh(-1)

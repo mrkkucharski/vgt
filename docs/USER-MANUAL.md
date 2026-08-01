@@ -73,7 +73,7 @@ keep. vgt may add:
 | `[vgt] <reference name>` | Initialization | Folder when it has children; otherwise a plain track. |
 | `[vgt] Chords` | Chord analysis | Unmuted but silent text-item machine draft. Every `vgt analyze` regenerates it from audio; initialize/apply re-creates its vgt-managed track. Copy it into `[work]` before making a correction you want to keep. |
 | `[vgt] Key` | Valid key analysis | Unmuted, silent text-item machine draft with one take name showing the effective root and scale. Every `vgt analyze` regenerates it from audio; initialize/apply re-creates its vgt-managed track. Copy it into `[work]` before making a correction you want to keep. |
-| `[vgt] Beats` | Existing/human-edited tempo map, or detected beats with unknown bar phase | Unmuted, silent text-item track; beat items are locked. |
+| `[vgt] Beats` | Tempo analysis | Unmuted, silent text-item track; beat items are locked. vgt never turns them into project tempo/measure markers. |
 | `[vgt] Click` | Tempo-click artifact exists | Muted audio track; unmute temporarily to check the beat grid. |
 | Vocals, Instrumental, Bass, Drums, Guitar, Backing | Standard separation | Unmuted, time-based audio tracks. |
 | Strings, Keys / Piano | Explicitly requested | Unmuted, time-based optional stem tracks. |
@@ -126,13 +126,12 @@ no cache identity. Run REAPER's initialize action afterwards if the project was
 already open — its imported MIDI items still reference the old paths until the
 managed tracks are rebuilt.
 
-vgt writes a tempo map only when the project still has REAPER's default 120
-BPM, 4/4 map and analysis detected a downbeat. Beat-only fallback analysis
-(for example, librosa when madmom is unavailable) retains the detected BPM and
-beat grid but records its bar phase as unknown; it always uses `[vgt] Beats`
-instead of anchoring a tempo map to an arbitrary beat. It never overwrites
-another map or a human-edited vgt map, and refreshes a vgt map only when it can
-prove that the map is still untouched.
+vgt always presents the analyzed beat grid on `[vgt] Beats`. Applying analysis
+never creates, updates, or deletes REAPER tempo/time-signature markers and
+never claims measure numbering on the project ruler. This applies whether the
+analysis detected a downbeat or only a phase-free beat sequence. The separate
+`vgt_sync_tempo_map.lua` action remains available when you deliberately want
+an existing, user-authored REAPER tempo map to become analysis evidence.
 
 `[vgt] Chords` and `[vgt] Key` are disposable machine drafts. Each `vgt analyze`
 regenerates them from audio, and the next initialize/apply replaces their

@@ -126,8 +126,10 @@ decision, and update the contract in the same change.
   user-owned, distinguished by ownership/provenance, never color. Automatic
   chord analysis stays audio-based; clean MIDI is a useful draft, never
   ground truth.
-- **Respect the project:** vgt does not overwrite an existing or human-edited
-  tempo map; it falls back to non-invasive beat labels.
+- **Respect the project:** automatic initialize/apply never creates, updates,
+  deletes, or claims a REAPER tempo map; analyzed beats are presented only as
+  non-invasive labels on `[vgt] Beats`. A deliberate user-authored tempo map
+  may be read only by the separate confirmation-gated synchronization action.
 - **Cost safe:** LALAL credentials are environment-only; paid work is cached,
   checkpointed, and explicitly confirmed when forced or optional.
 

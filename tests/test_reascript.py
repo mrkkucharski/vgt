@@ -347,7 +347,7 @@ def test_reference_start_and_end_derives_from_the_single_file_backed_item_only()
     """A reference track's placements must span only its one file-backed item,
     never every item on the track (issue #136)."""
     script = APPLY_SCRIPT.read_text()
-    helpers_end = script.index("local function parse_time_signature(")
+    helpers_end = script.index("-- Projected drift threshold (issue #274)")
     lua_program = "\n".join(
         [
             "reaper = {}",
@@ -375,7 +375,7 @@ def test_tempo_drift_warning_matches_the_hotel_california_and_7rivers_worked_exa
     California Cover's pre-fix mismatch (project 150 vs analyzed 147.759 over
     a 388s span) must warn, and 7Rivers (120 vs 120.004 over 178s) must not."""
     script = APPLY_SCRIPT.read_text()
-    helpers_end = script.index("-- A canonical snapshot of every tempo/time-sig marker currently in the")
+    helpers_end = script.index("local function add_beat_items(")
     lua_program = "\n".join(
         [
             "reaper = {}",
@@ -399,59 +399,9 @@ def test_tempo_drift_warning_matches_the_hotel_california_and_7rivers_worked_exa
     assert seven_rivers.stdout == "0"
 
 
-def test_apply_tempo_map_anchors_on_the_first_beat_without_claiming_bar_phase() -> None:
-    """Issue #275: a beat-only result (no downbeat) must still get the
-    analyzed BPM applied -- REAPER's own marker 0 carries the rate from time
-    0 -- but the second marker must anchor on the first detected beat and
-    must NOT claim bar phase (measurepos/beatpos must be -1/-1, matching the
-    non-claiming form the piecewise span markers already use), unlike the
-    downbeat-detected case which legitimately marks bar 1 beat 1."""
-    script = APPLY_SCRIPT.read_text()
-    helpers_end = script.index("-- Projected drift threshold (issue #274)")
-    lua_program = "\n".join(
-        [
-            "reaper = {}",
-            "local calls = {}",
-            "function reaper.CountTempoTimeSigMarkers(_) return 1 end",
-            "function reaper.DeleteTempoTimeSigMarker(_, _) end",
-            "function reaper.SetTempoTimeSigMarker(_, ptidx, timepos, measurepos, beatpos, bpm, num, den, lin)"
-            "  table.insert(calls, {ptidx=ptidx, timepos=timepos, measurepos=measurepos, beatpos=beatpos, bpm=bpm}) end",
-            script[:helpers_end],
-            "local tempo = {bpm = 147.759, time_signature = '4/4', beat_times = {0.42, 1.17, 1.92}}",
-            "apply_tempo_map(tempo, 10, 0.42, false)",
-            "local anchor = calls[2]",
-            "io.write(anchor.timepos, ':', anchor.measurepos, ':', anchor.beatpos, ':', anchor.bpm)",
-        ]
-    )
-    result = subprocess.run([LUA, "-", "song.RPP"], input=lua_program, text=True, capture_output=True, check=True)
-    assert result.stdout == "10.42:-1:-1:147.759"
-
-
-def test_apply_tempo_map_still_claims_bar_phase_at_a_real_downbeat() -> None:
-    script = APPLY_SCRIPT.read_text()
-    helpers_end = script.index("-- Projected drift threshold (issue #274)")
-    lua_program = "\n".join(
-        [
-            "reaper = {}",
-            "local calls = {}",
-            "function reaper.CountTempoTimeSigMarkers(_) return 1 end",
-            "function reaper.DeleteTempoTimeSigMarker(_, _) end",
-            "function reaper.SetTempoTimeSigMarker(_, ptidx, timepos, measurepos, beatpos, bpm, num, den, lin)"
-            "  table.insert(calls, {ptidx=ptidx, timepos=timepos, measurepos=measurepos, beatpos=beatpos, bpm=bpm}) end",
-            script[:helpers_end],
-            "local tempo = {bpm = 120, time_signature = '4/4', downbeat_offset_seconds = 0.25}",
-            "apply_tempo_map(tempo, 10, 0.25, true)",
-            "local anchor = calls[2]",
-            "io.write(anchor.timepos, ':', anchor.measurepos, ':', anchor.beatpos, ':', anchor.bpm)",
-        ]
-    )
-    result = subprocess.run([LUA, "-", "song.RPP"], input=lua_program, text=True, capture_output=True, check=True)
-    assert result.stdout == "10.25:0:0:120"
-
-
 def test_tempo_drift_warning_reports_both_tempos_drift_and_remedy() -> None:
     script = APPLY_SCRIPT.read_text()
-    helpers_end = script.index("-- A canonical snapshot of every tempo/time-sig marker currently in the")
+    helpers_end = script.index("local function add_beat_items(")
     lua_program = "\n".join(
         [
             "reaper = {}",
@@ -474,7 +424,7 @@ def test_tempo_drift_warning_compares_the_piecewise_span_covering_the_reference_
     """A piecewise analyzed tempo must be compared per-span at the reference
     start, never collapsed to a single global BPM (issue #274 notes)."""
     script = APPLY_SCRIPT.read_text()
-    helpers_end = script.index("-- A canonical snapshot of every tempo/time-sig marker currently in the")
+    helpers_end = script.index("local function add_beat_items(")
     lua_program = "\n".join(
         [
             "reaper = {}",
@@ -503,7 +453,8 @@ def test_apply_declares_and_persists_guitar_type_with_an_automation_override() -
 def test_phase1_apply_reads_analysis_and_uses_only_reaper_api() -> None:
     script = APPLY_SCRIPT.read_text()
     assert "decode_json" in script
-    assert "SetTempoTimeSigMarker" in script
+    assert "SetTempoTimeSigMarker" not in script
+    assert "DeleteTempoTimeSigMarker" not in script
     assert "AddProjectMarker2" in script
     assert '"C_BEATATTACHMODE", 0' in script
     assert 'SetMediaItemInfo_Value(item, "C_LOCK", 1)' in script
@@ -513,7 +464,7 @@ def test_phase1_apply_reads_analysis_and_uses_only_reaper_api() -> None:
     assert "managed[region_id]" in script
     assert "reaper.DeleteProjectMarker(0, region_id, true)" in script
     assert '"managed_region_ids"' in script
-    assert "tempo.downbeat_detected == true" in script
+    assert "offer_beats_track(insert_at + 1, tempo" in script
     assert "type(tempo.beat_times) == \"table\"" in script
 
 
@@ -1677,69 +1628,6 @@ def test_add_sections_clears_proj_ext_state_when_no_sections_remain(tmp_path: Pa
     assert result.stdout == "vgt:managed_region_ids="
 
 
-def test_current_tempo_fingerprint_reflects_every_live_marker(tmp_path: Path) -> None:
-    """The fingerprint must capture every marker's time/bpm/timesig, in order,
-    so any live edit (add, remove, or change one) is detectable on re-apply."""
-    script = APPLY_SCRIPT.read_text()
-    helpers_end = script.index("local function write_settings")
-    lua_program = "\n".join(
-        [
-            "local markers = {{time = 0, bpm = 120, num = 4, den = 4}, {time = 10.5, bpm = 140.25, num = 3, den = 4}}",
-            "reaper = {}",
-            "function reaper.EnumProjects() return true, arg[1] end",
-            "function reaper.CountTempoTimeSigMarkers() return #markers end",
-            "function reaper.GetTempoTimeSigMarker(_, index)",
-            "  local marker = markers[index + 1]",
-            "  return true, marker.time, 0, 0, marker.bpm, marker.num, marker.den",
-            "end",
-            script[:helpers_end],
-            "io.write(current_tempo_fingerprint())",
-        ]
-    )
-    result = subprocess.run(
-        [LUA, "-", str(tmp_path / "song.RPP")], input=lua_program, text=True, capture_output=True, check=True
-    )
-    assert result.stdout == "0.000000:120.000:4:4;10.500000:140.250:3:4"
-
-
-def test_prior_tempo_map_fingerprint_reads_the_sidecar_config_field(tmp_path: Path) -> None:
-    sidecar = tmp_path / "song.vgt"
-    sidecar.write_text(json.dumps({"config": {"tempo_map_fingerprint": "0.000000:120.000:4:4"}}))
-    script = APPLY_SCRIPT.read_text()
-    helpers_end = script.index("local function write_settings")
-    lua_program = "\n".join(
-        [
-            "reaper = {EnumProjects = function() return true, arg[1] end}",
-            script[:helpers_end],
-            "io.write(prior_tempo_map_fingerprint())",
-        ]
-    )
-    result = subprocess.run(
-        [LUA, "-", str(tmp_path / "song.RPP")], input=lua_program, text=True, capture_output=True, check=True
-    )
-    assert result.stdout == "0.000000:120.000:4:4"
-
-
-def test_prior_tempo_map_fingerprint_is_empty_when_never_recorded(tmp_path: Path) -> None:
-    """Older sidecars (pre-issue-#27) recorded tempo_map_applied but no
-    fingerprint -- treated as unverifiable, never as a match."""
-    sidecar = tmp_path / "song.vgt"
-    sidecar.write_text(json.dumps({"config": {"tempo_map_applied": True}}))
-    script = APPLY_SCRIPT.read_text()
-    helpers_end = script.index("local function write_settings")
-    lua_program = "\n".join(
-        [
-            "reaper = {EnumProjects = function() return true, arg[1] end}",
-            script[:helpers_end],
-            "io.write('[', prior_tempo_map_fingerprint(), ']')",
-        ]
-    )
-    result = subprocess.run(
-        [LUA, "-", str(tmp_path / "song.RPP")], input=lua_program, text=True, capture_output=True, check=True
-    )
-    assert result.stdout == "[]"
-
-
 def test_live_verifier_requires_a_saved_baseline_and_is_read_only() -> None:
     script = VERIFY_SCRIPT.read_text()
     assert "--baseline" in script
@@ -1761,15 +1649,11 @@ def test_phase1_live_verifier_checks_fallback_and_has_an_opt_in_reaper_proof() -
     assert "managed_region_ids" in script
 
 
-def test_phase1_live_verifier_has_an_opt_in_tempo_refresh_proof() -> None:
-    """Issue #27: re-apply must refresh a still-untouched vgt tempo map with
-    fresh tempo data, but freeze it (and fall back to [vgt] Beats) forever
-    once a human has edited it by hand."""
+def test_phase1_live_verifier_requires_beats_without_tempo_map_ownership() -> None:
     script = PHASE1_VERIFY_SCRIPT.read_text()
-    assert "--run-live-tempo-refresh" in script
-    assert "def run_live_tempo_refresh(" in script
+    assert "--run-live-tempo-refresh" not in script
+    assert "analyzed tempo needs a [vgt] Beats track" in script
     assert "tempo_map_fingerprint" in script
-    assert "SetTempoTimeSigMarker(0, 0, 0, -1, -1, 155, 3, 4, false)" in script
 
 
 def test_stem_live_verifier_requires_saved_rpp_relative_path_proof_and_reapply() -> None:
@@ -1984,7 +1868,7 @@ def test_write_settings_merges_a_concurrent_analyze_commit_via_generation_retry(
             "  return real_open(path, mode)",
             "end",
             "local track = {guid = '{TRACK-GUID}', name = 'Reference'}",
-            "write_settings({track}, {}, track, false, '', '', 'electric')",
+            "write_settings({track}, {}, track, 'electric')",
             "io.write(tostring(read_count))",
         ]
     )
@@ -2034,7 +1918,7 @@ def test_write_settings_gives_up_after_the_retry_limit_leaving_the_prior_sidecar
             "  return real_open(path, mode)",
             "end",
             "local track = {guid = '{TRACK-GUID}', name = 'Reference'}",
-            "local ok, err = pcall(write_settings, {track}, {}, track, false, '', '', 'electric')",
+            "local ok, err = pcall(write_settings, {track}, {}, track, 'electric')",
             "io.write(tostring(ok), ':', tostring(err):find('concurrently') ~= nil and 'retryable' or tostring(err))",
         ]
     )

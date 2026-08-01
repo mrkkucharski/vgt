@@ -185,22 +185,10 @@ def verify(project_path: Path, baseline_path: Path, *, first_snapshot: dict[str,
     tempo_fingerprint = config.get("tempo_map_fingerprint")
     tempo = ((analysis.get("tempo") or {}) if isinstance(analysis, dict) else {}).get("value")
     beat_guid = next((guid for guid in managed if names_by_guid.get(guid) == BEATS_NAME), None)
-    if tempo_applied is True:
-        if not _TEMPO_MARKER.search(rpp_text):
-            _fail("sidecar says the tempo map was applied, but RPP has no tempo markers")
-        if tempo_fingerprint:
-            # The recorded fingerprint still matches the live map (issue #27):
-            # vgt owns it and refreshed it, so no non-invasive fallback is needed.
-            if beat_guid is not None:
-                _fail("a current vgt tempo map must not also create a [vgt] Beats fallback track")
-        elif beat_guid is None:
-            # A vgt-created map exists but has since diverged from what vgt
-            # wrote (no live fingerprint match): it is left untouched and the
-            # latest tempo data is only ever offered non-invasively.
-            _fail("a diverged vgt tempo map needs the non-invasive [vgt] Beats fallback track")
-    elif tempo_applied is False and isinstance(tempo, dict):
-        if beat_guid is None:
-            _fail("existing tempo map needs the non-invasive [vgt] Beats fallback track")
+    if tempo_applied is not False or tempo_fingerprint:
+        _fail("apply must record that it did not create or claim a tempo map")
+    if isinstance(tempo, dict) and beat_guid is None:
+        _fail("analyzed tempo needs a [vgt] Beats track")
     if beat_guid is not None:
         beat_block = blocks[beat_guid]
         if _MUTE.search(beat_block) or any(not _LOCK.search(item) for item in _blocks(beat_block, _ITEM_START)):
@@ -291,119 +279,22 @@ def run_live(baseline: Path) -> dict[str, object]:
         shutil.rmtree(root, ignore_errors=True)
 
 
-def _run_plain_scripts(project: Path, run_dir: Path, scripts: list[Path]) -> None:
-    """Run REAPER against `project`, executing `scripts` in order, then save and
-    close -- no vgt action involved. Used to simulate a human editing the
-    project by hand between two vgt applies."""
-    save = run_dir / "plain-save.lua"
-    save.write_text("reaper.Main_SaveProject(0, false)\nreaper.Main_OnCommand(40004, 0)\n", encoding="utf-8")
-    arguments = [str(REAPER), "-newinst", str(project), *(str(script) for script in scripts), str(save)]
-    subprocess.run(arguments, check=True, timeout=90)
-
-
-def run_live_tempo_refresh(baseline: Path) -> dict[str, object]:
-    """Prove issue #27's rule live: re-apply refreshes a vgt-created tempo map
-    with newly detected/corrected tempo data while the live map is still
-    exactly what vgt wrote, but the moment a human edits it by hand, vgt must
-    never touch it again -- the fresh data is only ever offered non-invasively
-    via the `[vgt] Beats` track from then on."""
-    if not REAPER.is_file():
-        raise VerificationError(f"REAPER not found at {REAPER}")
-    root = Path(tempfile.mkdtemp(prefix="vgt-phase1-tempo-refresh-"))
-    try:
-        run_dir = root / "refresh"
-        fixture_dir = run_dir / "Reaper Project"
-        shutil.copytree(baseline.parent, fixture_dir)
-        project = fixture_dir / baseline.name
-        sidecar_path = project.with_suffix(".vgt")
-
-        def apply_with_tempo(bpm: float, *, first_snapshot: dict[str, object] | None = None) -> dict[str, object]:
-            sidecar = json.loads(sidecar_path.read_text(encoding="utf-8")) if sidecar_path.is_file() else {}
-            analysis = _analysis()
-            analysis["tempo"]["value"]["bpm"] = bpm
-            sidecar.update(schema_version=4, analysis=analysis)
-            sidecar_path.write_text(json.dumps(sidecar), encoding="utf-8")
-            _run_reaper(project, run_dir, existing_map=False)
-            return verify(project, baseline, first_snapshot=first_snapshot)
-
-        # 1. Phase 0 apply: no analysis yet, so no tempo map is written.
-        _run_reaper(project, run_dir, existing_map=False)
-        # 2. First tempo analysis lands on a fresh (default-tempo) project:
-        #    vgt writes the map and records a fingerprint for it.
-        created = apply_with_tempo(100.0)
-        if created["tempo_map_applied"] is not True or not created["tempo_map_fingerprint"]:
-            _fail("expected a fresh vgt tempo map with a recorded fingerprint")
-        if BEATS_NAME in created["managed_names"]:
-            _fail("a freshly-applied tempo map must not also create a [vgt] Beats track")
-
-        # 3. Only the detected/corrected tempo changed; the live map is still
-        #    byte-for-byte what vgt wrote, so re-apply must refresh it.
-        refreshed = apply_with_tempo(128.0)
-        if refreshed["tempo_map_applied"] is not True or not refreshed["tempo_map_fingerprint"]:
-            _fail("expected the refreshed tempo map to still be vgt-owned with a recorded fingerprint")
-        if refreshed["tempo_markers"] == created["tempo_markers"]:
-            _fail("re-apply did not refresh the tempo map with the corrected tempo data")
-        if BEATS_NAME in refreshed["managed_names"]:
-            _fail("a refreshed tempo map must not also create a [vgt] Beats track")
-
-        # 4. A human now edits the live map by hand -- outside of vgt entirely.
-        # Changing marker 0's tempo shifts any beat-attached item in that
-        # first span (e.g. the reference track's own audio), which throws off
-        # verify()'s reference-relative chord/section math -- that drift is
-        # an expected, inherent consequence of the human's own edit, not
-        # something vgt could or should compensate for. Read the raw tempo
-        # markers straight off the saved RPP instead of the full verify().
-        edit_script = run_dir / "user-edits-tempo.lua"
-        edit_script.write_text("reaper.SetTempoTimeSigMarker(0, 0, 0, -1, -1, 155, 3, 4, false)\n", encoding="utf-8")
-        _run_plain_scripts(project, run_dir, [edit_script])
-        edited_markers = tuple(_TEMPO_MARKER.findall(project.read_text(encoding="utf-8", errors="replace")))
-        if edited_markers == refreshed["tempo_markers"]:
-            _fail("test setup failed to simulate a human edit to the tempo map")
-
-        # 5. Re-apply with yet another tempo value: the human's edit must
-        #    survive completely untouched, and the new data must only be
-        #    offered non-invasively via [vgt] Beats.
-        diverged = apply_with_tempo(90.0)
-        if diverged["tempo_markers"] != edited_markers:
-            _fail("re-apply rewrote a tempo map the user had since edited by hand")
-        if diverged["tempo_map_applied"] is not True:
-            _fail("a diverged tempo map must still be recorded as vgt-created")
-        if diverged["tempo_map_fingerprint"]:
-            _fail("a diverged tempo map must not keep claiming a current fingerprint")
-        if BEATS_NAME not in diverged["managed_names"]:
-            _fail("a diverged vgt tempo map must fall back to the non-invasive [vgt] Beats track")
-
-        # 6. One more re-apply with no further live edits: the diverged,
-        #    Beats-fallback state must be stable, not oscillate.
-        apply_with_tempo(90.0, first_snapshot=diverged)
-        return {"created": created, "refreshed": refreshed, "edited_markers": {"tempo_markers": edited_markers}, "diverged": diverged}
-    finally:
-        shutil.rmtree(root, ignore_errors=True)
-
-
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("project", nargs="?", help="saved disposable .RPP copy to inspect")
     parser.add_argument("--baseline", required=True, help="unmodified source .RPP")
     parser.add_argument("--run-live", action="store_true", help="copy the fixture and prove first apply plus re-apply in REAPER")
-    parser.add_argument(
-        "--run-live-tempo-refresh",
-        action="store_true",
-        help="copy the fixture and prove issue #27's refresh-vs-preserve tempo map rule in REAPER",
-    )
     args = parser.parse_args(argv)
     try:
         baseline = locate_project(args.baseline)
-        if args.run_live_tempo_refresh:
-            result = run_live_tempo_refresh(baseline)
-        elif args.run_live:
+        if args.run_live:
             result = run_live(baseline)
         else:
             result = verify(locate_project(args.project), baseline)
     except (VerificationError, ProjectError, subprocess.SubprocessError) as error:
         print(f"Phase 1 verification failed: {error}", file=sys.stderr)
         return 1
-    if args.run_live or args.run_live_tempo_refresh:
+    if args.run_live:
         result = {name: {key: value for key, value in outcome.items() if key != "original_blocks"} for name, outcome in result.items()}
     print(json.dumps(result, indent=2, default=list))
     return 0
