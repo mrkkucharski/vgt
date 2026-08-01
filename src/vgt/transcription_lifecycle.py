@@ -217,7 +217,7 @@ def add_variant(
             drum_profile = drum_transcription_profile({target: profile})
             effective_profile = profile
             profile_definition_hash = None
-            audio_frontend = {"stages": []}
+            audio_frontend = dict(drum_profile.audio_frontend)
         resolved_settings = (
             {"backend": drum_profile.backend}
             if drum_profile.cleanup_profile is None

@@ -266,12 +266,13 @@ def _dispatch_transcription(args: argparse.Namespace, project: Path) -> int:
                 profile = DRUM_CLEANUP_PROFILES[drum_profile.cleanup_profile]
                 print(json.dumps(
                     {
-                        "name": profile.name,
+                        **profile.as_identity(),
+                        "name": drum_profile.name,
                         "target": "drums",
                         "backend": drum_profile.backend,
                         "is_builtin": True,
                         "profile_definition_hash": None,
-                        **profile.as_identity(),
+                        "audio_frontend": drum_profile.audio_frontend,
                     },
                     indent=2,
                 ))

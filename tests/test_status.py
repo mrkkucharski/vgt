@@ -157,7 +157,7 @@ def test_status_resolves_profiles_for_legacy_and_mixed_targets(tmp_path: Path, c
     text = capsys.readouterr().out
     assert "guitar   1 notes, MIDI 40-40, profile guitar-acoustic" in text
     assert "bass     skipped - no bass stem available, profile bass-monophonic" in text
-    assert "drums    error - backend failed, profile default" in text
+    assert "drums    error - backend failed, profile drums-hpss-gentle" in text
     assert "vocals   not yet run, profile vocals" in text
 
     assert main(["status", "--json", str(project)]) == 0
@@ -167,6 +167,6 @@ def test_status_resolves_profiles_for_legacy_and_mixed_targets(tmp_path: Path, c
     assert targets["bass"]["requested_mode"] == "bass-monophonic"
     assert targets["bass"]["effective_profile"] == "bass-monophonic"
     assert targets["drums"]["requested_mode"] is None
-    assert targets["drums"]["effective_profile"] == "default"
+    assert targets["drums"]["effective_profile"] == "drums-hpss-gentle"
     assert targets["vocals"]["requested_mode"] == "retired-profile"
     assert targets["vocals"]["effective_profile"] == "vocals"

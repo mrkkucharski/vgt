@@ -218,7 +218,7 @@ full mix.
 
 | Target | Backend |
 | --- | --- |
-| `drums` | DrumScript (the default baseline); the opt-in `drums-adtof` variant profile uses ADTOF |
+| `drums` | DrumScript with analysis-only gentle HPSS by default; explicit `default` opts out to the raw stem, and `drums-adtof` uses ADTOF |
 | `bass` | pYIN, a monophonic pitch tracker (see [Bass](#pyin-bass) below) |
 | `guitar`, `vocals`, `instrumental`, `backing`, `strings`, `piano`, `original` | Basic Pitch |
 
@@ -244,7 +244,7 @@ vgt analyze --transcribe bass --transcribe drums "Song.RPP"
   repeat it to select several. Current profiles are `default`, `guitar`,
   `bass`, `bass-pyin`, `bass-basic-pitch`, `bass-monophonic`, `vocals`,
   `guitar-acoustic`, and (for `drums`)
-  `drums-clean`, and `drums-adtof`. For example, `vgt analyze --mode guitar=guitar-acoustic
+  `drums-clean`, `drums-hpss-gentle`, and `drums-adtof`. For example, `vgt analyze --mode guitar=guitar-acoustic
   "Song.RPP"` or `vgt analyze --mode drums=drums-clean "Song.RPP"` (see
   [DrumScript](#drumscript-drums) below). A stale mode from an older sidecar
   safely falls back to the target default, but a profile named explicitly on
@@ -343,6 +343,12 @@ stages = [{ type = "bandpass", low_hz = 70, high_hz = 5000, order = 4 }]
 Processed-input variants appear as muted `[vgt] … Analysis … (Audio)` tracks
 beside their MIDI in REAPER. They are experimental candidates, never a replacement
 for the raw stem.
+
+Drum transcription uses the built-in `drums-hpss-gentle` profile by default:
+it blends 35% percussive HPSS into an analysis-only WAV and applies the existing
+`drums-clean` event cleanup. The raw `stems/drums.wav` is never changed. Opt out
+for a raw-stem DrumScript run with `--mode drums=default`, or create a raw
+comparison variant with `--profile default`.
 
 Use `vgt transcription profile validate "Song.RPP"`, then add it with
 `vgt transcription variant add guitar --name "my clean" --profile

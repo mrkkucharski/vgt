@@ -27,6 +27,7 @@ import math
 
 from . import __version__
 from .chords import ChordDetectionError, chord_sheet_path, detect_chords as _detect_chords, render_chord_sheet
+from .drum_cleanup import DRUM_CLEANUP_PROFILES
 from .key import KeyDetectionError, detect_key as _detect_key
 from .project import ProjectError, locate_project, track_source_path
 from .sections import SectionDetectionError, detect_sections as _detect_sections, render_section_timeline, section_timeline_path
@@ -54,6 +55,7 @@ from .transcribe import (
     Transcriber,
     TranscriberRouter,
     TargetTranscriberRouter,
+    drum_transcription_profile,
     events_artifact_name,
     effective_profile_name_for_target,
     midi_artifact_name,
@@ -307,12 +309,31 @@ def _refresh_target(
         beat_times=beat_times, downbeat_offset_s=downbeat_offset_s,
         tempo_map=tempo_map_reference(tempo_value if isinstance(tempo_value, dict) else None),
     )
-    profile = modes.get(target) or (variants.get(target_variant_id) or {}).get("requested_profile") or "default"
-    effective_profile = (
-        modes.get(target)
-        or (variants.get(target_variant_id) or {}).get("effective_profile")
-        or effective_profile_name_for_target(target, modes)
-    )
+    if target == "drums":
+        # An absent mode deliberately selects the gentle-HPSS drum default;
+        # an explicit `drums=default` is the raw-stem opt-out.
+        effective_profile = effective_profile_name_for_target(target, modes)
+        profile = modes.get(target) or effective_profile
+        drum_profile = drum_transcription_profile(modes)
+        audio_frontend = dict(drum_profile.audio_frontend)
+        resolved_settings = (
+            {"backend": drum_profile.backend}
+            if drum_profile.cleanup_profile is None
+            else {
+                "cleanup_profile": drum_profile.cleanup_profile,
+                **DRUM_CLEANUP_PROFILES[drum_profile.cleanup_profile].as_identity(),
+                "audio_frontend": audio_frontend,
+            }
+        )
+    else:
+        profile = modes.get(target) or (variants.get(target_variant_id) or {}).get("requested_profile") or "default"
+        effective_profile = (
+            modes.get(target)
+            or (variants.get(target_variant_id) or {}).get("effective_profile")
+            or effective_profile_name_for_target(target, modes)
+        )
+        audio_frontend = {"stages": []}
+        resolved_settings = (variants.get(target_variant_id) or {}).get("resolved_settings") or {"detection": {}, "cleanup": []}
     request = VariantRequest(
         variant_id=target_variant_id,
         label=label,
@@ -320,7 +341,8 @@ def _refresh_target(
         effective_profile=effective_profile,
         profile_definition_hash=(variants.get(target_variant_id) or {}).get("profile_definition_hash"),
         spec=spec,
-        resolved_settings=(variants.get(target_variant_id) or {}).get("resolved_settings") or {"detection": {}, "cleanup": []},
+        resolved_settings=resolved_settings,
+        audio_frontend=audio_frontend,
     )
     resolved = resolve_target_source(project_path, target, analysis, reference_source=reference_source)
     source_path, artifact = resolved if resolved is not None else (None, None)

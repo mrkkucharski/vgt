@@ -1297,6 +1297,9 @@ def test_refresh_target_uses_the_injected_router_and_keeps_drum_cache_independen
     project = _project_copy(tmp_path)
     _write_v1_sidecar(project)
     sidecar = read_sidecar(project)
+    # These fake byte stems are intentionally not WAVs; opt out of the
+    # default analysis frontend so this router/cache test stays audio-agnostic.
+    sidecar["analysis"]["transcription"]["modes"]["drums"] = "default"
     for target in ("guitar", "bass", "drums"):
         _add_fake_stem(project, sidecar, target, f"{target}-audio".encode())
     write_sidecar(project, sidecar)
@@ -1350,6 +1353,7 @@ def test_drum_backend_error_is_isolated_from_other_transcription_targets(tmp_pat
     project = _project_copy(tmp_path)
     _write_v1_sidecar(project)
     sidecar = read_sidecar(project)
+    sidecar["analysis"]["transcription"]["modes"]["drums"] = "default"
     for target in ("guitar", "drums"):
         _add_fake_stem(project, sidecar, target, target.encode())
     write_sidecar(project, sidecar)

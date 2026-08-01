@@ -135,6 +135,7 @@ def test_drums_clean_profile_is_listed_shown_and_distinct_from_default(tmp_path:
     assert main(["transcription", "profile", "list", str(project)]) == 0
     listing = capsys.readouterr().out
     assert "drums-clean (builtin, drums)" in listing
+    assert "drums-hpss-gentle (builtin, drums)" in listing
 
     assert main(["transcription", "profile", "show", "drums-clean", str(project)]) == 0
     shown = json.loads(capsys.readouterr().out)
@@ -142,6 +143,11 @@ def test_drums_clean_profile_is_listed_shown_and_distinct_from_default(tmp_path:
     assert shown["target"] == "drums"
     assert shown["is_builtin"] is True
     assert shown["enabled"] is True
+
+    assert main(["transcription", "profile", "show", "drums-hpss-gentle", str(project)]) == 0
+    gentle = json.loads(capsys.readouterr().out)
+    assert gentle["name"] == "drums-hpss-gentle"
+    assert gentle["audio_frontend"]["stages"][0]["wet"] == 0.35
 
 
 def test_mode_drums_equals_drums_clean_is_accepted_and_persisted(tmp_path: Path, capsys) -> None:
@@ -186,6 +192,15 @@ def test_variant_add_target_drums_profile_drums_clean_writes_channel_10_midi(tmp
     ]) == 0
     raw = json.loads(capsys.readouterr().out)
     assert raw["settings_hash"] != clean["settings_hash"]
+
+    assert main([
+        "transcription", "variant", "add", "drums",
+        "--name", "gentle", "--profile", "drums-hpss-gentle", str(project),
+    ]) == 0
+    gentle = json.loads(capsys.readouterr().out)
+    assert gentle["effective_profile"] == "drums-hpss-gentle"
+    assert gentle["audio_frontend"]["stages"][0]["wet"] == 0.35
+    assert gentle["analysis_audio_file"].startswith("transcription/cache/audio-frontends/")
 
     namespace_dir = project.parent / "vgt" / read_sidecar(project)["analysis"]["stems"]["artifact_namespace"]
     clean_id = next(

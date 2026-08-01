@@ -429,6 +429,14 @@ def resolve_profile(name: str, project_profiles: Mapping[str, RawProfileDefiniti
     definitions = project_profiles or {}
 
     if name not in definitions:
+        if name in DRUM_TRANSCRIPTION_PROFILE_NAMES and name != "default":
+            drum = drum_transcription_profile({"drums": name})
+            return ResolvedProfile(
+                name=name, target="drums", backend=drum.backend,
+                detection={"drum_profile": name}, cleanup=(),
+                audio_frontend=dict(drum.audio_frontend), is_builtin=True,
+                profile_definition_hash=None,
+            )
         if name not in _INSTRUMENT_PROFILES:
             _fail(f"unknown profile {name!r}")
         base = _INSTRUMENT_PROFILES[name]
@@ -461,7 +469,7 @@ def resolve_profile(name: str, project_profiles: Mapping[str, RawProfileDefiniti
             _fail(f"drum profile {current!r} may only be extended by a drums profile")
         if any(defn.detection or defn.cleanup for defn in chain):
             _fail("project drum profiles may currently override audio_frontend only")
-        frontend = {"stages": []}
+        frontend = dict(drum_transcription_profile({"drums": current}).audio_frontend)
         for defn in reversed(chain):
             if defn.audio_frontend["stages"]:
                 frontend = defn.audio_frontend

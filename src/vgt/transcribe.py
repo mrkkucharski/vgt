@@ -595,6 +595,10 @@ class DrumTranscriptionProfile:
     name: str
     backend: str
     cleanup_profile: str | None = None
+    # Analysis-only preprocessing for the transcription backend. This is
+    # deliberately not a stem transformation; the variant layer renders it
+    # into a separate content-addressed WAV.
+    audio_frontend: Mapping[str, Any] = field(default_factory=lambda: {"stages": []})
 
 
 _DRUM_TRANSCRIPTION_PROFILES: dict[str, DrumTranscriptionProfile] = {
@@ -604,7 +608,19 @@ _DRUM_TRANSCRIPTION_PROFILES: dict[str, DrumTranscriptionProfile] = {
 _DRUM_TRANSCRIPTION_PROFILES["drums-adtof"] = DrumTranscriptionProfile(
     name="drums-adtof", backend="adtof"
 )
+_DRUM_TRANSCRIPTION_PROFILES["drums-hpss-gentle"] = DrumTranscriptionProfile(
+    name="drums-hpss-gentle",
+    backend="drumscript",
+    cleanup_profile="drums-clean",
+    audio_frontend={
+        "stages": [
+            {"type": "hpss_blend", "component": "percussive", "wet": 0.35,
+             "margin": 1.0, "n_fft": 2048, "hop_length": 512}
+        ]
+    },
+)
 DRUM_TRANSCRIPTION_PROFILE_NAMES: tuple[str, ...] = tuple(_DRUM_TRANSCRIPTION_PROFILES)
+DEFAULT_DRUM_TRANSCRIPTION_PROFILE_NAME = "drums-hpss-gentle"
 
 # The canonical, load-bearing cleanup stage order (see
 # `_GUITAR_ACOUSTIC_FULL_CLEANUP`'s docstring above and
@@ -726,9 +742,15 @@ def validate_profile_for_target(target: str, profile: str) -> str:
 
 
 def drum_transcription_profile(modes: Mapping[str, str] | None) -> DrumTranscriptionProfile:
-    """Resolve drums' selected profile, with the historical default fallback."""
+    """Resolve drums' selected profile.
+
+    No explicit mode uses the measured gentle-HPSS analysis frontend. Naming
+    ``default`` explicitly remains the raw-stem opt-out profile.
+    """
     name = modes.get("drums") if isinstance(modes, Mapping) else None
-    return _DRUM_TRANSCRIPTION_PROFILES.get(name, _DRUM_TRANSCRIPTION_PROFILES["default"])
+    return _DRUM_TRANSCRIPTION_PROFILES.get(
+        name, _DRUM_TRANSCRIPTION_PROFILES[DEFAULT_DRUM_TRANSCRIPTION_PROFILE_NAME]
+    )
 
 
 def backend_for_target_profile(target: str, modes: Mapping[str, str] | None) -> str:

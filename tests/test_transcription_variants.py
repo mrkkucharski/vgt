@@ -389,7 +389,7 @@ def test_drumscript_clean_variant_gets_its_own_cache_identity_and_channel_10_mid
     from vgt.transcribe import _midi_has_non_percussion_notes
 
     source = _write_source(tmp_path)
-    default_spec = default_spec_for_target("drums", backend="drumscript")
+    default_spec = default_spec_for_target("drums", backend="drumscript", modes={"drums": "default"})
     clean_spec = default_spec_for_target("drums", backend="drumscript", modes={"drums": "drums-clean"})
     default_request = VariantRequest(
         variant_id="v-default", label="default", requested_profile="default",

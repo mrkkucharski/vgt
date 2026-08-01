@@ -336,39 +336,29 @@ def test_drumscript_spec_identity_covers_every_drumscript_setting() -> None:
     assert spec_hash(spec) != spec_hash(replace(spec, time_signature=(4, 4)))
 
 
-def test_drumscript_default_spec_is_byte_identical_to_before_drums_clean() -> None:
-    """Issue #177's compatibility contract: an unselected/absent `modes`
-    entry for drums must produce exactly the pre-#177 spec identity plus
-    `midi_tempo` (added by issue #193, since it now changes the authored
-    MIDI's tempo) and `beat_grid` (both profiles now author onto the analyzed
-    grid), so a default drums variant's `settings_hash` depends only on
-    `cleanup_profile` selection, the project tempo, and that grid."""
+def test_drumscript_uses_gentle_hpss_by_default_and_explicit_default_is_raw_opt_out() -> None:
     unset = default_spec_for_target("drums", backend="drumscript")
     explicit_default = default_spec_for_target("drums", backend="drumscript", modes={"drums": "default"})
     stale = default_spec_for_target("drums", backend="drumscript", modes={"drums": "not-a-real-profile"})
 
-    assert unset.cleanup_profile == "default"
-    assert unset.cleanup == ()
-    assert unset.to_dict() == {
-        "backend": "drumscript",
-        "package_pin": "drumscript==0.1.6",
-        "runtime_version": "python==3.12",
-        "classifier_mode": "standard-polyphonic",
-        "time_signature": None,
-        "midi_tempo": None,
-        "beat_grid": None,
-    }
-    assert spec_hash(unset) == spec_hash(explicit_default) == spec_hash(stale)
+    assert unset.cleanup_profile == "drums-clean"
+    assert len(unset.cleanup) == 1
+    assert explicit_default.cleanup_profile == "default"
+    assert explicit_default.cleanup == ()
+    assert spec_hash(unset) == spec_hash(stale)
+    assert spec_hash(unset) != spec_hash(explicit_default)
 
 
-def test_drumscript_clean_profile_has_a_distinct_settings_hash() -> None:
+def test_drumscript_clean_profile_shares_the_gentle_defaults_backend_spec() -> None:
     default_spec = default_spec_for_target("drums", backend="drumscript")
     clean_spec = default_spec_for_target("drums", backend="drumscript", modes={"drums": "drums-clean"})
 
     assert clean_spec.cleanup_profile == "drums-clean"
     assert len(clean_spec.cleanup) == 1
     assert clean_spec.cleanup[0].name == "drums-clean"
-    assert spec_hash(clean_spec) != spec_hash(default_spec)
+    # The frontend is intentionally outside the DrumScript spec: the variant
+    # layer hashes it with the raw input before invoking this unchanged backend.
+    assert spec_hash(clean_spec) == spec_hash(default_spec)
     # Every other target's identity is untouched by drums selecting a clean profile.
     guitar_spec = default_spec_for_target("guitar", modes={"drums": "drums-clean"})
     assert guitar_spec.cleanup == ()
@@ -395,21 +385,21 @@ def test_every_drumscript_profile_carries_the_analysis_beat_grid_in_its_identity
         assert spec.beat_grid.downbeat_offset_s == pytest.approx(0.0853)
         assert spec.to_dict()["beat_grid"]["downbeat_offset_s"] == pytest.approx(0.0853)
     assert spec_hash(moved_grid) != spec_hash(default_spec)
-    assert spec_hash(default_spec) != spec_hash(clean_spec)
+    assert spec_hash(default_spec) == spec_hash(clean_spec)
 
 
 def test_drumscript_clean_profile_name_is_valid_for_the_drums_target() -> None:
     from vgt.transcribe import effective_profile_name_for_target, valid_profile_names_for_target, validate_profile_for_target
 
-    assert valid_profile_names_for_target("drums") == ("default", "drums-clean", "drums-adtof")
+    assert valid_profile_names_for_target("drums") == ("default", "drums-clean", "drums-adtof", "drums-hpss-gentle")
     assert validate_profile_for_target("drums", "drums-clean") == "drums-clean"
     assert validate_profile_for_target("drums", "drums-adtof") == "drums-adtof"
     with pytest.raises(TranscriptionError):
         validate_profile_for_target("drums", "not-a-real-profile")
 
-    assert effective_profile_name_for_target("drums", None) == "default"
+    assert effective_profile_name_for_target("drums", None) == "drums-hpss-gentle"
     assert effective_profile_name_for_target("drums", {"drums": "drums-clean"}) == "drums-clean"
-    assert effective_profile_name_for_target("drums", {"drums": "not-a-real-profile"}) == "default"
+    assert effective_profile_name_for_target("drums", {"drums": "not-a-real-profile"}) == "drums-hpss-gentle"
 
 
 def test_router_routes_only_drums_to_an_injected_drum_backend() -> None:
