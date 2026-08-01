@@ -38,12 +38,13 @@ from .transcribe import (
     default_spec_for_target,
     backend_for_target_profile,
     effective_profile_name_for_target,
-    DRUM_TRANSCRIPTION_PROFILE_NAMES,
+    canonical_drum_profile_name,
     drum_transcription_profile,
     production_transcriber_router,
     resolve_target_source,
     target_input_hash,
     tempo_map_reference,
+    valid_profile_names_for_target as builtin_profile_names_for_target,
     validate_target,
 )
 from .transcription_profiles import (
@@ -210,12 +211,12 @@ def add_variant(
             profile_definition_hash = resolved.profile_definition_hash
             audio_frontend = resolved.audio_frontend
         else:
-            if profile not in DRUM_TRANSCRIPTION_PROFILE_NAMES:
+            if profile not in builtin_profile_names_for_target("drums"):
                 raise VariantLifecycleError(
-                    f"profile for 'drums' must be one of {DRUM_TRANSCRIPTION_PROFILE_NAMES}, got {profile!r}"
+                    f"profile for 'drums' must be one of {builtin_profile_names_for_target('drums')}, got {profile!r}"
                 )
             drum_profile = drum_transcription_profile({target: profile})
-            effective_profile = profile
+            effective_profile = canonical_drum_profile_name(profile)
             profile_definition_hash = None
             audio_frontend = dict(drum_profile.audio_frontend)
         resolved_settings = (

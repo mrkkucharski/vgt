@@ -18,10 +18,12 @@ from .sidecar import atomic_update_sidecar
 from .status import StatusError, build_status, format_status
 from .transcribe import (
     DRUM_TRANSCRIPTION_PROFILE_NAMES,
+    canonical_drum_profile_name,
     VALID_PROFILE_NAMES,
     VALID_TARGETS,
     TranscriptionError,
     drum_transcription_profile,
+    valid_profile_names_for_target,
     validate_profile_for_target,
     validate_target,
 )
@@ -251,16 +253,15 @@ def _dispatch_transcription(args: argparse.Namespace, project: Path) -> int:
                 print(f"{name} (project)")
             return 0
         if args.profile_command == "show":
-            # `drums-clean` is a `vgt.drum_cleanup` recipe, not a Basic Pitch
+            # The drum cleanup recipes are not Basic Pitch
             # `InstrumentProfile` -- `resolve_profile` below only knows the
             # latter (and explicitly rejects a 'drums' target), so it is
-            # reported directly instead. "default" stays on the generic path
-            # below since it is shared with every other target.
-            if args.name in DRUM_TRANSCRIPTION_PROFILE_NAMES and args.name != "default":
+            # reported directly instead. Legacy names are canonicalized here.
+            if args.name in valid_profile_names_for_target("drums"):
                 drum_profile = drum_transcription_profile({"drums": args.name})
                 if drum_profile.cleanup_profile is None:
                     print(json.dumps({
-                        "name": drum_profile.name, "target": "drums", "backend": drum_profile.backend,
+                        "name": canonical_drum_profile_name(args.name), "target": "drums", "backend": drum_profile.backend,
                         "is_builtin": True, "profile_definition_hash": None,
                     }, indent=2))
                     return 0

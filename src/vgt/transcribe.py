@@ -39,7 +39,7 @@ from .drum_cleanup import (
     cleaned_events_to_json,
     cleaned_events_to_midi_notes,
 )
-from .drum_grid import reconcile_event_times
+from .drum_grid import detect_uniform_step, reconcile_event_times
 from .pyin_notes import PYIN_ALGORITHM_VERSION
 
 # Valid target names: the separation artifact names, plus the untouched mix
@@ -79,6 +79,9 @@ DRUMSCRIPT_PACKAGE_PIN = "drumscript==0.1.6"
 # runtime.
 DRUMSCRIPT_RUNTIME_VERSION = "python==3.12"
 DRUMSCRIPT_CLASSIFIER_MODE = "standard-polyphonic"
+DRUMSCRIPT_TIMING_ALIGNMENT_VERSION = "quantized-audio-onsets-v1"
+DRUMSCRIPT_AUDIO_ALIGNMENT_MAX_WINDOW_S = 0.12
+DRUMSCRIPT_AUDIO_ALIGNMENT_MIN_STRENGTH = 0.30
 ADTOF_PACKAGE_PIN = "adtof-pytorch @ git+https://github.com/xavriley/ADTOF-pytorch.git@85c192e78f716ea0b111cc8a5ee4a8f6a3a4f8a9"
 ADTOF_PACKAGE_VERSION = "0.1.0"
 ADTOF_MODEL_VERSION = "Frame_RNN"
@@ -619,25 +622,30 @@ class DrumTranscriptionProfile:
 
 
 _DRUM_TRANSCRIPTION_PROFILES: dict[str, DrumTranscriptionProfile] = {
-    name: DrumTranscriptionProfile(name=name, backend="drumscript", cleanup_profile=name)
-    for name in DRUM_CLEANUP_PROFILE_NAMES
+    "raw": DrumTranscriptionProfile(name="raw", backend="drumscript", cleanup_profile="default"),
+    "hpss": DrumTranscriptionProfile(
+        name="hpss",
+        backend="drumscript",
+        cleanup_profile="drums-clean",
+        audio_frontend={
+            "stages": [
+                {"type": "hpss_blend", "component": "percussive", "wet": 0.35,
+                 "margin": 1.0, "n_fft": 2048, "hop_length": 512}
+            ]
+        },
+    ),
+    "adtof": DrumTranscriptionProfile(name="adtof", backend="adtof"),
 }
-_DRUM_TRANSCRIPTION_PROFILES["drums-adtof"] = DrumTranscriptionProfile(
-    name="drums-adtof", backend="adtof"
-)
-_DRUM_TRANSCRIPTION_PROFILES["drums-hpss-gentle"] = DrumTranscriptionProfile(
-    name="drums-hpss-gentle",
-    backend="drumscript",
-    cleanup_profile="drums-clean",
-    audio_frontend={
-        "stages": [
-            {"type": "hpss_blend", "component": "percussive", "wet": 0.35,
-             "margin": 1.0, "n_fft": 2048, "hop_length": 512}
-        ]
-    },
-)
+_DRUM_PROFILE_ALIASES = {
+    "default": "raw",
+    "drums-clean": "hpss",
+    "drums-hpss-gentle": "hpss",
+    "drums-adtof": "adtof",
+}
 DRUM_TRANSCRIPTION_PROFILE_NAMES: tuple[str, ...] = tuple(_DRUM_TRANSCRIPTION_PROFILES)
-DEFAULT_DRUM_TRANSCRIPTION_PROFILE_NAME = "drums-hpss-gentle"
+DEFAULT_DRUM_TRANSCRIPTION_PROFILE_NAME = "raw"
+_LEGACY_DRUM_TRANSCRIPTION_PROFILE_NAMES = tuple(_DRUM_PROFILE_ALIASES)
+
 
 # The canonical, load-bearing cleanup stage order (see
 # `_GUITAR_ACOUSTIC_FULL_CLEANUP`'s docstring above and
@@ -734,7 +742,7 @@ _PROFILE_NAMES_BY_TARGET["bass"] = (
     "bass-basic-pitch",
     "bass-monophonic",
 )
-_PROFILE_NAMES_BY_TARGET["drums"] = DRUM_TRANSCRIPTION_PROFILE_NAMES
+_PROFILE_NAMES_BY_TARGET["drums"] = (*DRUM_TRANSCRIPTION_PROFILE_NAMES, *_LEGACY_DRUM_TRANSCRIPTION_PROFILE_NAMES)
 
 
 def validate_profile_name(profile: str) -> str:
@@ -759,13 +767,22 @@ def validate_profile_for_target(target: str, profile: str) -> str:
     return profile
 
 
+def canonical_drum_profile_name(name: str | None) -> str:
+    """Return the public drum profile name, accepting stored legacy aliases."""
+    if name is None:
+        return DEFAULT_DRUM_TRANSCRIPTION_PROFILE_NAME
+    return _DRUM_PROFILE_ALIASES.get(name, name)
+
+
 def drum_transcription_profile(modes: Mapping[str, str] | None) -> DrumTranscriptionProfile:
     """Resolve drums' selected profile.
 
-    No explicit mode uses the measured gentle-HPSS analysis frontend. Naming
-    ``default`` explicitly remains the raw-stem opt-out profile.
+    No explicit mode uses raw DrumScript; ``hpss`` is the optional
+    analysis-frontend alternative. Legacy names resolve to their canonical
+    profile for existing projects.
     """
     name = modes.get("drums") if isinstance(modes, Mapping) else None
+    name = canonical_drum_profile_name(name)
     return _DRUM_TRANSCRIPTION_PROFILES.get(
         name, _DRUM_TRANSCRIPTION_PROFILES[DEFAULT_DRUM_TRANSCRIPTION_PROFILE_NAME]
     )
@@ -1004,6 +1021,7 @@ class DrumScriptSpec:
             "classifier_mode": self.classifier_mode,
             "time_signature": list(self.time_signature) if self.time_signature else None,
             "midi_tempo": self.midi_tempo,
+            "timing_alignment_version": DRUMSCRIPT_TIMING_ALIGNMENT_VERSION,
             "beat_grid": (
                 {"beat_times": list(self.beat_grid.beat_times), "downbeat_offset_s": self.beat_grid.downbeat_offset_s}
                 if self.beat_grid is not None else None
@@ -2759,6 +2777,50 @@ class PyinTranscriber:
         )
 
 
+def _align_quantized_drumscript_events_to_audio(
+    events: Sequence[Mapping[str, Any]], evidence_source: Any,
+) -> tuple[list[dict[str, Any]], int]:
+    """Recover nearby performed onsets when no project grid is available.
+
+    DrumScript emits a uniformly quantized timeline even when its beat tracker
+    chose the wrong phase. A synchronized REAPER tempo value intentionally no
+    longer carries the detector's old beat array, so grid reconciliation can
+    be unavailable. In that case only, and only when the backend timestamps
+    prove they are quantized, move each distinct onset to strong local audio
+    evidence. Ambiguous/weak evidence and unquantized future backends remain
+    untouched. One audio peak may claim at most one backend grid slot.
+    """
+    unchanged = [dict(event) for event in events]
+    times = sorted({float(event["time_sec"]) for event in events})
+    step = detect_uniform_step(times)
+    if step is None:
+        return unchanged, 0
+    window = min(DRUMSCRIPT_AUDIO_ALIGNMENT_MAX_WINDOW_S, step * 0.49)
+    candidates: list[tuple[float, float, float]] = []
+    for time_sec in times:
+        evidence = evidence_source.evidence_near(time_sec, window)
+        if (
+            evidence.available
+            and evidence.strength >= DRUMSCRIPT_AUDIO_ALIGNMENT_MIN_STRENGTH
+            and abs(float(evidence.time_sec) - time_sec) <= window
+        ):
+            candidates.append((time_sec, float(evidence.time_sec), abs(float(evidence.time_sec) - time_sec)))
+
+    # Adjacent backend slots can see the same strong transient. Keep the
+    # closer claim so alignment never manufactures duplicate grid events.
+    selected: dict[float, tuple[float, float]] = {}
+    for source_time, evidence_time, distance in candidates:
+        key = round(evidence_time, 6)
+        previous = selected.get(key)
+        if previous is None or distance < previous[1]:
+            selected[key] = (source_time, distance)
+    replacements = {source_time: evidence_time for evidence_time, (source_time, _distance) in selected.items()}
+    return (
+        [{**event, "time_sec": replacements.get(float(event["time_sec"]), float(event["time_sec"]))} for event in events],
+        len(replacements),
+    )
+
+
 class DrumScriptTranscriber:
     """Pinned, isolated DrumScript backend.
 
@@ -2828,6 +2890,12 @@ class DrumScriptTranscriber:
                 )
                 if reconciliation is not None:
                     emit(f"drum events {reconciliation.describe()}")
+                else:
+                    raw_events, aligned_count = _align_quantized_drumscript_events_to_audio(
+                        raw_events, AudioOnsetEvidenceSource(source)
+                    )
+                    if aligned_count:
+                        emit(f"drum events aligned {aligned_count} quantized onsets to nearby audio")
                 destination_dir.mkdir(parents=True, exist_ok=True)
                 midi_path = destination_dir / "transcription.mid"
                 events_path = destination_dir / "transcription.json"

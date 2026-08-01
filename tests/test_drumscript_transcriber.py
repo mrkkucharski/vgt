@@ -14,7 +14,7 @@ import subprocess
 
 import pytest
 
-from vgt.drum_cleanup import BeatGridReference
+from vgt.drum_cleanup import BeatGridReference, OnsetEvidence
 from vgt.transcribe import (
     DRUMSCRIPT_CMD_ENV,
     DRUMSCRIPT_PACKAGE_PIN,
@@ -22,6 +22,7 @@ from vgt.transcribe import (
     DrumScriptTranscriber,
     TranscriptionError,
     _varlen,
+    _align_quantized_drumscript_events_to_audio,
     build_drumscript_argv,
     default_spec_for_target,
     transcribed_entry,
@@ -73,6 +74,35 @@ def _transcribe(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, events, midi: b
     monkeypatch.setattr(subprocess, "run", _run_writing(events, midi))
     monkeypatch.setattr("vgt.transcribe._source_duration_seconds", lambda _source: 10.0)
     return DrumScriptTranscriber().transcribe(source, tmp_path / "destination", _spec())
+
+
+def test_quantized_events_fall_back_to_nearby_audio_onsets_without_a_grid() -> None:
+    class Evidence:
+        def evidence_near(self, time_sec: float, _window_s: float) -> OnsetEvidence:
+            return OnsetEvidence(time_sec=time_sec + 0.05, strength=0.9)
+
+    events = [{"time_sec": index * 0.25, "instruments": ["kick"]} for index in range(8)]
+
+    aligned, count = _align_quantized_drumscript_events_to_audio(events, Evidence())
+
+    assert count == 8
+    assert [event["time_sec"] for event in aligned] == pytest.approx([index * 0.25 + 0.05 for index in range(8)])
+
+
+def test_audio_fallback_never_moves_unquantized_backend_events() -> None:
+    class Evidence:
+        def evidence_near(self, time_sec: float, _window_s: float) -> OnsetEvidence:
+            return OnsetEvidence(time_sec=time_sec + 0.05, strength=1.0)
+
+    events = [
+        {"time_sec": time_sec, "instruments": ["kick"]}
+        for time_sec in (0.0, 0.251, 0.507, 0.740, 1.013, 1.244, 1.502, 1.760, 2.03)
+    ]
+
+    aligned, count = _align_quantized_drumscript_events_to_audio(events, Evidence())
+
+    assert count == 0
+    assert aligned == events
 
 
 def test_argv_is_pinned_isolated_and_never_enables_full_song(tmp_path: Path) -> None:

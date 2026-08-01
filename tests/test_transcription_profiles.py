@@ -98,13 +98,13 @@ def test_project_profile_resolves_audio_frontend_and_drum_base() -> None:
 schema_version = 2
 [profiles.clean-drums]
 target = "drums"
-extends = "drums-clean"
+extends = "hpss"
 [profiles.clean-drums.audio_frontend]
 stages = [{ type = "hpss_blend", component = "percussive", wet = 0.6 }]
 '''
     resolved = resolve_profile("clean-drums", parse_profiles_toml(text))
     assert resolved.backend == "drumscript"
-    assert resolved.detection["drum_profile"] == "drums-clean"
+    assert resolved.detection["drum_profile"] == "hpss"
     assert resolved.audio_frontend["stages"][0]["type"] == "hpss_blend"
 
 

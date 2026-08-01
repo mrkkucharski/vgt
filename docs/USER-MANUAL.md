@@ -218,7 +218,7 @@ full mix.
 
 | Target | Backend |
 | --- | --- |
-| `drums` | DrumScript with analysis-only gentle HPSS by default; explicit `default` opts out to the raw stem, and `drums-adtof` uses ADTOF |
+| `drums` | DrumScript on the raw stem by default (`raw`); `hpss` adds analysis-only gentle HPSS, and `adtof` uses ADTOF |
 | `bass` | pYIN, a monophonic pitch tracker (see [Bass](#pyin-bass) below) |
 | `guitar` | Basic Pitch with analysis-only harmonic HPSS by default; explicit `default` opts out to raw guitar |
 | `vocals`, `instrumental`, `backing`, `strings`, `piano`, `original` | Basic Pitch |
@@ -245,8 +245,8 @@ vgt analyze --transcribe bass --transcribe drums "Song.RPP"
   repeat it to select several. Current profiles are `default`, `guitar`,
   `bass`, `bass-pyin`, `bass-basic-pitch`, `bass-monophonic`, `vocals`,
   `guitar-acoustic`, `guitar-harmonic`, and (for `drums`)
-  `drums-clean`, `drums-hpss-gentle`, and `drums-adtof`. For example, `vgt analyze --mode guitar=guitar-acoustic
-  "Song.RPP"` or `vgt analyze --mode drums=drums-clean "Song.RPP"` (see
+  `raw`, `hpss`, and `adtof`. For example, `vgt analyze --mode guitar=guitar-acoustic
+  "Song.RPP"` or `vgt analyze --mode drums=hpss "Song.RPP"` (see
   [DrumScript](#drumscript-drums) below). A stale mode from an older sidecar
   safely falls back to the target default, but a profile named explicitly on
   the command line must be valid.
@@ -345,11 +345,13 @@ Processed-input variants appear as muted `[vgt] … Analysis … (Audio)` tracks
 beside their MIDI in REAPER. They are experimental candidates, never a replacement
 for the raw stem.
 
-Drum transcription uses the built-in `drums-hpss-gentle` profile by default:
-it blends 35% percussive HPSS into an analysis-only WAV and applies the existing
-`drums-clean` event cleanup. The raw `stems/drums.wav` is never changed. Opt out
-for a raw-stem DrumScript run with `--mode drums=default`, or create a raw
-comparison variant with `--profile default`.
+Drum transcription uses the built-in `raw` profile by default and feeds the
+unaltered `stems/drums.wav` to DrumScript. The optional `hpss` profile blends
+35% percussive HPSS into an analysis-only WAV and applies conservative event
+cleanup; it never changes the stem. `adtof` selects the alternative ADTOF
+backend. Older sidecars using `default`, `drums-clean`, `drums-hpss-gentle`, or
+`drums-adtof` remain readable, but status and newly created variants use the
+canonical names `raw`, `hpss`, and `adtof`.
 
 Guitar transcription likewise uses `guitar-harmonic` by default: 50% harmonic
 HPSS feeds an analysis-only WAV into the acoustic-clean profile. The raw guitar
@@ -534,21 +536,24 @@ estimate, so its "absolute seconds" begin at the item edge rather than at the
 song's first beat and drift from there. vgt moves each event to the nearest
 line of the analyzed grid, at the subdivision the backend was using, which is
 what makes the reference MIDI line up with the beat from the first bar to the
-last. If tempo analysis has not run, or the two grids cannot be matched
-confidently, DrumScript's own times are used unchanged. Because the beat grid
-is an input to the result, re-running tempo analysis re-transcribes the drums
+last. If no trustworthy beat array remains after a manually corrected tempo
+map is synchronized, vgt instead detects whether DrumScript returned a
+uniformly quantized clock and moves its slots to strong nearby audio onsets.
+Unquantized events and weak or ambiguous evidence remain unchanged. If neither
+alignment path is trustworthy, DrumScript's own times are used unchanged.
+Because the beat grid is an input to the result, re-running tempo analysis re-transcribes the drums
 rather than reusing MIDI aligned to the old grid.
 
-An opt-in **`drums-clean`** profile is also available:
+The optional **`hpss`** profile is also available:
 
 ```sh
-vgt analyze --mode drums=drums-clean "Song.RPP"
-# or, to retain default and clean side by side:
-vgt transcription variant add drums --name raw --profile default "Song.RPP"
-vgt transcription variant add drums --name clean --profile drums-clean "Song.RPP"
+vgt analyze --mode drums=hpss "Song.RPP"
+# or, to retain raw and HPSS side by side:
+vgt transcription variant add drums --name raw --profile raw "Song.RPP"
+vgt transcription variant add drums --name hpss --profile hpss "Song.RPP"
 ```
 
-`drums-clean` applies a small, conservative post-processing pass to
+`hpss` applies a small, conservative post-processing pass to
 DrumScript's raw events, all within fixed, documented bounds — it never
 assumes a repeated groove, a fixed number of hits per bar, or that a role
 from one measure should be copied to the next:
@@ -569,11 +574,11 @@ from one measure should be copied to the next:
 
 Both profiles have their own settings identity, cache, and artifacts, so
 retaining both (as in the second example above) costs one extra DrumScript
-run, not a rerun of the first. **Retain both and compare them**: `default`
+run, not a rerun of the first. **Retain both and compare them**: `raw`
 is DrumScript's unfiltered read and the more complete audit trail;
-`drums-clean` is easier to read at a glance but, like any automatic cleanup,
+`hpss` is easier to read at a glance but, like any automatic cleanup,
 can occasionally suppress or nudge something a human ear would have kept.
-Neither is authoritative. `vgt transcription profile show drums-clean
+Neither is authoritative. `vgt transcription profile show hpss
 "Song.RPP"` prints its exact windows/thresholds; the generated
 `transcription/drums/<variant-id>.json` for a clean variant records, per
 note, its raw DrumScript time/instrument alongside the cleanup decision
@@ -590,8 +595,8 @@ candidate:
 
 ```sh
 # Keep the default DrumScript candidate and add ADTOF beside it.
-vgt transcription variant add drums --name baseline --profile default "Song.RPP"
-vgt transcription variant add drums --name adtof --profile drums-adtof "Song.RPP"
+vgt transcription variant add drums --name baseline --profile raw "Song.RPP"
+vgt transcription variant add drums --name adtof --profile adtof "Song.RPP"
 ```
 
 ADTOF runs its pinned Torch model in an isolated, pre-fetched environment,

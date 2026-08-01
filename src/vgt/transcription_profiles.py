@@ -57,7 +57,8 @@ from .transcribe import (
     VALID_TARGETS,
     _bar_duration_seconds,  # noqa: SLF001 -- reuses the same bars->seconds conversion `default_spec_for_target` applies
     _INSTRUMENT_PROFILES,  # noqa: SLF001 -- this module is transcribe.py's one intended reader of the builtin registry
-    DRUM_TRANSCRIPTION_PROFILE_NAMES,
+    canonical_drum_profile_name,
+    valid_profile_names_for_target as builtin_profile_names_for_target,
     drum_transcription_profile,
 )
 from .audio_frontend import AudioFrontendError, canonical_recipe
@@ -429,11 +430,14 @@ def resolve_profile(name: str, project_profiles: Mapping[str, RawProfileDefiniti
     definitions = project_profiles or {}
 
     if name not in definitions:
-        if name in DRUM_TRANSCRIPTION_PROFILE_NAMES and name != "default":
-            drum = drum_transcription_profile({"drums": name})
+        # ``default`` is a shared cross-target profile name here; the drum
+        # compatibility alias is resolved only where the target is known.
+        if name in builtin_profile_names_for_target("drums") and name != "default":
+            canonical_name = canonical_drum_profile_name(name)
+            drum = drum_transcription_profile({"drums": canonical_name})
             return ResolvedProfile(
-                name=name, target="drums", backend=drum.backend,
-                detection={"drum_profile": name}, cleanup=(),
+                name=canonical_name, target="drums", backend=drum.backend,
+                detection={"drum_profile": canonical_name}, cleanup=(),
                 audio_frontend=dict(drum.audio_frontend), is_builtin=True,
                 profile_definition_hash=None,
             )
@@ -463,7 +467,8 @@ def resolve_profile(name: str, project_profiles: Mapping[str, RawProfileDefiniti
         chain.append(defn)
         current = defn.extends
 
-    if current in DRUM_TRANSCRIPTION_PROFILE_NAMES:
+    if current in builtin_profile_names_for_target("drums"):
+        current = canonical_drum_profile_name(current)
         target = chain[0].target
         if target != "drums" or any(defn.target != "drums" for defn in chain):
             _fail(f"drum profile {current!r} may only be extended by a drums profile")

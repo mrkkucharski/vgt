@@ -134,41 +134,43 @@ def _init_project_with_bass(tmp_path: Path) -> Path:
     return project
 
 
-def test_drums_clean_profile_is_listed_shown_and_distinct_from_default(tmp_path: Path, capsys) -> None:
+def test_canonical_drum_profiles_are_listed_and_shown(tmp_path: Path, capsys) -> None:
     project = _init_project(tmp_path)
 
     assert main(["transcription", "profile", "list", str(project)]) == 0
     listing = capsys.readouterr().out
-    assert "drums-clean (builtin, drums)" in listing
-    assert "drums-hpss-gentle (builtin, drums)" in listing
+    assert "raw (builtin, drums)" in listing
+    assert "hpss (builtin, drums)" in listing
+    assert "adtof (builtin, drums)" in listing
+    assert "drums-hpss-gentle" not in listing
 
-    assert main(["transcription", "profile", "show", "drums-clean", str(project)]) == 0
+    assert main(["transcription", "profile", "show", "raw", str(project)]) == 0
     shown = json.loads(capsys.readouterr().out)
-    assert shown["name"] == "drums-clean"
+    assert shown["name"] == "raw"
     assert shown["target"] == "drums"
     assert shown["is_builtin"] is True
-    assert shown["enabled"] is True
+    assert shown["backend"] == "drumscript"
 
-    assert main(["transcription", "profile", "show", "drums-hpss-gentle", str(project)]) == 0
+    assert main(["transcription", "profile", "show", "hpss", str(project)]) == 0
     gentle = json.loads(capsys.readouterr().out)
-    assert gentle["name"] == "drums-hpss-gentle"
+    assert gentle["name"] == "hpss"
     assert gentle["audio_frontend"]["stages"][0]["wet"] == 0.35
 
 
-def test_mode_drums_equals_drums_clean_is_accepted_and_persisted(tmp_path: Path, capsys) -> None:
+def test_mode_drums_equals_hpss_is_accepted_and_persisted(tmp_path: Path, capsys) -> None:
     project = _init_project_with_drums(tmp_path)
 
     assert main([
-        "analyze", "--mode", "drums=drums-clean", str(project),
+        "analyze", "--mode", "drums=hpss", str(project),
     ]) == 0
     capsys.readouterr()
 
     modes = read_sidecar(project)["analysis"]["transcription"]["modes"]
-    assert modes["drums"] == "drums-clean"
+    assert modes["drums"] == "hpss"
 
     assert main(["status", "--json", str(project)]) == 0
     status = json.loads(capsys.readouterr().out)
-    assert status["transcription"]["targets"]["drums"]["effective_profile"] == "drums-clean"
+    assert status["transcription"]["targets"]["drums"]["effective_profile"] == "hpss"
 
 
 def test_mode_drums_equals_unknown_profile_is_rejected(tmp_path: Path, capsys) -> None:
@@ -178,38 +180,38 @@ def test_mode_drums_equals_unknown_profile_is_rejected(tmp_path: Path, capsys) -
     assert "profile for 'drums'" in capsys.readouterr().err
 
 
-def test_variant_add_target_drums_profile_drums_clean_writes_channel_10_midi(tmp_path: Path, capsys) -> None:
+def test_variant_add_target_drums_profiles_write_channel_10_midi(tmp_path: Path, capsys) -> None:
     from vgt.transcribe import _midi_has_non_percussion_notes
 
     project = _init_project_with_drums(tmp_path)
 
     assert main([
         "transcription", "variant", "add", "drums",
-        "--name", "clean", "--profile", "drums-clean", str(project),
+        "--name", "hpss", "--profile", "hpss", str(project),
     ]) == 0
     clean = json.loads(capsys.readouterr().out)
     assert clean["status"] == "transcribed"
-    assert clean["effective_profile"] == "drums-clean"
+    assert clean["effective_profile"] == "hpss"
 
     assert main([
         "transcription", "variant", "add", "drums",
-        "--name", "raw", "--profile", "default", str(project),
+        "--name", "raw", "--profile", "raw", str(project),
     ]) == 0
     raw = json.loads(capsys.readouterr().out)
     assert raw["settings_hash"] != clean["settings_hash"]
 
     assert main([
         "transcription", "variant", "add", "drums",
-        "--name", "gentle", "--profile", "drums-hpss-gentle", str(project),
+        "--name", "legacy", "--profile", "drums-hpss-gentle", str(project),
     ]) == 0
     gentle = json.loads(capsys.readouterr().out)
-    assert gentle["effective_profile"] == "drums-hpss-gentle"
+    assert gentle["effective_profile"] == "hpss"
     assert gentle["audio_frontend"]["stages"][0]["wet"] == 0.35
     assert gentle["analysis_audio_file"].startswith("transcription/cache/audio-frontends/")
 
     namespace_dir = project.parent / "vgt" / read_sidecar(project)["analysis"]["stems"]["artifact_namespace"]
     clean_id = next(
-        vid for vid, v in _variants(project, "drums")["variants"].items() if v["label"] == "clean"
+        vid for vid, v in _variants(project, "drums")["variants"].items() if v["label"] == "hpss"
     )
     midi_path = namespace_dir / "transcription" / "drums" / f"{clean_id}.mid"
     assert not _midi_has_non_percussion_notes(midi_path.read_bytes())
