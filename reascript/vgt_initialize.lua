@@ -1321,6 +1321,10 @@ local function valid_analysis_audio(record, artifact_namespace)
   return path
 end
 
+-- Forward declaration: analysis-audio variants are defined before the MIDI
+-- helpers, while the target lookup is shared with those helpers below.
+local transcription_definition
+
 local function add_analysis_audio_variant(index, target, variant_id, variant, reference_start, managed_tracks, artifact_namespace)
   local path = valid_analysis_audio(variant, artifact_namespace)
   if not path then return index end
@@ -1358,7 +1362,7 @@ local function set_take_ignores_project_tempo(item, midi_tempo)
   return reaper.SetItemStateChunk(item, new_chunk, false)
 end
 
-local function transcription_definition(target)
+transcription_definition = function(target)
   local definition = nil
   for _, candidate in ipairs(TRANSCRIPTION_TARGETS) do
     if candidate.target == target then definition = candidate break end

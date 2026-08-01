@@ -1443,6 +1443,14 @@ def test_transcription_import_source_and_opt_in_verifier_are_present() -> None:
     assert TRANSCRIPTION_VERIFY_SCRIPT.is_file()
 
 
+def test_analysis_audio_variant_has_target_lookup_in_scope() -> None:
+    """Lua locals begin scope at their declaration, so this must be forward-declared."""
+    script = APPLY_SCRIPT.read_text()
+    forward = script.index("local transcription_definition\n\nlocal function add_analysis_audio_variant")
+    lookup = script.index("transcription_definition = function(target)")
+    assert forward < lookup
+
+
 def test_variant_transcriptions_import_in_order_with_neutral_color(tmp_path: Path) -> None:
     """Retained variants are peers (#176 removed selection): every imported
     variant track gets no custom color, regardless of any leftover
