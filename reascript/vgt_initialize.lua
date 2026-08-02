@@ -1031,14 +1031,25 @@ local function add_key_track(index, key, reference_start, reference_end, managed
   managed_tracks[#managed_tracks + 1] = key_track
 end
 
--- Imports the rendered click WAV (analysis.tempo.value.click_artifact_path,
--- a filename under the project's vgt/<namespace>/ folder) as a muted audio track, so
--- it never surprises the user with playback -- unlike Beats/Chords, which
--- are read rather than heard, this one only needs to exist for the user to
--- unmute it. Absent gracefully if `vgt analyze` has not produced the
--- artifact yet, or if no namespace has been recorded yet.
-local function add_click_track(index, tempo, reference_start, managed_tracks, artifact_namespace)
-  local filename = tempo.click_artifact_path
+-- Imports the rendered click WAV (a filename under the project's
+-- vgt/<namespace>/ folder) as a muted audio track, so it never surprises the
+-- user with playback -- unlike Beats/Chords, which are read rather than
+-- heard, this one only needs to exist for the user to unmute it. Absent
+-- gracefully if `vgt analyze` has not produced the artifact yet, or if no
+-- namespace has been recorded yet.
+--
+-- The click WAV is rendered once by `vgt analyze` against the detected beat
+-- grid and is never touched by the REAPER tempo-map sync action, which
+-- writes a wholesale-replaced `value` (see vgt_sync_tempo_map.lua) carrying
+-- no `click_artifact_path` of its own. So `value` is checked first for a
+-- human-corrected click artifact, but `detected` -- the machine baseline,
+-- which stays live independent of any human correction -- is always the
+-- fallback, rather than letting a tempo-map sync silently make this track
+-- disappear.
+local function add_click_track(index, tempo_stage, reference_start, managed_tracks, artifact_namespace)
+  local value = type(tempo_stage.value) == "table" and tempo_stage.value or nil
+  local detected = type(tempo_stage.detected) == "table" and tempo_stage.detected or nil
+  local filename = (value and value.click_artifact_path) or (detected and detected.click_artifact_path)
   if not filename or filename == "" then return end
   if not artifact_namespace or artifact_namespace == "" then return end
   local click_path = project_dir() .. "vgt/" .. tostring(artifact_namespace) .. "/" .. tostring(filename)
@@ -1493,7 +1504,7 @@ local function apply()
   end
 
   if type(tempo) == "table" then
-    add_click_track(reaper.CountTracks(0), tempo, reference_start, managed_tracks, artifact_namespace)
+    add_click_track(reaper.CountTracks(0), analysis.tempo, reference_start, managed_tracks, artifact_namespace)
   end
 
   -- `value`, rather than `detected`, intentionally displays the effective
