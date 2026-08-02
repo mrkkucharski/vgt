@@ -984,7 +984,13 @@ local function warn_if_tempo_disagrees(tempo, reference_start, reference_end)
   end
 end
 
-local function add_beat_items(track, tempo, reference_start, reference_end)
+-- `fallback_phase_seconds`, when the tempo carries neither a `beat_times`
+-- array nor its own `downbeat_offset_seconds`, anchors the synthesized grid
+-- instead of defaulting to the reference start. A REAPER tempo-map sync
+-- (vgt_sync_tempo_map.lua) never records phase -- it captures only bpm and
+-- time-signature spans -- so without this, every synced tempo silently
+-- claims the reference start is beat 1, which is only true by coincidence.
+local function add_beat_items(track, tempo, reference_start, reference_end, fallback_phase_seconds)
   if type(tempo.beat_times) == "table" then
     for beat, offset in ipairs(tempo.beat_times) do
       local time = reference_start + (tonumber(offset) or -1)
@@ -999,7 +1005,8 @@ local function add_beat_items(track, tempo, reference_start, reference_end)
   local bpm = tonumber(tempo.bpm)
   if not bpm or bpm <= 0 or reference_end <= reference_start then return end
   local interval = 60 / bpm
-  local time = reference_start + (tonumber(tempo.downbeat_offset_seconds) or 0)
+  local phase = tonumber(tempo.downbeat_offset_seconds) or fallback_phase_seconds or 0
+  local time = reference_start + phase
   while time > reference_start do time = time - interval end
   local beat = 1
   while time < reference_end do
@@ -1009,11 +1016,36 @@ local function add_beat_items(track, tempo, reference_start, reference_end)
   end
 end
 
-local function offer_beats_track(index, tempo, reference_start, reference_end, managed_tracks)
+-- `tempo_stage` is the full `analysis.tempo` table (`value` plus `detected`),
+-- not just `value`: `value` is what a REAPER tempo-map sync wholesale-writes
+-- and it carries no per-beat timing of its own, only an averaged bpm (see
+-- add_beat_items above). Real performances drift from a perfectly constant
+-- bpm, so synthesizing an evenly-spaced grid off that single average slowly
+-- diverges from the audio over the length of the reference. `detected`'s
+-- exact per-beat timestamps -- the same array the Click audio was rendered
+-- from, and the machine baseline that stays live independent of any human
+-- correction -- avoid that drift entirely, so they are reused wholesale
+-- whenever `value` doesn't supply its own beat_times. If `detected` has no
+-- beat_times either, its downbeat_offset_seconds anchors the constant-bpm
+-- fallback instead of defaulting to the reference start.
+local function offer_beats_track(index, tempo_stage, reference_start, reference_end, managed_tracks)
+  local value = type(tempo_stage.value) == "table" and tempo_stage.value or {}
+  local detected = type(tempo_stage.detected) == "table" and tempo_stage.detected or nil
+  local tempo = value
+  local fallback_phase = nil
+  if type(value.beat_times) ~= "table" and detected then
+    if type(detected.beat_times) == "table" then
+      tempo = {}
+      for key, field_value in pairs(value) do tempo[key] = field_value end
+      tempo.beat_times = detected.beat_times
+    else
+      fallback_phase = tonumber(detected.downbeat_offset_seconds)
+    end
+  end
   -- This is an item-label-only track, so it does not need muting. Keeping it
   -- unmuted ensures its beat labels remain readable in REAPER.
   local beats = add_locked_track(index, BEATS_NAME, false, "beats")
-  add_beat_items(beats, tempo, reference_start, reference_end)
+  add_beat_items(beats, tempo, reference_start, reference_end, fallback_phase)
   managed_tracks[#managed_tracks + 1] = beats
 end
 
@@ -1499,7 +1531,7 @@ local function apply()
   if type(tempo) == "table" and tonumber(tempo.bpm) then
     -- The analyzed grid is always presented as an owned label track. It must
     -- never claim the user's project ruler or create measure/tempo markers.
-    offer_beats_track(insert_at + 1, tempo, reference_start, reference_end, managed_tracks)
+    offer_beats_track(insert_at + 1, analysis.tempo, reference_start, reference_end, managed_tracks)
     warn_if_tempo_disagrees(tempo, reference_start, reference_end)
   end
 

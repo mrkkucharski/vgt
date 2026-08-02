@@ -464,7 +464,7 @@ def test_phase1_apply_reads_analysis_and_uses_only_reaper_api() -> None:
     assert "managed[region_id]" in script
     assert "reaper.DeleteProjectMarker(0, region_id, true)" in script
     assert '"managed_region_ids"' in script
-    assert "offer_beats_track(insert_at + 1, tempo" in script
+    assert "offer_beats_track(insert_at + 1, analysis.tempo" in script
     assert "type(tempo.beat_times) == \"table\"" in script
 
 
@@ -473,10 +473,75 @@ def test_beats_and_chords_tracks_are_both_unmuted() -> None:
     # Both are item-label-only tracks with no audio, so muting them would
     # only make their labels unreadable in REAPER (issue #41 regression).
     assert 'reaper.SetMediaTrackInfo_Value(track, "B_MUTE", muted and 1 or 0)' in script
-    assert "local function offer_beats_track(index, tempo, reference_start, reference_end, managed_tracks)" in script
+    assert "local function offer_beats_track(index, tempo_stage, reference_start, reference_end, managed_tracks)" in script
     assert 'local beats = add_locked_track(index, BEATS_NAME, false, "beats")' in script
-    assert "offer_beats_track(insert_at + 1, tempo, reference_start, reference_end, managed_tracks)" in script
+    assert "offer_beats_track(insert_at + 1, analysis.tempo, reference_start, reference_end, managed_tracks)" in script
     assert 'add_locked_track(reaper.CountTracks(0), CHORDS_NAME, false, "chords")' in script
+
+
+def test_add_beat_items_anchors_on_the_given_fallback_phase_when_the_tempo_has_none_of_its_own() -> None:
+    script = APPLY_SCRIPT.read_text()
+    helpers_end = script.index("local function remove_previous_managed_regions()")
+    lua_program = "\n".join(
+        [
+            _click_track_lua_mock(Path("song.RPP")),
+            script[:helpers_end],
+            "local track = {}",
+            "reaper.InsertTrackAtIndex(0, true)",
+            "track = reaper.GetTrack(0, 0)",
+            "add_beat_items(track, {bpm = 120}, 10, 14, 0.2)",
+            "local item = __items[1]",
+            "io.write(item.values.D_POSITION, ':', item.notes)",
+        ]
+    )
+    result = subprocess.run([LUA, "-", "song.RPP"], input=lua_program, text=True, capture_output=True, check=True)
+    assert result.stdout == "10.2:Beat 2"
+
+
+def test_offer_beats_track_falls_back_to_detected_beat_times_when_a_reaper_tempo_map_sync_replaced_value() -> None:
+    """A REAPER tempo-map sync (vgt_sync_tempo_map.lua) wholesale-replaces `value`
+    with a fresh table that carries only an averaged bpm, no per-beat timing. A real
+    performance drifts from a perfectly constant bpm, so the exact `detected.beat_times`
+    array -- the same one the Click audio was rendered from -- must be reused wholesale
+    rather than re-synthesizing an evenly-spaced (and therefore drifting) grid."""
+    script = APPLY_SCRIPT.read_text()
+    helpers_end = script.index("local function remove_previous_managed_regions()")
+    lua_program = "\n".join(
+        [
+            _click_track_lua_mock(Path("song.RPP")),
+            script[:helpers_end],
+            "local managed_tracks = {}",
+            "local tempo_stage = {value = {bpm = 120, mode = 'constant', spans = {}, source = 'reaper-tempo-map'},"
+            " detected = {beat_times = {0.2, 0.7, 1.2}}}",
+            "offer_beats_track(0, tempo_stage, 10, 14, managed_tracks)",
+            "local item = __items[1]",
+            "io.write(item.values.D_POSITION, ':', item.notes, ':', #managed_tracks)",
+        ]
+    )
+    result = subprocess.run([LUA, "-", "song.RPP"], input=lua_program, text=True, capture_output=True, check=True)
+    assert result.stdout == "10.2:Beat 1:1"
+
+
+def test_offer_beats_track_falls_back_to_detected_downbeat_offset_when_no_beat_times_are_cached() -> None:
+    """When `detected` itself has no beat_times cached (e.g. a legacy sidecar),
+    its downbeat_offset_seconds still anchors the constant-bpm grid rather than
+    defaulting to the reference start."""
+    script = APPLY_SCRIPT.read_text()
+    helpers_end = script.index("local function remove_previous_managed_regions()")
+    lua_program = "\n".join(
+        [
+            _click_track_lua_mock(Path("song.RPP")),
+            script[:helpers_end],
+            "local managed_tracks = {}",
+            "local tempo_stage = {value = {bpm = 120, mode = 'constant', spans = {}, source = 'reaper-tempo-map'},"
+            " detected = {downbeat_offset_seconds = 0.2}}",
+            "offer_beats_track(0, tempo_stage, 10, 14, managed_tracks)",
+            "local item = __items[1]",
+            "io.write(item.values.D_POSITION, ':', item.notes, ':', #managed_tracks)",
+        ]
+    )
+    result = subprocess.run([LUA, "-", "song.RPP"], input=lua_program, text=True, capture_output=True, check=True)
+    assert result.stdout == "10.2:Beat 2:1"
 
 
 def test_key_display_uses_the_effective_value_as_an_editable_unmuted_label() -> None:
