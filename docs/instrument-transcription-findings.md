@@ -17,7 +17,9 @@ a given instrument, and why* — the accumulated per-instrument knowledge.
 | `guitar` (acoustic) | Basic Pitch | `guitar-acoustic-clean` / `-detail` / `-strict-chords` | Yes — one acoustic stem, three rounds | [guitar-transcription-findings.md](guitar-transcription-findings.md) |
 | `guitar` (electric) | Basic Pitch | `guitar` | **No** — deliberately left at shared defaults | see guitar findings, "Changes applied" §1 |
 | `guitar` (strum onsets) | Classical onset candidates (evaluation only) | — | **Rejected** — best 7Rivers F1 24.0%, precision 17.1%; no variant shipped | [strum-transcription-findings.md](strum-transcription-findings.md) |
+| `guitar` (MT3 alternative) | MT3, opt-in | `guitar-mt3` | Yes — one 7Rivers run: no sustain runaway, chord-tone agreement 94.4% (vs. clean default's 68.4%), but heavy fragmentation (1228 of 1804 notes) | [guitar-transcription-findings.md](guitar-transcription-findings.md), "MT3 alternative" |
 | `bass` | **pYIN** (monophonic tracker) + re-articulation split | `bass` / `bass-pyin`; `bass-basic-pitch`, `bass-monophonic` retained for comparison | Yes — one 7Rivers stem: frame F 78.9%, octave errors 10.9%; **onset F 75.6% against a 272-note full-length hand annotation** (57.1% before splitting); earlier Basic Pitch experiments retained as evidence | [bass-transcription-findings.md](bass-transcription-findings.md) |
+| `bass` (MT3 alternative) | MT3, opt-in | `bass-mt3` | Yes — one 7Rivers run: frame F **0.0%**, output pitch range (47–58) entirely above the reference's 99th percentile (44) — a clear instrument-leakage failure on this stem, not recommended | [bass-transcription-findings.md](bass-transcription-findings.md), "MT3 alternative" |
 | `drums` | DrumScript (`raw` default, optional `hpss`), ADTOF (`adtof`) | `raw`, `hpss`, `adtof` | Yes — IDMT-SMT-Drums corpus + real-stem timing study | [drumscript-evaluation-findings.md](drumscript-evaluation-findings.md), [drums-transcription-timing-findings.md](drums-transcription-timing-findings.md), [drums-clean-profile.md](drums-clean-profile.md), [adtof-phase-0-feasibility-findings.md](adtof-phase-0-feasibility-findings.md) |
 | `vocals` | Basic Pitch | `vocals` | **No** — frequency window only | — |
 | `piano`, `strings`, `instrumental`, `backing`, `original` | Basic Pitch | `default` | **No** — full-range defaults | — |
@@ -89,6 +91,20 @@ every instrument.** `clamp_sustain` must precede anything that resolves overlaps
 or counts voices, because a runaway drone otherwise dominates the decision.
 Moving it across `force_monophony` swung bass accuracy ~20 points; the same
 mistake in the guitar pipeline re-created a 7.1 s note under a 4 s clamp.
+
+**7. A multi-instrument model's "first output track" is not the same claim as
+"the requested instrument."** MT3 (`guitar-mt3`/`bass-mt3`, see the guitar and
+bass findings' "MT3 alternative" sections) writes every instrument it detects
+as separate MIDI tracks with no reliable identifying metadata, so selecting
+"the first note-bearing track" is a structural rule, not a content guarantee.
+Measured on one 7Rivers run: guitar's first track landed in a plausible
+register with higher chord-tone agreement than the shipped default (94.4% vs.
+68.4%), while bass's landed an octave-plus above the actual part and scored
+0.0% frame-level F against the same reference the pYIN default scores 78.9%
+on. Same backend, same selection rule, opposite outcome by instrument and by
+song — a single measured run says nothing about which case a *different* song
+would land in. Treat any first-track selection from a multi-instrument model
+as unverified per instrument, per stem, until measured.
 
 ## Method
 

@@ -1,5 +1,5 @@
 {
-  "schema_version": 17,
+  "schema_version": 18,
   "analysis": {
     "tempo": {
       "value": {
@@ -369,7 +369,8 @@
           176.074667,
           176.565333,
           177.066667
-        ]
+        ],
+        "downbeat_source": null
       },
       "input_hash": "56d74f78a001ce60d5beabc7c561a3bf3dd4c2e6a03a8a2ddc7ca68e120f3f91",
       "settings_hash": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a",
@@ -743,7 +744,8 @@
           176.074667,
           176.565333,
           177.066667
-        ]
+        ],
+        "downbeat_source": null
       },
       "detected_input_hash": "56d74f78a001ce60d5beabc7c561a3bf3dd4c2e6a03a8a2ddc7ca68e120f3f91",
       "detected_settings_hash": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
@@ -2792,13 +2794,71 @@
               "last_event_s": null,
               "transcribed_at": "2026-07-26T14:43:43.153070Z",
               "error": null
+            },
+            "316c4bf8": {
+              "label": "mt3",
+              "requested_profile": "guitar-mt3",
+              "profile_definition_hash": null,
+              "effective_profile": "guitar-mt3",
+              "backend": "mt3",
+              "package_pin": null,
+              "serialization": null,
+              "source_role": "guitar",
+              "settings_hash": "6d581371079359c5fbf263dad6b48b3c4b3343cfa73f78ea3d62d46e4c254124",
+              "resolved_settings": {
+                "detection": {
+                  "repository": "https://github.com/mrkkucharski/mt3.git",
+                  "tag": "v0.1.1",
+                  "commit": "36c9d1bfdc8f432376c1ca303cb965e71ef297d6",
+                  "runtime_version": "python==3.11",
+                  "lock_sha256": "5cf925749b767ebb8924ac4eca9475ab7d8accf5b45e9a1668a61697ff2f1e9f",
+                  "model_id": "official-multitrack-v1",
+                  "track_selection_version": 1,
+                  "note_normalization_version": 1
+                },
+                "cleanup": [],
+                "audio_frontend": {
+                  "stages": []
+                }
+              },
+              "midi_tempo": 120.004,
+              "audio_frontend": {
+                "stages": []
+              },
+              "input_hash": "2e75322e4c63ea0f0e54fbad34d81537ee1dec475cb481a151bc10a0cde7669d",
+              "detection_hash": "04c09b9f36ffb59e9fa78985b36253d640f509f70aa2f86ae1e85326ac179770",
+              "raw_notes_hash": "23cc0f3502f1fd2a9342f69a4b3fcf71d4130b5f4e4583e0707492d6b320d219",
+              "cleanup_hash": "1764575f5396df6feb37d0b1ebd639800071d7fd31d4a824177c08ad6827538b",
+              "status": "transcribed",
+              "midi_file": "transcription/guitar/316c4bf8.mid",
+              "notes_file": "transcription/guitar/316c4bf8.csv",
+              "events_file": null,
+              "note_count": 1804,
+              "event_count": null,
+              "instrument_counts": null,
+              "pitch_range_midi": [
+                34,
+                70
+              ],
+              "first_note_s": 0.059091,
+              "last_note_s": 178.170455,
+              "max_note_duration_s": 2.411363999999992,
+              "max_simultaneous_voices": 8,
+              "first_event_s": null,
+              "last_event_s": null,
+              "transcribed_at": "2026-08-03T13:16:51.441003Z",
+              "error": null,
+              "source_input_hash": "2e75322e4c63ea0f0e54fbad34d81537ee1dec475cb481a151bc10a0cde7669d",
+              "analysis_input_hash": "2e75322e4c63ea0f0e54fbad34d81537ee1dec475cb481a151bc10a0cde7669d",
+              "analysis_audio_file": null
             }
           },
           "variant_order": [
             "ca81e27f",
             "3451a5ba",
             "fe9c3b21",
-            "0148ccb0"
+            "0148ccb0",
+            "316c4bf8"
           ],
           "discarded_variants": []
         },
@@ -2842,10 +2902,68 @@
               "last_event_s": null,
               "transcribed_at": "2026-07-30T11:36:37.126510Z",
               "error": null
+            },
+            "358f0346": {
+              "label": "mt3",
+              "requested_profile": "bass-mt3",
+              "profile_definition_hash": null,
+              "effective_profile": "bass-mt3",
+              "backend": "mt3",
+              "package_pin": null,
+              "serialization": null,
+              "source_role": "bass",
+              "settings_hash": "6d581371079359c5fbf263dad6b48b3c4b3343cfa73f78ea3d62d46e4c254124",
+              "resolved_settings": {
+                "detection": {
+                  "repository": "https://github.com/mrkkucharski/mt3.git",
+                  "tag": "v0.1.1",
+                  "commit": "36c9d1bfdc8f432376c1ca303cb965e71ef297d6",
+                  "runtime_version": "python==3.11",
+                  "lock_sha256": "5cf925749b767ebb8924ac4eca9475ab7d8accf5b45e9a1668a61697ff2f1e9f",
+                  "model_id": "official-multitrack-v1",
+                  "track_selection_version": 1,
+                  "note_normalization_version": 1
+                },
+                "cleanup": [],
+                "audio_frontend": {
+                  "stages": []
+                }
+              },
+              "midi_tempo": 120.004,
+              "audio_frontend": {
+                "stages": []
+              },
+              "input_hash": "d4d4fd91adaebcc19cd2ecd2b34c31a00db6421a2d2af00d730b279e67cfe698",
+              "detection_hash": "f97a940166f1e47a690fd5f8ba400264e25c3cd9378c13b95a9ff361a7803eea",
+              "raw_notes_hash": "cad631298a6ed12d479af5361d49909d7b26d1b834e9d9d5681f642270fed897",
+              "cleanup_hash": "d75cdecf00cdb4a562effd94acc95044867fb9ffe249df4d9a905d365cedb2f0",
+              "status": "transcribed",
+              "midi_file": "transcription/bass/358f0346.mid",
+              "notes_file": "transcription/bass/358f0346.csv",
+              "events_file": null,
+              "note_count": 131,
+              "event_count": null,
+              "instrument_counts": null,
+              "pitch_range_midi": [
+                47,
+                58
+              ],
+              "first_note_s": 0.079545,
+              "last_note_s": 161.790909,
+              "max_note_duration_s": 4.361364000000009,
+              "max_simultaneous_voices": 2,
+              "first_event_s": null,
+              "last_event_s": null,
+              "transcribed_at": "2026-08-03T13:17:51.624835Z",
+              "error": null,
+              "source_input_hash": "d4d4fd91adaebcc19cd2ecd2b34c31a00db6421a2d2af00d730b279e67cfe698",
+              "analysis_input_hash": "d4d4fd91adaebcc19cd2ecd2b34c31a00db6421a2d2af00d730b279e67cfe698",
+              "analysis_audio_file": null
             }
           },
           "variant_order": [
-            "default-bass"
+            "default-bass",
+            "358f0346"
           ],
           "discarded_variants": []
         }
@@ -2882,12 +3000,66 @@
           "raw_notes_file": "transcription/cache/basic-pitch/fd372fc1cdf315adefa3d417042d5693651bd8c0c50837aae644ae3f002ba127/raw.csv",
           "raw_notes_hash": "1e6754aa2a3e155becc557ebb21645b7f054641df22d1a0226f976ac50f0ddc3",
           "created_at": "2026-07-30T11:36:37.124663Z"
+        },
+        "04c09b9f36ffb59e9fa78985b36253d640f509f70aa2f86ae1e85326ac179770": {
+          "target": "guitar",
+          "input_hash": "2e75322e4c63ea0f0e54fbad34d81537ee1dec475cb481a151bc10a0cde7669d",
+          "raw_midi_file": "transcription/cache/mt3/04c09b9f36ffb59e9fa78985b36253d640f509f70aa2f86ae1e85326ac179770/raw.mid",
+          "raw_notes_file": "transcription/cache/mt3/04c09b9f36ffb59e9fa78985b36253d640f509f70aa2f86ae1e85326ac179770/raw.csv",
+          "raw_notes_hash": "23cc0f3502f1fd2a9342f69a4b3fcf71d4130b5f4e4583e0707492d6b320d219",
+          "created_at": "2026-08-03T13:16:51.428608Z"
+        },
+        "f97a940166f1e47a690fd5f8ba400264e25c3cd9378c13b95a9ff361a7803eea": {
+          "target": "bass",
+          "input_hash": "d4d4fd91adaebcc19cd2ecd2b34c31a00db6421a2d2af00d730b279e67cfe698",
+          "raw_midi_file": "transcription/cache/mt3/f97a940166f1e47a690fd5f8ba400264e25c3cd9378c13b95a9ff361a7803eea/raw.mid",
+          "raw_notes_file": "transcription/cache/mt3/f97a940166f1e47a690fd5f8ba400264e25c3cd9378c13b95a9ff361a7803eea/raw.csv",
+          "raw_notes_hash": "cad631298a6ed12d479af5361d49909d7b26d1b834e9d9d5681f642270fed897",
+          "created_at": "2026-08-03T13:17:51.624084Z"
         }
       }
     }
   },
-  "generation": 215,
-  "managed_track_guids": ["{1F65DE19-8C36-684B-8D1C-CD92345F0D5A}", "{E931C410-0164-D346-AD20-86BA90D1D47D}", "{2C94F4B7-BD6E-254D-A94B-7F76C21C5D19}", "{DD7A64A9-AE8C-1645-8F71-D70EB066428A}", "{B2A0EF41-F407-D045-A2C8-E11EEE9E09C0}", "{3CE89FFA-108C-3E48-B2F2-187BA4C6D1D0}", "{BF462E8C-6A95-3F4D-A98B-17387DFB89EC}", "{F1CC55B4-2303-404F-92F3-AD6D262D465D}", "{A1C489C7-F8CB-7A40-9F42-EC5B31E336D3}", "{EC862A13-D7C5-3949-9707-B2EA5CDDCC23}", "{2CC78445-D4BE-B341-ACEE-448607833C9A}", "{04229709-4E62-4848-A3E9-A43F139273C9}", "{B56486EB-6CD1-E542-814C-C998E9B80F9B}", "{21E4D8EE-6677-164C-9046-DC7D53629B94}", "{E0CD6DB6-FC78-E040-8A0A-8A2E985BFB76}", "{A74E4EE2-3AD4-5E49-A0EE-AA4366F1A78E}", "{EA9692A2-237B-4443-A0C0-0B6DF094C364}", "{6506911F-03E0-FD40-9D1C-CCCCEB2CF789}", "{F70B388A-D6D7-C745-A819-0A9D0F2BEF44}"],
-  "managed_region_ids": [1, 2, 3, 4, 5, 6, 7, 8, 9],
-  "config": {"reference_track_name": "The Seven Rivers (Full March - 3_00)", "reference_track_guid": "{75418143-1F31-B548-B7D2-96815CB0297D}", "folder_name": "[vgt] The Seven Rivers (Full March - 3_00)", "tempo_map_applied": false, "tempo_map_fingerprint": "", "tempo_data_fingerprint": "", "guitar_type": "acoustic"}
+  "generation": 219,
+  "managed_track_guids": [
+    "{1F65DE19-8C36-684B-8D1C-CD92345F0D5A}",
+    "{E931C410-0164-D346-AD20-86BA90D1D47D}",
+    "{2C94F4B7-BD6E-254D-A94B-7F76C21C5D19}",
+    "{DD7A64A9-AE8C-1645-8F71-D70EB066428A}",
+    "{B2A0EF41-F407-D045-A2C8-E11EEE9E09C0}",
+    "{3CE89FFA-108C-3E48-B2F2-187BA4C6D1D0}",
+    "{BF462E8C-6A95-3F4D-A98B-17387DFB89EC}",
+    "{F1CC55B4-2303-404F-92F3-AD6D262D465D}",
+    "{A1C489C7-F8CB-7A40-9F42-EC5B31E336D3}",
+    "{EC862A13-D7C5-3949-9707-B2EA5CDDCC23}",
+    "{2CC78445-D4BE-B341-ACEE-448607833C9A}",
+    "{04229709-4E62-4848-A3E9-A43F139273C9}",
+    "{B56486EB-6CD1-E542-814C-C998E9B80F9B}",
+    "{21E4D8EE-6677-164C-9046-DC7D53629B94}",
+    "{E0CD6DB6-FC78-E040-8A0A-8A2E985BFB76}",
+    "{A74E4EE2-3AD4-5E49-A0EE-AA4366F1A78E}",
+    "{EA9692A2-237B-4443-A0C0-0B6DF094C364}",
+    "{6506911F-03E0-FD40-9D1C-CCCCEB2CF789}",
+    "{F70B388A-D6D7-C745-A819-0A9D0F2BEF44}"
+  ],
+  "managed_region_ids": [
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7,
+    8,
+    9
+  ],
+  "config": {
+    "reference_track_name": "The Seven Rivers (Full March - 3_00)",
+    "reference_track_guid": "{75418143-1F31-B548-B7D2-96815CB0297D}",
+    "folder_name": "[vgt] The Seven Rivers (Full March - 3_00)",
+    "tempo_map_applied": false,
+    "tempo_map_fingerprint": "",
+    "tempo_data_fingerprint": "",
+    "guitar_type": "acoustic"
+  }
 }

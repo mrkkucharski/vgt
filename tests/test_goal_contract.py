@@ -26,6 +26,7 @@ from vgt.transcribe import (
     DRUMSCRIPT_INSTRUMENTS,
     DrumScriptSpec,
     FakeAdtofTranscriber,
+    FakeMt3Transcriber,
     FakeTranscriber,
     TargetTranscriberRouter,
     TranscriptionResult,
@@ -1585,6 +1586,68 @@ def test_goal_contract_retains_and_discards_adtof_beside_drumscript_offline(
     assert baseline_path.read_bytes() == baseline_bytes
     assert not (namespace / alternative["midi_file"]).exists()
     assert not any(name == "torch" or name.startswith("torch.") for name in sys.modules)
+
+
+def test_goal_contract_retains_and_discards_mt3_beside_the_default_guitar_and_bass_profiles(
+    tmp_path: Path, deterministic_detectors: None,
+) -> None:
+    """guitar-mt3/bass-mt3 (issue #288) are peer, opt-in lifecycles: adding or
+    discarding one never touches the existing default variant's artifact or
+    identity, and no profile falls back to another backend on failure."""
+    assert not any(name == "tensorflow" or name.startswith("tensorflow.") for name in sys.modules)
+    assert not any(name == "jax" or name.startswith("jax.") for name in sys.modules)
+    project = _copy_project(tmp_path)
+    state = _lua_state(project)
+    state, _ = _run_apply(project, state)
+    separate(project, CountingSeparator(), guitar_type="electric")
+
+    router = TargetTranscriberRouter(
+        basic_pitch=CountingTranscriber(), drumscript=CountingTranscriber(),
+        pyin=CountingPyinTranscriber(), mt3=FakeMt3Transcriber(),
+    )
+    guitar_default = add_variant(project, "guitar", label="default", profile="default", router=router)
+    bass_default = add_variant(project, "bass", label="default", profile="default", router=router)
+    sidecar = read_sidecar(project)
+    namespace = artifact_namespace_dir(project, sidecar["analysis"]["stems"]["artifact_namespace"])
+    guitar_default_path = namespace / guitar_default["midi_file"]
+    guitar_default_bytes = guitar_default_path.read_bytes()
+    bass_default_path = namespace / bass_default["midi_file"]
+    bass_default_bytes = bass_default_path.read_bytes()
+
+    # `add` reconciles immediately. Retaining MT3 beside each target's default
+    # must neither re-run nor alter the existing default's artifact/identity.
+    guitar_mt3 = add_variant(project, "guitar", label="mt3", profile="guitar-mt3", router=router)
+    bass_mt3 = add_variant(project, "bass", label="mt3", profile="bass-mt3", router=router)
+    guitar_record = read_sidecar(project)["analysis"]["transcription"]["targets"]["guitar"]
+    bass_record = read_sidecar(project)["analysis"]["transcription"]["targets"]["bass"]
+    assert {variant["backend"] for variant in guitar_record["variants"].values()} == {"basic-pitch", "mt3"}
+    assert {variant["backend"] for variant in bass_record["variants"].values()} == {"pyin", "mt3"}
+    assert guitar_default_path.read_bytes() == guitar_default_bytes
+    assert bass_default_path.read_bytes() == bass_default_bytes
+    assert (namespace / guitar_mt3["midi_file"]).is_file()
+    assert (namespace / bass_mt3["midi_file"]).is_file()
+    # guitar-mt3 and bass-mt3 never share a detection group with each other.
+    assert guitar_mt3["detection_hash"] != bass_mt3["detection_hash"]
+
+    state, applied = _run_apply(project, state)
+    names = applied.split("#", 1)[0].split("|")
+    assert names.count("[vgt] Guitar Ref — default (MIDI)") == 1
+    assert names.count("[vgt] Guitar Ref — mt3 (MIDI)") == 1
+    assert names.count("[vgt] Bass Ref — default (MIDI)") == 1
+    assert names.count("[vgt] Bass Ref — mt3 (MIDI)") == 1
+
+    discard_variant(project, "guitar", "mt3")
+    discard_variant(project, "bass", "mt3")
+    final_guitar = read_sidecar(project)["analysis"]["transcription"]["targets"]["guitar"]
+    final_bass = read_sidecar(project)["analysis"]["transcription"]["targets"]["bass"]
+    assert [variant["label"] for variant in final_guitar["variants"].values()] == ["default"]
+    assert [variant["label"] for variant in final_bass["variants"].values()] == ["default"]
+    assert guitar_default_path.read_bytes() == guitar_default_bytes
+    assert bass_default_path.read_bytes() == bass_default_bytes
+    assert not (namespace / guitar_mt3["midi_file"]).exists()
+    assert not (namespace / bass_mt3["midi_file"]).exists()
+    assert not any(name == "tensorflow" or name.startswith("tensorflow.") for name in sys.modules)
+    assert not any(name == "jax" or name.startswith("jax.") for name in sys.modules)
 
 
 def _midi_note_on_qns(path: Path) -> list[float]:

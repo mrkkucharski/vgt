@@ -549,3 +549,56 @@ hatch `BASIC_PITCH_CMD_ENV` already documents.
 The chord-agreement metric depends on vgt's own `chords.txt`, which is itself
 estimated and collapsed to `maj_min`.  It is a useful *relative* signal for
 ranking variants and should not be read as an absolute accuracy figure.
+
+## MT3 alternative (opt-in comparison, issue #288)
+
+Status: **shipped as `guitar-mt3`, opt-in, no fallback, single-song evidence
+only** (2026-08-03). `guitar-mt3` feeds the raw `guitar` stem (no HPSS
+frontend) into the pinned MT3 backend (`docs/instrument-transcription-
+findings.md` links the backend's own provisioning/normalization docs) and
+retains only its first note-bearing MIDI track, unmodified by any cleanup
+stage. It never replaces or changes `guitar`'s existing Basic Pitch defaults,
+and there is no fallback if MT3 is unavailable or fails.
+
+Measured against the same `7Rivers` stem and the same `guitar-acoustic`
+comparison harness as the rest of this document, `guitar-mt3` beside the
+shipped `guitar-acoustic-clean` default:
+
+| Variant | notes | med (ms) | max (s) | >5s | maxpoly | %ghost | %ct-on | %ct-t | frag |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| `guitar-acoustic-clean` (default) | 481 | 895 | 4.0 | 0 | 6 | 22.8 | 67.9 | 68.4 | 0 |
+| `guitar-mt3` | 1804 | 241 | 2.4 | 0 | 8 | 31.7 | 86.2 | 94.4 | **1228** |
+
+Two things stand out, in opposite directions:
+
+- **No sustain runaway, and chord-tone agreement is clearly higher** (94.4%
+  time-attributed vs. 68.4%). MT3 does not share Basic Pitch's frame-release
+  failure mode on this stem (see finding 2 in the index): nothing rings past
+  4.4 s, let alone the 126 s drone the unmodified defaults produced before
+  acoustic tuning existed.
+- **Fragmentation is severe.** 1228 of 1804 notes are same-pitch pairs within
+  30 ms of each other — most of MT3's output is a held note chopped into many
+  short repeated fragments rather than one continuous note, which is exactly
+  the failure `merge_fragments` exists to repair for Basic Pitch and is not
+  applied here by design (see "Profile behavior" above). A high chord-tone
+  score does not mean this is directly usable as-is: pitch correctness and
+  note-count/duration sanity are different questions, and this profile
+  deliberately reports only the former honestly, unfiltered.
+
+This is **one song, one run, no fallback** — read it exactly like the standing
+caveat at the top of the index says: a relative ranking signal on `7Rivers`,
+not an absolute accuracy claim, and not yet reason to prefer or promote this
+profile. It has not been listened to end-to-end in REAPER; that verification
+step remains the user's.
+
+### Reproducing
+
+```sh
+vgt transcription backend provision mt3
+vgt transcription variant add guitar --name mt3 --profile guitar-mt3 "Song.RPP"
+uv run python scripts/guitar_transcription_probe.py \
+  /path/to/project/vgt/<namespace>/transcription/guitar/<default-id>.csv \
+  /path/to/project/vgt/<namespace>/transcription/guitar/<mt3-id>.csv \
+  --profile guitar-acoustic \
+  --chords /path/to/project/vgt/<namespace>/chords.txt
+```

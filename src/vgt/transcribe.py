@@ -1115,7 +1115,7 @@ class AdtofActivationResult:
 
 @dataclass(frozen=True)
 class Mt3Spec:
-    """Pinned MT3 v0.1.0 multi-instrument backend identity (issue #287).
+    """Pinned MT3 multi-instrument backend identity (issue #287).
 
     A dedicated spec rather than an overload of `BasicPitchSpec`/`PyinSpec`:
     MT3 is a fixed pretrained model with no configurable detection threshold

@@ -1,6 +1,6 @@
 """Backend-neutral MT3 multitrack MIDI normalization (issue #286).
 
-MT3 v0.1.0 writes its complete multi-instrument prediction into one Standard
+MT3 writes its complete multi-instrument prediction into one Standard
 MIDI File; it exposes no stable primary-track field, and an apparent
 input-filename track name may have been assigned by whatever imported the
 file rather than guaranteed MIDI metadata. This module's selection rule is

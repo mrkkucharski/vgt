@@ -11,7 +11,7 @@ is expected to run; `_checkout_repo`, `_build_environment`, and
 `_download_model` mirror them literally so a human can reproduce or debug a
 failure by hand:
 
-    git clone --branch v0.1.0 https://github.com/mrkkucharski/mt3.git /path/to/mt3
+    git clone --branch v0.1.1 https://github.com/mrkkucharski/mt3.git /path/to/mt3
     uv sync --project /path/to/mt3 --frozen
     uv run --project /path/to/mt3 mt3-download-model --output-dir /path/to/models/mt3 --json
 """
@@ -31,8 +31,14 @@ import subprocess
 from typing import Any
 
 MT3_REPO_URL = "https://github.com/mrkkucharski/mt3.git"
-MT3_PINNED_TAG = "v0.1.0"
-MT3_PINNED_COMMIT = "4b49f9b9d38549fcc0231efbff3f4e85b3690923"
+# v0.1.0's own `mt3-download-model` had a bug: it wrote checkpoint files
+# straight into `--output-dir` but then required an `output-dir/checkpoint_0`
+# subdirectory that the real GCS bucket layout could never produce, so
+# provisioning always failed at the download step. v0.1.1 fixes that (see
+# https://github.com/mrkkucharski/mt3/commit/36c9d1bfdc8f432376c1ca303cb965e71ef297d6);
+# v0.1.0 itself is not usable and is not repinned here.
+MT3_PINNED_TAG = "v0.1.1"
+MT3_PINNED_COMMIT = "36c9d1bfdc8f432376c1ca303cb965e71ef297d6"
 
 MT3_CACHE_DIR_ENV = "VGT_MT3_CACHE_DIR"
 

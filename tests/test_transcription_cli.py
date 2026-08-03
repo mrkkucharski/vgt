@@ -582,7 +582,7 @@ def test_mt3_profiles_are_listed_and_show_their_pinned_identity(tmp_path: Path, 
     assert shown["cleanup"] == []
     assert shown["audio_frontend"]["stages"] == []
     assert shown["detection"]["model_id"] == "official-multitrack-v1"
-    assert shown["detection"]["tag"] == "v0.1.0"
+    assert shown["detection"]["tag"] == "v0.1.1"
     assert "repository" in shown["detection"]
     assert "commit" in shown["detection"]
     assert "track_selection_version" in shown["detection"]

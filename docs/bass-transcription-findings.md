@@ -520,3 +520,62 @@ basic-pitch sweep/strict /path/to/stems/bass.wav \
 The pyin row needs no sweep harness — it is what `vgt analyze` produces for
 `bass`, and `PyinTranscriber().transcribe(...)` can be called directly against a
 stem for a one-off.
+
+## MT3 alternative (opt-in comparison, issue #288)
+
+Status: **shipped as `bass-mt3`, opt-in, no fallback, single-song evidence
+only, and measurably not usable as a bass reference on this stem**
+(2026-08-03). `bass-mt3` feeds the raw `bass` stem into the pinned MT3
+backend and retains only its first note-bearing MIDI track, unmodified by any
+cleanup stage. It never replaces or changes `bass`'s pYIN default, and there
+is no fallback if MT3 is unavailable or fails.
+
+Measured against the same `7Rivers` bass stem, the same CQT reference, and
+the same hand-corrected onset annotation used throughout this document:
+
+| Variant | notes | maxpoly | pitch range | hit% | oct% | wrong% | miss% | prec | rec | f |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| `default-bass` (pYIN) | 268 | 1 | 28–50 | 82.6 | 10.9 | 1.6 | 4.9 | 75.5 | 82.6 | **78.9** |
+| `bass-mt3` | 131 | 2 | 47–58 | 0.0 | 46.5 | 22.8 | 30.8 | 0.0 | 0.0 | **0.0** |
+
+The CQT reference's own graded-frame pitch distribution on this stem is
+`p1 29.0, median 34.0, p99 44.0` (MIDI). `bass-mt3`'s output sits at **47–58 —
+entirely above the reference's 99th percentile**, roughly an octave to an
+octave-and-a-half higher than the part actually played. Frame-level precision/
+recall/F are a flat 0.0%: not one graded frame agrees on pitch, because the
+two pitch ranges do not overlap at all.
+
+Scored against onset timing alone (ignoring pitch, from the 272-note hand
+annotation, 50 ms tolerance): `bass-mt3` reaches 79.4% onset precision but only
+38.2% recall (F 51.6%, against pYIN's 76.1%/75.0%/**75.6%**). So *something*
+in `bass-mt3`'s output lands on roughly the right moments rhythmically, at
+recall well under half the reference — but it is very unlikely to be the bass
+line itself: **this is the "instrument leakage" limitation the profile's own
+documentation warns about**, observed for real rather than hypothesized.
+Selection is deliberately just "the first note-bearing MIDI track" with no
+program-family filtering (see "Profile behavior" in the shipping issue), and
+on this stem that track is not a usable bass reference.
+
+This is **one song, one run, no fallback** — read it as a relative signal on
+`7Rivers`, not an absolute accuracy claim. It is also, on this specific
+evidence, a clear negative result for `bass-mt3` as shipped: unlike guitar
+(where MT3 was at least in the right register), bass's first MT3 track missed
+the instrument's actual pitch range entirely. It has not been listened to
+end-to-end in REAPER; that verification step remains the user's, but the
+frame-level numbers alone are enough to not recommend this profile for bass
+without further investigation (a different separated stem, a different
+song, or GM-program-aware selection -- all explicitly out of this profile's
+scope as shipped).
+
+### Reproducing
+
+```sh
+vgt transcription backend provision mt3
+vgt transcription variant add bass --name mt3 --profile bass-mt3 "Song.RPP"
+uv run python scripts/bass_transcription_probe.py \
+  /path/to/project/vgt/<namespace>/transcription/bass/<default-id>.csv \
+  /path/to/project/vgt/<namespace>/transcription/bass/<mt3-id>.csv \
+  --stem /path/to/project/vgt/<namespace>/stems/bass.wav \
+  --reference cqt --cache /tmp/bass-ref.npz --agreement \
+  --onset-reference tests/fixtures/bass_7rivers/hand_corrected_notes.json
+```

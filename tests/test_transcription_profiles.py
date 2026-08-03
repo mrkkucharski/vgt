@@ -76,7 +76,7 @@ def test_guitar_mt3_resolves_with_no_cleanup_and_the_mt3_backend() -> None:
     assert resolved.cleanup == ()
     assert resolved.audio_frontend["stages"] == []  # raw stem, no HPSS frontend
     assert resolved.detection["model_id"] == "official-multitrack-v1"
-    assert resolved.detection["tag"] == "v0.1.0"
+    assert resolved.detection["tag"] == "v0.1.1"
     assert "repository" in resolved.detection and "commit" in resolved.detection
     assert "track_selection_version" in resolved.detection
     assert "note_normalization_version" in resolved.detection
@@ -98,7 +98,7 @@ def test_spec_from_resolved_mt3_profile_builds_an_mt3_spec() -> None:
 
     assert isinstance(spec, Mt3Spec)
     assert spec.backend == "mt3"
-    assert spec.tag == "v0.1.0"
+    assert spec.tag == "v0.1.1"
     assert spec.checkpoint_fingerprint == "fp-1"
     assert spec.midi_tempo == 120.0
     assert spec.cleanup == ()

@@ -660,7 +660,7 @@ vgt transcription backend provision mt3
 ```
 
 This clones [Marek's MT3 fork](https://github.com/mrkkucharski/mt3)'s pinned
-`v0.1.0` tag, verifies the checkout resolves to the exact contracted commit,
+`v0.1.1` tag, verifies the checkout resolves to the exact contracted commit,
 builds its isolated environment with its own committed `uv.lock`
 (`uv sync --project ... --frozen`), and downloads the checkpoint
 (`mt3-download-model --output-dir ... --json`). MT3's TensorFlow/JAX/T5X
