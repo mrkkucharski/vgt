@@ -648,6 +648,61 @@ vgt-owned object, for both backends. Edits to it do not survive: make a working
 copy before editing (see [Working copies and promotion](#working-copies-and-promotion-vgt_working_copylua)).
 There is no `vgt sync` read-back for MIDI.
 
+### MT3 backend provisioning (future guitar/bass profiles, not yet registered)
+
+vgt can provision a pinned MT3 runtime for a future guitar/bass transcription
+backend. This is provisioning only: no profile currently selects MT3, and
+`vgt analyze` never clones, builds, or downloads anything implicitly. Fetch it
+explicitly, once, ahead of time:
+
+```sh
+vgt transcription backend provision mt3
+```
+
+This clones [Marek's MT3 fork](https://github.com/mrkkucharski/mt3)'s pinned
+`v0.1.0` tag, verifies the checkout resolves to the exact contracted commit,
+builds its isolated environment with its own committed `uv.lock`
+(`uv sync --project ... --frozen`), and downloads the checkpoint
+(`mt3-download-model --output-dir ... --json`). MT3's TensorFlow/JAX/T5X
+dependency graph is never installed into vgt's own environment.
+
+**Location and disk/network expectations.** Everything lands under
+`~/Library/Caches/vgt/mt3` (override with `VGT_MT3_CACHE_DIR`) — the
+repository checkout and its `.venv` under `repo/`, the downloaded checkpoint
+under `models/`, and a `checkpoint-manifest.json` fingerprint (file paths,
+sizes, and sha256 over the downloaded checkpoint) that a later MT3 backend
+will use as part of its cache identity. Nothing is written into the REAPER
+project or the `.vgt` sidecar. First provisioning clones a repository, builds
+a Python environment, and downloads a multi-instrument transcription
+checkpoint — expect real disk space and a real download.
+
+**Requirements.** The fork is pinned to Apple Silicon macOS, Python 3.11, a
+`uv` version in the fork's declared range, and `ffmpeg` on `PATH` (`brew
+install ffmpeg`). Missing any of these produces an actionable diagnostic
+before vgt attempts any clone, build, or download.
+
+**Re-running is idempotent.** A second `provision mt3` with nothing changed
+recomputes the checkpoint's hashes, confirms they still match the recorded
+manifest, and does nothing further — it does not rebuild the environment or
+redownload the checkpoint. If the on-disk checkpoint no longer matches the
+manifest (corrupted, partially deleted), or the prior attempt was
+interrupted, the command rebuilds/redownloads to converge on a verified
+state again. `mt3-download-model` is resumable, so an interrupted download
+picks up where it left off rather than starting over. Pass `--force` to
+rebuild the environment and redownload the checkpoint unconditionally.
+
+**Removal.** There is no separate removal command; delete
+`~/Library/Caches/vgt/mt3` (or your `VGT_MT3_CACHE_DIR` override) and rerun
+`provision mt3` to start clean.
+
+**Offline behavior.** Outside of `provision mt3` itself, nothing in vgt
+touches the network for MT3. A future backend that needs the provisioned
+checkpoint and finds it missing reports instructions to run
+`vgt transcription backend provision mt3`; it does not attempt to provision
+it automatically. The offline test suite fakes the checkout, build, and
+download steps and never clones a repository, runs `uv`, or downloads a
+model.
+
 ## Working copies and promotion (`vgt_working_copy.lua`)
 
 Generated reference MIDI and the `[vgt] Chords` and `[vgt] Key` machine drafts

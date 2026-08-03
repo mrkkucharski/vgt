@@ -11,6 +11,7 @@ from typing import Any
 from .analysis import AnalysisError, add_transcription_targets, analyze, forget_transcription_targets, set_transcription_modes
 from .drum_cleanup import DRUM_CLEANUP_PROFILES
 from .lalal import LalalError, LalalSeparator
+from .mt3_provision import Mt3ProvisionError, provision_mt3
 from .project import ProjectError, locate_project, read_project
 from .reascripts import ReaScriptInstallError, confirm_overwrite, default_destination, install_reascripts
 from .separation import GUITAR_TYPES, OPTIONAL_STEMS, SeparationError, declared_guitar_type, separate, separation_preview
@@ -173,6 +174,19 @@ def _parser() -> argparse.ArgumentParser:
     variant_purge.add_argument("target", choices=VALID_TARGETS)
     variant_purge.add_argument("project", nargs="?", help="Path to a .RPP project (defaults to cwd's only .RPP).")
 
+    backend_parser = transcription_sub.add_parser(
+        "backend", help="Provision isolated third-party transcription backends (no REAPER project required)."
+    )
+    backend_sub = backend_parser.add_subparsers(dest="backend_command", required=True)
+    backend_provision = backend_sub.add_parser(
+        "provision", help="Provision a pinned backend's runtime and checkpoint into the user cache."
+    )
+    backend_provision.add_argument("name", choices=("mt3",), help="Backend to provision.")
+    backend_provision.add_argument(
+        "--force", action="store_true",
+        help="Rebuild the environment and re-verify/redownload the checkpoint even if already provisioned.",
+    )
+
     return parser
 
 
@@ -316,6 +330,33 @@ def _dispatch_transcription(args: argparse.Namespace, project: Path) -> int:
     raise AnalysisError(f"unknown transcription subcommand: {args.transcription_command}")
 
 
+def _dispatch_transcription_backend(args: argparse.Namespace) -> int:
+    if args.backend_command == "provision":
+        if args.name != "mt3":
+            raise TranscriptionError(f"unknown transcription backend: {args.name}")
+
+        def report(message: str) -> None:
+            print(f"vgt: {message}", file=sys.stderr, flush=True)
+
+        result = provision_mt3(force=args.force, progress=report)
+        print(json.dumps(
+            {
+                "backend": "mt3",
+                "already_provisioned": result.already_provisioned,
+                "cache_dir": str(result.cache_dir),
+                "repo_dir": str(result.repo_dir),
+                "model_dir": str(result.model_dir),
+                "commit": result.manifest.commit,
+                "tag": result.manifest.tag,
+                "fingerprint": result.manifest.fingerprint,
+                "checkpoint_files": len(result.manifest.files),
+            },
+            indent=2,
+        ))
+        return 0
+    raise TranscriptionError(f"unknown transcription backend subcommand: {args.backend_command}")
+
+
 def main(argv: list[str] | None = None) -> int:
     # Phase 0's primary invocation is `vgt [project.rpp]`; retain explicit
     # subcommands for scripts that want to state their intent.
@@ -339,6 +380,8 @@ def main(argv: list[str] | None = None) -> int:
                 print("Dry run: no files were changed.")
             print("In REAPER, open the Action List, then use ReaScript: Load to register these files once.")
             return 0
+        if args.command == "transcription" and args.transcription_command == "backend":
+            return _dispatch_transcription_backend(args)
         project = locate_project(args.project)
         if args.command == "inspect":
             print(json.dumps(read_project(project).to_dict(), indent=2))
@@ -515,7 +558,7 @@ def main(argv: list[str] | None = None) -> int:
             file=sys.stderr,
         )
         return 2
-    except (ProjectError, AnalysisError, StatusError, SeparationError, ReaScriptInstallError, TranscriptionError) as exc:
+    except (ProjectError, AnalysisError, StatusError, SeparationError, ReaScriptInstallError, TranscriptionError, Mt3ProvisionError) as exc:
         print(f"vgt: {exc}", file=sys.stderr)
         return 2
 
