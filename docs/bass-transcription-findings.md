@@ -524,11 +524,12 @@ stem for a one-off.
 ## MT3 alternative (opt-in comparison, issue #288)
 
 Status: **shipped as `bass-mt3`, opt-in, no fallback, single-song evidence
-only, and measurably not usable as a bass reference on this stem**
-(2026-08-03). `bass-mt3` feeds the raw `bass` stem into the pinned MT3
-backend and retains only its first note-bearing MIDI track, unmodified by any
-cleanup stage. It never replaces or changes `bass`'s pYIN default, and there
-is no fallback if MT3 is unavailable or fails.
+only, and measurably noisy relative to the shipped default on this stem**
+(2026-08-03, corrected 2026-08-03 — see "The raw octave gap is a known
+convention, not leakage" below). `bass-mt3` feeds the raw `bass` stem into the
+pinned MT3 backend and retains only its first note-bearing MIDI track,
+unmodified by any cleanup stage. It never replaces or changes `bass`'s pYIN
+default, and there is no fallback if MT3 is unavailable or fails.
 
 Measured against the same `7Rivers` bass stem, the same CQT reference, and
 the same hand-corrected onset annotation used throughout this document:
@@ -536,36 +537,46 @@ the same hand-corrected onset annotation used throughout this document:
 | Variant | notes | maxpoly | pitch range | hit% | oct% | wrong% | miss% | prec | rec | f |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | `default-bass` (pYIN) | 268 | 1 | 28–50 | 82.6 | 10.9 | 1.6 | 4.9 | 75.5 | 82.6 | **78.9** |
-| `bass-mt3` | 131 | 2 | 47–58 | 0.0 | 46.5 | 22.8 | 30.8 | 0.0 | 0.0 | **0.0** |
+| `bass-mt3` (raw) | 131 | 2 | 47–58 | 0.0 | 46.5 | 22.8 | 30.8 | 0.0 | 0.0 | **0.0** |
+| `bass-mt3` (−12 semitones) | 131 | 2 | 35–46 | 27.0 | 19.5 | 22.8 | 30.8 | 35.6 | 27.0 | **30.7** |
 
-The CQT reference's own graded-frame pitch distribution on this stem is
-`p1 29.0, median 34.0, p99 44.0` (MIDI). `bass-mt3`'s output sits at **47–58 —
-entirely above the reference's 99th percentile**, roughly an octave to an
-octave-and-a-half higher than the part actually played. Frame-level precision/
-recall/F are a flat 0.0%: not one graded frame agrees on pitch, because the
-two pitch ranges do not overlap at all.
+### The raw octave gap is a known convention, not leakage
 
-Scored against onset timing alone (ignoring pitch, from the 272-note hand
-annotation, 50 ms tolerance): `bass-mt3` reaches 79.4% onset precision but only
-38.2% recall (F 51.6%, against pYIN's 76.1%/75.0%/**75.6%**). So *something*
-in `bass-mt3`'s output lands on roughly the right moments rhythmically, at
-recall well under half the reference — but it is very unlikely to be the bass
-line itself: **this is the "instrument leakage" limitation the profile's own
-documentation warns about**, observed for real rather than hypothesized.
-Selection is deliberately just "the first note-bearing MIDI track" with no
-program-family filtering (see "Profile behavior" in the shipping issue), and
-on this stem that track is not a usable bass reference.
+`bass-mt3`'s raw output (47–58) sits a clean octave-plus above `default-bass`'s
+range (28–50) and the CQT reference's own graded-frame distribution (`p1 29.0,
+median 34.0, p99 44.0`). Read on its own, a non-overlapping pitch range looks
+like MT3 selected the wrong instrument's track. **It is not**: the maintainer
+notes that the *shipped default* itself needs a 12-semitone (one octave)
+transposition to sound correct against the bass instrument actually used for
+playback — bass guitar is conventionally notated (and, evidently, authored
+here) an octave above where it sounds. MT3 has no reason to know or follow
+that convention; it emits standard, non-transposed MIDI pitch. Shifting
+`bass-mt3`'s output down 12 semitones before re-scoring against the same
+reference moves it from a flat 0.0% to a non-trivial **27.0% hit / 30.7% F**,
+confirming the two are working in different octave conventions rather than
+different instruments.
+
+That correction narrows the finding, it doesn't erase it: even octave-aligned,
+`bass-mt3` still recovers only 27.0% of graded frames correctly (`hit`) against
+`default-bass`'s 82.6%, with 22.8% flatly wrong pitches and 30.8% missed —
+both **unchanged by the shift**, since a uniform transposition cannot fix a
+frame that was never voiced or that landed on the wrong note *within* the
+correct octave. Onset timing alone (ignoring pitch, 272-note hand annotation,
+50 ms tolerance) is unaffected by any pitch shift: `bass-mt3` reaches 79.4%
+onset precision but only 38.2% recall (F 51.6%, against pYIN's 76.1%/75.0%/
+**75.6%**) — plausible timing on the notes it does emit, well under half the
+onsets found at all.
 
 This is **one song, one run, no fallback** — read it as a relative signal on
-`7Rivers`, not an absolute accuracy claim. It is also, on this specific
-evidence, a clear negative result for `bass-mt3` as shipped: unlike guitar
-(where MT3 was at least in the right register), bass's first MT3 track missed
-the instrument's actual pitch range entirely. It has not been listened to
-end-to-end in REAPER; that verification step remains the user's, but the
-frame-level numbers alone are enough to not recommend this profile for bass
-without further investigation (a different separated stem, a different
-song, or GM-program-aware selection -- all explicitly out of this profile's
-scope as shipped).
+`7Rivers`, not an absolute accuracy claim, and the corrected numbers above are
+the ones to trust over the raw table. `bass-mt3`'s pitch register is not
+evidence against it; its frame-level agreement, even octave-corrected, is
+still clearly behind the shipped pYIN default on this stem. It has not been
+listened to end-to-end in REAPER; that verification step remains the user's,
+but the numbers alone are not yet reason to prefer this profile for bass
+without further investigation (a different separated stem, a different song,
+or whether the octave convention above generalizes) — all explicitly out of
+this profile's scope as shipped.
 
 ### Reproducing
 
