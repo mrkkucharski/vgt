@@ -571,12 +571,19 @@ This is **one song, one run, no fallback** — read it as a relative signal on
 `7Rivers`, not an absolute accuracy claim, and the corrected numbers above are
 the ones to trust over the raw table. `bass-mt3`'s pitch register is not
 evidence against it; its frame-level agreement, even octave-corrected, is
-still clearly behind the shipped pYIN default on this stem. It has not been
-listened to end-to-end in REAPER; that verification step remains the user's,
-but the numbers alone are not yet reason to prefer this profile for bass
-without further investigation (a different separated stem, a different song,
-or whether the octave convention above generalizes) — all explicitly out of
-this profile's scope as shipped.
+still clearly behind the shipped pYIN default on this stem.
+
+### Ear-verified 2026-08-03: confirms the measurement, on a second song too
+
+The maintainer listened to `bass-mt3`'s output end to end in REAPER on both
+`7Rivers` and a second song ("Chcemy Bys Soba" — 72 notes, pitch range 28–43,
+notably *not* needing the octave correction `7Rivers` did, and no probe scores
+computed for it): **not impressed — the current pYIN default gives a better
+outcome by ear**, on both songs. This corroborates the frame-level numbers
+above rather than complicating them: even where the octave lands correctly
+without adjustment (the second song), the actual note content is still
+judged worse than the shipped default by ear. `bass-mt3` is **not recommended
+over the current bass default** on either song measured so far.
 
 ### Reproducing
 

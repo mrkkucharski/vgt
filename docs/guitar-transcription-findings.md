@@ -588,8 +588,20 @@ Two things stand out, in opposite directions:
 This is **one song, one run, no fallback** — read it exactly like the standing
 caveat at the top of the index says: a relative ranking signal on `7Rivers`,
 not an absolute accuracy claim, and not yet reason to prefer or promote this
-profile. It has not been listened to end-to-end in REAPER; that verification
-step remains the user's.
+profile.
+
+### Ear-verified 2026-08-03: encouraging on chords, across two songs
+
+The maintainer listened to `guitar-mt3`'s output end to end in REAPER on both
+`7Rivers` and a second song ("Chcemy Bys Soba" — 2975 notes, pitch range
+24–90, no probe scores computed for it): **MT3 seems better at catching
+chords** than the current default, by ear. This corroborates the measured
+chord-tone agreement gap above (94.4% vs. 68.4% on `7Rivers`) with a real
+listening check, on a second song besides. It is still not a recommendation
+to promote this profile — the fragmentation problem above is real and
+unaddressed, and two songs of anecdotal-plus-one-measured evidence is still
+early — but it is the first positive signal from an actual listen, not just a
+metric.
 
 ### Reproducing
 
