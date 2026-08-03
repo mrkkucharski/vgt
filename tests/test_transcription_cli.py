@@ -16,7 +16,7 @@ import pytest
 
 from vgt.cli import main
 from vgt.sidecar import read_sidecar, write_sidecar
-from vgt.transcribe import AdtofSpec, FakeAdtofTranscriber, FakeTranscriber, TargetTranscriberRouter
+from vgt.transcribe import AdtofSpec, FakeAdtofTranscriber, FakeMt3Transcriber, FakeTranscriber, TargetTranscriberRouter
 from vgt.transcription_profiles import profiles_path
 
 FIXTURE_DIR = Path(__file__).parents[1] / "test" / "Reaper Project"
@@ -67,7 +67,10 @@ def _fake_router(monkeypatch: pytest.MonkeyPatch) -> None:
     fake = FakeTranscriber()
     monkeypatch.setattr(
         "vgt.transcription_lifecycle.production_transcriber_router",
-        lambda: TargetTranscriberRouter(basic_pitch=fake, drumscript=fake, drumscript_targets=("drums",), adtof=FakeAdtofTranscriber()),
+        lambda: TargetTranscriberRouter(
+            basic_pitch=fake, drumscript=fake, drumscript_targets=("drums",),
+            adtof=FakeAdtofTranscriber(), mt3=FakeMt3Transcriber(),
+        ),
     )
 
 
@@ -563,3 +566,210 @@ def test_forget_transcription_removes_variant_artifacts_and_gcs_cache(tmp_path: 
     after = read_sidecar(project)
     assert "guitar" not in after["analysis"]["transcription"]["targets"]
     assert after["analysis"]["transcription"]["detection_cache"] == {}
+
+
+def test_mt3_profiles_are_listed_and_show_their_pinned_identity(tmp_path: Path, capsys) -> None:
+    project = _init_project(tmp_path)
+
+    assert main(["transcription", "profile", "list", str(project)]) == 0
+    listing = capsys.readouterr().out
+    assert "guitar-mt3 (builtin)" in listing
+    assert "bass-mt3 (builtin)" in listing
+
+    assert main(["transcription", "profile", "show", "guitar-mt3", str(project)]) == 0
+    shown = json.loads(capsys.readouterr().out)
+    assert shown["backend"] == "mt3"
+    assert shown["cleanup"] == []
+    assert shown["audio_frontend"]["stages"] == []
+    assert shown["detection"]["model_id"] == "official-multitrack-v1"
+    assert shown["detection"]["tag"] == "v0.1.0"
+    assert "repository" in shown["detection"]
+    assert "commit" in shown["detection"]
+    assert "track_selection_version" in shown["detection"]
+    assert "note_normalization_version" in shown["detection"]
+
+    assert main(["transcription", "profile", "show", "bass-mt3", str(project)]) == 0
+    bass_shown = json.loads(capsys.readouterr().out)
+    assert bass_shown["backend"] == "mt3"
+    assert bass_shown["cleanup"] == []
+
+
+def test_mt3_profile_is_rejected_via_mode_for_the_wrong_target(tmp_path: Path, capsys) -> None:
+    project = _init_project_with_bass(tmp_path)
+
+    assert main(["analyze", "--mode", "bass=guitar-mt3", str(project)]) == 2
+    error = capsys.readouterr().err
+    assert "profile for 'bass' must be one of" in error
+    assert "'bass-mt3'" in error
+    assert "got 'guitar-mt3'" in error  # the rejected request, not a listed option
+
+    assert main(["analyze", "--mode", "guitar=bass-mt3", str(project)]) == 2
+    error = capsys.readouterr().err
+    assert "profile for 'guitar' must be one of" in error
+    assert "'guitar-mt3'" in error
+    assert "got 'bass-mt3'" in error
+
+
+def test_variant_add_guitar_mt3(tmp_path: Path, capsys) -> None:
+    project = _init_project(tmp_path)
+
+    assert main([
+        "transcription", "variant", "add", "guitar", "--name", "mt3", "--profile", "guitar-mt3", str(project),
+    ]) == 0
+    variant = json.loads(capsys.readouterr().out)
+
+    assert variant["status"] == "transcribed"
+    assert variant["backend"] == "mt3"
+    assert variant["effective_profile"] == "guitar-mt3"
+    assert variant["package_pin"] is None  # MT3 is git-cloned, not a pip package
+    assert variant["resolved_settings"]["detection"]["model_id"] == "official-multitrack-v1"
+    assert variant["resolved_settings"]["cleanup"] == []
+    assert variant["resolved_settings"]["audio_frontend"]["stages"] == []  # raw stem, no HPSS frontend
+
+    namespace = read_sidecar(project)["analysis"]["stems"]["artifact_namespace"]
+    variant_id = next(iter(_variants(project)["variants"]))
+    midi_path = project.parent / "vgt" / namespace / "transcription" / "guitar" / f"{variant_id}.mid"
+    notes_path = project.parent / "vgt" / namespace / "transcription" / "guitar" / f"{variant_id}.csv"
+    assert midi_path.is_file()
+    assert notes_path.is_file()
+
+
+def test_variant_add_bass_mt3(tmp_path: Path, capsys) -> None:
+    project = _init_project_with_bass(tmp_path)
+
+    assert main([
+        "transcription", "variant", "add", "bass", "--name", "mt3", "--profile", "bass-mt3", str(project),
+    ]) == 0
+    variant = json.loads(capsys.readouterr().out)
+
+    assert variant["status"] == "transcribed"
+    assert variant["backend"] == "mt3"
+    assert variant["effective_profile"] == "bass-mt3"
+
+
+def test_mt3_variant_coexists_as_a_peer_beside_the_default_guitar_profile(tmp_path: Path, capsys) -> None:
+    project = _init_project(tmp_path)
+
+    assert main([
+        "transcription", "variant", "add", "guitar", "--name", "default", "--profile", "guitar-harmonic", str(project),
+    ]) == 0
+    default_variant = json.loads(capsys.readouterr().out)
+    assert main([
+        "transcription", "variant", "add", "guitar", "--name", "mt3", "--profile", "guitar-mt3", str(project),
+    ]) == 0
+    mt3_variant = json.loads(capsys.readouterr().out)
+
+    # Two independent detection groups: MT3's backend identity shares nothing
+    # with Basic Pitch's, and neither is preferred/selected/best -- both are
+    # retained peers.
+    assert default_variant["detection_hash"] != mt3_variant["detection_hash"]
+    assert default_variant["backend"] == "basic-pitch"
+    assert mt3_variant["backend"] == "mt3"
+    variants = _variants(project)["variants"]
+    assert {v["label"] for v in variants.values()} == {"default", "mt3"}
+    for variant in variants.values():
+        assert "selected" not in variant
+
+    detection_cache = read_sidecar(project)["analysis"]["transcription"]["detection_cache"]
+    mt3_entry = detection_cache[mt3_variant["detection_hash"]]
+    default_entry = detection_cache[default_variant["detection_hash"]]
+    assert mt3_entry["raw_midi_file"].startswith("transcription/cache/mt3/")
+    assert default_entry["raw_midi_file"].startswith("transcription/cache/basic-pitch/")
+
+
+def test_guitar_mt3_and_bass_mt3_never_share_a_detection_group(tmp_path: Path, capsys) -> None:
+    project = _init_project_with_bass(tmp_path)
+
+    assert main([
+        "transcription", "variant", "add", "guitar", "--name", "mt3", "--profile", "guitar-mt3", str(project),
+    ]) == 0
+    guitar = json.loads(capsys.readouterr().out)
+    assert main([
+        "transcription", "variant", "add", "bass", "--name", "mt3", "--profile", "bass-mt3", str(project),
+    ]) == 0
+    bass = json.loads(capsys.readouterr().out)
+
+    assert guitar["detection_hash"] != bass["detection_hash"]
+
+
+def test_mt3_variant_status_reports_backend_and_note_metrics(tmp_path: Path, capsys) -> None:
+    project = _init_project(tmp_path)
+    assert main([
+        "transcription", "variant", "add", "guitar", "--name", "mt3", "--profile", "guitar-mt3", str(project),
+    ]) == 0
+    capsys.readouterr()
+
+    assert main(["status", "--json", str(project)]) == 0
+    status = json.loads(capsys.readouterr().out)
+    variant = next(v for v in status["transcription"]["targets"]["guitar"]["variants"] if v["label"] == "mt3")
+    assert variant["backend"] == "mt3"
+    assert variant["note_count"] is not None
+    assert variant["note_count"] > 0
+    assert variant["pitch_range_midi"] is not None
+    assert variant["error"] is None
+    assert "selected" not in variant
+
+
+def test_mt3_variant_rename_discard_and_purge_behave_like_other_variants(tmp_path: Path, capsys) -> None:
+    project = _init_project(tmp_path)
+    assert main([
+        "transcription", "variant", "add", "guitar", "--name", "mt3-take", "--profile", "guitar-mt3", str(project),
+    ]) == 0
+    capsys.readouterr()
+    variant_id = next(iter(_variants(project)["variants"]))
+
+    assert main(["transcription", "variant", "rename", "guitar", "mt3-take", "--name", "mt3-renamed", str(project)]) == 0
+    renamed = json.loads(capsys.readouterr().out)["variants"][variant_id]
+    assert renamed["label"] == "mt3-renamed"
+    assert renamed["status"] == "transcribed"  # rename never reruns transcription
+
+    namespace = read_sidecar(project)["analysis"]["stems"]["artifact_namespace"]
+    midi_path = project.parent / "vgt" / namespace / "transcription" / "guitar" / f"{variant_id}.mid"
+    assert midi_path.is_file()
+
+    assert main(["transcription", "variant", "discard", "guitar", variant_id, str(project)]) == 0
+    assert not midi_path.is_file()
+    assert variant_id not in _variants(project)["variants"]
+
+    assert main(["transcription", "variant", "purge-discarded", "guitar", str(project)]) == 0
+    record = _variants(project)
+    assert record.get("discarded_variants", []) == []
+
+
+def test_mt3_variant_force_refresh_reruns_detection(tmp_path: Path, capsys, monkeypatch: pytest.MonkeyPatch) -> None:
+    from vgt.transcribe import Mt3Spec, RawDetectionResult
+
+    class CountingMt3(FakeMt3Transcriber):
+        def __init__(self) -> None:
+            self.calls = 0
+
+        def detect_raw(self, source, destination_dir, spec, progress=None) -> RawDetectionResult:
+            assert isinstance(spec, Mt3Spec)
+            self.calls += 1
+            return super().detect_raw(source, destination_dir, spec, progress)
+
+    counting = CountingMt3()
+    monkeypatch.setattr(
+        "vgt.transcription_lifecycle.production_transcriber_router",
+        lambda: TargetTranscriberRouter(basic_pitch=FakeTranscriber(), drumscript=FakeTranscriber(), mt3=counting),
+    )
+    project = _init_project(tmp_path)
+
+    assert main([
+        "transcription", "variant", "add", "guitar", "--name", "mt3", "--profile", "guitar-mt3", str(project),
+    ]) == 0
+    capsys.readouterr()
+    assert counting.calls == 1
+
+    assert main([
+        "transcription", "variant", "add", "guitar", "--name", "mt3-again", "--profile", "guitar-mt3", str(project),
+    ]) == 0
+    capsys.readouterr()
+    assert counting.calls == 1  # shares the same detection group unchanged
+
+    assert main([
+        "transcription", "variant", "add", "guitar", "--name", "mt3-forced", "--profile", "guitar-mt3",
+        "--force", str(project),
+    ]) == 0
+    capsys.readouterr()
+    assert counting.calls == 2

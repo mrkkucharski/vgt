@@ -1498,7 +1498,7 @@ def test_cli_mode_rejects_a_profile_registered_for_another_target(tmp_path: Path
 
     error = capsys.readouterr().err
     assert "profile for 'bass' must be one of" in error
-    assert "('default', 'bass', 'bass-pyin', 'bass-basic-pitch', 'bass-monophonic')" in error
+    assert "('default', 'bass', 'bass-pyin', 'bass-basic-pitch', 'bass-monophonic', 'bass-mt3')" in error
 
 
 def test_forget_transcription_targets_before_any_analysis_is_a_harmless_no_op(tmp_path: Path) -> None:

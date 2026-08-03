@@ -50,6 +50,7 @@ from .transcribe import (
     BasicPitchSpec,
     CleanupStage,
     InstrumentProfile,
+    Mt3Spec,
     PyinSpec,
     PYIN_ALGORITHM_VERSION,
     TempoMapReference,
@@ -448,6 +449,8 @@ def resolve_profile(name: str, project_profiles: Mapping[str, RawProfileDefiniti
             detection = _profile_detection_fields(base)
         elif base.backend == "pyin":
             detection = _pyin_detection_fields(base)
+        elif base.backend == "mt3":
+            detection = _mt3_detection_fields()
         else:
             detection = {}
         return ResolvedProfile(
@@ -566,6 +569,28 @@ def _profile_detection_fields(profile: InstrumentProfile) -> dict[str, Any]:
     }
 
 
+def _mt3_detection_fields() -> dict[str, Any]:
+    """MT3's pinned identity, in the same `resolved.detection` slot a Basic
+    Pitch/pYIN profile fills -- so `profile show`/`variant add` report the
+    fork/commit/model/normalization-version pin instead of an empty table or
+    unread Basic Pitch fields. There is no per-`InstrumentProfile` variation
+    to read here (issue #288: MT3 has no per-instrument detection settings),
+    unlike the two functions above."""
+    from .mt3_normalize import MT3_NOTE_NORMALIZATION_VERSION, MT3_TRACK_SELECTION_VERSION
+    from .mt3_provision import MT3_LOCK_SHA256, MT3_MODEL_ID, MT3_PINNED_COMMIT, MT3_PINNED_TAG, MT3_REPO_URL, MT3_RUNTIME_VERSION
+
+    return {
+        "repository": MT3_REPO_URL,
+        "tag": MT3_PINNED_TAG,
+        "commit": MT3_PINNED_COMMIT,
+        "runtime_version": MT3_RUNTIME_VERSION,
+        "lock_sha256": MT3_LOCK_SHA256,
+        "model_id": MT3_MODEL_ID,
+        "track_selection_version": MT3_TRACK_SELECTION_VERSION,
+        "note_normalization_version": MT3_NOTE_NORMALIZATION_VERSION,
+    }
+
+
 def validate_profile_for_target(
     name: str, target: str, project_profiles: Mapping[str, RawProfileDefinition] | None = None
 ) -> ResolvedProfile:
@@ -649,13 +674,35 @@ def spec_from_resolved_profile(
     midi_tempo: float | None = None,
     time_signature: str | None = None,
     tempo_map: TempoMapReference | None = None,
-) -> BasicPitchSpec | PyinSpec:
+    mt3_checkpoint_fingerprint: str | None = None,
+) -> BasicPitchSpec | PyinSpec | Mt3Spec:
     """Build the spec a resolved profile (builtin or project-local) describes
     -- the bridge `transcription_profiles.py`'s module docstring calls out as
     later-issue work: turning a `ResolvedProfile` into the same spec shape
     `default_spec_for_target` produces for a builtin-only selection, so
     `vgt.transcription_lifecycle`'s `variant add` can run any resolved profile
-    through `vgt.transcription_variants.reconcile_variants` unchanged."""
+    through `vgt.transcription_variants.reconcile_variants` unchanged.
+
+    `mt3_checkpoint_fingerprint` is a caller-supplied local provisioning
+    check (see `vgt.mt3_provision.mt3_status`), never derived here -- the
+    same reason `vgt.transcribe.default_spec_for_target` never derives it
+    either."""
+    if resolved.backend == "mt3":
+        detection = resolved.detection
+        return Mt3Spec(
+            backend="mt3",
+            repository=detection["repository"],
+            tag=detection["tag"],
+            commit=detection["commit"],
+            runtime_version=detection["runtime_version"],
+            lock_sha256=detection["lock_sha256"],
+            model_id=detection["model_id"],
+            checkpoint_fingerprint=mt3_checkpoint_fingerprint,
+            track_selection_version=detection["track_selection_version"],
+            note_normalization_version=detection["note_normalization_version"],
+            midi_tempo=midi_tempo,
+            tempo_map=tempo_map,
+        )
     if resolved.backend == "pyin":
         detection = resolved.detection
         cleanup = _instantiate_resolved_cleanup(resolved.cleanup, midi_tempo=midi_tempo, time_signature=time_signature)

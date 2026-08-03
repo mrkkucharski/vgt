@@ -648,12 +648,12 @@ vgt-owned object, for both backends. Edits to it do not survive: make a working
 copy before editing (see [Working copies and promotion](#working-copies-and-promotion-vgt_working_copylua)).
 There is no `vgt sync` read-back for MIDI.
 
-### MT3 backend provisioning (future guitar/bass profiles, not yet registered)
+### MT3 backend provisioning
 
-vgt can provision a pinned MT3 runtime for a future guitar/bass transcription
-backend. This is provisioning only: no profile currently selects MT3, and
-`vgt analyze` never clones, builds, or downloads anything implicitly. Fetch it
-explicitly, once, ahead of time:
+vgt can provision a pinned MT3 runtime for the opt-in `guitar-mt3`/`bass-mt3`
+profiles below. This is provisioning only: `vgt analyze` never clones,
+builds, or downloads anything implicitly, no matter which profiles a project
+has retained. Fetch it explicitly, once, ahead of time:
 
 ```sh
 vgt transcription backend provision mt3
@@ -696,12 +696,62 @@ rebuild the environment and redownload the checkpoint unconditionally.
 `provision mt3` to start clean.
 
 **Offline behavior.** Outside of `provision mt3` itself, nothing in vgt
-touches the network for MT3. A future backend that needs the provisioned
-checkpoint and finds it missing reports instructions to run
-`vgt transcription backend provision mt3`; it does not attempt to provision
+touches the network for MT3. `guitar-mt3`/`bass-mt3` need the provisioned
+checkpoint and find it missing report instructions to run
+`vgt transcription backend provision mt3`; they do not attempt to provision
 it automatically. The offline test suite fakes the checkout, build, and
 download steps and never clones a repository, runs `uv`, or downloads a
 model.
+
+### MT3 alternative (guitar/bass, opt-in, experimental)
+
+`guitar-mt3` and `bass-mt3` are opt-in, experimental profiles that run the
+provisioned MT3 backend instead of Basic Pitch/pYIN. They never replace or
+change the current guitar/bass defaults, and there is no automatic fallback
+between them -- add one as a separate retained candidate beside the default:
+
+```sh
+# Provision the backend once (see above), then add MT3 beside the default.
+vgt transcription backend provision mt3
+vgt transcription variant add guitar --name mt3 --profile guitar-mt3 "Song.RPP"
+vgt transcription variant add bass --name mt3 --profile bass-mt3 "Song.RPP"
+```
+
+`guitar-mt3` only accepts the `guitar` target and `bass-mt3` only accepts
+`bass` (`--mode guitar=bass-mt3` or the reverse is rejected before anything
+runs). Both feed the raw separated stem into MT3 (no HPSS frontend) and
+retain only its first note-bearing MIDI track through vgt's first-track
+normalizer -- see the [MT3 track-selection
+contract](#mt3-backend-provisioning) above. There is deliberately **no
+cleanup pipeline** here (no note-dropping, voice-cap, or force-monophony):
+these profiles exist to show MT3's own output honestly, before any measured
+evidence would motivate a derived cleanup profile. There is also no General
+MIDI program filtering and no fallback to another MT3 track, Basic Pitch, or
+pYIN -- if MT3's first track happens to be the wrong instrument, or MT3 is
+not provisioned, or the backend fails, the variant records that error and
+nothing else is substituted.
+
+`vgt transcription profile show guitar-mt3` reports the full pinned identity
+(fork repository, tag, commit, runtime, checkpoint model id, and both
+normalization-stage versions) instead of Basic Pitch/pYIN detector settings,
+which these profiles have none of. `vgt status`/`--json` report the variant
+like any other: backend `mt3`, note count, pitch range, and (once
+provisioned) the checkpoint fingerprint as part of its cache identity.
+Rename, discard, purge, force refresh, and reconciliation behave exactly like
+any other retained note variant -- MT3 is admitted into the same two-level
+raw-detection/derived-cleanup cache Basic Pitch/pYIN already use, just under
+its own `transcription/cache/mt3/` cache directory so it never shares or
+invalidates their cache entries.
+
+**Known limitation: instrument leakage.** MT3 is a genuine multi-instrument
+model; its raw output can and does contain other instruments (including
+drums) as separate MIDI tracks. Because selection is deliberately the *first*
+note-bearing track and nothing more, if that track is not the requested
+instrument, the variant will contain whatever MT3 actually put there first --
+there is no "find the guitar" filter. Treat these profiles as an
+experimental, single-song-at-a-time comparison against the current default
+(see docs/instrument-transcription-findings.md), not a production
+replacement.
 
 ## Working copies and promotion (`vgt_working_copy.lua`)
 

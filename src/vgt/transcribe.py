@@ -592,6 +592,28 @@ _GUITAR_HARMONIC_PROFILE = replace(
     },
 )
 
+# MT3 alternatives (issue #288): opt-in, experimental, and deliberately bare.
+# The onset/frame-threshold/frequency-window/melodia fields below are never
+# read for backend="mt3" (same convention as a pyin profile's -- see this
+# class's docstring); `_INSTRUMENT_PROFILES`'s copies exist only so this
+# dataclass's required fields are satisfiable. No audio frontend (MT3 gets
+# the raw separated stem, no HPSS blend) and no cleanup pipeline: the point of
+# shipping these now is to expose MT3's own output honestly, before any
+# measured evidence would motivate a derived cleanup profile (see
+# docs/instrument-transcription-findings.md).
+_GUITAR_MT3_PROFILE = InstrumentProfile(
+    name="guitar-mt3",
+    backend="mt3",
+    onset_threshold=DEFAULT_ONSET_THRESHOLD,
+    frame_threshold=DEFAULT_FRAME_THRESHOLD,
+    minimum_note_length_ms=DEFAULT_MINIMUM_NOTE_LENGTH_MS,
+    minimum_frequency_hz=None,
+    maximum_frequency_hz=None,
+    multiple_pitch_bends=DEFAULT_MULTIPLE_PITCH_BENDS,
+    melodia_trick=DEFAULT_MELODIA_TRICK,
+)
+_BASS_MT3_PROFILE = replace(_GUITAR_MT3_PROFILE, name="bass-mt3")
+
 _INSTRUMENT_PROFILES: dict[str, InstrumentProfile] = {
     "default": _DEFAULT_PROFILE,
     "guitar": _GUITAR_PROFILE,
@@ -605,6 +627,8 @@ _INSTRUMENT_PROFILES: dict[str, InstrumentProfile] = {
     "guitar-acoustic-clean": _GUITAR_ACOUSTIC_CLEAN_PROFILE,
     "guitar-acoustic-strict-chords": _GUITAR_ACOUSTIC_STRICT_CHORDS_PROFILE,
     "guitar-harmonic": _GUITAR_HARMONIC_PROFILE,
+    "guitar-mt3": _GUITAR_MT3_PROFILE,
+    "bass-mt3": _BASS_MT3_PROFILE,
 }
 VALID_PROFILE_NAMES: tuple[str, ...] = tuple(_INSTRUMENT_PROFILES)
 
@@ -740,6 +764,7 @@ _PROFILE_NAMES_BY_TARGET["guitar"] = (
     "guitar-acoustic-clean",
     "guitar-acoustic-strict-chords",
     "guitar-harmonic",
+    "guitar-mt3",
 )
 _PROFILE_NAMES_BY_TARGET["bass"] = (
     "default",
@@ -747,6 +772,7 @@ _PROFILE_NAMES_BY_TARGET["bass"] = (
     "bass-pyin",
     "bass-basic-pitch",
     "bass-monophonic",
+    "bass-mt3",
 )
 _PROFILE_NAMES_BY_TARGET["drums"] = (*DRUM_TRANSCRIPTION_PROFILE_NAMES, *_LEGACY_DRUM_TRANSCRIPTION_PROFILE_NAMES)
 

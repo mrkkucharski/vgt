@@ -250,7 +250,19 @@ def add_variant(
         effective_profile = resolved.name
         profile_definition_hash = resolved.profile_definition_hash
         resolved_settings = resolved_settings_snapshot(resolved)
-        spec = spec_from_resolved_profile(resolved, midi_tempo=midi_tempo, time_signature=time_signature, tempo_map=tempo_map)
+        mt3_checkpoint_fingerprint = None
+        if resolved.backend == "mt3":
+            # Local-only provisioning check (see `vgt.mt3_provision.mt3_status`):
+            # never touches the network, and only runs when this target's
+            # resolved profile actually claims the mt3 backend.
+            from .mt3_provision import mt3_status
+
+            manifest = mt3_status()
+            mt3_checkpoint_fingerprint = manifest.fingerprint if manifest is not None else None
+        spec = spec_from_resolved_profile(
+            resolved, midi_tempo=midi_tempo, time_signature=time_signature, tempo_map=tempo_map,
+            mt3_checkpoint_fingerprint=mt3_checkpoint_fingerprint,
+        )
         audio_frontend = resolved.audio_frontend
         routing_modes = {target: effective_profile}
 

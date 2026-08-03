@@ -15,7 +15,7 @@ from vgt.transcription_profiles import (
     validate_profile_for_target,
     validate_project_profiles,
 )
-from vgt.transcribe import PyinSpec
+from vgt.transcribe import Mt3Spec, PyinSpec
 
 
 MINIMAL_PROFILE = """
@@ -63,6 +63,66 @@ def test_guitar_harmonic_builtin_exposes_its_analysis_frontend() -> None:
 def test_unknown_builtin_profile_is_rejected() -> None:
     with pytest.raises(ProfileDefinitionError):
         resolve_profile("guitar-acoustic-does-not-exist")
+
+
+# --- MT3 builtin profiles (issue #288) --------------------------------------
+
+
+def test_guitar_mt3_resolves_with_no_cleanup_and_the_mt3_backend() -> None:
+    resolved = resolve_profile("guitar-mt3")
+
+    assert resolved.backend == "mt3"
+    assert resolved.is_builtin is True
+    assert resolved.cleanup == ()
+    assert resolved.audio_frontend["stages"] == []  # raw stem, no HPSS frontend
+    assert resolved.detection["model_id"] == "official-multitrack-v1"
+    assert resolved.detection["tag"] == "v0.1.0"
+    assert "repository" in resolved.detection and "commit" in resolved.detection
+    assert "track_selection_version" in resolved.detection
+    assert "note_normalization_version" in resolved.detection
+
+
+def test_bass_mt3_resolves_identically_apart_from_name() -> None:
+    guitar = resolve_profile("guitar-mt3")
+    bass = resolve_profile("bass-mt3")
+
+    assert bass.backend == guitar.backend == "mt3"
+    assert bass.detection == guitar.detection
+    assert bass.cleanup == guitar.cleanup == ()
+
+
+def test_spec_from_resolved_mt3_profile_builds_an_mt3_spec() -> None:
+    resolved = resolve_profile("guitar-mt3")
+
+    spec = spec_from_resolved_profile(resolved, midi_tempo=120.0, mt3_checkpoint_fingerprint="fp-1")
+
+    assert isinstance(spec, Mt3Spec)
+    assert spec.backend == "mt3"
+    assert spec.tag == "v0.1.0"
+    assert spec.checkpoint_fingerprint == "fp-1"
+    assert spec.midi_tempo == 120.0
+    assert spec.cleanup == ()
+
+
+def test_spec_from_resolved_mt3_profile_checkpoint_fingerprint_defaults_to_none() -> None:
+    resolved = resolve_profile("bass-mt3")
+
+    spec = spec_from_resolved_profile(resolved, midi_tempo=120.0)
+
+    assert isinstance(spec, Mt3Spec)
+    assert spec.checkpoint_fingerprint is None
+
+
+def test_mt3_builtin_cannot_be_extended_by_a_project_profile() -> None:
+    text = """
+schema_version = 1
+
+[profiles.my-mt3]
+target = "guitar"
+extends = "guitar-mt3"
+"""
+    with pytest.raises(ProfileDefinitionError, match="does not support project overrides"):
+        resolve_profile("my-mt3", parse_profiles_toml(text))
 
 
 # --- TOML parsing and validation -------------------------------------------
