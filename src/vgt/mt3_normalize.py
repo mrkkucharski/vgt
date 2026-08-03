@@ -1,11 +1,12 @@
 """Backend-neutral MT3 multitrack MIDI normalization (issue #286, revised by
-issue #290 to select the dominant track rather than the first).
+issue #290 to select the dominant track by duration rather than the first,
+with target-aware program-family elimination for explicitly named tracks).
 
 MT3 writes its complete multi-instrument prediction into one Standard
 MIDI File; it exposes no stable primary-track field, and an apparent
 input-filename track name may have been assigned by whatever imported the
 file rather than guaranteed MIDI metadata. This module's selection rule is
-therefore structural, not name- or instrument-aware:
+therefore structural wherever possible, not a guess about audio content:
 
 1. Exclude every track that is drums: General MIDI's percussion channel (MIDI
    channel 9, 0-indexed) is a universal, structural convention, not an
@@ -14,21 +15,27 @@ therefore structural, not name- or instrument-aware:
    `assign_instruments`, which pins a drum note to a fixed instrument index
    regardless of when it occurs -- verified against MT3's real output on two
    songs; see docs/instrument-transcription-findings.md finding 7).
-2. Among the remaining tracks, select the one with the most note events. A
-   source-separated single-instrument stem is expected to be *dominated*, in
-   note count, by its intended instrument -- a more robust assumption than
-   "whichever track the model happened to decode first" (issue #286's
-   original rule), which only needs a spurious secondary track to start a
-   few ticks earlier to win. Ties resolve to the earlier track in file order,
+2. Among the remaining tracks, eliminate any track MT3 explicitly *named*
+   (every non-first instrument gets a MIDI `track_name` meta event derived
+   from its own declared GM program -- see `note_seq`'s MIDI writer) whose
+   declared program falls outside the requested target's General MIDI
+   instrument family (guitar: 24-31; bass: 32-39). This is reading MT3's own
+   declared classification for a track it was confident enough to label, not
+   vgt inventing an instrument-family guess. The one *unnamed* track a file
+   always has (MT3's structurally first-decoded instrument -- see finding 7)
+   is never eliminated by this rule: there is nothing to check its label
+   against, so it stays a candidate regardless of its numeric program.
+3. Among the survivors, select the one with the most total note *duration*
+   (not note count): a source-separated single-instrument stem is expected
+   to be dominated, in how much of the track it actually occupies, by its
+   intended instrument. Raw note count is gameable by fragmentation -- a
+   spurious track with many short notes can outcount a correct track with
+   fewer, longer ones (measured for real: see docs/instrument-transcription-
+   findings.md finding 7). Ties resolve to the earlier track in file order,
    deterministically.
-3. Record the selected track's name for diagnostics when present, but never
+4. Record the selected track's name for diagnostics when present, but never
    require or select by it.
-4. Do not filter by predicted General MIDI program family (never guess
-   "which program is guitar/bass") -- drum-channel exclusion is a structural
-   MIDI convention, not that kind of instrument-aware heuristic, and remains
-   out of scope; see docs/instrument-transcription-findings.md before
-   changing that.
-5. Fail clearly if no non-drum track contains a note event.
+5. Fail clearly if no surviving track contains a note event.
 
 This module never invokes or provisions MT3 itself (see `vgt.mt3_provision`
 for that); it only produces vgt's canonical `ParsedNote`/CSV/MIDI contract
@@ -59,12 +66,23 @@ from .transcribe import (
 # `select_dominant_musical_track` picks; `NOTE_NORMALIZATION` covers how its
 # note-on/off pairs are converted into `ParsedNote`s once a track is chosen.
 # The same role `PYIN_ALGORITHM_VERSION` plays for that backend's identity.
-# TRACK_SELECTION bumped 1 -> 2 by issue #290 (dominant-by-note-count with
-# drum-channel exclusion, replacing first-by-decode-order): any raw MT3
-# detection cached under the old version must not be reused as if it were
-# selected under the new rule.
-MT3_TRACK_SELECTION_VERSION = 2
+# TRACK_SELECTION bumped 1 -> 2 -> 3 by issue #290 (first: dominant-by-note-
+# count with drum-channel exclusion, replacing first-by-decode-order; then:
+# dominant-by-duration plus target-aware family elimination of named
+# tracks): any raw MT3 detection cached under an older version must not be
+# reused as if it were selected under the current rule.
+MT3_TRACK_SELECTION_VERSION = 3
 MT3_NOTE_NORMALIZATION_VERSION = 1
+
+# General MIDI Level 1 program-family ranges (0-indexed), keyed by the vgt
+# target they may eliminate a *named* track for. Guitar: patches 25-32 in the
+# 1-indexed GM spec (Nylon/Steel/Jazz/Clean/Muted/Overdriven/Distortion
+# Guitar, Guitar Harmonics); Bass: patches 33-40 (Acoustic/Electric-finger/
+# Electric-pick/Fretless/Slap 1-2/Synth 1-2 Bass).
+GM_PROGRAM_FAMILIES: dict[str, range] = {
+    "guitar": range(24, 32),
+    "bass": range(32, 40),
+}
 
 _DEFAULT_TEMPO_USPB = 500_000  # 120 BPM, MIDI's implicit default absent a set_tempo event
 
@@ -175,11 +193,45 @@ def _is_drum_track(track: Any) -> bool:
     return any(msg.type in ("note_on", "note_off") and msg.channel == _DRUM_CHANNEL for msg in track)
 
 
-def select_dominant_musical_track(path: str | Path) -> Mt3SelectedTrack:
-    """Select and normalize MT3's dominant non-drum track from `path`: the
-    one with the most note events, among tracks that are not drums.
+def _track_program(track: Any) -> int | None:
+    """The GM program MT3 declared for `track` via `program_change`, or
+    `None` if it never sent one (MIDI's own default would be program 0, but
+    the absence itself is what `_is_named_track` uses to grant the pass)."""
+    for msg in track:
+        if msg.type == "program_change":
+            return msg.program
+    return None
 
-    Raises `TranscriptionError` if the file cannot be parsed or no non-drum
+
+def _is_named_track(track: Any) -> bool:
+    """Whether MT3 gave `track` an explicit `track_name` meta event.
+
+    Every instrument `note_seq` assigns after the structurally-first one gets
+    a name derived from its own declared GM program; the first-decoded
+    instrument does not (see the module docstring) -- so "named" doubles as
+    "MT3 was confident enough to label this instrument," which is exactly the
+    condition family elimination should apply to.
+    """
+    return any(msg.is_meta and msg.type == "track_name" for msg in track)
+
+
+def _total_duration_s(notes: tuple[ParsedNote, ...]) -> float:
+    return sum(note.end_s - note.start_s for note in notes)
+
+
+def select_dominant_musical_track(path: str | Path, *, target: str | None = None) -> Mt3SelectedTrack:
+    """Select and normalize MT3's dominant track from `path`: the surviving
+    track with the most total note duration, among tracks that are not drums
+    and were not explicitly named as a different instrument family.
+
+    `target`, when it names a target in `GM_PROGRAM_FAMILIES` (currently
+    "guitar" or "bass"), eliminates every explicitly *named* track whose
+    declared GM program falls outside that family; the one unnamed track a
+    file always has is never eliminated by this rule (see the module
+    docstring). `None`, or a target with no known family, applies no family
+    elimination -- only the drum-channel exclusion.
+
+    Raises `TranscriptionError` if the file cannot be parsed or no surviving
     track contains a note event.
     """
     import mido
@@ -191,18 +243,26 @@ def select_dominant_musical_track(path: str | Path) -> Mt3SelectedTrack:
     if midi.ticks_per_beat <= 0:
         raise TranscriptionError(f"{path}: MIDI file has an invalid ticks-per-beat")
 
+    family = GM_PROGRAM_FAMILIES.get(target) if target else None
+
     tempo_events = _tempo_events(midi.tracks)
     best: Mt3SelectedTrack | None = None
-    best_count = 0
+    best_duration = 0.0
     for track in midi.tracks:
         if _is_drum_track(track):
             continue
+        if family is not None and _is_named_track(track) and _track_program(track) not in family:
+            continue
         notes = _extract_track_notes(track, tempo_events, midi.ticks_per_beat)
-        if len(notes) > best_count:  # strictly greater: a tie keeps the earlier track
+        if not notes:
+            continue
+        duration = _total_duration_s(notes)
+        if duration > best_duration:  # strictly greater: a tie keeps the earlier track
             best = Mt3SelectedTrack(track_name=_track_name(track), notes=tuple(notes))
-            best_count = len(notes)
+            best_duration = duration
     if best is None:
-        raise TranscriptionError(f"{path}: no non-drum MIDI track contains note events")
+        family_detail = f" of the {target!r} program family (or unnamed)" if family is not None else ""
+        raise TranscriptionError(f"{path}: no surviving MIDI track{family_detail} contains note events")
     return best
 
 

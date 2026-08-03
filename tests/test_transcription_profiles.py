@@ -94,12 +94,13 @@ def test_bass_mt3_resolves_identically_apart_from_name() -> None:
 def test_spec_from_resolved_mt3_profile_builds_an_mt3_spec() -> None:
     resolved = resolve_profile("guitar-mt3")
 
-    spec = spec_from_resolved_profile(resolved, midi_tempo=120.0, mt3_checkpoint_fingerprint="fp-1")
+    spec = spec_from_resolved_profile(resolved, midi_tempo=120.0, mt3_checkpoint_fingerprint="fp-1", target="guitar")
 
     assert isinstance(spec, Mt3Spec)
     assert spec.backend == "mt3"
     assert spec.tag == "v0.1.1"
     assert spec.checkpoint_fingerprint == "fp-1"
+    assert spec.target == "guitar"
     assert spec.midi_tempo == 120.0
     assert spec.cleanup == ()
 
@@ -107,10 +108,17 @@ def test_spec_from_resolved_mt3_profile_builds_an_mt3_spec() -> None:
 def test_spec_from_resolved_mt3_profile_checkpoint_fingerprint_defaults_to_none() -> None:
     resolved = resolve_profile("bass-mt3")
 
-    spec = spec_from_resolved_profile(resolved, midi_tempo=120.0)
+    spec = spec_from_resolved_profile(resolved, midi_tempo=120.0, target="bass")
 
     assert isinstance(spec, Mt3Spec)
     assert spec.checkpoint_fingerprint is None
+
+
+def test_spec_from_resolved_mt3_profile_requires_an_explicit_target() -> None:
+    resolved = resolve_profile("bass-mt3")
+
+    with pytest.raises(ProfileDefinitionError, match="requires an explicit target"):
+        spec_from_resolved_profile(resolved, midi_tempo=120.0)
 
 
 def test_mt3_builtin_cannot_be_extended_by_a_project_profile() -> None:

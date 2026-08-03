@@ -720,18 +720,24 @@ vgt transcription variant add bass --name mt3 --profile bass-mt3 "Song.RPP"
 `guitar-mt3` only accepts the `guitar` target and `bass-mt3` only accepts
 `bass` (`--mode guitar=bass-mt3` or the reverse is rejected before anything
 runs). Both feed the raw separated stem into MT3 (no HPSS frontend) and
-retain only its **dominant non-drum MIDI track** through vgt's normalizer:
-every track on General MIDI's percussion channel is excluded (a structural
-MIDI convention, not an instrument guess), and among the rest, the track with
-the most note events is kept -- a source-separated single-instrument stem is
-expected to be dominated, in note count, by its intended instrument. There is
-deliberately **no cleanup pipeline** here (no note-dropping, voice-cap, or
-force-monophony): these profiles exist to show MT3's own output honestly,
-before any measured evidence would motivate a derived cleanup profile. There
-is also no General MIDI program filtering and no fallback to another MT3
-track, Basic Pitch, or pYIN -- if MT3's dominant track happens to be the
-wrong instrument, or MT3 is not provisioned, or the backend fails, the
-variant records that error and nothing else is substituted.
+retain only its **dominant MIDI track** through vgt's normalizer, in two
+steps: every track on General MIDI's percussion channel is excluded (a
+structural MIDI convention, not an instrument guess); and every remaining
+track MT3 *explicitly named* (every track but one always is, by MT3's own
+MIDI-writing convention) whose declared GM program falls outside the
+target's instrument family (guitar/bass) is also excluded -- reading MT3's
+own declared classification for a track it named, not vgt guessing an
+instrument from audio. Among the survivors, the one with the most total note
+*duration* is kept (not raw note count, which a fragmented, wrong-instrument
+track can otherwise win). There is deliberately **no cleanup pipeline** here
+(no note-dropping, voice-cap, or force-monophony): these profiles exist to
+show MT3's own output honestly, before any measured evidence would motivate
+a derived cleanup profile. There is also no fallback to another MT3 track,
+Basic Pitch, or pYIN -- and the file's one always-unnamed track is never
+excluded by the family rule (there is no label to check it against), so if
+that specific track is the wrong instrument, or MT3 is not provisioned, or
+the backend fails, the variant records that error and nothing else is
+substituted.
 
 `vgt transcription profile show guitar-mt3` reports the full pinned identity
 (fork repository, tag, commit, runtime, checkpoint model id, and both

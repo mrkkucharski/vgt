@@ -261,7 +261,7 @@ def add_variant(
             mt3_checkpoint_fingerprint = manifest.fingerprint if manifest is not None else None
         spec = spec_from_resolved_profile(
             resolved, midi_tempo=midi_tempo, time_signature=time_signature, tempo_map=tempo_map,
-            mt3_checkpoint_fingerprint=mt3_checkpoint_fingerprint,
+            mt3_checkpoint_fingerprint=mt3_checkpoint_fingerprint, target=target,
         )
         audio_frontend = resolved.audio_frontend
         routing_modes = {target: effective_profile}

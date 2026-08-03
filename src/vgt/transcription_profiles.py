@@ -675,6 +675,7 @@ def spec_from_resolved_profile(
     time_signature: str | None = None,
     tempo_map: TempoMapReference | None = None,
     mt3_checkpoint_fingerprint: str | None = None,
+    target: str | None = None,
 ) -> BasicPitchSpec | PyinSpec | Mt3Spec:
     """Build the spec a resolved profile (builtin or project-local) describes
     -- the bridge `transcription_profiles.py`'s module docstring calls out as
@@ -686,8 +687,15 @@ def spec_from_resolved_profile(
     `mt3_checkpoint_fingerprint` is a caller-supplied local provisioning
     check (see `vgt.mt3_provision.mt3_status`), never derived here -- the
     same reason `vgt.transcribe.default_spec_for_target` never derives it
-    either."""
+    either. `target` is required for `backend == "mt3"`: unlike every other
+    resolved profile, a *builtin* mt3 profile resolves with `resolved.target
+    is None` (the same as `default`, since resolution has no target context
+    of its own -- see `resolve_profile`), so the caller's own already-known
+    target (`vgt.transcription_lifecycle.add_variant` has one) must be passed
+    in explicitly for `vgt.mt3_normalize`'s program-family elimination."""
     if resolved.backend == "mt3":
+        if target is None:
+            raise ProfileDefinitionError(f"profile {resolved.name!r} requires an explicit target to resolve an Mt3Spec")
         detection = resolved.detection
         return Mt3Spec(
             backend="mt3",
@@ -700,6 +708,7 @@ def spec_from_resolved_profile(
             checkpoint_fingerprint=mt3_checkpoint_fingerprint,
             track_selection_version=detection["track_selection_version"],
             note_normalization_version=detection["note_normalization_version"],
+            target=target,
             midi_tempo=midi_tempo,
             tempo_map=tempo_map,
         )

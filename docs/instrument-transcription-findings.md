@@ -94,56 +94,80 @@ mistake in the guitar pipeline re-created a 7.1 s note under a 4 s clamp.
 
 **7. MT3's per-instrument track order has a precise, verified mechanism, and
 selecting by structural dominance rather than by that order is safer — but
-either way, a pitch mismatch is not automatically evidence of picking the
-wrong instrument.** Traced in MT3's own source rather than assumed:
-`mt3/note_sequences.py::assign_instruments` gives instrument index 0 to
-whichever GM program's note it decodes *first*, index 1 to the next new
-program encountered, and so on — except any drum note, which always gets a
-fixed instrument index (9) regardless of when it occurs; `note_seq`'s MIDI
-writer then emits tracks sorted by that instrument index, and
-`mt3/metrics_utils.py` decodes audio segments in strict chronological order.
-So MT3's own track order is whichever non-drum instrument genuinely sounds
-*first* in the piece, drums structurally excluded from ever winning that
-slot — this was issue #286's original selection rule.
+neither a pitch mismatch nor a wrong-looking dominant track is automatically
+evidence of picking the wrong instrument, and the two real fixes below only
+help when MT3 actually labeled the culprit.** Traced in MT3's own source
+rather than assumed: `mt3/note_sequences.py::assign_instruments` gives
+instrument index 0 to whichever GM program's note it decodes *first*, index 1
+to the next new program encountered, and so on — except any drum note, which
+always gets a fixed instrument index (9) regardless of when it occurs;
+`note_seq`'s MIDI writer then emits tracks sorted by that instrument index,
+naming every track *except* the first (whichever program won instrument index
+0 is always left with no `track_name` meta event, structurally, not by
+chance), and `mt3/metrics_utils.py` decodes audio segments in strict
+chronological order. So MT3's own track order is whichever non-drum
+instrument genuinely sounds *first* in the piece, drums structurally excluded
+from ever winning that slot, and exactly one track per file is unnamed no
+matter what — this was issue #286's original selection rule.
 
-**Revised by issue #290**: rather than trust decode order, vgt now excludes
-every drum-channel track (the same structural exclusion, checked directly
-against MIDI channel 9 instead of inferred from MT3's instrument-index
-assignment) and selects the *most note-populous* remaining track. A
-source-separated single-instrument stem is expected to be dominated, in note
-count, by its intended instrument — a stronger assumption than "whichever
-track happened to decode first," which only needs a spurious secondary track
-to start a few ticks earlier to win.
+**Revised twice by issue #290.** First: rather than trust decode order, select
+the *most note-populous* non-drum track (a source-separated stem should be
+dominated, in content, by its intended instrument, a stronger assumption than
+"whichever track decoded first"). Measured on the 7Rivers guitar/bass stems
+already used above (re-running `mt3-transcribe` directly, outside vgt, kept
+the full multi-track output), selection was correct under either rule and the
+published numbers didn't move: bass's first *and* most populous track was
+"Acoustic Bass" (program 32, 131 notes, unnamed, vs. the next track — piano,
+9 notes — starting far later); guitar's was "Acoustic Guitar (nylon)"
+(program 24, 1804 notes, unnamed). A 244-note drum track in the guitar stem's
+raw output, starting earlier than 12 of the other 13 detected tracks and more
+populous than every non-selected pitched track, was still correctly excluded
+either way.
 
-Confirmed by re-running `mt3-transcribe` directly (outside vgt, keeping its
-full multi-track output) on both the 7Rivers guitar and bass stems used
-above, before this revision. Both times, selection was **correct under either
-rule** — the numbers below are unchanged by the revision: bass's first
-*and* most populous track was labeled "Acoustic Bass" (program 32, 131 notes,
-first onset at tick 35, vs. the next spurious track — piano, 9 notes — at
-tick 4765); guitar's first *and* most populous track was labeled "Acoustic
-Guitar (nylon)" (program 24, 1804 notes, first onset at tick 26). Drums were
-present in the guitar stem's raw output (244 notes, first onset at tick 260 —
-earlier than 12 of the other 13 detected tracks, and more populous than every
-non-selected pitched track too) and were excluded from selection either way.
+**Second, a real counter-example forced a further revision.** A second song
+("Perfect_Chcemy-byc-soba", outside this repo) showed raw note count can pick
+the *wrong* instrument outright: its bass stem's most-populous non-drum track
+was "Electric Piano 1" (309 notes, 66.7s total duration) — beating the actual
+"Electric Bass (finger)" track (264 notes, but 80.6s total duration, i.e.
+occupying more of the song despite fewer, longer notes) purely because piano
+notes were shorter and more fragmented. So the rule became: (a) exclude every
+*named* track whose declared GM program is outside the requested target's
+family (guitar 24-31, bass 32-39) — reading MT3's own declared classification
+for a track it was confident enough to label, not vgt guessing; the one
+*always-unnamed* track is never eliminated this way, since there is no label
+to check it against; then (b) rank survivors by total note *duration*, not
+count, which is resistant to exactly the fragmentation-gaming that made count
+fail here.
 
-That means neither measured result above is actually a *track-selection*
-failure: bass's low accuracy (even octave-corrected, 27.0% frame hit vs.
-pYIN's 82.6%) is a genuine note-level transcription problem on the content
-MT3 correctly identified as bass. Guitar's severe fragmentation has a second,
-now-confirmed contributor beyond simple same-pitch splitting: MT3 detected
-the *same* real guitar performance as two separate near-identical programs
-("Acoustic Guitar (nylon)", kept, 1804 notes; "Electric Guitar (jazz)",
-discarded, 105 notes) — content vgt's dominant-track-only rule silently
-drops, not because it picked the wrong instrument, but because MT3 itself
-does not reliably keep one instrument in one program. Treat a selected
-track's pitch or content mismatch as an open, checkable question (verified
-mechanism above, octave/notation convention, or genuinely noisy/split output)
-rather than an assumed leakage failure — but do not assume it is *never* a
-wrong instrument either: the hard exclusion is drums-specific, and nothing
-stops a genuinely different, more note-populous pitched instrument from
-outscoring the real one on a stem with heavy bleed; this is simply not what
-happened on either measured song here.
+Verified against all four measured stems using the shipped function directly:
+7Rivers bass and guitar are **unchanged** (same tracks selected as under the
+count-based rule, both already unnamed and already dominant by duration too).
+Perfect's bass is **fixed**: "Electric Piano 1" is now correctly eliminated
+(named, program 4, outside 32-39) and "Electric Bass (finger)" (named,
+program 33, in-family, 264 notes/80.6s) is correctly selected. Perfect's
+guitar is **unchanged, and not fixed by this revision**: its dominant track
+(2975 notes, an unusually wide 24-90 pitch range) is exactly the file's one
+always-unnamed track, so there is no label for family elimination to check it
+against — nothing rules it out, whatever it actually is. This is the
+mechanism's honest limit, not a bug: name-based elimination can only remove
+what MT3 chose to name.
+
+None of this means a pitch or content mismatch is settled once selection is
+"correct" by this rule: bass's low frame accuracy on 7Rivers (even
+octave-corrected, 27.0% hit vs. pYIN's 82.6%) is a genuine note-level
+transcription problem on content MT3 *did* correctly identify as bass, not a
+selection failure. Guitar's severe fragmentation on 7Rivers has a
+confirmed second contributor beyond same-pitch splitting: MT3 detected the
+*same* real guitar performance as two separate near-identical, both
+guitar-family programs ("Acoustic Guitar (nylon)", kept; "Electric Guitar
+(jazz)", discarded) — content the dominant-track-only rule still drops
+either way, because MT3 does not reliably keep one instrument in one program,
+and family membership alone can't tell two same-family tracks apart. Treat a
+selected track's pitch, register, or content as an open, checkable question
+(mechanism above, octave/notation convention, genuinely noisy/split output,
+or an unnamed and therefore unfilterable track) rather than an assumed
+leakage failure — and don't assume family elimination catches every case
+either: it only ever removes a track MT3 both named and mislabeled.
 
 ## Method
 

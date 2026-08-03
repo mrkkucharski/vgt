@@ -37,10 +37,13 @@ def _spec(**overrides) -> Mt3Spec:
     return replace(base, **overrides) if overrides else base
 
 
-def _write_valid_mt3_midi(path: Path, *, track_name: str = "Guitar", pitch: int = 60) -> None:
+def _write_valid_mt3_midi(path: Path, *, track_name: str = "Guitar", pitch: int = 60, program: int = 24) -> None:
     midi = mido.MidiFile(ticks_per_beat=480)
     midi.tracks.append(mido.MidiTrack([mido.MetaMessage("set_tempo", tempo=500_000, time=0)]))
-    track = mido.MidiTrack([mido.MetaMessage("track_name", name=track_name, time=0)])
+    track = mido.MidiTrack([
+        mido.MetaMessage("track_name", name=track_name, time=0),
+        mido.Message("program_change", program=program, time=0),
+    ])
     track.append(mido.Message("note_on", note=pitch, velocity=90, time=0))
     track.append(mido.Message("note_off", note=pitch, velocity=0, time=480))
     midi.tracks.append(track)
@@ -250,7 +253,7 @@ def test_detect_raw_reports_no_note_bearing_track(tmp_path: Path, monkeypatch: p
 
     monkeypatch.setattr(subprocess, "run", fake_run)
 
-    with pytest.raises(TranscriptionError, match="no non-drum MIDI track contains note events"):
+    with pytest.raises(TranscriptionError, match="no surviving MIDI track"):
         Mt3Transcriber().detect_raw(_source(tmp_path), tmp_path / "dest", _spec())
 
 

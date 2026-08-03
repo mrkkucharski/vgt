@@ -584,14 +584,15 @@ Timpani). The track vgt selected is the one labeled **"Acoustic Bass"
 (program 32), 131 notes, first onset at tick 35** — matching `bass-mt3`'s
 reported note count exactly, and it is both the first track decoded (vs. the
 spurious piano and timpani tracks, starting at ticks 4765 and 10916) and the
-most note-populous one (131 vs. 9 vs. 1), so this was correct selection under
-either rule (see finding 7 in
+most duration-populous one too (101.8s vs. far less for the others), so this
+was correct selection under every rule issue #290 tried (see finding 7 in
 [instrument-transcription-findings.md](instrument-transcription-findings.md)
-for the verified mechanism and how issue #290 later changed which of the two
-this profile actually selects by). MT3 did not put the wrong instrument first
-here either way; the octave gap above and the 27.0%-hit accuracy gap are both
-about the *quality* of MT3's bass transcription, not about which track got
-selected.
+for the full, twice-revised mechanism -- including a real counter-example on
+a *second* song, where raw note count picked the wrong instrument for bass
+outright, fixed by the same duration-plus-family-elimination rule verified
+here as a no-op). MT3 did not put the wrong instrument first here either way;
+the octave gap above and the 27.0%-hit accuracy gap are both about the
+*quality* of MT3's bass transcription, not about which track got selected.
 
 ### Ear-verified 2026-08-03: confirms the measurement, on a second song too
 

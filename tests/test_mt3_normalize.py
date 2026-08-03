@@ -1,5 +1,6 @@
 """Offline coverage for MT3 multitrack MIDI normalization (issue #286,
-revised by issue #290 to select the dominant non-drum track by note count
+revised by issue #290 to select the dominant track by total note duration,
+with target-aware program-family elimination of explicitly named tracks,
 rather than the first note-bearing track).
 
 Every fixture is a synthetic MIDI file built directly with `mido`; nothing
@@ -51,6 +52,10 @@ def _off(note: int, time: int, channel: int = 0) -> mido.Message:
     return mido.Message("note_off", channel=channel, note=note, velocity=0, time=time)
 
 
+def _program(program: int) -> mido.Message:
+    return mido.Message("program_change", program=program, time=0)
+
+
 CONDUCTOR = [_tempo(500_000)]  # 120 BPM
 
 
@@ -67,8 +72,8 @@ def _drum_notes(count: int, *, time: int = 0, gap: int = 120) -> list[mido.Messa
 def test_selects_the_dominant_track_not_the_first(tmp_path: Path) -> None:
     path = _midi(tmp_path, [
         CONDUCTOR,
-        [_named("Piano"), _on(60, 90, 0), _off(60, 480)],  # first in file, only 1 note
-        [_named("Guitar"), _on(62, 80, 0), _off(62, 240), _on(64, 80, 0), _off(64, 240)],  # 2 notes
+        [_named("Piano"), _on(60, 90, 0), _off(60, 480)],  # first in file, 0.5s total duration
+        [_named("Guitar"), _on(62, 80, 0), _off(62, 960), _on(64, 80, 0), _off(64, 480)],  # 1.5s total duration
     ])
 
     selected = select_dominant_musical_track(path)
@@ -102,6 +107,54 @@ def test_ties_prefer_the_earlier_track_in_file_order(tmp_path: Path) -> None:
     assert selected.track_name == "First"
 
 
+def test_named_wrong_family_track_is_eliminated_even_with_more_duration(tmp_path: Path) -> None:
+    path = _midi(tmp_path, [
+        CONDUCTOR,
+        [_named("Piano"), _program(0), _on(60, 90, 0), _off(60, 960)],  # 2.0s, wrong family
+        [_named("Guitar"), _program(24), _on(62, 80, 0), _off(62, 480)],  # 1.0s, guitar family
+    ])
+
+    selected = select_dominant_musical_track(path, target="guitar")
+
+    assert selected.track_name == "Guitar"
+    assert [note.pitch_midi for note in selected.notes] == [62]
+
+
+def test_family_elimination_is_a_noop_without_a_recognized_target(tmp_path: Path) -> None:
+    path = _midi(tmp_path, [
+        CONDUCTOR,
+        [_named("Piano"), _program(0), _on(60, 90, 0), _off(60, 960)],  # more duration
+        [_named("Guitar"), _program(24), _on(62, 80, 0), _off(62, 480)],
+    ])
+
+    assert select_dominant_musical_track(path, target=None).track_name == "Piano"
+    assert select_dominant_musical_track(path, target="drums").track_name == "Piano"  # no known family
+
+
+def test_unnamed_track_is_never_eliminated_by_family(tmp_path: Path) -> None:
+    """The one unnamed track a file always has (MT3's structurally-first
+    instrument) has nothing to check its label against, so it survives family
+    elimination regardless of its own declared program."""
+    path = _midi(tmp_path, [
+        CONDUCTOR,
+        [_program(0), _on(60, 90, 0), _off(60, 960)],  # unnamed, wrong family, most duration
+        [_named("Piano"), _program(0), _on(64, 70, 0), _off(64, 240)],  # named, wrong family, eliminated
+        [_named("Guitar"), _program(24), _on(62, 80, 0), _off(62, 480)],  # named, correct family, less duration
+    ])
+
+    selected = select_dominant_musical_track(path, target="guitar")
+
+    assert selected.track_name is None
+    assert [note.pitch_midi for note in selected.notes] == [60]
+
+
+def test_no_surviving_track_for_the_target_family_fails_clearly(tmp_path: Path) -> None:
+    path = _midi(tmp_path, [CONDUCTOR, [_named("Piano"), _program(0), _on(60, 90, 0), _off(60, 480)]])
+
+    with pytest.raises(TranscriptionError, match=r"no surviving MIDI track of the 'guitar' program family"):
+        select_dominant_musical_track(path, target="guitar")
+
+
 def test_a_note_bearing_track_with_no_name_is_selected_with_none(tmp_path: Path) -> None:
     path = _midi(tmp_path, [CONDUCTOR, [_on(64, 70, 0), _off(64, 240)]])
 
@@ -126,7 +179,7 @@ def test_empty_and_meta_only_tracks_are_skipped_without_error(tmp_path: Path) ->
 def test_no_note_bearing_track_fails_clearly(tmp_path: Path) -> None:
     path = _midi(tmp_path, [CONDUCTOR, [_named("Empty")]])
 
-    with pytest.raises(TranscriptionError, match="no non-drum MIDI track contains note events"):
+    with pytest.raises(TranscriptionError, match="no surviving MIDI track contains note events"):
         select_dominant_musical_track(path)
 
 
@@ -135,7 +188,7 @@ def test_drums_only_output_fails_clearly(tmp_path: Path) -> None:
     silently fall back to the drum track."""
     path = _midi(tmp_path, [CONDUCTOR, [_named("Drums"), *_drum_notes(5)]])
 
-    with pytest.raises(TranscriptionError, match="no non-drum MIDI track contains note events"):
+    with pytest.raises(TranscriptionError, match="no surviving MIDI track contains note events"):
         select_dominant_musical_track(path)
 
 

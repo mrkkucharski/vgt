@@ -1129,6 +1129,14 @@ class Mt3Spec:
     see that module's docstring on why this spec never re-hashes the
     checkpoint itself); a real transcription attempt with no fingerprint yet
     still fails clearly at execution time, not at spec-build time.
+
+    `target` (issue #290) is the vgt target this spec transcribes -- unlike
+    every other spec, MT3's normalization needs it to eliminate an explicitly
+    named track outside the target's General MIDI instrument family (see
+    `vgt.mt3_normalize.select_dominant_musical_track`); no other backend
+    re-derives target-specific behavior from the target name at run time, so
+    this is a deliberate, narrow exception to the rest of this module's
+    specs not carrying one.
     """
 
     backend: str  # "mt3" | "fake"
@@ -1141,6 +1149,7 @@ class Mt3Spec:
     checkpoint_fingerprint: str | None
     track_selection_version: int
     note_normalization_version: int
+    target: str
     midi_tempo: float | None
     tempo_map: "TempoMapReference | None" = None
     cleanup: tuple[CleanupStage, ...] = ()
@@ -1157,6 +1166,7 @@ class Mt3Spec:
             "checkpoint_fingerprint": self.checkpoint_fingerprint,
             "track_selection_version": self.track_selection_version,
             "note_normalization_version": self.note_normalization_version,
+            "target": self.target,
             "midi_tempo": self.midi_tempo,
             "cleanup": [{"name": stage.name, "params": stage.params} for stage in self.cleanup],
         }
@@ -1304,7 +1314,7 @@ def default_spec_for_target(
             runtime_version=MT3_RUNTIME_VERSION, lock_sha256=MT3_LOCK_SHA256, model_id=MT3_MODEL_ID,
             checkpoint_fingerprint=mt3_checkpoint_fingerprint,
             track_selection_version=MT3_TRACK_SELECTION_VERSION, note_normalization_version=MT3_NOTE_NORMALIZATION_VERSION,
-            midi_tempo=midi_tempo, tempo_map=tempo_map,
+            target=target, midi_tempo=midi_tempo, tempo_map=tempo_map,
         )
     profile = _profile_for_target(target, modes)
     bar_seconds = _bar_duration_seconds(midi_tempo, time_signature)
@@ -1469,6 +1479,7 @@ def _settings_dict(spec: TranscriptionSpec) -> dict[str, Any]:
             "model_id": spec.model_id, "checkpoint_fingerprint": spec.checkpoint_fingerprint,
             "track_selection_version": spec.track_selection_version,
             "note_normalization_version": spec.note_normalization_version,
+            "target": spec.target,
             "midi_tempo": spec.midi_tempo,
         }
     return {
@@ -1681,9 +1692,7 @@ class TargetTranscriberRouter:
     # test wiring a single fake) keeps routing every note target to the one
     # transcriber it supplied, rather than failing on bass.
     pyin: Transcriber | None = None
-    # No profile selects `backend="mt3"` yet (issue #287 is backend plumbing
-    # only; see issue #288), so this route is unreachable in production today
-    # -- present so the seam already exists for that later profile.
+    # Routed to by the `guitar-mt3`/`bass-mt3` profiles (issue #288).
     mt3: Transcriber | None = None
 
     def for_target(self, target: str, modes: Mapping[str, str] | None = None) -> Transcriber:
@@ -2051,41 +2060,71 @@ class FakeAdtofTranscriber(FakeTranscriber):
         )
 
 
-def _fake_mt3_multitrack_midi(destination: Path, source: Path, spec: TranscriptionSpec) -> None:
-    """A synthetic multi-instrument MIDI shaped like MT3's own raw output: a
-    leading conductor track (tempo only, no notes), one of two named pitched
-    instrument tracks with notes (content-seeded), and a real drum track on
-    the GM percussion channel with more notes than either pitched candidate.
+# Representative in-family GM program per target (arbitrary; only membership
+# in `vgt.mt3_normalize.GM_PROGRAM_FAMILIES` matters), and a fixed
+# out-of-family program (Acoustic Grand Piano, in neither family) for the
+# fake's wrong-instrument distractor track below.
+_FAKE_MT3_FAMILY_PROGRAM: dict[str, int] = {"guitar": 24, "bass": 33}
+_FAKE_MT3_OUT_OF_FAMILY_PROGRAM = 0
+
+
+def _fake_mt3_multitrack_midi(destination: Path, source: Path, spec: Mt3Spec) -> None:
+    """A synthetic multi-instrument MIDI shaped like MT3's own raw output:
+
+    - a leading conductor track (tempo only, no notes);
+    - one *unnamed* track (mirroring MT3's own structurally-first,
+      never-labeled instrument -- see `vgt.mt3_normalize`), with modest,
+      content-seeded content;
+    - one *named*, correct-family track with more content than the unnamed
+      one -- the one selection is meant to choose;
+    - one *named*, wrong-family "distractor" track with more raw notes *and*
+      more total duration than the correct track, so family elimination
+      (not duration ranking alone) is what has to exclude it;
+    - a populous drum track on the GM percussion channel, which must still
+      lose regardless of its own note count or duration.
+
     This is written so `FakeMt3Transcriber` exercises the real
     `vgt.mt3_normalize.select_dominant_musical_track` selection/normalization
-    logic -- including that a more-populous drum track must still lose to a
-    less-populous non-drum one -- not a shortcut around it, while remaining
-    fully offline and content-addressed like every other fake backend."""
+    logic end to end, not a shortcut around any of it, while remaining fully
+    offline and content-addressed like every other fake backend."""
     import mido
+
+    family_program = _FAKE_MT3_FAMILY_PROGRAM.get(spec.target, _FAKE_MT3_FAMILY_PROGRAM["guitar"])
+
+    def _notes(track: Any, count: int, *, duration_ticks: int) -> None:
+        for note_index in range(count):
+            pitch = 52 + _content_seed(source, spec, f"mt3-pitch-{note_index}") % 24
+            velocity = 60 + _content_seed(source, spec, f"mt3-velocity-{note_index}") % 40
+            track.append(mido.Message("note_on", note=pitch, velocity=velocity, time=0))
+            track.append(mido.Message("note_off", note=pitch, velocity=0, time=duration_ticks))
+
+    note_count = 3 + _content_seed(source, spec, "mt3-note-count") % 3
 
     midi = mido.MidiFile(ticks_per_beat=480)
     midi.tracks.append(mido.MidiTrack([mido.MetaMessage("set_tempo", tempo=500_000, time=0)]))
 
-    instrument_names = ("Guitar", "Piano")
-    selected_index = _content_seed(source, spec, "mt3-selected-track") % len(instrument_names)
-    for index, name in enumerate(instrument_names):
-        track = mido.MidiTrack([mido.MetaMessage("track_name", name=name, time=0)])
-        if index == selected_index:
-            note_count = 3 + _content_seed(source, spec, "mt3-note-count") % 3
-            for note_index in range(note_count):
-                pitch = 52 + _content_seed(source, spec, f"mt3-pitch-{note_index}") % 24
-                velocity = 60 + _content_seed(source, spec, f"mt3-velocity-{note_index}") % 40
-                track.append(mido.Message("note_on", note=pitch, velocity=velocity, time=0))
-                track.append(mido.Message("note_off", note=pitch, velocity=0, time=240))
-        midi.tracks.append(track)
+    unnamed = mido.MidiTrack([mido.Message("program_change", program=family_program, time=0)])
+    _notes(unnamed, max(1, note_count - 2), duration_ticks=120)
+    midi.tracks.append(unnamed)
 
-    # A populous drum track (GM percussion channel 9) must still lose to
-    # whichever pitched track above got notes -- proves drum exclusion isn't
-    # simply an accident of note count.
+    correct = mido.MidiTrack([
+        mido.MetaMessage("track_name", name="Correct", time=0),
+        mido.Message("program_change", program=family_program, time=0),
+    ])
+    _notes(correct, note_count, duration_ticks=240)
+    midi.tracks.append(correct)
+
+    distractor = mido.MidiTrack([
+        mido.MetaMessage("track_name", name="Distractor", time=0),
+        mido.Message("program_change", program=_FAKE_MT3_OUT_OF_FAMILY_PROGRAM, time=0),
+    ])
+    _notes(distractor, note_count + 5, duration_ticks=480)
+    midi.tracks.append(distractor)
+
     drums = mido.MidiTrack([mido.MetaMessage("track_name", name="Drums", time=0)])
-    for beat in range(8):
+    for _ in range(8):
         drums.append(mido.Message("note_on", channel=9, note=36, velocity=100, time=0))
-        drums.append(mido.Message("note_off", channel=9, note=36, velocity=0, time=120))
+        drums.append(mido.Message("note_off", channel=9, note=36, velocity=0, time=480))
     midi.tracks.append(drums)
 
     destination.parent.mkdir(parents=True, exist_ok=True)
@@ -2116,7 +2155,7 @@ class FakeMt3Transcriber(FakeTranscriber):
 
         raw_midi = destination_dir / "_fake_mt3_raw.mid"
         _fake_mt3_multitrack_midi(raw_midi, source, spec)
-        selected = select_dominant_musical_track(raw_midi)
+        selected = select_dominant_musical_track(raw_midi, target=spec.target)
         raw_midi.unlink()
 
         midi_path = destination_dir / "transcription.mid"
@@ -3528,7 +3567,7 @@ class Mt3Transcriber:
                     raise TranscriptionError("mt3-transcribe reported an unexpected output path")
                 if not raw_output.is_file():
                     raise TranscriptionError("mt3-transcribe reported success but wrote no output file")
-                selected = select_dominant_musical_track(raw_output)
+                selected = select_dominant_musical_track(raw_output, target=spec.target)
             except TranscriptionError as exc:
                 raise TranscriptionError(_without_temporary_path(str(exc), work_dir)) from exc
 

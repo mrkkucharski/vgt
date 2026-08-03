@@ -599,21 +599,25 @@ keeping MT3's full multi-track output) shows `programs: [0, 4, 8, 16, 24, 26,
 32, 33, 50, 60, 73, 80, 88]` — MT3 detects far more than one instrument in an
 isolated guitar stem. The track vgt selected is correctly labeled **"Acoustic
 Guitar (nylon)" (program 24), 1804 notes, first onset at tick 26** — matching
-`guitar-mt3`'s reported note count exactly, and it is both the *first* track
-decoded and the *most note-populous* one, so this is not a wrong-instrument
-selection under either rule (see finding 7 in
+`guitar-mt3`'s reported note count exactly, and it is unnamed, the first
+track decoded, the most note-populous one, *and* the most duration-populous
+one, so this is not a wrong-instrument selection under any of the rules
+issue #290 tried (see finding 7 in
 [instrument-transcription-findings.md](instrument-transcription-findings.md)
-for the verified selection mechanism, and how issue #290 later changed which
-of the two this profile actually selects by). Two things worth separating
-out:
+for the full, twice-revised mechanism -- including a real counter-example on
+a second song where note count alone picked the wrong instrument, fixed by
+ranking by duration and eliminating named tracks outside the target's GM
+program family; that same second song's *guitar* case is not fixed by the
+family-elimination rule, because its dominant track happens to be the file's
+one always-unnamed track, which no label-based rule can rule out). Two
+things worth separating out on this stem specifically:
 
 - **Drums were correctly excluded despite starting early and being
   populous.** A 244-note drum track exists in the raw output, first onset at
   tick 260 — earlier than 12 of the other 13 detected tracks, and more
   populous than every other non-selected track too — and it was still placed
-  after the guitar track, both under the original decode-order rule and
-  under #290's note-count-dominance rule. This is not luck; it is the
-  mechanism working, twice over.
+  after the guitar track under every rule tried. This is not luck; it is the
+  mechanism working, every time.
 - **A second guitar-family track was silently discarded.** MT3 also produced
   an "Electric Guitar (jazz)" track (program 26, 105 notes, first onset at
   tick 31 — 5 ticks after the selected track). This is very likely the *same*
