@@ -40,10 +40,14 @@ from .transcribe import (
     _write_parsed_notes_csv,
 )
 
-# Bumped whenever a change here would select a different track or produce
-# different note boundaries from an unchanged MT3 MIDI file -- the same role
-# `PYIN_ALGORITHM_VERSION` plays for that backend's spec identity.
-MT3_NORMALIZATION_VERSION = 1
+# Two independent identity fields (both part of `Mt3Spec`'s serialized
+# identity -- see `vgt.transcribe`), bumped separately so retuning one never
+# masquerades as a change to the other: `TRACK_SELECTION` covers which track
+# `select_first_musical_track` picks; `NOTE_NORMALIZATION` covers how its
+# note-on/off pairs are converted into `ParsedNote`s once a track is chosen.
+# The same role `PYIN_ALGORITHM_VERSION` plays for that backend's identity.
+MT3_TRACK_SELECTION_VERSION = 1
+MT3_NOTE_NORMALIZATION_VERSION = 1
 
 _DEFAULT_TEMPO_USPB = 500_000  # 120 BPM, MIDI's implicit default absent a set_tempo event
 

@@ -12,7 +12,8 @@ import mido
 import pytest
 
 from vgt.mt3_normalize import (
-    MT3_NORMALIZATION_VERSION,
+    MT3_NOTE_NORMALIZATION_VERSION,
+    MT3_TRACK_SELECTION_VERSION,
     Mt3SelectedTrack,
     select_first_musical_track,
     summarize_selected_track,
@@ -268,9 +269,9 @@ def test_downstream_midi_stays_aligned_under_a_piecewise_project_tempo_map(tmp_p
     assert read_back[1][0] == pytest.approx(1.0, abs=1e-3)
 
 
-def test_normalization_version_is_a_stable_integer() -> None:
-    assert isinstance(MT3_NORMALIZATION_VERSION, int)
-    assert MT3_NORMALIZATION_VERSION >= 1
+def test_normalization_versions_are_stable_integers() -> None:
+    assert isinstance(MT3_TRACK_SELECTION_VERSION, int) and MT3_TRACK_SELECTION_VERSION >= 1
+    assert isinstance(MT3_NOTE_NORMALIZATION_VERSION, int) and MT3_NOTE_NORMALIZATION_VERSION >= 1
 
 
 def test_mt3_selected_track_is_a_frozen_dataclass_of_parsed_notes(tmp_path: Path) -> None:

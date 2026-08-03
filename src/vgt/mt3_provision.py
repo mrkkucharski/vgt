@@ -42,6 +42,19 @@ MT3_CACHE_DIR_ENV = "VGT_MT3_CACHE_DIR"
 MT3_REQUIRED_PYTHON = (3, 11)
 MT3_MIN_UV_VERSION = (0, 9, 20)
 MT3_MAX_UV_VERSION_EXCLUSIVE = (0, 10, 0)
+MT3_RUNTIME_VERSION = f"python=={MT3_REQUIRED_PYTHON[0]}.{MT3_REQUIRED_PYTHON[1]}"
+
+# sha256 of the pinned commit's own `uv.lock` -- fully determined by
+# `MT3_PINNED_COMMIT` (it is part of that commit's tree), so this is a
+# reproducible identity constant rather than a value read from a local
+# checkout. Verify it against the pinned commit with:
+#   gh api "repos/mrkkucharski/mt3/contents/uv.lock?ref=<MT3_PINNED_COMMIT>" \
+#     --jq '.content' | base64 -d | shasum -a 256
+MT3_LOCK_SHA256 = "5cf925749b767ebb8924ac4eca9475ab7d8accf5b45e9a1668a61697ff2f1e9f"
+
+# `mt3.model_download.MODEL_ID` at the pinned commit: the only checkpoint
+# `mt3-download-model` knows how to fetch.
+MT3_MODEL_ID = "official-multitrack-v1"
 
 
 class Mt3ProvisionError(Exception):

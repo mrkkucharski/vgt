@@ -54,6 +54,7 @@ from .transcribe import (
     BasicPitchSpec,
     AdtofSpec,
     DrumScriptSpec,
+    Mt3Spec,
     NoteSpec,
     PyinSpec,
     ParsedNote,
@@ -73,7 +74,17 @@ from .transcribe import (
 )
 from .audio_frontend import canonical_recipe, frontend_hash, frontend_relative_path, render
 
+# Basic Pitch and pYIN share this raw-cache directory name (their disjoint
+# `detection_hash` identities already keep the two from ever colliding inside
+# it -- see `detection_identity`); MT3 gets its own (issue #287), so a human
+# browsing the cache can tell a TensorFlow/JAX-produced raw MIDI from an ONNX-
+# or in-process one at a glance.
 CACHE_BACKEND_DIR = "basic-pitch"
+MT3_CACHE_BACKEND_DIR = "mt3"
+
+
+def _cache_backend_dir_for_spec(spec: NoteSpec) -> str:
+    return MT3_CACHE_BACKEND_DIR if isinstance(spec, Mt3Spec) else CACHE_BACKEND_DIR
 
 
 @dataclass(frozen=True)
@@ -123,19 +134,18 @@ def detection_identity(target: str, input_hash: str, spec: NoteSpec) -> dict[str
     raw detection" section). Two specs with equal identity here can share one
     raw inference regardless of which profile produced them.
 
-    Both note-producing backends resolve through here. A `PyinSpec` contributes
-    its own analysis settings rather than Basic Pitch's detector fields, so the
-    two identity shapes are disjoint apart from the keys that mean the same
-    thing to both -- and a pyin variant can therefore never collide with, or be
-    served from, a Basic Pitch variant's cache entry.
+    Every note-producing backend resolves through here. Each backend branch's
+    identity shape is disjoint from the others' apart from `common`'s keys --
+    a pyin, Basic Pitch, or MT3 variant can therefore never collide with, or
+    be served from, another backend's cache entry. Basic Pitch/pYIN's detector
+    fields (`minimum_note_length_ms`/frequency window) live in their own
+    branches rather than `common`: MT3 is a fixed pretrained model with no
+    such settings to hash.
     """
     common = {
         "target": target,
         "input_hash": input_hash,
         "backend": spec.backend,
-        "minimum_note_length_ms": spec.minimum_note_length_ms,
-        "minimum_frequency_hz": spec.minimum_frequency_hz,
-        "maximum_frequency_hz": spec.maximum_frequency_hz,
         # The backend embeds this in the raw MIDI it emits, so it is part of
         # what determines the raw artifact even though it never changes note
         # timings themselves (see the plan's "MIDI tempo metadata" note).
@@ -148,6 +158,9 @@ def detection_identity(target: str, input_hash: str, spec: NoteSpec) -> dict[str
     if isinstance(spec, PyinSpec):
         return {
             **common,
+            "minimum_note_length_ms": spec.minimum_note_length_ms,
+            "minimum_frequency_hz": spec.minimum_frequency_hz,
+            "maximum_frequency_hz": spec.maximum_frequency_hz,
             "algorithm_version": spec.algorithm_version,
             "sample_rate_hz": spec.sample_rate_hz,
             "frame_length": spec.frame_length,
@@ -163,8 +176,24 @@ def detection_identity(target: str, input_hash: str, spec: NoteSpec) -> dict[str
             "rearticulation_rise_db": spec.rearticulation_rise_db,
             "rearticulation_minimum_spacing_beats": spec.rearticulation_minimum_spacing_beats,
         }
+    if isinstance(spec, Mt3Spec):
+        return {
+            **common,
+            "repository": spec.repository,
+            "tag": spec.tag,
+            "commit": spec.commit,
+            "runtime_version": spec.runtime_version,
+            "lock_sha256": spec.lock_sha256,
+            "model_id": spec.model_id,
+            "checkpoint_fingerprint": spec.checkpoint_fingerprint,
+            "track_selection_version": spec.track_selection_version,
+            "note_normalization_version": spec.note_normalization_version,
+        }
     return {
         **common,
+        "minimum_note_length_ms": spec.minimum_note_length_ms,
+        "minimum_frequency_hz": spec.minimum_frequency_hz,
+        "maximum_frequency_hz": spec.maximum_frequency_hz,
         "package_pin": spec.package_pin,
         "serialization": spec.serialization,
         "onset_threshold": spec.onset_threshold,
@@ -194,16 +223,21 @@ def cleanup_hash(raw_notes_hash: str, source_audio_hash: str, spec: NoteSpec) ->
     return _hash(cleanup_identity(raw_notes_hash, source_audio_hash, spec))
 
 
-def detection_cache_root(namespace_dir: Path) -> Path:
-    return namespace_dir / "transcription" / "cache" / CACHE_BACKEND_DIR
+def _cache_root(namespace_dir: Path) -> Path:
+    """The parent of every backend's raw-cache subdirectory."""
+    return namespace_dir / "transcription" / "cache"
 
 
-def _raw_midi_name(detection_hash_value: str) -> str:
-    return f"transcription/cache/{CACHE_BACKEND_DIR}/{detection_hash_value}/raw.mid"
+def detection_cache_root(namespace_dir: Path, *, backend_dir: str = CACHE_BACKEND_DIR) -> Path:
+    return _cache_root(namespace_dir) / backend_dir
 
 
-def _raw_notes_name(detection_hash_value: str) -> str:
-    return f"transcription/cache/{CACHE_BACKEND_DIR}/{detection_hash_value}/raw.csv"
+def _raw_midi_name(detection_hash_value: str, *, backend_dir: str = CACHE_BACKEND_DIR) -> str:
+    return f"transcription/cache/{backend_dir}/{detection_hash_value}/raw.mid"
+
+
+def _raw_notes_name(detection_hash_value: str, *, backend_dir: str = CACHE_BACKEND_DIR) -> str:
+    return f"transcription/cache/{backend_dir}/{detection_hash_value}/raw.csv"
 
 
 def variant_midi_name(target: str, variant_id: str) -> str:
@@ -243,8 +277,9 @@ def _base_variant_fields(request: VariantRequest, target: str) -> dict[str, Any]
         "backend": spec.backend,
         # pYIN runs in-process, so it has neither a pinned package nor a model
         # serialization; its runtime identity is `algorithm_version`, already
-        # inside `settings_hash` below (see `vgt.transcribe.PyinSpec`).
-        "package_pin": None if isinstance(spec, PyinSpec) else spec.package_pin,
+        # inside `settings_hash` below (see `vgt.transcribe.PyinSpec`). MT3 is
+        # a git-cloned project pinned by commit, not a pip package.
+        "package_pin": None if isinstance(spec, (PyinSpec, Mt3Spec)) else spec.package_pin,
         "serialization": spec.serialization if isinstance(spec, BasicPitchSpec) else None,
         "source_role": target,
         "settings_hash": variant_settings_hash(request),
@@ -455,11 +490,12 @@ def _obtain_raw_group(
     emit: Callable[[str], None],
 ) -> tuple[str | None, Path | None, str | None, int]:
     """Return `(raw_notes_hash, raw_notes_path, error, invocation_count)` for
-    one detection group, running Basic Pitch at most once. On success,
+    one detection group, running the backend at most once. On success,
     `detection_cache[detection_hash_value]` is updated in place so the caller
     can persist it immediately (see `reconcile_variants`)."""
-    raw_midi_path = namespace_dir / _raw_midi_name(detection_hash_value)
-    raw_notes_path = namespace_dir / _raw_notes_name(detection_hash_value)
+    backend_dir = _cache_backend_dir_for_spec(representative_spec)
+    raw_midi_path = namespace_dir / _raw_midi_name(detection_hash_value, backend_dir=backend_dir)
+    raw_notes_path = namespace_dir / _raw_notes_name(detection_hash_value, backend_dir=backend_dir)
     entry = detection_cache.get(detection_hash_value)
     cache_valid = (
         not force
@@ -493,8 +529,8 @@ def _obtain_raw_group(
     detection_cache[detection_hash_value] = {
         "target": target,
         "input_hash": input_hash,
-        "raw_midi_file": _raw_midi_name(detection_hash_value),
-        "raw_notes_file": _raw_notes_name(detection_hash_value),
+        "raw_midi_file": _raw_midi_name(detection_hash_value, backend_dir=backend_dir),
+        "raw_notes_file": _raw_notes_name(detection_hash_value, backend_dir=backend_dir),
         "raw_notes_hash": raw_hash,
         "created_at": _now(),
     }
@@ -597,7 +633,7 @@ def reconcile_variants(
             invocations += count
             commit_variant(request.variant_id, with_frontend(record, request))
             continue
-        if not isinstance(request.spec, (BasicPitchSpec, PyinSpec)):
+        if not isinstance(request.spec, (BasicPitchSpec, PyinSpec, Mt3Spec)):
             raise TranscriptionError(f"unsupported spec type for variant {request.variant_id!r}: {type(request.spec)!r}")
         groups.setdefault((detection_hash(target, processed_hash, request.spec), processed_hash, processed_source), []).append(request)
 
@@ -630,7 +666,7 @@ def reconcile_variants(
 
         for request in group_requests:
             spec = request.spec
-            assert isinstance(spec, (BasicPitchSpec, PyinSpec))
+            assert isinstance(spec, (BasicPitchSpec, PyinSpec, Mt3Spec))
             variant_cleanup_hash = cleanup_hash(raw_notes_hash, processed_hash, spec)
             existing = existing_variants.get(request.variant_id)
             if not force and _existing_basic_pitch_current(
@@ -680,9 +716,11 @@ def garbage_collect_raw_cache(
     see docs/transcription-variants-plan.md's discard semantics). An
     unreferenced entry's own recorded `raw_midi_file`/`raw_notes_file` paths
     are the only files ever deleted -- resolved and checked to stay inside
-    this cache's own namespace before unlinking, and never through a
-    directory glob -- so a concurrently retained variant's artifacts can
-    never be swept up by a stale or malformed cache entry.
+    this cache's own namespace (any backend's subdirectory under
+    `transcription/cache/`, e.g. `basic-pitch/` or `mt3/`) before unlinking,
+    and never through a directory glob -- so a concurrently retained
+    variant's artifacts can never be swept up by a stale or malformed cache
+    entry.
     """
     referenced: set[str] = set()
     for target_record in targets.values():
@@ -695,13 +733,14 @@ def garbage_collect_raw_cache(
             if isinstance(variant, dict) and isinstance(variant.get("detection_hash"), str):
                 referenced.add(variant["detection_hash"])
 
-    cache_root = detection_cache_root(namespace_dir).resolve()
+    cache_root = _cache_root(namespace_dir).resolve()
     kept: dict[str, dict[str, Any]] = {}
     removed: list[str] = []
     for detection_hash_value, entry in detection_cache.items():
         if detection_hash_value in referenced:
             kept[detection_hash_value] = entry
             continue
+        group_dirs: set[Path] = set()
         for key in ("raw_midi_file", "raw_notes_file"):
             relative = entry.get(key) if isinstance(entry, dict) else None
             if not isinstance(relative, str):
@@ -713,12 +752,13 @@ def garbage_collect_raw_cache(
                 continue  # never delete anything outside this cache's own namespace
             if candidate.is_file():
                 candidate.unlink()
-        group_dir = cache_root / detection_hash_value
-        if group_dir.is_dir():
-            try:
-                next(group_dir.iterdir())
-            except StopIteration:
-                group_dir.rmdir()
+            group_dirs.add(candidate.parent)
+        for group_dir in group_dirs:
+            if group_dir.is_dir():
+                try:
+                    next(group_dir.iterdir())
+                except StopIteration:
+                    group_dir.rmdir()
         removed.append(detection_hash_value)
     return kept, removed
 

@@ -5,16 +5,21 @@ import hashlib
 import pytest
 
 from vgt.transcribe import (
+    FakeMt3Transcriber,
     FakeTranscriber,
+    Mt3Spec,
     RawDetectionResult,
     TranscriptionError,
     TranscriptionSpec,
     default_spec_for_target,
 )
 from vgt.transcription_variants import (
+    CACHE_BACKEND_DIR,
+    MT3_CACHE_BACKEND_DIR,
     VariantRequest,
     cleanup_hash,
     detection_hash,
+    detection_identity,
     garbage_collect_raw_cache,
     reconcile_artifact_layout,
     reconcile_variants,
@@ -74,6 +79,36 @@ def _variant(variant_id: str, label: str, profile: str, *, target: str = "guitar
         label=label,
         requested_profile=profile,
         effective_profile=profile,
+        profile_definition_hash=None,
+        spec=spec,
+        resolved_settings={"detection": {}, "cleanup": []},
+    )
+
+
+class _CountingFakeMt3(FakeMt3Transcriber):
+    """`FakeMt3Transcriber` wrapped to record every call, mirroring
+    `_CountingFake` -- but no profile selects `backend="mt3"` yet (issue #287
+    is backend plumbing only; see #288), so these tests build an `Mt3Spec`
+    directly through `default_spec_for_target(..., backend="mt3")` rather than
+    through `modes`/a profile name."""
+
+    def __init__(self) -> None:
+        self.raw_calls: list[TranscriptionSpec] = []
+
+    def detect_raw(self, source, destination_dir, spec, progress=None) -> RawDetectionResult:
+        self.raw_calls.append(spec)
+        return super().detect_raw(source, destination_dir, spec, progress)
+
+
+def _mt3_variant(
+    variant_id: str, label: str, *, target: str = "guitar", checkpoint_fingerprint: str | None = "fp-1", **spec_kwargs: Any
+) -> VariantRequest:
+    spec = default_spec_for_target(target, backend="mt3", mt3_checkpoint_fingerprint=checkpoint_fingerprint, **spec_kwargs)
+    return VariantRequest(
+        variant_id=variant_id,
+        label=label,
+        requested_profile="mt3",
+        effective_profile="mt3",
         profile_definition_hash=None,
         spec=spec,
         resolved_settings={"detection": {}, "cleanup": []},
@@ -789,3 +824,169 @@ def test_layout_catches_up_a_stale_record_whose_file_another_pass_already_moved(
     assert targets["guitar"]["variants"]["ca81e27f"]["midi_file"] == "transcription/guitar/ca81e27f.mid"
     assert outcome.missing == []
     assert outcome.records_changed
+
+
+def test_mt3_variant_uses_the_mt3_cache_backend_directory(tmp_path: Path) -> None:
+    source = _write_source(tmp_path)
+    namespace_dir = tmp_path / "ns"
+    variant = _mt3_variant("v-mt3", "mt3")
+
+    outcome = reconcile_variants(
+        target="guitar", requests=[variant], transcriber=_CountingFakeMt3(),
+        source=source, input_hash=_input_hash(source), namespace_dir=namespace_dir,
+    )
+
+    assert outcome.backend_invocations == 1
+    dh = outcome.variants["v-mt3"]["detection_hash"]
+    entry = outcome.detection_cache[dh]
+    assert entry["raw_midi_file"].startswith(f"transcription/cache/{MT3_CACHE_BACKEND_DIR}/")
+    assert entry["raw_notes_file"].startswith(f"transcription/cache/{MT3_CACHE_BACKEND_DIR}/")
+    assert (namespace_dir / entry["raw_midi_file"]).is_file()
+    assert (namespace_dir / entry["raw_notes_file"]).is_file()
+    assert outcome.variants["v-mt3"]["status"] == "transcribed"
+    assert outcome.variants["v-mt3"]["package_pin"] is None  # MT3 is git-cloned, not a pip package
+
+
+def test_mt3_variant_is_cached_and_not_rerun_when_unchanged(tmp_path: Path) -> None:
+    source = _write_source(tmp_path)
+    namespace_dir = tmp_path / "ns"
+    variant = _mt3_variant("v-mt3", "mt3")
+    transcriber = _CountingFakeMt3()
+
+    first = reconcile_variants(
+        target="guitar", requests=[variant], transcriber=transcriber,
+        source=source, input_hash=_input_hash(source), namespace_dir=namespace_dir,
+        existing_variants={}, detection_cache={},
+    )
+    second = reconcile_variants(
+        target="guitar", requests=[variant], transcriber=transcriber,
+        source=source, input_hash=_input_hash(source), namespace_dir=namespace_dir,
+        existing_variants=first.variants, detection_cache=first.detection_cache,
+    )
+
+    assert first.backend_invocations == 1
+    assert second.backend_invocations == 0
+    assert len(transcriber.raw_calls) == 1
+    assert second.variants["v-mt3"] == first.variants["v-mt3"]
+
+
+def test_mt3_force_reruns_detection_even_when_unchanged(tmp_path: Path) -> None:
+    source = _write_source(tmp_path)
+    namespace_dir = tmp_path / "ns"
+    variant = _mt3_variant("v-mt3", "mt3")
+    transcriber = _CountingFakeMt3()
+
+    first = reconcile_variants(
+        target="guitar", requests=[variant], transcriber=transcriber,
+        source=source, input_hash=_input_hash(source), namespace_dir=namespace_dir,
+    )
+    second = reconcile_variants(
+        target="guitar", requests=[variant], transcriber=transcriber,
+        source=source, input_hash=_input_hash(source), namespace_dir=namespace_dir,
+        existing_variants=first.variants, detection_cache=first.detection_cache, force=True,
+    )
+
+    assert second.backend_invocations == 1
+    assert len(transcriber.raw_calls) == 2
+
+
+def test_mt3_checkpoint_fingerprint_change_needs_its_own_detection_group(tmp_path: Path) -> None:
+    source = _write_source(tmp_path)
+    namespace_dir = tmp_path / "ns"
+    original = _mt3_variant("v-fp1", "fp1", checkpoint_fingerprint="fp-1")
+    reprovisioned = _mt3_variant("v-fp2", "fp2", checkpoint_fingerprint="fp-2")
+
+    outcome = reconcile_variants(
+        target="guitar", requests=[original, reprovisioned], transcriber=_CountingFakeMt3(),
+        source=source, input_hash=_input_hash(source), namespace_dir=namespace_dir,
+    )
+
+    assert outcome.backend_invocations == 2
+    assert len(outcome.detection_cache) == 2
+    assert outcome.variants["v-fp1"]["detection_hash"] != outcome.variants["v-fp2"]["detection_hash"]
+
+
+def test_mt3_source_change_invalidates_its_detection_group(tmp_path: Path) -> None:
+    namespace_dir = tmp_path / "ns"
+    variant = _mt3_variant("v-mt3", "mt3")
+    transcriber = _CountingFakeMt3()
+
+    first_source = _write_source(tmp_path, "guitar.wav", b"first-take")
+    first = reconcile_variants(
+        target="guitar", requests=[variant], transcriber=transcriber,
+        source=first_source, input_hash=_input_hash(first_source), namespace_dir=namespace_dir,
+    )
+
+    second_source = _write_source(tmp_path, "guitar.wav", b"second-take")
+    second = reconcile_variants(
+        target="guitar", requests=[variant], transcriber=transcriber,
+        source=second_source, input_hash=_input_hash(second_source), namespace_dir=namespace_dir,
+        existing_variants=first.variants, detection_cache=first.detection_cache,
+    )
+
+    assert len(transcriber.raw_calls) == 2
+    assert second.variants["v-mt3"]["detection_hash"] != first.variants["v-mt3"]["detection_hash"]
+
+
+def test_detection_identity_for_mt3_carries_its_own_pin_and_no_basic_pitch_fields() -> None:
+    spec = default_spec_for_target("guitar", backend="mt3", midi_tempo=120.0, mt3_checkpoint_fingerprint="fp-1")
+    assert isinstance(spec, Mt3Spec)
+
+    identity = detection_identity("guitar", "input-hash", spec)
+
+    assert identity["repository"] == spec.repository
+    assert identity["commit"] == spec.commit
+    assert identity["checkpoint_fingerprint"] == "fp-1"
+    assert identity["track_selection_version"] == spec.track_selection_version
+    assert identity["note_normalization_version"] == spec.note_normalization_version
+    assert "minimum_note_length_ms" not in identity
+    assert "onset_threshold" not in identity
+
+
+def test_detection_identity_changes_with_either_normalization_version() -> None:
+    from dataclasses import replace
+
+    spec = default_spec_for_target("guitar", backend="mt3", midi_tempo=120.0, mt3_checkpoint_fingerprint="fp-1")
+    assert isinstance(spec, Mt3Spec)
+    base = detection_hash("guitar", "input-hash", spec)
+
+    bumped_selection = detection_hash("guitar", "input-hash", replace(spec, track_selection_version=spec.track_selection_version + 1))
+    bumped_normalization = detection_hash(
+        "guitar", "input-hash", replace(spec, note_normalization_version=spec.note_normalization_version + 1)
+    )
+
+    assert bumped_selection != base
+    assert bumped_normalization != base
+    assert bumped_selection != bumped_normalization
+
+
+def test_mt3_and_basic_pitch_raw_caches_never_collide_and_gc_handles_both(tmp_path: Path) -> None:
+    source = _write_source(tmp_path)
+    namespace_dir = tmp_path / "ns"
+    basic_pitch_variant = _variant("v-bp", "bp", "guitar-acoustic-clean")
+    mt3_variant = _mt3_variant("v-mt3", "mt3")
+
+    bp_outcome = reconcile_variants(
+        target="guitar", requests=[basic_pitch_variant], transcriber=_CountingFake(),
+        source=source, input_hash=_input_hash(source), namespace_dir=namespace_dir,
+    )
+    mt3_outcome = reconcile_variants(
+        target="guitar", requests=[mt3_variant], transcriber=_CountingFakeMt3(),
+        source=source, input_hash=_input_hash(source), namespace_dir=namespace_dir,
+    )
+
+    bp_dh = bp_outcome.variants["v-bp"]["detection_hash"]
+    mt3_dh = mt3_outcome.variants["v-mt3"]["detection_hash"]
+    assert (namespace_dir / "transcription" / "cache" / CACHE_BACKEND_DIR / bp_dh).is_dir()
+    assert (namespace_dir / "transcription" / "cache" / MT3_CACHE_BACKEND_DIR / mt3_dh).is_dir()
+
+    combined_cache = {**bp_outcome.detection_cache, **mt3_outcome.detection_cache}
+    # Only the mt3 variant is still live; the basic-pitch one was discarded elsewhere.
+    targets = {"guitar": {"variants": {"v-mt3": mt3_outcome.variants["v-mt3"]}}}
+    kept, removed = garbage_collect_raw_cache(namespace_dir=namespace_dir, detection_cache=combined_cache, targets=targets)
+
+    assert kept == {mt3_dh: combined_cache[mt3_dh]}
+    assert removed == [bp_dh]
+    assert not (namespace_dir / "transcription" / "cache" / CACHE_BACKEND_DIR / bp_dh).is_dir()
+    assert (namespace_dir / "transcription" / "cache" / MT3_CACHE_BACKEND_DIR / mt3_dh).is_dir()
+    assert (namespace_dir / mt3_outcome.detection_cache[mt3_dh]["raw_midi_file"]).is_file()

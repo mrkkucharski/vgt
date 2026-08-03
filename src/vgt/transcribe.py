@@ -101,6 +101,12 @@ ADTOF_LOCK_SHA256 = "c1c0e70cd0ff9f3045536a49940d9a9e8ada6523bd17424c36fd4f40e5e
 ADTOF_TIMEOUT_SECONDS = 120
 ADTOF_CLASS_NAMES = ("bass_drum", "snare_drum", "tom_tom", "hi_hat", "cymbal")
 
+# MT3's own pinned identity (fork/tag/commit/runtime/lock/model id) lives in
+# `vgt.mt3_provision`, imported lazily where needed (see `Mt3Transcriber`);
+# this is the one MT3 constant that is purely about how long vgt waits for
+# `mt3-transcribe`, not about what got provisioned.
+MT3_TIMEOUT_SECONDS = 600
+
 # These are deliberately vgt settings, rather than the port's decoder
 # settings: Phase 3 consumes its raw sigmoid outputs and owns the resulting
 # timing/MIDI contract.  A 10 ms frame rate means the IOIs below suppress only
@@ -1081,14 +1087,66 @@ class AdtofActivationResult:
     cache_hit: bool
 
 
-TranscriptionSpec = BasicPitchSpec | PyinSpec | DrumScriptSpec | AdtofSpec
+@dataclass(frozen=True)
+class Mt3Spec:
+    """Pinned MT3 v0.1.0 multi-instrument backend identity (issue #287).
 
-# The two note-producing specs. Both carry a `cleanup` pipeline, a `midi_tempo`
+    A dedicated spec rather than an overload of `BasicPitchSpec`/`PyinSpec`:
+    MT3 is a fixed pretrained model with no configurable detection threshold
+    or frequency window, so it carries none of those fields. Its identity is
+    instead a fork/commit/checkpoint pin (see `vgt.mt3_provision`) plus the two
+    independently-versioned normalization stages a raw MT3 MIDI passes through
+    before it becomes a vgt note list (see `vgt.mt3_normalize`) -- so a change
+    to either invalidates exactly the caches it should and no others.
+    `checkpoint_fingerprint` is `None` until the caller has actually checked
+    local provisioning state (`vgt.mt3_provision.mt3_status`, never done here:
+    see that module's docstring on why this spec never re-hashes the
+    checkpoint itself); a real transcription attempt with no fingerprint yet
+    still fails clearly at execution time, not at spec-build time.
+    """
+
+    backend: str  # "mt3" | "fake"
+    repository: str
+    tag: str
+    commit: str
+    runtime_version: str
+    lock_sha256: str
+    model_id: str
+    checkpoint_fingerprint: str | None
+    track_selection_version: int
+    note_normalization_version: int
+    midi_tempo: float | None
+    tempo_map: "TempoMapReference | None" = None
+    cleanup: tuple[CleanupStage, ...] = ()
+
+    def to_dict(self) -> dict[str, Any]:
+        data: dict[str, Any] = {
+            "backend": self.backend,
+            "repository": self.repository,
+            "tag": self.tag,
+            "commit": self.commit,
+            "runtime_version": self.runtime_version,
+            "lock_sha256": self.lock_sha256,
+            "model_id": self.model_id,
+            "checkpoint_fingerprint": self.checkpoint_fingerprint,
+            "track_selection_version": self.track_selection_version,
+            "note_normalization_version": self.note_normalization_version,
+            "midi_tempo": self.midi_tempo,
+            "cleanup": [{"name": stage.name, "params": stage.params} for stage in self.cleanup],
+        }
+        if self.tempo_map is not None:
+            data["tempo_map"] = self.tempo_map.to_dict()
+        return data
+
+
+TranscriptionSpec = BasicPitchSpec | PyinSpec | DrumScriptSpec | AdtofSpec | Mt3Spec
+
+# The note-producing specs. Each carries a `cleanup` pipeline, a `midi_tempo`
 # and a `tempo_map`, which is everything `_apply_cleanup_stages` and
-# `derive_variant_artifacts` need -- so a monophonic variant reuses the same
-# raw-detection/derived-cleanup machinery as a Basic Pitch one rather than
-# getting a parallel code path (see `vgt.transcription_variants`).
-NoteSpec = BasicPitchSpec | PyinSpec
+# `derive_variant_artifacts` need -- so a monophonic or MT3 variant reuses the
+# same raw-detection/derived-cleanup machinery as a Basic Pitch one rather
+# than getting a parallel code path (see `vgt.transcription_variants`).
+NoteSpec = BasicPitchSpec | PyinSpec | Mt3Spec
 
 
 @dataclass(frozen=True)
@@ -1164,6 +1222,7 @@ def default_spec_for_target(
     beat_times: Sequence[float] | None = None,
     downbeat_offset_s: float | None = None,
     tempo_map: TempoMapReference | None = None,
+    mt3_checkpoint_fingerprint: str | None = None,
 ) -> TranscriptionSpec:
     """The per-target default spec, resolved through `_INSTRUMENT_PROFILES`.
 
@@ -1171,6 +1230,13 @@ def default_spec_for_target(
     or stale selection falls back to that target's default. `time_signature` (a
     tempo-stage string like `"4/4"`) converts that profile's cleanup stage's
     bar-based sustain clamp to seconds at this specific tempo.
+
+    `mt3_checkpoint_fingerprint` is never derived here: computing it means
+    re-hashing the whole provisioned checkpoint (see
+    `vgt.mt3_provision.mt3_status`), and this function is called on every
+    target on every analyze run, so a caller that actually needs an `Mt3Spec`
+    checks provisioning once per run and passes the fingerprint in, exactly
+    like it already resolves `midi_tempo` once and threads it through.
     """
     validate_target(target)
     if backend == "drumscript":
@@ -1202,6 +1268,17 @@ def default_spec_for_target(
             torch_version=ADTOF_TORCH_VERSION, lock_sha256=ADTOF_LOCK_SHA256, midi_tempo=midi_tempo,
             beat_grid=BeatGridReference(tuple(float(time) for time in beat_times), downbeat_offset_s) if beat_times else None,
             tempo_map=tempo_map,
+        )
+    if backend == "mt3":
+        from .mt3_normalize import MT3_NOTE_NORMALIZATION_VERSION, MT3_TRACK_SELECTION_VERSION
+        from .mt3_provision import MT3_LOCK_SHA256, MT3_MODEL_ID, MT3_PINNED_COMMIT, MT3_PINNED_TAG, MT3_REPO_URL, MT3_RUNTIME_VERSION
+
+        return Mt3Spec(
+            backend="mt3", repository=MT3_REPO_URL, tag=MT3_PINNED_TAG, commit=MT3_PINNED_COMMIT,
+            runtime_version=MT3_RUNTIME_VERSION, lock_sha256=MT3_LOCK_SHA256, model_id=MT3_MODEL_ID,
+            checkpoint_fingerprint=mt3_checkpoint_fingerprint,
+            track_selection_version=MT3_TRACK_SELECTION_VERSION, note_normalization_version=MT3_NOTE_NORMALIZATION_VERSION,
+            midi_tempo=midi_tempo, tempo_map=tempo_map,
         )
     profile = _profile_for_target(target, modes)
     bar_seconds = _bar_duration_seconds(midi_tempo, time_signature)
@@ -1322,11 +1399,12 @@ def target_input_hash(path: Path, artifact: dict[str, Any] | None) -> str:
 
 
 def _spec_package_pin(spec: TranscriptionSpec) -> str | None:
-    """The pinned package a spec's backend runs, or `None` for one that runs
-    in-process. Only pYIN has no pin: librosa is already a vgt dependency, so
-    there is no isolated environment to pin, and `PyinSpec.algorithm_version`
-    carries the runtime identity a pin would otherwise provide."""
-    return None if isinstance(spec, PyinSpec) else spec.package_pin
+    """The pinned package a spec's backend runs, or `None` for one with no
+    single pip pin. pYIN runs in-process against librosa (already a vgt
+    dependency; `PyinSpec.algorithm_version` carries its runtime identity
+    instead). MT3 is a git-cloned project pinned by commit, not a pip package
+    (see `Mt3Spec.repository`/`commit`)."""
+    return None if isinstance(spec, (PyinSpec, Mt3Spec)) else spec.package_pin
 
 
 def _settings_dict(spec: TranscriptionSpec) -> dict[str, Any]:
@@ -1357,6 +1435,15 @@ def _settings_dict(spec: TranscriptionSpec) -> dict[str, Any]:
                 {"beat_times": list(spec.beat_grid.beat_times), "downbeat_offset_s": spec.beat_grid.downbeat_offset_s}
                 if spec.beat_grid else None
             ),
+        }
+    if isinstance(spec, Mt3Spec):
+        return {
+            "repository": spec.repository, "tag": spec.tag, "commit": spec.commit,
+            "runtime_version": spec.runtime_version, "lock_sha256": spec.lock_sha256,
+            "model_id": spec.model_id, "checkpoint_fingerprint": spec.checkpoint_fingerprint,
+            "track_selection_version": spec.track_selection_version,
+            "note_normalization_version": spec.note_normalization_version,
+            "midi_tempo": spec.midi_tempo,
         }
     return {
         "onset_threshold": spec.onset_threshold,
@@ -1420,16 +1507,16 @@ def transcribed_entry(
         "settings_hash": spec_hash(spec),
         "status": "transcribed",
         "midi_file": midi_artifact_name(target),
-        "notes_file": notes_artifact_name(target) if isinstance(spec, BasicPitchSpec) else None,
+        "notes_file": notes_artifact_name(target) if isinstance(spec, (BasicPitchSpec, Mt3Spec)) else None,
         "events_file": events_artifact_name(target) if isinstance(spec, (DrumScriptSpec, AdtofSpec)) else None,
-        "note_count": result.note_count if isinstance(spec, BasicPitchSpec) else None,
+        "note_count": result.note_count if isinstance(spec, (BasicPitchSpec, Mt3Spec)) else None,
         "event_count": result.event_count if isinstance(spec, (DrumScriptSpec, AdtofSpec)) else None,
         "instrument_counts": result.instrument_counts if isinstance(spec, (DrumScriptSpec, AdtofSpec)) else None,
         # GM percussion note numbers select kit instruments; they are not a
         # musical pitch range and must never be presented as one.
-        "pitch_range_midi": list(result.pitch_range_midi) if isinstance(spec, BasicPitchSpec) and result.pitch_range_midi else None,
-        "first_note_s": result.first_note_s if isinstance(spec, BasicPitchSpec) else None,
-        "last_note_s": result.last_note_s if isinstance(spec, BasicPitchSpec) else None,
+        "pitch_range_midi": list(result.pitch_range_midi) if isinstance(spec, (BasicPitchSpec, Mt3Spec)) and result.pitch_range_midi else None,
+        "first_note_s": result.first_note_s if isinstance(spec, (BasicPitchSpec, Mt3Spec)) else None,
+        "last_note_s": result.last_note_s if isinstance(spec, (BasicPitchSpec, Mt3Spec)) else None,
         "first_event_s": result.first_event_s if isinstance(spec, (DrumScriptSpec, AdtofSpec)) else None,
         "last_event_s": result.last_event_s if isinstance(spec, (DrumScriptSpec, AdtofSpec)) else None,
         "backend_tempo": result.backend_tempo if isinstance(spec, (DrumScriptSpec, AdtofSpec)) else None,
@@ -1568,6 +1655,10 @@ class TargetTranscriberRouter:
     # test wiring a single fake) keeps routing every note target to the one
     # transcriber it supplied, rather than failing on bass.
     pyin: Transcriber | None = None
+    # No profile selects `backend="mt3"` yet (issue #287 is backend plumbing
+    # only; see issue #288), so this route is unreachable in production today
+    # -- present so the seam already exists for that later profile.
+    mt3: Transcriber | None = None
 
     def for_target(self, target: str, modes: Mapping[str, str] | None = None) -> Transcriber:
         validate_target(target)
@@ -1576,6 +1667,10 @@ class TargetTranscriberRouter:
             if self.adtof is None:
                 raise TranscriptionError("ADTOF is not available in this router")
             return self.adtof
+        if backend == "mt3":
+            if self.mt3 is None:
+                raise TranscriptionError("MT3 is not available in this router")
+            return self.mt3
         if backend == "pyin":
             return self.pyin if self.pyin is not None else self.basic_pitch
         return self.drumscript if backend == "drumscript" else self.basic_pitch
@@ -1608,13 +1703,18 @@ class TargetTranscriberRouter:
 
 def production_transcriber_router() -> TranscriberRouter:
     """Current production route: DrumScript handles drums, pYIN handles the
-    monophonic targets its profiles claim (bass), Basic Pitch everything else."""
+    monophonic targets its profiles claim (bass), Basic Pitch everything else.
+
+    `mt3=Mt3Transcriber()` is wired for when a future profile claims it (issue
+    #288); constructing it does nothing until a target is actually routed to
+    it, exactly like `AdtofTranscriber()` above."""
     basic_pitch = BasicPitchTranscriber()
     return TargetTranscriberRouter(
         basic_pitch=basic_pitch,
         drumscript=DrumScriptTranscriber(),
         adtof=AdtofTranscriber(),
         pyin=PyinTranscriber(),
+        mt3=Mt3Transcriber(),
         drumscript_targets=("drums",),
     )
 
@@ -1820,7 +1920,7 @@ class FakeTranscriber:
         notes = _fake_notes(source, spec)
         midi_path = destination_dir / "transcription.mid"
         notes_path = destination_dir / "transcription.csv"
-        tempo_bpm = spec.midi_tempo if isinstance(spec, (BasicPitchSpec, PyinSpec)) else None
+        tempo_bpm = spec.midi_tempo if isinstance(spec, (BasicPitchSpec, PyinSpec, Mt3Spec)) else None
         tempo_bpm = tempo_bpm or 120.0
         _write_midi(midi_path, notes, tempo_bpm, tempo_map=spec.tempo_map)
         _write_notes_csv(notes_path, notes, source, spec)
@@ -1923,6 +2023,83 @@ class FakeAdtofTranscriber(FakeTranscriber):
             event_count=len(events), first_event_s=events[0]["time_sec"], last_event_s=events[-1]["time_sec"],
             backend_tempo=None, midi_tempo=spec.midi_tempo,
         )
+
+
+def _fake_mt3_multitrack_midi(destination: Path, source: Path, spec: TranscriptionSpec) -> None:
+    """A synthetic multi-instrument MIDI shaped like MT3's own raw output: a
+    leading conductor track (tempo only, no notes) plus several named
+    instrument tracks, only one of which has notes. This is written so
+    `FakeMt3Transcriber` exercises the real
+    `vgt.mt3_normalize.select_first_musical_track` selection/normalization
+    logic -- not a shortcut around it -- while remaining fully offline and
+    content-addressed like every other fake backend."""
+    import mido
+
+    midi = mido.MidiFile(ticks_per_beat=480)
+    midi.tracks.append(mido.MidiTrack([mido.MetaMessage("set_tempo", tempo=500_000, time=0)]))
+
+    instrument_names = ("Guitar", "Piano", "Drums")
+    selected_index = _content_seed(source, spec, "mt3-selected-track") % len(instrument_names)
+    for index, name in enumerate(instrument_names):
+        track = mido.MidiTrack([mido.MetaMessage("track_name", name=name, time=0)])
+        if index == selected_index:
+            note_count = 3 + _content_seed(source, spec, "mt3-note-count") % 3
+            for note_index in range(note_count):
+                pitch = 52 + _content_seed(source, spec, f"mt3-pitch-{note_index}") % 24
+                velocity = 60 + _content_seed(source, spec, f"mt3-velocity-{note_index}") % 40
+                track.append(mido.Message("note_on", note=pitch, velocity=velocity, time=0))
+                track.append(mido.Message("note_off", note=pitch, velocity=0, time=240))
+        midi.tracks.append(track)
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    midi.save(str(destination))
+
+
+class FakeMt3Transcriber(FakeTranscriber):
+    """Offline MT3 stand-in that runs the real selection/normalization code
+    (`vgt.mt3_normalize`) against a synthetic multi-track MIDI it fabricates,
+    rather than reusing `FakeTranscriber`'s generic note fake -- so the
+    offline suite proves the actual "first musical track" contract holds, the
+    same way `FakeAdtofTranscriber` proves ADTOF's post-processing contract
+    rather than sidestepping it."""
+
+    name = "mt3"
+
+    def detect_raw(
+        self, source: Path, destination_dir: Path, spec: TranscriptionSpec,
+        progress: Callable[[str], None] | None = None,
+    ) -> RawDetectionResult:
+        if not isinstance(spec, Mt3Spec):
+            raise TranscriptionError("FakeMt3Transcriber requires an Mt3Spec")
+        emit = progress or (lambda _message: None)
+        emit(f"transcribing (fake-mt3): {source.name}")
+        destination_dir.mkdir(parents=True, exist_ok=True)
+
+        from .mt3_normalize import select_first_musical_track, write_normalized_mt3_artifacts
+
+        raw_midi = destination_dir / "_fake_mt3_raw.mid"
+        _fake_mt3_multitrack_midi(raw_midi, source, spec)
+        selected = select_first_musical_track(raw_midi)
+        raw_midi.unlink()
+
+        midi_path = destination_dir / "transcription.mid"
+        notes_path = destination_dir / "transcription.csv"
+        write_normalized_mt3_artifacts(
+            selected, csv_path=notes_path, midi_path=midi_path,
+            tempo_bpm=spec.midi_tempo or 120.0, tempo_map=spec.tempo_map,
+        )
+        emit(f"detected (fake-mt3): {len(selected.notes)} notes ({selected.track_name or 'unnamed track'})")
+        return RawDetectionResult(
+            notes=parse_notes_csv(notes_path), raw_midi_path=midi_path, raw_notes_path=notes_path, midi_tempo=spec.midi_tempo
+        )
+
+    def transcribe(
+        self, source: Path, destination_dir: Path, spec: TranscriptionSpec,
+        progress: Callable[[str], None] | None = None,
+    ) -> TranscriptionResult:
+        if not isinstance(spec, Mt3Spec):
+            raise TranscriptionError("FakeMt3Transcriber requires an Mt3Spec")
+        raw = self.detect_raw(source, destination_dir, spec, progress)
+        return derive_variant_artifacts(raw.notes, spec, midi_path=raw.raw_midi_path, notes_path=raw.raw_notes_path)
 
 
 def _basic_pitch_base_command(package_pin: str) -> list[str]:
@@ -3210,6 +3387,134 @@ class AdtofTranscriber:
             last_event_s=events[-1]["time_sec"] if events else None,
             backend_tempo=None, midi_tempo=spec.midi_tempo,
         )
+
+
+def _mt3_base_command(repo_dir: Path) -> list[str]:
+    """Run inside the pinned, already-provisioned project (see
+    `vgt.mt3_provision`), never an ephemeral `uvx`/`--isolated` invocation:
+    MT3's own `uv.lock` is what makes the environment reproducible, and only
+    `uv run --project` reads it."""
+    return ["uv", "run", "--project", str(repo_dir), "mt3-transcribe"]
+
+
+def build_mt3_argv(source: Path, output: Path, checkpoint_dir: Path, repo_dir: Path) -> list[str]:
+    """Build the pinned `mt3-transcribe` command without executing it. Mirrors
+    the fork's own documented invocation (see `vgt.mt3_provision`'s module
+    docstring) exactly, so a human can reproduce a failure by hand."""
+    return [*_mt3_base_command(repo_dir), "--checkpoint", str(checkpoint_dir), "--input", str(source), "--output", str(output), "--json"]
+
+
+def _parse_mt3_json(stdout: str, work_dir: Path) -> dict[str, Any]:
+    """Validate `mt3-transcribe --json`'s stdout against its documented
+    schema (`{"output", "note_count", "programs", "drum_note_count"}`) before
+    any of it is trusted."""
+    stripped = stdout.strip()
+    last_line = stripped.splitlines()[-1] if stripped else ""
+    try:
+        result = json.loads(last_line)
+    except json.JSONDecodeError as exc:
+        raise TranscriptionError(_without_temporary_path(f"mt3-transcribe produced unparsable JSON output: {exc}", work_dir)) from exc
+    required = {"output", "note_count", "programs", "drum_note_count"}
+    if not isinstance(result, dict) or not required.issubset(result):
+        raise TranscriptionError("mt3-transcribe JSON output is missing required fields")
+    if not isinstance(result["output"], str):
+        raise TranscriptionError("mt3-transcribe JSON 'output' field must be a string path")
+    return result
+
+
+class Mt3Transcriber:
+    """Real MT3 backend: the fork's pinned `mt3-transcribe` CLI, invoked
+    inside its own provisioned project (never vgt's environment -- see
+    `vgt.mt3_provision`), then normalized to vgt's first-musical-track note
+    contract (see `vgt.mt3_normalize`).
+
+    Degradation is per target, mirroring every other subprocess backend here:
+    missing provisioning, a non-zero exit, a timeout, malformed JSON, a
+    disagreeing declared output path, a missing output file, or a malformed
+    MIDI structure all raise `TranscriptionError` with the local work
+    directory scrubbed from the message, so the orchestrator marks just this
+    target and continues.
+    """
+
+    name = "mt3"
+
+    def detect_raw(
+        self, source: Path, destination_dir: Path, spec: TranscriptionSpec,
+        progress: Callable[[str], None] | None = None,
+    ) -> RawDetectionResult:
+        if not isinstance(spec, Mt3Spec):
+            raise TranscriptionError("Mt3Transcriber requires an Mt3Spec")
+        emit = progress or (lambda _message: None)
+        source = source.resolve()
+        if not source.is_file():
+            raise TranscriptionError("mt3 source is not a readable file")
+
+        from .mt3_normalize import select_first_musical_track, write_normalized_mt3_artifacts
+        from .mt3_provision import Mt3ProvisionError, default_cache_dir, require_mt3_provisioned
+
+        try:
+            require_mt3_provisioned()
+        except Mt3ProvisionError as exc:
+            raise TranscriptionError(str(exc)) from exc
+
+        cache_dir = default_cache_dir()
+        repo_dir = cache_dir / "repo"
+        checkpoint_dir = cache_dir / "models" / "checkpoint_0"
+        if not checkpoint_dir.is_dir():
+            raise TranscriptionError(
+                "mt3 checkpoint directory is missing; run `vgt transcription backend provision mt3` again"
+            )
+
+        emit(f"transcribing (mt3): {source.name}")
+        with tempfile.TemporaryDirectory(prefix="vgt-mt3-") as temporary:
+            work_dir = Path(temporary)
+            raw_output = work_dir / "mt3_raw.mid"
+            argv = build_mt3_argv(source, raw_output, checkpoint_dir, repo_dir)
+            try:
+                completed = subprocess.run(
+                    argv, cwd=work_dir, capture_output=True, text=True, timeout=MT3_TIMEOUT_SECONDS, errors="replace",
+                )
+            except subprocess.TimeoutExpired as exc:
+                raise TranscriptionError(f"mt3-transcribe timed out after {exc.timeout}s") from exc
+            except OSError as exc:
+                raise TranscriptionError(f"failed to run mt3-transcribe: {exc}") from exc
+            if completed.returncode != 0:
+                context = _stderr_tail(completed.stderr) or _stderr_tail(completed.stdout)
+                raise TranscriptionError(
+                    _without_temporary_path(f"mt3-transcribe exited with status {completed.returncode}: {context}", work_dir)
+                )
+
+            try:
+                result = _parse_mt3_json(completed.stdout, work_dir)
+                if Path(result["output"]).resolve() != raw_output.resolve():
+                    raise TranscriptionError("mt3-transcribe reported an unexpected output path")
+                if not raw_output.is_file():
+                    raise TranscriptionError("mt3-transcribe reported success but wrote no output file")
+                selected = select_first_musical_track(raw_output)
+            except TranscriptionError as exc:
+                raise TranscriptionError(_without_temporary_path(str(exc), work_dir)) from exc
+
+            destination_dir.mkdir(parents=True, exist_ok=True)
+            midi_path = destination_dir / "transcription.mid"
+            notes_path = destination_dir / "transcription.csv"
+            write_normalized_mt3_artifacts(
+                selected, csv_path=notes_path, midi_path=midi_path,
+                tempo_bpm=spec.midi_tempo or 120.0, tempo_map=spec.tempo_map,
+            )
+
+        emit(f"detected (mt3): {len(selected.notes)} notes ({selected.track_name or 'unnamed track'})")
+        return RawDetectionResult(
+            notes=list(selected.notes), raw_midi_path=midi_path, raw_notes_path=notes_path, midi_tempo=spec.midi_tempo
+        )
+
+    def transcribe(
+        self, source: Path, destination_dir: Path, spec: TranscriptionSpec,
+        progress: Callable[[str], None] | None = None,
+    ) -> TranscriptionResult:
+        if not isinstance(spec, Mt3Spec):
+            raise TranscriptionError("Mt3Transcriber requires an Mt3Spec")
+        raw = self.detect_raw(source, destination_dir, spec, progress)
+        return derive_variant_artifacts(raw.notes, spec, midi_path=raw.raw_midi_path, notes_path=raw.raw_notes_path)
 
 
 def _sha256_file(path: Path) -> str:
