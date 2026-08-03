@@ -590,6 +590,33 @@ caveat at the top of the index says: a relative ranking signal on `7Rivers`,
 not an absolute accuracy claim, and not yet reason to prefer or promote this
 profile.
 
+### Track selection was verified correct — but MT3 splits one instrument across tracks
+
+Re-running `mt3-transcribe` directly on this same guitar stem (outside vgt,
+keeping MT3's full multi-track output) shows `programs: [0, 4, 8, 16, 24, 26,
+32, 33, 50, 60, 73, 80, 88]` — MT3 detects far more than one instrument in an
+isolated guitar stem. The track vgt selected is correctly labeled **"Acoustic
+Guitar (nylon)" (program 24), 1804 notes, first onset at tick 26** — matching
+`guitar-mt3`'s reported note count exactly, so this is not a wrong-instrument
+selection either (see finding 7 in
+[instrument-transcription-findings.md](instrument-transcription-findings.md)
+for the verified selection mechanism). Two things worth separating out:
+
+- **Drums were correctly excluded despite starting early.** A 244-note drum
+  track exists in the raw output, first onset at tick 260 — earlier than 12 of
+  the other 13 detected tracks — and it was still placed after the guitar
+  tracks, because drum notes are hard-excluded from the "first" slot
+  regardless of timing. This is not luck; it is the mechanism working.
+- **A second guitar-family track was silently discarded.** MT3 also produced
+  an "Electric Guitar (jazz)" track (program 26, 105 notes, first onset at
+  tick 31 — 5 ticks after the selected track). This is very likely the *same*
+  real performance MT3 classified into two different programs, and vgt's
+  first-track-only rule drops the second one entirely. This is a plausible
+  second contributor to the fragmentation finding above, beyond simple
+  same-pitch splitting within one track: some of what should be one
+  continuous guitar part may be split across *tracks*, not just across
+  fragments within a track, with the second track's notes never recovered.
+
 ### Ear-verified 2026-08-03: encouraging on chords, across two songs
 
 The maintainer listened to `guitar-mt3`'s output end to end in REAPER on both

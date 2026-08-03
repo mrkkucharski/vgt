@@ -92,27 +92,45 @@ or counts voices, because a runaway drone otherwise dominates the decision.
 Moving it across `force_monophony` swung bass accuracy ~20 points; the same
 mistake in the guitar pipeline re-created a 7.1 s note under a 4 s clamp.
 
-**7. A multi-instrument model's "first output track" is not the same claim as
-"the requested instrument," and check for a systematic octave/notation
-convention before concluding a pitch mismatch is wrong content.** MT3
-(`guitar-mt3`/`bass-mt3`, see the guitar and bass findings' "MT3 alternative"
-sections) writes every instrument it detects as separate MIDI tracks with no
-reliable identifying metadata, so selecting "the first note-bearing track" is
-a structural rule, not a content guarantee — that risk is real and generalizes.
-But a non-overlapping pitch *range* is not automatically evidence of it: bass's
-first MT3 track initially looked like a wrong-instrument failure (frame F
-0.0%, a full octave-plus above the reference), until accounting for a known
-convention this project's own default already needs a 12-semitone shift for
-(bass guitar's written-vs-sounding octave) — after which frame F rose to
-27.0%, still clearly behind pYIN's 78.9% but nowhere near the "wrong track
-entirely" the raw numbers first suggested. Guitar's first track, by contrast,
-landed in a plausible register with *higher* chord-tone agreement than the
-shipped default (94.4% vs. 68.4%). Same backend, same selection rule,
-different outcome by instrument and by song — a single measured run says
-nothing about which case a *different* song would land in. Treat any
-first-track pitch mismatch from a multi-instrument model as an open question
-("wrong track, or a known transposition convention, or genuinely noisy
-output?"), not a conclusion, until checked the way this one was.
+**7. "First output track" has a precise, verified mechanism — it is not
+arbitrary, but it is also not a content guarantee, and a pitch mismatch is not
+automatically evidence of picking the wrong instrument.** Traced in MT3's own
+source rather than assumed: `mt3/note_sequences.py::assign_instruments` gives
+instrument index 0 to whichever GM program's note it decodes *first*, index 1
+to the next new program encountered, and so on — except any drum note, which
+always gets a fixed instrument index (9) regardless of when it occurs;
+`note_seq`'s MIDI writer then emits tracks sorted by that instrument index, and
+`mt3/metrics_utils.py` decodes audio segments in strict chronological order.
+So **"first track" = whichever non-drum instrument genuinely sounds first in
+the piece**, drums structurally excluded from ever winning that slot.
+
+Confirmed by re-running `mt3-transcribe` directly (outside vgt, keeping its
+full multi-track output) on both the 7Rivers guitar and bass stems used
+above. Both times, track selection was **correct**: bass's first track was
+labeled "Acoustic Bass" (program 32, 131 notes, first onset at tick 35, vs.
+the next spurious track — piano — at tick 4765); guitar's first track was
+labeled "Acoustic Guitar (nylon)" (program 24, 1804 notes, first onset at
+tick 26). Drums were present in the guitar stem's raw output (244 notes,
+first onset at tick 260 — earlier than 12 of the other 13 detected tracks)
+and were still correctly excluded from the first slot by the hard-coded rule,
+not luck.
+
+That means neither measured result above is actually a *track-selection*
+failure: bass's low accuracy (even octave-corrected, 27.0% frame hit vs.
+pYIN's 82.6%) is a genuine note-level transcription problem on the content
+MT3 correctly identified as bass. Guitar's severe fragmentation has a second,
+now-confirmed contributor beyond simple same-pitch splitting: MT3 detected
+the *same* real guitar performance as two separate near-identical programs
+("Acoustic Guitar (nylon)", kept, 1804 notes; "Electric Guitar (jazz)",
+discarded, 105 notes) — content vgt's "first track only" rule silently drops,
+not because it picked the wrong instrument, but because MT3 itself does not
+reliably keep one instrument in one program. Treat a first-track pitch or
+content mismatch as an open, checkable question (verified mechanism above,
+octave/notation convention, or genuinely noisy/split output) rather than an
+assumed leakage failure — but do not assume it is *never* a wrong instrument
+either: the hard exclusion is drums-specific; nothing stops two genuinely
+different pitched instruments from racing for "first" on a stem with real
+bleed, this is simply not what happened on either measured song here.
 
 ## Method
 

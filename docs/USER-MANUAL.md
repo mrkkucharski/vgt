@@ -744,14 +744,20 @@ its own `transcription/cache/mt3/` cache directory so it never shares or
 invalidates their cache entries.
 
 **Known limitation: instrument leakage.** MT3 is a genuine multi-instrument
-model; its raw output can and does contain other instruments (including
-drums) as separate MIDI tracks. Because selection is deliberately the *first*
-note-bearing track and nothing more, if that track is not the requested
-instrument, the variant will contain whatever MT3 actually put there first --
-there is no "find the guitar" filter. Treat these profiles as an
-experimental, single-song-at-a-time comparison against the current default
-(see docs/instrument-transcription-findings.md), not a production
-replacement.
+model; its raw output can and does contain other instruments as separate MIDI
+tracks. Because selection is deliberately the *first* note-bearing track and
+nothing more, if that track is not the requested instrument, the variant will
+contain whatever MT3 actually put there first -- there is no "find the
+guitar" filter. Track order is not arbitrary (it is whichever instrument's
+note genuinely sounds earliest in the piece, with drums specifically excluded
+from ever winning that slot -- see finding 7 in
+docs/instrument-transcription-findings.md for the verified mechanism), but it
+is still not a content guarantee: on measured songs so far the correct
+instrument has always landed first, while a second, related instrument's
+content (e.g. a second guitar-family track) has still been silently dropped
+by the first-track-only rule. Treat these profiles as an experimental,
+single-song-at-a-time comparison against the current default (see
+docs/instrument-transcription-findings.md), not a production replacement.
 
 ## Working copies and promotion (`vgt_working_copy.lua`)
 
