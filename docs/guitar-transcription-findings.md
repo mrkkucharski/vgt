@@ -553,12 +553,14 @@ ranking variants and should not be read as an absolute accuracy figure.
 ## MT3 alternative (opt-in comparison, issue #288)
 
 Status: **shipped as `guitar-mt3`, opt-in, no fallback, single-song evidence
-only** (2026-08-03). `guitar-mt3` feeds the raw `guitar` stem (no HPSS
-frontend) into the pinned MT3 backend (`docs/instrument-transcription-
-findings.md` links the backend's own provisioning/normalization docs) and
-retains only its first note-bearing MIDI track, unmodified by any cleanup
-stage. It never replaces or changes `guitar`'s existing Basic Pitch defaults,
-and there is no fallback if MT3 is unavailable or fails.
+only** (2026-08-03; track selection revised 2026-08-03 by issue #290, see
+below — the measured numbers here are unaffected). `guitar-mt3` feeds the raw
+`guitar` stem (no HPSS frontend) into the pinned MT3 backend
+(`docs/instrument-transcription-findings.md` links the backend's own
+provisioning/normalization docs) and retains only its dominant non-drum MIDI
+track, unmodified by any cleanup stage. It never replaces or changes
+`guitar`'s existing Basic Pitch defaults, and there is no fallback if MT3 is
+unavailable or fails.
 
 Measured against the same `7Rivers` stem and the same `guitar-acoustic`
 comparison harness as the rest of this document, `guitar-mt3` beside the
@@ -597,16 +599,21 @@ keeping MT3's full multi-track output) shows `programs: [0, 4, 8, 16, 24, 26,
 32, 33, 50, 60, 73, 80, 88]` — MT3 detects far more than one instrument in an
 isolated guitar stem. The track vgt selected is correctly labeled **"Acoustic
 Guitar (nylon)" (program 24), 1804 notes, first onset at tick 26** — matching
-`guitar-mt3`'s reported note count exactly, so this is not a wrong-instrument
-selection either (see finding 7 in
+`guitar-mt3`'s reported note count exactly, and it is both the *first* track
+decoded and the *most note-populous* one, so this is not a wrong-instrument
+selection under either rule (see finding 7 in
 [instrument-transcription-findings.md](instrument-transcription-findings.md)
-for the verified selection mechanism). Two things worth separating out:
+for the verified selection mechanism, and how issue #290 later changed which
+of the two this profile actually selects by). Two things worth separating
+out:
 
-- **Drums were correctly excluded despite starting early.** A 244-note drum
-  track exists in the raw output, first onset at tick 260 — earlier than 12 of
-  the other 13 detected tracks — and it was still placed after the guitar
-  tracks, because drum notes are hard-excluded from the "first" slot
-  regardless of timing. This is not luck; it is the mechanism working.
+- **Drums were correctly excluded despite starting early and being
+  populous.** A 244-note drum track exists in the raw output, first onset at
+  tick 260 — earlier than 12 of the other 13 detected tracks, and more
+  populous than every other non-selected track too — and it was still placed
+  after the guitar track, both under the original decode-order rule and
+  under #290's note-count-dominance rule. This is not luck; it is the
+  mechanism working, twice over.
 - **A second guitar-family track was silently discarded.** MT3 also produced
   an "Electric Guitar (jazz)" track (program 26, 105 notes, first onset at
   tick 31 — 5 ticks after the selected track). This is very likely the *same*

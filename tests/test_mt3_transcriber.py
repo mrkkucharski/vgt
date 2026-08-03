@@ -250,7 +250,7 @@ def test_detect_raw_reports_no_note_bearing_track(tmp_path: Path, monkeypatch: p
 
     monkeypatch.setattr(subprocess, "run", fake_run)
 
-    with pytest.raises(TranscriptionError, match="no MIDI track contains note events"):
+    with pytest.raises(TranscriptionError, match="no non-drum MIDI track contains note events"):
         Mt3Transcriber().detect_raw(_source(tmp_path), tmp_path / "dest", _spec())
 
 

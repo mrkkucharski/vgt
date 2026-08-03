@@ -526,10 +526,12 @@ stem for a one-off.
 Status: **shipped as `bass-mt3`, opt-in, no fallback, single-song evidence
 only, and measurably noisy relative to the shipped default on this stem**
 (2026-08-03, corrected 2026-08-03 — see "The raw octave gap is a known
-convention, not leakage" below). `bass-mt3` feeds the raw `bass` stem into the
-pinned MT3 backend and retains only its first note-bearing MIDI track,
-unmodified by any cleanup stage. It never replaces or changes `bass`'s pYIN
-default, and there is no fallback if MT3 is unavailable or fails.
+convention, not leakage" below; track selection revised 2026-08-03 by issue
+#290, see "Track selection was verified correct" below — the measured numbers
+here are unaffected). `bass-mt3` feeds the raw `bass` stem into the pinned
+MT3 backend and retains only its dominant non-drum MIDI track, unmodified by
+any cleanup stage. It never replaces or changes `bass`'s pYIN default, and
+there is no fallback if MT3 is unavailable or fails.
 
 Measured against the same `7Rivers` bass stem, the same CQT reference, and
 the same hand-corrected onset annotation used throughout this document:
@@ -577,16 +579,19 @@ still clearly behind the shipped pYIN default on this stem.
 
 Re-running `mt3-transcribe` directly on this same bass stem (outside vgt,
 keeping MT3's full multi-track output rather than letting normalization
-discard it) shows exactly which instrument landed first: `programs: [0, 32,
-47]` (Piano, **Acoustic Bass**, Timpani). The track vgt selected is the one
-labeled **"Acoustic Bass" (program 32), 131 notes, first onset at tick 35** —
-matching `bass-mt3`'s reported note count exactly. The spurious piano and
-timpani tracks start at ticks 4765 and 10916 respectively, far later. So
-MT3 did not put the wrong instrument first here; the octave gap above and the
-27.0%-hit accuracy gap are both about the *quality* of MT3's bass
-transcription, not about which track got selected. See finding 7 in
+discard it) shows `programs: [0, 32, 47]` (Piano, **Acoustic Bass**,
+Timpani). The track vgt selected is the one labeled **"Acoustic Bass"
+(program 32), 131 notes, first onset at tick 35** — matching `bass-mt3`'s
+reported note count exactly, and it is both the first track decoded (vs. the
+spurious piano and timpani tracks, starting at ticks 4765 and 10916) and the
+most note-populous one (131 vs. 9 vs. 1), so this was correct selection under
+either rule (see finding 7 in
 [instrument-transcription-findings.md](instrument-transcription-findings.md)
-for the verified track-selection mechanism this confirms.
+for the verified mechanism and how issue #290 later changed which of the two
+this profile actually selects by). MT3 did not put the wrong instrument first
+here either way; the octave gap above and the 27.0%-hit accuracy gap are both
+about the *quality* of MT3's bass transcription, not about which track got
+selected.
 
 ### Ear-verified 2026-08-03: confirms the measurement, on a second song too
 

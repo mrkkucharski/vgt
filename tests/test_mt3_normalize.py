@@ -1,4 +1,6 @@
-"""Offline coverage for MT3 multitrack MIDI normalization (issue #286).
+"""Offline coverage for MT3 multitrack MIDI normalization (issue #286,
+revised by issue #290 to select the dominant non-drum track by note count
+rather than the first note-bearing track).
 
 Every fixture is a synthetic MIDI file built directly with `mido`; nothing
 here invokes or provisions MT3 (see test_mt3_provision.py for that surface).
@@ -15,7 +17,7 @@ from vgt.mt3_normalize import (
     MT3_NOTE_NORMALIZATION_VERSION,
     MT3_TRACK_SELECTION_VERSION,
     Mt3SelectedTrack,
-    select_first_musical_track,
+    select_dominant_musical_track,
     summarize_selected_track,
     write_normalized_mt3_artifacts,
 )
@@ -52,56 +54,61 @@ def _off(note: int, time: int, channel: int = 0) -> mido.Message:
 CONDUCTOR = [_tempo(500_000)]  # 120 BPM
 
 
-def test_selects_first_note_bearing_track_and_skips_the_conductor(tmp_path: Path) -> None:
+def _drum_notes(count: int, *, time: int = 0, gap: int = 120) -> list[mido.Message]:
+    """`count` short hits on GM's percussion channel (9)."""
+    messages = []
+    for _ in range(count):
+        messages.append(_on(36, 100, time, channel=9))
+        messages.append(_off(36, gap, channel=9))
+        time = 0
+    return messages
+
+
+def test_selects_the_dominant_track_not_the_first(tmp_path: Path) -> None:
     path = _midi(tmp_path, [
         CONDUCTOR,
-        [_named("Guitar"), _on(60, 90, 0), _off(60, 480)],
-        [_named("Drums"), _on(36, 100, 0, channel=9), _off(36, 240, channel=9)],
+        [_named("Piano"), _on(60, 90, 0), _off(60, 480)],  # first in file, only 1 note
+        [_named("Guitar"), _on(62, 80, 0), _off(62, 240), _on(64, 80, 0), _off(64, 240)],  # 2 notes
     ])
 
-    selected = select_first_musical_track(path)
+    selected = select_dominant_musical_track(path)
+
+    assert selected.track_name == "Guitar"
+    assert [note.pitch_midi for note in selected.notes] == [62, 64]
+
+
+def test_drums_are_excluded_even_when_first_and_most_populous(tmp_path: Path) -> None:
+    path = _midi(tmp_path, [
+        CONDUCTOR,
+        [_named("Drums"), *_drum_notes(10)],  # first in file, most notes, but drums
+        [_named("Guitar"), _on(60, 90, 0), _off(60, 480)],
+    ])
+
+    selected = select_dominant_musical_track(path)
 
     assert selected.track_name == "Guitar"
     assert [note.pitch_midi for note in selected.notes] == [60]
-    assert selected.notes[0].start_s == pytest.approx(0.0)
-    assert selected.notes[0].end_s == pytest.approx(0.5)  # 480 ticks at 480 tpb, 120 BPM = 1 beat = 0.5s
 
 
-def test_percussion_in_a_later_track_never_leaks_into_the_selection(tmp_path: Path) -> None:
+def test_ties_prefer_the_earlier_track_in_file_order(tmp_path: Path) -> None:
     path = _midi(tmp_path, [
         CONDUCTOR,
-        [_named("Bass"), _on(40, 80, 0), _off(40, 480)],
-        [_named("Drums"), _on(36, 100, 0, channel=9), _off(36, 60, channel=9)],
+        [_named("First"), _on(60, 90, 0), _off(60, 240)],
+        [_named("Second"), _on(62, 80, 0), _off(62, 240)],
     ])
 
-    selected = select_first_musical_track(path)
+    selected = select_dominant_musical_track(path)
 
-    assert selected.track_name == "Bass"
-    assert all(note.pitch_midi == 40 for note in selected.notes)
+    assert selected.track_name == "First"
 
 
 def test_a_note_bearing_track_with_no_name_is_selected_with_none(tmp_path: Path) -> None:
     path = _midi(tmp_path, [CONDUCTOR, [_on(64, 70, 0), _off(64, 240)]])
 
-    selected = select_first_musical_track(path)
+    selected = select_dominant_musical_track(path)
 
     assert selected.track_name is None
     assert len(selected.notes) == 1
-
-
-def test_first_musical_track_can_itself_be_percussion_by_design(tmp_path: Path) -> None:
-    """Rule 5: no target-aware program-family filtering -- if the first
-    note-bearing track happens to be drums, that is still "the" track."""
-    path = _midi(tmp_path, [
-        CONDUCTOR,
-        [_named("Drums"), _on(36, 100, 0, channel=9), _off(36, 240, channel=9)],
-        [_named("Guitar"), _on(60, 90, 0), _off(60, 480)],
-    ])
-
-    selected = select_first_musical_track(path)
-
-    assert selected.track_name == "Drums"
-    assert [note.pitch_midi for note in selected.notes] == [36]
 
 
 def test_empty_and_meta_only_tracks_are_skipped_without_error(tmp_path: Path) -> None:
@@ -111,7 +118,7 @@ def test_empty_and_meta_only_tracks_are_skipped_without_error(tmp_path: Path) ->
         [_named("Guitar"), _on(62, 90, 0), _off(62, 480)],
     ])
 
-    selected = select_first_musical_track(path)
+    selected = select_dominant_musical_track(path)
 
     assert selected.track_name == "Guitar"
 
@@ -119,8 +126,17 @@ def test_empty_and_meta_only_tracks_are_skipped_without_error(tmp_path: Path) ->
 def test_no_note_bearing_track_fails_clearly(tmp_path: Path) -> None:
     path = _midi(tmp_path, [CONDUCTOR, [_named("Empty")]])
 
-    with pytest.raises(TranscriptionError, match="no MIDI track contains note events"):
-        select_first_musical_track(path)
+    with pytest.raises(TranscriptionError, match="no non-drum MIDI track contains note events"):
+        select_dominant_musical_track(path)
+
+
+def test_drums_only_output_fails_clearly(tmp_path: Path) -> None:
+    """No pitched candidate at all -- a drums-only stem selection must not
+    silently fall back to the drum track."""
+    path = _midi(tmp_path, [CONDUCTOR, [_named("Drums"), *_drum_notes(5)]])
+
+    with pytest.raises(TranscriptionError, match="no non-drum MIDI track contains note events"):
+        select_dominant_musical_track(path)
 
 
 def test_malformed_file_fails_clearly(tmp_path: Path) -> None:
@@ -128,7 +144,7 @@ def test_malformed_file_fails_clearly(tmp_path: Path) -> None:
     path.write_bytes(b"not a midi file")
 
     with pytest.raises(TranscriptionError, match="not a valid MIDI file"):
-        select_first_musical_track(path)
+        select_dominant_musical_track(path)
 
 
 def test_tempo_change_within_the_track_is_reflected_in_absolute_seconds(tmp_path: Path) -> None:
@@ -138,7 +154,7 @@ def test_tempo_change_within_the_track_is_reflected_in_absolute_seconds(tmp_path
         [_tempo(500_000), _on(60, 90, 0), _tempo(1_000_000, 480), _off(60, 480)],
     ])
 
-    selected = select_first_musical_track(path)
+    selected = select_dominant_musical_track(path)
 
     assert selected.notes[0].start_s == pytest.approx(0.0)
     assert selected.notes[0].end_s == pytest.approx(1.5)
@@ -155,7 +171,7 @@ def test_repeated_and_overlapping_notes_on_one_pitch_pair_fifo(tmp_path: Path) -
         _off(60, 240),      # closes the second
     ]])
 
-    selected = select_first_musical_track(path)
+    selected = select_dominant_musical_track(path)
 
     assert len(selected.notes) == 2
     first, second = sorted(selected.notes, key=lambda note: note.start_s)
@@ -166,7 +182,7 @@ def test_repeated_and_overlapping_notes_on_one_pitch_pair_fifo(tmp_path: Path) -
 def test_note_on_velocity_zero_is_treated_as_note_off(tmp_path: Path) -> None:
     path = _midi(tmp_path, [[CONDUCTOR[0], _on(60, 90, 0), _on(60, 0, 480)]])
 
-    selected = select_first_musical_track(path)
+    selected = select_dominant_musical_track(path)
 
     assert len(selected.notes) == 1
     assert selected.notes[0].end_s == pytest.approx(0.5)
@@ -175,7 +191,7 @@ def test_note_on_velocity_zero_is_treated_as_note_off(tmp_path: Path) -> None:
 def test_unclosed_note_is_closed_deterministically_at_track_end(tmp_path: Path) -> None:
     path = _midi(tmp_path, [[CONDUCTOR[0], _on(60, 90, 0), _on(64, 80, 480)]])  # 64 never gets a note_off
 
-    selected = select_first_musical_track(path)
+    selected = select_dominant_musical_track(path)
 
     assert len(selected.notes) == 2
     unclosed = next(note for note in selected.notes if note.pitch_midi == 64)
@@ -185,7 +201,7 @@ def test_unclosed_note_is_closed_deterministically_at_track_end(tmp_path: Path) 
 def test_a_note_off_with_no_matching_note_on_is_ignored(tmp_path: Path) -> None:
     path = _midi(tmp_path, [[CONDUCTOR[0], _off(60, 0), _on(64, 90, 0), _off(64, 240)]])
 
-    selected = select_first_musical_track(path)
+    selected = select_dominant_musical_track(path)
 
     assert [note.pitch_midi for note in selected.notes] == [64]
 
@@ -193,7 +209,7 @@ def test_a_note_off_with_no_matching_note_on_is_ignored(tmp_path: Path) -> None:
 def test_no_fabricated_pitch_bends(tmp_path: Path) -> None:
     path = _midi(tmp_path, [[CONDUCTOR[0], _on(60, 90, 0), _off(60, 480)]])
 
-    selected = select_first_musical_track(path)
+    selected = select_dominant_musical_track(path)
 
     assert all(note.pitch_bend == () for note in selected.notes)
 
@@ -204,7 +220,7 @@ def test_summarize_selected_track_reports_the_retained_variant_metrics(tmp_path:
         _on(60, 90, 0), _on(64, 70, 0),  # simultaneous notes -> 2 voices
         _off(60, 240), _off(64, 240),
     ]])
-    selected = select_first_musical_track(path)
+    selected = select_dominant_musical_track(path)
 
     summary = summarize_selected_track(selected)
 
@@ -235,7 +251,7 @@ def test_downstream_midi_stays_aligned_under_a_constant_project_tempo(tmp_path: 
     # Two simultaneous notes (both deltas 0 relative to the prior event), so
     # both must land on the same re-authored tick regardless of project tempo.
     path = _midi(tmp_path, [[CONDUCTOR[0], _on(60, 90, 0), _on(62, 80, 0), _off(60, 480), _off(62, 0)]])
-    selected = select_first_musical_track(path)  # source MIDI at 120 BPM
+    selected = select_dominant_musical_track(path)  # source MIDI at 120 BPM
 
     out_csv, out_midi = tmp_path / "out.csv", tmp_path / "out.mid"
     write_normalized_mt3_artifacts(selected, csv_path=out_csv, midi_path=out_midi, tempo_bpm=90.0)
@@ -254,7 +270,7 @@ def test_downstream_midi_stays_aligned_under_a_piecewise_project_tempo_map(tmp_p
     path = _midi(tmp_path, [[
         CONDUCTOR[0], _on(60, 90, 0), _off(60, 480), _on(62, 80, 480), _off(62, 480),
     ]])
-    selected = select_first_musical_track(path)
+    selected = select_dominant_musical_track(path)
     assert selected.notes[0].start_s == pytest.approx(0.0)
     assert selected.notes[1].start_s == pytest.approx(1.0)
 
@@ -276,7 +292,7 @@ def test_normalization_versions_are_stable_integers() -> None:
 
 def test_mt3_selected_track_is_a_frozen_dataclass_of_parsed_notes(tmp_path: Path) -> None:
     path = _midi(tmp_path, [[CONDUCTOR[0], _on(60, 90, 0), _off(60, 480)]])
-    selected = select_first_musical_track(path)
+    selected = select_dominant_musical_track(path)
 
     assert isinstance(selected, Mt3SelectedTrack)
     assert all(isinstance(note, ParsedNote) for note in selected.notes)

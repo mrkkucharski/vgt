@@ -2053,18 +2053,20 @@ class FakeAdtofTranscriber(FakeTranscriber):
 
 def _fake_mt3_multitrack_midi(destination: Path, source: Path, spec: TranscriptionSpec) -> None:
     """A synthetic multi-instrument MIDI shaped like MT3's own raw output: a
-    leading conductor track (tempo only, no notes) plus several named
-    instrument tracks, only one of which has notes. This is written so
-    `FakeMt3Transcriber` exercises the real
-    `vgt.mt3_normalize.select_first_musical_track` selection/normalization
-    logic -- not a shortcut around it -- while remaining fully offline and
-    content-addressed like every other fake backend."""
+    leading conductor track (tempo only, no notes), one of two named pitched
+    instrument tracks with notes (content-seeded), and a real drum track on
+    the GM percussion channel with more notes than either pitched candidate.
+    This is written so `FakeMt3Transcriber` exercises the real
+    `vgt.mt3_normalize.select_dominant_musical_track` selection/normalization
+    logic -- including that a more-populous drum track must still lose to a
+    less-populous non-drum one -- not a shortcut around it, while remaining
+    fully offline and content-addressed like every other fake backend."""
     import mido
 
     midi = mido.MidiFile(ticks_per_beat=480)
     midi.tracks.append(mido.MidiTrack([mido.MetaMessage("set_tempo", tempo=500_000, time=0)]))
 
-    instrument_names = ("Guitar", "Piano", "Drums")
+    instrument_names = ("Guitar", "Piano")
     selected_index = _content_seed(source, spec, "mt3-selected-track") % len(instrument_names)
     for index, name in enumerate(instrument_names):
         track = mido.MidiTrack([mido.MetaMessage("track_name", name=name, time=0)])
@@ -2076,6 +2078,16 @@ def _fake_mt3_multitrack_midi(destination: Path, source: Path, spec: Transcripti
                 track.append(mido.Message("note_on", note=pitch, velocity=velocity, time=0))
                 track.append(mido.Message("note_off", note=pitch, velocity=0, time=240))
         midi.tracks.append(track)
+
+    # A populous drum track (GM percussion channel 9) must still lose to
+    # whichever pitched track above got notes -- proves drum exclusion isn't
+    # simply an accident of note count.
+    drums = mido.MidiTrack([mido.MetaMessage("track_name", name="Drums", time=0)])
+    for beat in range(8):
+        drums.append(mido.Message("note_on", channel=9, note=36, velocity=100, time=0))
+        drums.append(mido.Message("note_off", channel=9, note=36, velocity=0, time=120))
+    midi.tracks.append(drums)
+
     destination.parent.mkdir(parents=True, exist_ok=True)
     midi.save(str(destination))
 
@@ -2084,9 +2096,9 @@ class FakeMt3Transcriber(FakeTranscriber):
     """Offline MT3 stand-in that runs the real selection/normalization code
     (`vgt.mt3_normalize`) against a synthetic multi-track MIDI it fabricates,
     rather than reusing `FakeTranscriber`'s generic note fake -- so the
-    offline suite proves the actual "first musical track" contract holds, the
-    same way `FakeAdtofTranscriber` proves ADTOF's post-processing contract
-    rather than sidestepping it."""
+    offline suite proves the actual "dominant non-drum track" contract holds,
+    the same way `FakeAdtofTranscriber` proves ADTOF's post-processing
+    contract rather than sidestepping it."""
 
     name = "mt3"
 
@@ -2100,11 +2112,11 @@ class FakeMt3Transcriber(FakeTranscriber):
         emit(f"transcribing (fake-mt3): {source.name}")
         destination_dir.mkdir(parents=True, exist_ok=True)
 
-        from .mt3_normalize import select_first_musical_track, write_normalized_mt3_artifacts
+        from .mt3_normalize import select_dominant_musical_track, write_normalized_mt3_artifacts
 
         raw_midi = destination_dir / "_fake_mt3_raw.mid"
         _fake_mt3_multitrack_midi(raw_midi, source, spec)
-        selected = select_first_musical_track(raw_midi)
+        selected = select_dominant_musical_track(raw_midi)
         raw_midi.unlink()
 
         midi_path = destination_dir / "transcription.mid"
@@ -3451,8 +3463,8 @@ def _parse_mt3_json(stdout: str, work_dir: Path) -> dict[str, Any]:
 class Mt3Transcriber:
     """Real MT3 backend: the fork's pinned `mt3-transcribe` CLI, invoked
     inside its own provisioned project (never vgt's environment -- see
-    `vgt.mt3_provision`), then normalized to vgt's first-musical-track note
-    contract (see `vgt.mt3_normalize`).
+    `vgt.mt3_provision`), then normalized to vgt's dominant-non-drum-track
+    note contract (see `vgt.mt3_normalize`).
 
     Degradation is per target, mirroring every other subprocess backend here:
     missing provisioning, a non-zero exit, a timeout, malformed JSON, a
@@ -3475,7 +3487,7 @@ class Mt3Transcriber:
         if not source.is_file():
             raise TranscriptionError("mt3 source is not a readable file")
 
-        from .mt3_normalize import select_first_musical_track, write_normalized_mt3_artifacts
+        from .mt3_normalize import select_dominant_musical_track, write_normalized_mt3_artifacts
         from .mt3_provision import Mt3ProvisionError, default_cache_dir, require_mt3_provisioned
 
         try:
@@ -3516,7 +3528,7 @@ class Mt3Transcriber:
                     raise TranscriptionError("mt3-transcribe reported an unexpected output path")
                 if not raw_output.is_file():
                     raise TranscriptionError("mt3-transcribe reported success but wrote no output file")
-                selected = select_first_musical_track(raw_output)
+                selected = select_dominant_musical_track(raw_output)
             except TranscriptionError as exc:
                 raise TranscriptionError(_without_temporary_path(str(exc), work_dir)) from exc
 

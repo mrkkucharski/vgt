@@ -1,4 +1,5 @@
-"""Backend-neutral MT3 multitrack MIDI normalization (issue #286).
+"""Backend-neutral MT3 multitrack MIDI normalization (issue #286, revised by
+issue #290 to select the dominant track rather than the first).
 
 MT3 writes its complete multi-instrument prediction into one Standard
 MIDI File; it exposes no stable primary-track field, and an apparent
@@ -6,22 +7,34 @@ input-filename track name may have been assigned by whatever imported the
 file rather than guaranteed MIDI metadata. This module's selection rule is
 therefore structural, not name- or instrument-aware:
 
-1. Select the first MIDI track containing note events (this also skips a
-   leading conductor/meta-only track: a track with no notes is simply not a
-   candidate).
-2. Record that track's name for diagnostics when present, but never require
-   or select by it.
-3. Discard every other note-bearing track, including detected percussion --
-   this is deliberately MT3's first musical track, not target-aware
-   program-family filtering (out of scope; see docs/instrument-transcription-
-   findings.md before changing that).
-4. Fail clearly if no track contains a note event.
+1. Exclude every track that is drums: General MIDI's percussion channel (MIDI
+   channel 9, 0-indexed) is a universal, structural convention, not an
+   instrument-family guess, and MT3's own writer places a drum note's channel
+   this way unconditionally (see `mt3/note_sequences.py`'s
+   `assign_instruments`, which pins a drum note to a fixed instrument index
+   regardless of when it occurs -- verified against MT3's real output on two
+   songs; see docs/instrument-transcription-findings.md finding 7).
+2. Among the remaining tracks, select the one with the most note events. A
+   source-separated single-instrument stem is expected to be *dominated*, in
+   note count, by its intended instrument -- a more robust assumption than
+   "whichever track the model happened to decode first" (issue #286's
+   original rule), which only needs a spurious secondary track to start a
+   few ticks earlier to win. Ties resolve to the earlier track in file order,
+   deterministically.
+3. Record the selected track's name for diagnostics when present, but never
+   require or select by it.
+4. Do not filter by predicted General MIDI program family (never guess
+   "which program is guitar/bass") -- drum-channel exclusion is a structural
+   MIDI convention, not that kind of instrument-aware heuristic, and remains
+   out of scope; see docs/instrument-transcription-findings.md before
+   changing that.
+5. Fail clearly if no non-drum track contains a note event.
 
 This module never invokes or provisions MT3 itself (see `vgt.mt3_provision`
-for that), and nothing here is wired to a transcription spec/profile yet --
-it only produces vgt's canonical `ParsedNote`/CSV/MIDI contract from an
-already-existing MT3 MIDI file, reusing the same tempo-map-aware MIDI writer
-every other backend uses.
+for that); it only produces vgt's canonical `ParsedNote`/CSV/MIDI contract
+from an already-existing MT3 MIDI file, reusing the same tempo-map-aware
+MIDI writer every other backend uses (see `vgt.transcribe.Mt3Transcriber`,
+`Mt3Spec`, and the `guitar-mt3`/`bass-mt3` profiles for how it is wired up).
 """
 
 from __future__ import annotations
@@ -43,10 +56,14 @@ from .transcribe import (
 # Two independent identity fields (both part of `Mt3Spec`'s serialized
 # identity -- see `vgt.transcribe`), bumped separately so retuning one never
 # masquerades as a change to the other: `TRACK_SELECTION` covers which track
-# `select_first_musical_track` picks; `NOTE_NORMALIZATION` covers how its
+# `select_dominant_musical_track` picks; `NOTE_NORMALIZATION` covers how its
 # note-on/off pairs are converted into `ParsedNote`s once a track is chosen.
 # The same role `PYIN_ALGORITHM_VERSION` plays for that backend's identity.
-MT3_TRACK_SELECTION_VERSION = 1
+# TRACK_SELECTION bumped 1 -> 2 by issue #290 (dominant-by-note-count with
+# drum-channel exclusion, replacing first-by-decode-order): any raw MT3
+# detection cached under the old version must not be reused as if it were
+# selected under the new rule.
+MT3_TRACK_SELECTION_VERSION = 2
 MT3_NOTE_NORMALIZATION_VERSION = 1
 
 _DEFAULT_TEMPO_USPB = 500_000  # 120 BPM, MIDI's implicit default absent a set_tempo event
@@ -54,7 +71,8 @@ _DEFAULT_TEMPO_USPB = 500_000  # 120 BPM, MIDI's implicit default absent a set_t
 
 @dataclass(frozen=True)
 class Mt3SelectedTrack:
-    """The first note-bearing track normalized to vgt's canonical note form."""
+    """The dominant (most note-populous, non-drum) track normalized to vgt's
+    canonical note form."""
 
     track_name: str | None
     notes: tuple[ParsedNote, ...]
@@ -145,11 +163,24 @@ def _extract_track_notes(track: Any, tempo_events: list[tuple[int, int]], ticks_
     return notes
 
 
-def select_first_musical_track(path: str | Path) -> Mt3SelectedTrack:
-    """Select and normalize MT3's first note-bearing track from `path`.
+_DRUM_CHANNEL = 9  # General MIDI percussion convention, 0-indexed ("channel 10")
 
-    Raises `TranscriptionError` if the file cannot be parsed or no track
-    contains a note event.
+
+def _is_drum_track(track: Any) -> bool:
+    """Whether `track`'s notes are on GM's percussion channel.
+
+    MT3's own writer assigns every drum note this channel unconditionally
+    (see the module docstring), so this is a structural check, not a guess.
+    """
+    return any(msg.type in ("note_on", "note_off") and msg.channel == _DRUM_CHANNEL for msg in track)
+
+
+def select_dominant_musical_track(path: str | Path) -> Mt3SelectedTrack:
+    """Select and normalize MT3's dominant non-drum track from `path`: the
+    one with the most note events, among tracks that are not drums.
+
+    Raises `TranscriptionError` if the file cannot be parsed or no non-drum
+    track contains a note event.
     """
     import mido
 
@@ -161,11 +192,18 @@ def select_first_musical_track(path: str | Path) -> Mt3SelectedTrack:
         raise TranscriptionError(f"{path}: MIDI file has an invalid ticks-per-beat")
 
     tempo_events = _tempo_events(midi.tracks)
+    best: Mt3SelectedTrack | None = None
+    best_count = 0
     for track in midi.tracks:
+        if _is_drum_track(track):
+            continue
         notes = _extract_track_notes(track, tempo_events, midi.ticks_per_beat)
-        if notes:
-            return Mt3SelectedTrack(track_name=_track_name(track), notes=tuple(notes))
-    raise TranscriptionError(f"{path}: no MIDI track contains note events")
+        if len(notes) > best_count:  # strictly greater: a tie keeps the earlier track
+            best = Mt3SelectedTrack(track_name=_track_name(track), notes=tuple(notes))
+            best_count = len(notes)
+    if best is None:
+        raise TranscriptionError(f"{path}: no non-drum MIDI track contains note events")
+    return best
 
 
 def summarize_selected_track(selected: Mt3SelectedTrack) -> dict[str, Any]:

@@ -720,16 +720,18 @@ vgt transcription variant add bass --name mt3 --profile bass-mt3 "Song.RPP"
 `guitar-mt3` only accepts the `guitar` target and `bass-mt3` only accepts
 `bass` (`--mode guitar=bass-mt3` or the reverse is rejected before anything
 runs). Both feed the raw separated stem into MT3 (no HPSS frontend) and
-retain only its first note-bearing MIDI track through vgt's first-track
-normalizer -- see the [MT3 track-selection
-contract](#mt3-backend-provisioning) above. There is deliberately **no
-cleanup pipeline** here (no note-dropping, voice-cap, or force-monophony):
-these profiles exist to show MT3's own output honestly, before any measured
-evidence would motivate a derived cleanup profile. There is also no General
-MIDI program filtering and no fallback to another MT3 track, Basic Pitch, or
-pYIN -- if MT3's first track happens to be the wrong instrument, or MT3 is
-not provisioned, or the backend fails, the variant records that error and
-nothing else is substituted.
+retain only its **dominant non-drum MIDI track** through vgt's normalizer:
+every track on General MIDI's percussion channel is excluded (a structural
+MIDI convention, not an instrument guess), and among the rest, the track with
+the most note events is kept -- a source-separated single-instrument stem is
+expected to be dominated, in note count, by its intended instrument. There is
+deliberately **no cleanup pipeline** here (no note-dropping, voice-cap, or
+force-monophony): these profiles exist to show MT3's own output honestly,
+before any measured evidence would motivate a derived cleanup profile. There
+is also no General MIDI program filtering and no fallback to another MT3
+track, Basic Pitch, or pYIN -- if MT3's dominant track happens to be the
+wrong instrument, or MT3 is not provisioned, or the backend fails, the
+variant records that error and nothing else is substituted.
 
 `vgt transcription profile show guitar-mt3` reports the full pinned identity
 (fork repository, tag, commit, runtime, checkpoint model id, and both
@@ -745,17 +747,18 @@ invalidates their cache entries.
 
 **Known limitation: instrument leakage.** MT3 is a genuine multi-instrument
 model; its raw output can and does contain other instruments as separate MIDI
-tracks. Because selection is deliberately the *first* note-bearing track and
+tracks. Because selection is deliberately the *dominant non-drum* track and
 nothing more, if that track is not the requested instrument, the variant will
-contain whatever MT3 actually put there first -- there is no "find the
-guitar" filter. Track order is not arbitrary (it is whichever instrument's
-note genuinely sounds earliest in the piece, with drums specifically excluded
-from ever winning that slot -- see finding 7 in
-docs/instrument-transcription-findings.md for the verified mechanism), but it
-is still not a content guarantee: on measured songs so far the correct
-instrument has always landed first, while a second, related instrument's
-content (e.g. a second guitar-family track) has still been silently dropped
-by the first-track-only rule. Treat these profiles as an experimental,
+contain whatever MT3's most note-populous non-drum track actually is -- there
+is no "find the guitar" filter. This is not arbitrary (every drum-channel
+track is excluded outright, and note-count dominance is a stronger signal
+than the original "whichever track decodes first" rule it replaced -- issue
+#290; see finding 7 in docs/instrument-transcription-findings.md for the
+verified mechanism and why it changed), but it is still not a content
+guarantee: on measured songs so far the correct instrument has always been
+dominant, while a second, related instrument's content (e.g. a second
+guitar-family track) has still been silently dropped by the
+dominant-track-only rule. Treat these profiles as an experimental,
 single-song-at-a-time comparison against the current default (see
 docs/instrument-transcription-findings.md), not a production replacement.
 
