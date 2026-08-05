@@ -34,11 +34,14 @@ MT3_REPO_URL = "https://github.com/mrkkucharski/mt3.git"
 # v0.1.0's own `mt3-download-model` had a bug: it wrote checkpoint files
 # straight into `--output-dir` but then required an `output-dir/checkpoint_0`
 # subdirectory that the real GCS bucket layout could never produce, so
-# provisioning always failed at the download step. v0.1.1 fixes that (see
-# https://github.com/mrkkucharski/mt3/commit/36c9d1bfdc8f432376c1ca303cb965e71ef297d6);
-# v0.1.0 itself is not usable and is not repinned here.
-MT3_PINNED_TAG = "v0.1.1"
-MT3_PINNED_COMMIT = "36c9d1bfdc8f432376c1ca303cb965e71ef297d6"
+# provisioning always failed at the download step. v0.1.1 fixed that (see
+# https://github.com/mrkkucharski/mt3/commit/36c9d1bfdc8f432376c1ca303cb965e71ef297d6).
+# v0.1.2 replaced the GCS-hosted official Google checkpoint entirely with the
+# guitar_pilot fine-tune from mrkkucharski's own Hugging Face repo (see
+# https://github.com/mrkkucharski/mt3/commit/ec19e8f2e19f123d9fa6a995698a9a5af0c48ff3).
+# Neither v0.1.0 nor v0.1.1 is usable/repinned here.
+MT3_PINNED_TAG = "v0.1.2"
+MT3_PINNED_COMMIT = "ec19e8f2e19f123d9fa6a995698a9a5af0c48ff3"
 
 MT3_CACHE_DIR_ENV = "VGT_MT3_CACHE_DIR"
 
@@ -56,11 +59,13 @@ MT3_RUNTIME_VERSION = f"python=={MT3_REQUIRED_PYTHON[0]}.{MT3_REQUIRED_PYTHON[1]
 # checkout. Verify it against the pinned commit with:
 #   gh api "repos/mrkkucharski/mt3/contents/uv.lock?ref=<MT3_PINNED_COMMIT>" \
 #     --jq '.content' | base64 -d | shasum -a 256
-MT3_LOCK_SHA256 = "5cf925749b767ebb8924ac4eca9475ab7d8accf5b45e9a1668a61697ff2f1e9f"
+MT3_LOCK_SHA256 = "1f103f1395c42617a1df98ade4238a7bff8ce84c3e6f7bf3fd1c45e63bf04f46"
 
 # `mt3.model_download.MODEL_ID` at the pinned commit: the only checkpoint
-# `mt3-download-model` knows how to fetch.
-MT3_MODEL_ID = "official-multitrack-v1"
+# `mt3-download-model` knows how to fetch -- the guitar_pilot fine-tune from
+# mrkkucharski/mt3-guitar-pilot on Hugging Face, not Google's official
+# release (see `mt3.model_download.HF_REPO_ID`/`HF_REVISION`).
+MT3_MODEL_ID = "guitar-pilot-v1"
 
 
 class Mt3ProvisionError(Exception):

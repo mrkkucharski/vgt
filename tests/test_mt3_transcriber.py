@@ -306,10 +306,10 @@ def test_mt3_spec_serializes_its_full_pinned_identity() -> None:
 
     assert data["backend"] == "mt3"
     assert data["repository"] == spec.repository
-    assert data["tag"] == "v0.1.1"
+    assert data["tag"] == "v0.1.2"
     assert data["commit"] == spec.commit
     assert data["runtime_version"] == "python==3.11"
-    assert data["model_id"] == "official-multitrack-v1"
+    assert data["model_id"] == "guitar-pilot-v1"
     assert data["checkpoint_fingerprint"] == "fp-1"
     assert data["track_selection_version"] == spec.track_selection_version
     assert data["note_normalization_version"] == spec.note_normalization_version
