@@ -19,15 +19,17 @@ vgt install-reascripts
 ```
 
 `install-reascripts` installs the bundled `vgt_initialize.lua`,
-`vgt_sync.lua`, `vgt_sync_tempo_map.lua`, and `vgt_working_copy.lua` into
+`vgt_sync.lua`, `vgt_sync_tempo_map.lua`, `vgt_create_working_copy.lua`, and
+`vgt_promote_working_copy.lua` (plus their shared implementation) into
 `~/Library/Application Support/REAPER/Scripts/vgt`, so it works equally from a
 wheel, Git URL, or local source. In REAPER, open the Action List and use
-`ReaScript: Load` to register all four files once. Run `vgt_initialize.lua`
+`ReaScript: Load` to register the five action files once. Run `vgt_initialize.lua`
 to initialize a project and apply vgt's generated objects, `vgt_sync.lua` to
 save section corrections, `vgt_sync_tempo_map.lua` to adopt a tempo-map
-correction after its confirmation prompt, and `vgt_working_copy.lua` to create
+correction after its confirmation prompt, `vgt_create_working_copy.lua` to create
 protected user-owned `[work]` copies of generated reference MIDI, chords, or
-key tracks and promote finished copies into `[clean]`. Initialize maintains the bottom layout:
+key tracks, and `vgt_promote_working_copy.lua` to promote finished copies into
+`[clean]`. Initialize maintains the bottom layout:
 loose root tracks, `[clean]`, `[work]`, then `[vgt]`. Use
 `vgt install-reascripts --dry-run` to preview paths, or `--destination DIR`
 to install into a test or nonstandard Scripts directory. Existing files that

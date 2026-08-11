@@ -42,7 +42,7 @@ FIXTURE_DIR = ROOT / "test" / "Reaper Project"
 APPLY_SCRIPT = ROOT / "reascript" / "vgt_initialize.lua"
 SYNC_SCRIPT = ROOT / "reascript" / "vgt_sync.lua"
 TEMPO_SYNC_SCRIPT = ROOT / "reascript" / "vgt_sync_tempo_map.lua"
-WORKING_COPY_SCRIPT = ROOT / "reascript" / "vgt_working_copy.lua"
+WORKING_COPY_SCRIPT = ROOT / "reascript" / "vgt_working_copy_common.lua"
 LUA = __import__("os").environ.get("VGT_TEST_LUA", "lua")
 REFERENCE_GUID = "{75418143-1F31-B548-B7D2-96815CB0297D}"
 
@@ -458,7 +458,7 @@ def _run_tempo_map_sync(project: Path, state: str) -> str:
 
 def _run_promote(project: Path, state: str, *guids: str) -> tuple[str, str]:
     """Promote selected simulated working copies through the real ReaScript."""
-    module = WORKING_COPY_SCRIPT.read_text(encoding="utf-8").split("local ok, error_message = xpcall", 1)[0]
+    module = WORKING_COPY_SCRIPT.read_text(encoding="utf-8").split("local function run(action)", 1)[0]
     selected_guids = "{" + ",".join(json.dumps(guid) for guid in guids) + "}"
     return _run(project, state, module, f"""
 local selected_guids = {selected_guids}
