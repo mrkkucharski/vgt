@@ -1,21 +1,23 @@
 {
   "current_issue": 294,
-  "session_id": "20828a76-47d7-4d0e-8a83-16e0cb31f179",
-  "pid": 44733,
-  "process_started_at": "Tue Aug 11 14:03:02 2026",
+  "session_id": "5cee68a9-5dba-43e5-93b9-b60893d5172d",
+  "pid": 45622,
+  "process_started_at": "Tue Aug 11 14:05:55 2026",
   "agent": "claude",
-  "started_at": "2026-08-11T12:03:01.202435+00:00",
+  "started_at": "2026-08-11T12:05:53.929298+00:00",
   "scheduler_stalls": {},
   "budget": {
     "window_start": "2026-08-11T11:43:48.260052+00:00",
-    "seconds_used": 0.0,
-    "dollars_used": 0.0,
-    "seconds_used_by_agent": {}
+    "seconds_used": 170.099264,
+    "dollars_used": 0.769983,
+    "seconds_used_by_agent": {
+      "claude": 170.099264
+    }
   },
   "verification_followups": {
     "f0d8bfc9d2dc6da7a31609184e25c4d66d3986fd2340b33a83e98204fb86691e": "created"
   },
-  "role": "review",
+  "role": "fix",
   "branch": "issue-294-add-transcribing-instrumental-stem-with",
   "worktree_path": "/Users/marekkucharski/projects/.pm-worktrees/vgt/issue-294",
   "pr_number": 296,
@@ -78,16 +80,17 @@
     "225": 3,
     "226": 2,
     "239": 3,
-    "273": 1
+    "273": 1,
+    "294": 1
   },
   "pending_transition": {
     "issue": 294,
     "target": "working",
-    "event": "agent.review_started",
+    "event": "agent.fix_started",
     "detail": {
       "issue": 294,
       "agent": "claude",
-      "pr": 296
+      "fix_count": 1
     },
     "cleanup": {}
   }
