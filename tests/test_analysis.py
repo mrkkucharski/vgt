@@ -1578,6 +1578,23 @@ def test_cli_no_transcribe_skips_the_stage_and_keeps_the_requested_set(
     assert read_sidecar(project)["analysis"]["transcription"]["requested_targets"] == ["guitar"]
 
 
+def test_cli_no_transcribe_also_skips_the_mt3_instrumental_review(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    project = _project_copy(tmp_path)
+    _write_v1_sidecar(project)
+    review_calls: list[object] = []
+
+    def fake_refresh(project: object, **_kwargs: object) -> None:
+        review_calls.append(project)
+
+    monkeypatch.setattr("vgt.cli.refresh_mt3_instrumental_review", fake_refresh)
+    monkeypatch.setattr("vgt.cli.analyze", lambda *_args, **_kwargs: read_sidecar(project))
+
+    assert main(["analyze", "--no-transcribe", str(project)]) == 0
+    assert review_calls == []
+
+
 def test_cli_transcribe_only_rejects_no_transcribe_and_transcribe(tmp_path: Path) -> None:
     project = _project_copy(tmp_path)
     _write_v1_sidecar(project)

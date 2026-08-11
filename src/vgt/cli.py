@@ -516,8 +516,10 @@ def main(argv: list[str] | None = None) -> int:
             # The complete instrumental prediction is a review surface, not a
             # target variant: keep every MT3 track once separation makes its
             # source available.  A missing provision is recorded as a local
-            # review error and does not discard the rest of analysis.
-            refresh_mt3_instrumental_review(project, force=args.force, progress=report)
+            # review error and does not discard the rest of analysis.  Still a
+            # transcription pass, so --no-transcribe must skip it too.
+            if not args.no_transcribe:
+                refresh_mt3_instrumental_review(project, force=args.force, progress=report)
 
             if args.forget_transcription:
                 forget_transcription_targets(project, tuple(args.forget_transcription))
