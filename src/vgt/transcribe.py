@@ -3530,6 +3530,50 @@ class Mt3Transcriber:
 
     name = "mt3"
 
+    def transcribe_all_tracks(
+        self, source: Path, destination_dir: Path, spec: Mt3Spec,
+        progress: Callable[[str], None] | None = None,
+    ) -> Path:
+        """Run MT3 and retain its unfiltered multi-instrument MIDI output.
+
+        Used only by the instrumental review pass; normal target variants use
+        :meth:`detect_raw` and retain their deliberately selected one track.
+        """
+        if not isinstance(spec, Mt3Spec):
+            raise TranscriptionError("Mt3Transcriber requires an Mt3Spec")
+        emit = progress or (lambda _message: None)
+        if not source.is_file():
+            raise TranscriptionError("mt3 source is not a readable file")
+        from .mt3_provision import Mt3ProvisionError, default_cache_dir, require_mt3_provisioned
+        try:
+            manifest = require_mt3_provisioned()
+        except Mt3ProvisionError as exc:
+            raise TranscriptionError(str(exc)) from exc
+        cache_dir = default_cache_dir()
+        repo_dir = cache_dir / "repo"
+        checkpoint_dir = cache_dir / "models" / "checkpoint_0"
+        if not checkpoint_dir.is_dir():
+            raise TranscriptionError("mt3 checkpoint directory is missing; run `vgt transcription backend provision mt3` again")
+        del manifest
+        destination_dir.mkdir(parents=True, exist_ok=True)
+        output = destination_dir / "instrumental.mid"
+        emit(f"transcribing (mt3 review): {source.name}")
+        argv = build_mt3_argv(source, output, checkpoint_dir, repo_dir,
+                              input_length_frames=spec.input_length_frames, lookahead_frames=spec.lookahead_frames)
+        try:
+            completed = subprocess.run(argv, cwd=destination_dir, capture_output=True, text=True,
+                                       timeout=MT3_TIMEOUT_SECONDS, errors="replace")
+        except subprocess.TimeoutExpired as exc:
+            raise TranscriptionError(f"mt3-transcribe timed out after {exc.timeout}s") from exc
+        except OSError as exc:
+            raise TranscriptionError(f"failed to run mt3-transcribe: {exc}") from exc
+        if completed.returncode != 0:
+            raise TranscriptionError(f"mt3-transcribe exited with status {completed.returncode}: {_tail(completed.stderr, completed.stdout)}")
+        result = _parse_mt3_json(completed.stdout, destination_dir)
+        if Path(result["output"]).resolve() != output.resolve() or not output.is_file():
+            raise TranscriptionError("mt3-transcribe reported an unexpected or missing output file")
+        return output
+
     def detect_raw(
         self, source: Path, destination_dir: Path, spec: TranscriptionSpec,
         progress: Callable[[str], None] | None = None,

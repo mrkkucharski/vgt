@@ -378,6 +378,10 @@ def _empty_transcription_block() -> dict[str, Any]:
     return {"requested_targets": list(DEFAULT_TRANSCRIPTION_TARGETS), "modes": {}, "targets": {}, "detection_cache": {}}
 
 
+def _empty_mt3_review_block() -> dict[str, Any]:
+    return {"status": "pending", "input_hash": None, "midi_file": None, "tracks": [], "error": None}
+
+
 def _legacy_variant_id(target: str, settings_hash: str | None) -> str:
     """A stable id for the single variant a pre-v13 flat target record
     implies. Deterministic in `target` + `settings_hash` so repeated
@@ -577,6 +581,7 @@ def upgrade(data: dict[str, Any]) -> dict[str, Any]:
         record.pop("selected_variant_id", None)
     transcription["targets"] = targets
     analysis["transcription"] = transcription
+    analysis["mt3_review"] = {**_empty_mt3_review_block(), **(analysis.get("mt3_review") or {})}
 
     upgraded["analysis"] = analysis
     return upgraded
