@@ -8,7 +8,7 @@ from pathlib import Path
 import sys
 from typing import Any
 
-from .analysis import AnalysisError, add_transcription_targets, analyze, forget_transcription_targets, set_transcription_modes
+from .analysis import AnalysisError, add_transcription_targets, analyze, forget_transcription_targets, refresh_mt3_instrumental_review, set_transcription_modes
 from .drum_cleanup import DRUM_CLEANUP_PROFILES
 from .lalal import LalalError, LalalSeparator
 from .mt3_provision import Mt3ProvisionError, provision_mt3
@@ -512,6 +512,14 @@ def main(argv: list[str] | None = None) -> int:
 
             if separation_error is not None:
                 report(f"stem separation unavailable; continuing with available sources: {separation_error}")
+
+            # The complete instrumental prediction is a review surface, not a
+            # target variant: keep every MT3 track once separation makes its
+            # source available.  A missing provision is recorded as a local
+            # review error and does not discard the rest of analysis.  Still a
+            # transcription pass, so --no-transcribe must skip it too.
+            if not args.no_transcribe:
+                refresh_mt3_instrumental_review(project, force=args.force, progress=report)
 
             if args.forget_transcription:
                 forget_transcription_targets(project, tuple(args.forget_transcription))

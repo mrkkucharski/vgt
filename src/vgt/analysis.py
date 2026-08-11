@@ -55,6 +55,10 @@ from .transcribe import (
     Transcriber,
     TranscriberRouter,
     TargetTranscriberRouter,
+    Mt3Transcriber,
+    Mt3Spec,
+    TranscriptionError,
+    default_spec_for_target,
     drum_transcription_profile,
     events_artifact_name,
     effective_profile_name_for_target,
@@ -68,6 +72,7 @@ from .transcribe import (
     validate_profile_for_target,
     validate_target,
 )
+from .mt3_review import split_mt3_midi
 from .transcription_variants import (
     VariantRequest,
     garbage_collect_raw_cache,
@@ -582,6 +587,42 @@ def reference_source_path(project_path: Path, sidecar: dict[str, Any]) -> Path:
     if not guid:
         raise AnalysisError(f"{project_path}: sidecar has no config.reference_track_guid; run Phase 0 apply first.")
     return track_source_path(project_path, guid)
+
+
+def refresh_mt3_instrumental_review(project: str | Path, *, force: bool = False, progress: Callable[[str], None] | None = None) -> None:
+    """Transcribe the separated instrumental stem into reviewable MT3 tracks.
+
+    This is intentionally outside the ordinary target-variant model: it keeps
+    all predicted instruments and is surfaced as a separate `[vgt] MT3`
+    REAPER folder, rather than claiming one prediction is the instrumental.
+    """
+    emit = progress or (lambda _message: None)
+    project_path = locate_project(project)
+    sidecar = read_sidecar(project_path)
+    analysis = sidecar["analysis"]
+    source = reference_source_path(project_path, sidecar)
+    resolved = resolve_target_source(project_path, "instrumental", analysis, reference_source=source)
+    if resolved is None:
+        return
+    instrumental, _artifact = resolved
+    input_hash = hash_source_file(instrumental)
+    review = analysis["mt3_review"]
+    namespace = ensure_artifact_namespace(sidecar, project_path)
+    output_dir = artifact_namespace_dir(project_path, namespace) / "mt3"
+    raw_path = output_dir / "instrumental.mid"
+    if not force and review.get("status") == "transcribed" and review.get("input_hash") == input_hash and raw_path.is_file():
+        return
+    try:
+        spec = default_spec_for_target("instrumental", backend="mt3")
+        assert isinstance(spec, Mt3Spec)
+        raw = Mt3Transcriber().transcribe_all_tracks(instrumental, output_dir, spec, progress=emit)
+        tracks = split_mt3_midi(raw, output_dir / "tracks")
+        value = {"status": "transcribed", "input_hash": input_hash, "midi_file": "mt3/instrumental.mid", "tracks": tracks, "error": None}
+        emit(f"MT3 review — retained {len(tracks)} predicted instrument track(s)")
+    except TranscriptionError as exc:
+        value = {"status": "error", "input_hash": input_hash, "midi_file": None, "tracks": [], "error": str(exc)}
+        emit(f"MT3 review unavailable: {exc}")
+    update_analysis(project_path, lambda current: current.__setitem__("mt3_review", value))
 
 
 def analyze(

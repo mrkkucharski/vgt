@@ -43,6 +43,8 @@ checklist.
    `drums`, a pYIN pitch tracker transcribes `bass`, and Basic Pitch
    transcribes every other target. This is free and needs no confirmation;
    guitar is requested by default.
+   When MT3 has been provisioned, it also transcribes the complete instrumental
+   stem and retains every predicted MIDI track for review.
 5. Run `vgt_initialize.lua` again to apply analysis and import available stems
    and reference MIDI tracks.
 6. To keep a chord or key correction, select its `[vgt]` track, use
@@ -64,7 +66,7 @@ the required REAPER actions; they never text-edit an RPP.
 Original tracks, items, and regions are never renamed, deleted, or changed.
 At the bottom of the project, initialize maintains this four-position layout:
 loose root tracks, `[clean] <reference name>`, `[work] <reference name>`, then
-`[vgt] <reference name>`. It encodes a bottom-up workflow: vgt generates into
+`[vgt] <reference name>` (and, when available, `[vgt] MT3`). It encodes a bottom-up workflow: vgt generates into
 `[vgt]`; copy down into `[work]` to edit; then promote up into `[clean]` to
 keep. vgt may add:
 
@@ -80,6 +82,7 @@ keep. vgt may add:
 | Vocals, Instrumental, Bass, Drums, Guitar, Backing | Standard separation | Unmuted, time-based audio tracks. |
 | Strings, Keys / Piano | Explicitly requested | Unmuted, time-based optional stem tracks. |
 | `[vgt] <Target> Ref — <Label> (MIDI)` | A retained transcription variant was transcribed | Unmuted, time-based MIDI item directly beneath the stem it was transcribed from, in default/neutral track colour; every retained variant is a peer, ordered only for stable presentation, with none marked preferred. The item spans the reference track, whether or not the transcription's last note reaches the end of the song, and never loops to fill it. It has no sound without an instrument; muting it would only dim the notes meant to be read. |
+| `[vgt] MT3` | Instrumental stem and provisioned MT3 backend | Last managed folder, after `[vgt]`; one unmuted MIDI track per note-bearing MT3 prediction. These are deliberately unfiltered review candidates, not selected variants or ground truth. |
 | `[vgt]` section regions | Section analysis | Movable and renamable section markers. |
 
 Chords and Beats are unmuted so labels stay visible, but contain no audible
@@ -699,7 +702,7 @@ rebuild the environment and redownload the checkpoint unconditionally.
 `provision mt3` to start clean.
 
 **Offline behavior.** Outside of `provision mt3` itself, nothing in vgt
-touches the network for MT3. `guitar-mt3`/`bass-mt3` need the provisioned
+touches the network for MT3. `guitar-mt3`/`bass-mt3` and the automatic instrumental review need the provisioned
 checkpoint and find it missing report instructions to run
 `vgt transcription backend provision mt3`; they do not attempt to provision
 it automatically. The offline test suite fakes the checkout, build, and

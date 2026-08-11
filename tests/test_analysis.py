@@ -5,10 +5,11 @@ import json
 import shutil
 import sys
 
+import mido
 import pytest
 
 from vgt import analysis as analysis_module
-from vgt.analysis import AnalysisError, add_transcription_targets, analyze, chord_sources, forget_transcription_targets, set_transcription_modes
+from vgt.analysis import AnalysisError, add_transcription_targets, analyze, chord_sources, forget_transcription_targets, refresh_mt3_instrumental_review, set_transcription_modes
 from vgt.cli import main
 from vgt.sidecar import (
     ANALYSIS_STAGES,
@@ -65,6 +66,36 @@ def _add_fake_stem(project: Path, sidecar: dict, target: str, content: bytes) ->
         # use it exercise cache/orchestration and explicitly opt out of the
         # analysis frontend; the default itself is covered with decodable WAVs.
         sidecar["analysis"]["transcription"].setdefault("modes", {})["guitar"] = "default"
+
+
+def test_instrumental_review_persists_split_mt3_tracks(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    project = _project_copy(tmp_path)
+    _write_v1_sidecar(project)
+    analyze(project, stages=("tempo",))
+    sidecar = read_sidecar(project)
+    namespace = sidecar["analysis"]["stems"]["artifact_namespace"]
+    stem = artifact_namespace_dir(project, namespace) / "stems" / "instrumental.wav"
+    stem.parent.mkdir(parents=True)
+    stem.write_bytes(b"instrumental")
+    sidecar["analysis"]["stems"]["artifacts"]["instrumental"] = {"file": str(stem.relative_to(project.parent))}
+    write_sidecar(project, sidecar)
+
+    def fake_all_tracks(self: object, source: Path, destination: Path, spec: object, progress: object = None) -> Path:
+        del self, source, spec, progress
+        midi = mido.MidiFile()
+        midi.tracks.append(mido.MidiTrack([mido.MetaMessage("track_name", name="Piano", time=0), mido.Message("note_on", note=60, velocity=90, time=0), mido.Message("note_off", note=60, velocity=0, time=120)]))
+        output = destination / "instrumental.mid"
+        destination.mkdir(parents=True, exist_ok=True)
+        midi.save(output)
+        return output
+
+    monkeypatch.setattr("vgt.analysis.Mt3Transcriber.transcribe_all_tracks", fake_all_tracks)
+    refresh_mt3_instrumental_review(project)
+
+    review = read_sidecar(project)["analysis"]["mt3_review"]
+    assert review["status"] == "transcribed"
+    assert review["tracks"] == [{"file": "01-piano.mid", "name": "Piano", "program": None}]
+    assert (artifact_namespace_dir(project, namespace) / "mt3" / "tracks" / "01-piano.mid").is_file()
 
 
 def _write_v1_sidecar(project: Path) -> Path:
@@ -1545,6 +1576,23 @@ def test_cli_no_transcribe_skips_the_stage_and_keeps_the_requested_set(
     assert main(["analyze", "--no-transcribe", str(project)]) == 0
     assert calls[-1] == (("chords",), None)
     assert read_sidecar(project)["analysis"]["transcription"]["requested_targets"] == ["guitar"]
+
+
+def test_cli_no_transcribe_also_skips_the_mt3_instrumental_review(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    project = _project_copy(tmp_path)
+    _write_v1_sidecar(project)
+    review_calls: list[object] = []
+
+    def fake_refresh(project: object, **_kwargs: object) -> None:
+        review_calls.append(project)
+
+    monkeypatch.setattr("vgt.cli.refresh_mt3_instrumental_review", fake_refresh)
+    monkeypatch.setattr("vgt.cli.analyze", lambda *_args, **_kwargs: read_sidecar(project))
+
+    assert main(["analyze", "--no-transcribe", str(project)]) == 0
+    assert review_calls == []
 
 
 def test_cli_transcribe_only_rejects_no_transcribe_and_transcribe(tmp_path: Path) -> None:

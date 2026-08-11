@@ -509,7 +509,7 @@ local function reconciliation_inventory(analysis)
     -- including one the project manifest still names as root=<guid>. Skipping
     -- it here meant that root was never authenticated *or* rejected: apply()
     -- treated its presence as a first run and appended a second one beside it.
-    if starts_with_vgt(track)
+    if starts_with_vgt(track) and track_role(track) ~= "mt3-root"
       and (reaper.GetMediaTrackInfo_Value(track, "I_FOLDERDEPTH") > 0 or track_role(track) == "managed-root" or manifest_match)
     then
       roots[#roots + 1] = {
@@ -1336,6 +1336,45 @@ local function add_stem_tracks(index, stems, transcription, reference_start, ref
   end
 end
 
+-- MT3's instrumental review is deliberately a sibling of the normal [vgt]
+-- area.  Its files are pre-split by Python, so each detected program becomes
+-- one visible REAPER MIDI track for the user to keep or ignore.
+local function add_mt3_review_folder(review, reference_start, reference_end, managed_tracks, artifact_namespace)
+  if type(review) ~= "table" or review.status ~= "transcribed" or type(review.tracks) ~= "table" then return end
+  if not artifact_namespace or artifact_namespace == "" or artifact_namespace:find("[\\/]") or artifact_namespace:find("%.%.") then return end
+  local imported = {}
+  for index, record in ipairs(review.tracks) do
+    if type(record) == "table" and type(record.file) == "string" and record.file:match("^[%w_-]+%.mid$") then
+      local path = project_dir() .. "vgt/" .. artifact_namespace .. "/mt3/tracks/" .. record.file
+      local file = io.open(path, "rb")
+      if file then
+        file:close()
+        local source = reaper.PCM_Source_CreateFromFile(path)
+        if source then imported[#imported + 1] = {source = source, name = tostring(record.name or "unnamed")} end
+      end
+    end
+  end
+  if #imported == 0 then return end
+  local root = add_locked_track(reaper.CountTracks(0), PREFIX .. " MT3", false, "mt3-root")
+  reaper.SetMediaTrackInfo_Value(root, "I_FOLDERDEPTH", 1)
+  managed_tracks[#managed_tracks + 1] = root
+  for position, entry in ipairs(imported) do
+    local track = add_locked_track(reaper.CountTracks(0), PREFIX .. " MT3 — " .. entry.name, false, "mt3-track:" .. position)
+    local item = reaper.AddMediaItemToTrack(track)
+    reaper.SetMediaItemInfo_Value(item, "D_POSITION", reference_start)
+    local length = (tonumber(reference_end) or 0) - reference_start
+    if length <= 0 then length = reaper.GetMediaSourceLength(entry.source) end
+    reaper.SetMediaItemInfo_Value(item, "D_LENGTH", length)
+    reaper.SetMediaItemInfo_Value(item, "B_LOOPSRC", 0)
+    reaper.SetMediaItemInfo_Value(item, "C_BEATATTACHMODE", 0)
+    local take = reaper.AddTakeToMediaItem(item)
+    reaper.SetMediaItemTake_Source(take, entry.source)
+    set_take_ignores_project_tempo(item, 120.0)
+    if position == #imported then reaper.SetMediaTrackInfo_Value(track, "I_FOLDERDEPTH", -1) end
+    managed_tracks[#managed_tracks + 1] = track
+  end
+end
+
 local function remove_previous_managed_regions()
   -- Either the sidecar's list or the durable ProjExtState record is evidence
   -- of ownership -- see record_region_ids_ext_state above for why the latter
@@ -1569,6 +1608,10 @@ local function apply()
     -- plain track rather than leave a folder with no children.
     reaper.SetMediaTrackInfo_Value(folder, "I_FOLDERDEPTH", 0)
   end
+
+  -- Must follow the closing edge of the main root: this is a separate,
+  -- bottom-most review folder rather than another child of [vgt].
+  add_mt3_review_folder(analysis and analysis.mt3_review, reference_start, reference_end, managed_tracks, artifact_namespace)
 
   write_settings(managed_tracks, managed_region_ids, reference, guitar_type)
   write_root_manifest(folder, managed_tracks)
