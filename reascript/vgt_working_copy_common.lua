@@ -1,5 +1,5 @@
--- vgt working-copy action for REAPER 7.x.
--- Install this file in REAPER's Action List and run it while the target RPP is open.
+-- Shared implementation for vgt's separate working-copy REAPER actions.
+-- Loaded by vgt_create_working_copy.lua and vgt_promote_working_copy.lua.
 --
 -- Purpose: vgt recreates every `[vgt]`-managed object on each apply, so edits to
 -- a `[vgt] <Target> Ref (MIDI)` (or any other vgt track) never survive the next
@@ -592,24 +592,9 @@ local function promote()
   end
 end
 
--- Automation (and the headless tests) can preselect the branch through the
--- "vgt"/"working_copy_action" ExtState; interactive users get a popup menu.
-local function choose_action()
-  local forced = reaper.GetExtState("vgt", "working_copy_action")
-  if forced ~= "" then return forced end
-  gfx.init("vgt working copy", 0, 0)
-  gfx.x, gfx.y = gfx.mouse_x, gfx.mouse_y
-  local choice = gfx.showmenu("Create working copy from selected tracks|Promote selected [work] tracks to [clean]")
-  gfx.quit()
-  if choice == 1 then return "create" end
-  if choice == 2 then return "promote" end
-  return nil
-end
-
-local function main()
+local function run(action)
   local path = select(2, reaper.EnumProjects(-1, ""))
   if path == "" then error("Save the REAPER project before creating a working copy.") end
-  local action = choose_action()
   if action == "create" then
     create()
   elseif action == "promote" then
@@ -617,8 +602,4 @@ local function main()
   end
 end
 
-local ok, error_message = xpcall(main, debug.traceback)
-if not ok then
-  reaper.PreventUIRefresh(-1)
-  reaper.ShowMessageBox("vgt working copy failed:\n" .. error_message, "vgt", 0)
-end
+return {create = create, promote = promote, run = run}

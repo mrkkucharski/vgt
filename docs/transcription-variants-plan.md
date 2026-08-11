@@ -69,7 +69,7 @@ transcription subsystem.
 - **Selected variant:** the user's preferred generated candidate for a target.
   Selection does not delete alternatives.
 - **Working copy:** a user-owned REAPER copy created by
-  `vgt_working_copy.lua`. It is outside the sidecar transcription cache and
+  `vgt_create_working_copy.lua`. It is outside the sidecar transcription cache and
   survives future vgt applies.
 
 Labels are descriptive and editable. They are not filesystem identities.
@@ -545,7 +545,7 @@ Each variant track:
   color, without making color part of ownership.
 
 Generated tracks remain read-only references. The shipped
-`vgt_working_copy.lua` action is the supported transition to manual work:
+`vgt_create_working_copy.lua` action is the supported transition to manual work:
 
 1. compare generated candidates;
 2. select the preferred `[vgt]` variant track;

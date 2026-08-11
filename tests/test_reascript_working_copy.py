@@ -3,7 +3,9 @@ import os
 import subprocess
 
 
-WORKING_COPY_SCRIPT = Path(__file__).parents[1] / "reascript" / "vgt_working_copy.lua"
+WORKING_COPY_SCRIPT = Path(__file__).parents[1] / "reascript" / "vgt_working_copy_common.lua"
+CREATE_WORKING_COPY_SCRIPT = Path(__file__).parents[1] / "reascript" / "vgt_create_working_copy.lua"
+PROMOTE_WORKING_COPY_SCRIPT = Path(__file__).parents[1] / "reascript" / "vgt_promote_working_copy.lua"
 LUA = os.environ.get("VGT_TEST_LUA", "lua")
 
 
@@ -32,6 +34,18 @@ def test_working_copy_is_never_vgt_owned() -> None:
     assert 'reaper.GetSetMediaTrackInfo_String(track, WORK_EXT_STATE_KEY, WORK_EXT_STATE_VALUE, true)' in script
     # Promotion requires both name and durable provenance, never just `[work]`.
     assert "is_marked_work_object(track) and starts_with(track_name(track), WORK_PREFIX)" in script
+
+
+def test_create_and_promote_are_separate_actions_without_a_choice_menu() -> None:
+    """The Action List exposes distinct, unambiguous commands for each mutation."""
+    create = CREATE_WORKING_COPY_SCRIPT.read_text()
+    promote = PROMOTE_WORKING_COPY_SCRIPT.read_text()
+
+    assert 'actions.run("create")' in create
+    assert 'actions.run("promote")' not in create
+    assert 'actions.run("promote")' in promote
+    assert 'actions.run("create")' not in promote
+    assert "gfx.showmenu" not in create + promote + WORKING_COPY_SCRIPT.read_text()
 
 
 def test_working_name_reprefixes_into_the_work_namespace() -> None:
@@ -323,7 +337,7 @@ def test_find_work_folder_resolves_marked_container_even_with_altered_folder_dep
 
 def test_create_reports_and_leaves_a_structurally_changed_container_untouched() -> None:
     script = WORKING_COPY_SCRIPT.read_text()
-    helpers_end = script.index("local function choose_action")
+    helpers_end = script.index("local function run(action)")
     lua_program = "\n".join(
         [
             "local tracks = {",
@@ -358,7 +372,7 @@ def test_create_appends_into_a_populated_work_container() -> None:
     appends the new copy after it, leaving the existing child's name, marker,
     and items otherwise untouched."""
     script = WORKING_COPY_SCRIPT.read_text()
-    helpers_end = script.index("local function choose_action")
+    helpers_end = script.index("local function run(action)")
     lua_program = "\n".join(
         [
             "local tracks = {",
@@ -408,7 +422,7 @@ def test_create_reuses_an_empty_initialize_container() -> None:
     """Initialize intentionally leaves a newly made container flat until this
     action gives it its first child. That ordinary empty state is not damage."""
     script = WORKING_COPY_SCRIPT.read_text()
-    helpers_end = script.index("local function choose_action")
+    helpers_end = script.index("local function run(action)")
     lua_program = "\n".join(
         [
             "local tracks = {",
@@ -574,7 +588,7 @@ def test_create_refuses_a_source_whose_midi_notes_live_in_another_item() -> None
     hand the copy an empty source, so the action refuses up front and inserts
     nothing -- rather than producing a silently empty copy."""
     script = WORKING_COPY_SCRIPT.read_text()
-    helpers_end = script.index("local function choose_action")
+    helpers_end = script.index("local function run(action)")
     lua_program = "\n".join(
         [
             "local tracks = {{name='[vgt] Bass Ref (MIDI)', values={}, ext={}, items={}, selected=true}}",
@@ -604,7 +618,7 @@ def test_create_does_not_reuse_an_unmarked_work_folder_and_creates_a_container()
     mutate its closing child. The action creates a separate marked top-level
     container and keeps both folder-depth regions balanced."""
     script = WORKING_COPY_SCRIPT.read_text()
-    helpers_end = script.index("local function choose_action")
+    helpers_end = script.index("local function run(action)")
     lua_program = "\n".join(
         [
             "local tracks = {",
@@ -679,7 +693,7 @@ def _promote_mock(tracks_literal: str) -> str:
 
 def test_promote_moves_the_existing_track_and_reclaims_it() -> None:
     script = WORKING_COPY_SCRIPT.read_text()
-    helpers_end = script.index("local function choose_action")
+    helpers_end = script.index("local function run(action)")
     lua_program = "\n".join(
         [
             _promote_mock("{{name='[clean] Song',guid='{C}',values={I_FOLDERDEPTH=0},ext={['P_EXT:vgt_container']='clean'},items={}}, {name='[work] Song',guid='{W}',values={I_FOLDERDEPTH=1},ext={['P_EXT:vgt_container']='work'},items={}}, {name='[work] Guitar',guid='{GUITAR}',values={I_FOLDERDEPTH=-1},ext={['P_EXT:vgt_working_copy']='1',['P_EXT:vgt_managed']='1',['P_EXT:vgt_container']='work'},items={'item'},takes={'take'},selected=true}, {name='Outside',guid='{O}',values={I_FOLDERDEPTH=0},ext={},items={}}}"),
@@ -704,7 +718,7 @@ def test_clean_name_reprefixes_without_namespace_pileup() -> None:
 
 def test_promote_into_empty_clean_preserves_selection_order_and_flattens_work() -> None:
     script = WORKING_COPY_SCRIPT.read_text()
-    helpers_end = script.index("local function choose_action")
+    helpers_end = script.index("local function run(action)")
     lua_program = "\n".join(
         [
             _promote_mock("{{name='[clean] Song',guid='{C}',values={I_FOLDERDEPTH=0},ext={['P_EXT:vgt_container']='clean'},items={}}, {name='[work] Song',guid='{W}',values={I_FOLDERDEPTH=1},ext={['P_EXT:vgt_container']='work'},items={}}, {name='[work] First',guid='{1}',values={I_FOLDERDEPTH=0},ext={['P_EXT:vgt_working_copy']='1'},items={},selected=true}, {name='[work] Second',guid='{2}',values={I_FOLDERDEPTH=-1},ext={['P_EXT:vgt_working_copy']='1'},items={},selected=true}, {name='Outside',guid='{O}',values={I_FOLDERDEPTH=0},ext={},items={}}}"),
@@ -719,7 +733,7 @@ def test_promote_into_empty_clean_preserves_selection_order_and_flattens_work() 
 
 def test_promote_creates_clean_above_work_with_initialize_metadata() -> None:
     script = WORKING_COPY_SCRIPT.read_text()
-    helpers_end = script.index("local function choose_action")
+    helpers_end = script.index("local function run(action)")
     lua_program = "\n".join(
         [
             _promote_mock("{{name='[work] Reference',guid='{W}',values={I_FOLDERDEPTH=1},ext={['P_EXT:vgt_container']='work'},items={}}, {name='[work] Draft',guid='{D}',values={I_FOLDERDEPTH=-1},ext={['P_EXT:vgt_working_copy']='1'},items={},selected=true}, {name='[vgt] Reference',guid='{V}',values={I_FOLDERDEPTH=0},ext={},items={}}}"),
@@ -732,7 +746,7 @@ def test_promote_creates_clean_above_work_with_initialize_metadata() -> None:
 
 def test_promote_refuses_renamed_or_unmarked_work_tracks_without_changes() -> None:
     script = WORKING_COPY_SCRIPT.read_text()
-    helpers_end = script.index("local function choose_action")
+    helpers_end = script.index("local function run(action)")
     lua_program = "\n".join(
         [
             _promote_mock("{{name='Kept by user',guid='{R}',values={I_FOLDERDEPTH=0},ext={['P_EXT:vgt_working_copy']='1'},items={},selected=true}, {name='[work] Hand made',guid='{U}',values={I_FOLDERDEPTH=0},ext={},items={},selected=true}}"),
@@ -752,7 +766,7 @@ def test_promote_reassigns_the_work_closer_onto_a_remaining_sibling() -> None:
     be refused, and that refusal is now gone. The unselected sibling's name,
     marker, and items are otherwise untouched."""
     script = WORKING_COPY_SCRIPT.read_text()
-    helpers_end = script.index("local function choose_action")
+    helpers_end = script.index("local function run(action)")
     tracks = "{{name='[clean] Song',guid='{C}',values={I_FOLDERDEPTH=0},ext={['P_EXT:vgt_container']='clean'},items={}}, {name='[work] Song',guid='{W}',values={I_FOLDERDEPTH=1},ext={['P_EXT:vgt_container']='work'},items={}}, {name='User reclaimed',guid='{R}',values={I_FOLDERDEPTH=0},ext={['P_EXT:vgt_working_copy']='1',keep='reclaimed'},items={'keep'},selected=false}, {name='[work] Draft',guid='{D}',values={I_FOLDERDEPTH=-1},ext={['P_EXT:vgt_working_copy']='1'},items={'draft'},selected=true}}"
     lua_program = "\n".join([
         _promote_mock(tracks), script[:helpers_end],
@@ -772,7 +786,7 @@ def test_promote_appends_into_a_populated_clean_container() -> None:
     appends the newly promoted track after it, leaving the existing child's
     name, marker, and items otherwise untouched."""
     script = WORKING_COPY_SCRIPT.read_text()
-    helpers_end = script.index("local function choose_action")
+    helpers_end = script.index("local function run(action)")
     tracks = "{{name='[clean] Song',guid='{C}',values={I_FOLDERDEPTH=1},ext={['P_EXT:vgt_container']='clean'},items={}}, {name='Old clean',guid='{OLD}',values={I_FOLDERDEPTH=-1},ext={keep='yes'},items={'keep'},selected=false}, {name='[work] Song',guid='{W}',values={I_FOLDERDEPTH=1},ext={['P_EXT:vgt_container']='work'},items={}}, {name='[work] Draft',guid='{D}',values={I_FOLDERDEPTH=-1},ext={['P_EXT:vgt_working_copy']='1'},items={'draft'},selected=true}}"
     lua_program = "\n".join([
         _promote_mock(tracks), script[:helpers_end],
@@ -794,7 +808,7 @@ def test_promote_refuses_when_both_closing_edges_would_move_at_once() -> None:
     tracks' folder structure for one user action, so refuse atomically
     (issue #246) rather than silently pick one of the two edits."""
     script = WORKING_COPY_SCRIPT.read_text()
-    helpers_end = script.index("local function choose_action")
+    helpers_end = script.index("local function run(action)")
     tracks = (
         "{{name='[clean] Song',guid='{C}',values={I_FOLDERDEPTH=1},ext={['P_EXT:vgt_container']='clean'},items={}}, "
         "{name='Old clean',guid='{OLD}',values={I_FOLDERDEPTH=-1},ext={keep='yes'},items={'keep'},selected=false}, "
