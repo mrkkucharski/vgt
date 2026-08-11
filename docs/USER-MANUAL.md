@@ -702,7 +702,7 @@ rebuild the environment and redownload the checkpoint unconditionally.
 `provision mt3` to start clean.
 
 **Offline behavior.** Outside of `provision mt3` itself, nothing in vgt
-touches the network for MT3. `guitar-mt3`/`bass-mt3` need the provisioned
+touches the network for MT3. `guitar-mt3`/`bass-mt3` and the automatic instrumental review need the provisioned
 checkpoint and find it missing report instructions to run
 `vgt transcription backend provision mt3`; they do not attempt to provision
 it automatically. The offline test suite fakes the checkout, build, and

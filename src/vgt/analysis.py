@@ -57,6 +57,7 @@ from .transcribe import (
     TargetTranscriberRouter,
     Mt3Transcriber,
     Mt3Spec,
+    TranscriptionError,
     default_spec_for_target,
     drum_transcription_profile,
     events_artifact_name,
