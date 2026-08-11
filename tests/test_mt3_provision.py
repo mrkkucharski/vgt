@@ -12,6 +12,9 @@ from types import SimpleNamespace
 import pytest
 
 from vgt.mt3_provision import (
+    MT3_HF_CHECKPOINT_DIR,
+    MT3_HF_REPO_ID,
+    MT3_HF_REVISION,
     MT3_PINNED_COMMIT,
     MT3_PINNED_TAG,
     MT3_REPO_URL,
@@ -308,3 +311,25 @@ def test_default_cache_dir_honours_the_env_override(monkeypatch: pytest.MonkeyPa
 
     monkeypatch.setattr("vgt.mt3_provision.os.environ", {})
     assert default_cache_dir() == Path.home() / "Library" / "Caches" / "vgt" / "mt3"
+
+
+def test_downloader_pins_the_requested_4s_hugging_face_checkpoint(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    from vgt.mt3_provision import _download_model
+
+    calls: list[tuple[list[str], Path]] = []
+
+    def fake_run(argv: list[str], *, cwd: Path) -> SimpleNamespace:
+        calls.append((argv, cwd))
+        return _ok()
+
+    monkeypatch.setattr("vgt.mt3_provision._run", fake_run)
+    repo_dir, model_dir = tmp_path / "repo", tmp_path / "models"
+
+    _download_model(repo_dir, model_dir)
+
+    argv, cwd = calls[0]
+    assert cwd == repo_dir
+    assert argv[:5] == ["uv", "run", "--project", str(repo_dir), "python"]
+    assert argv[-4:] == [str(model_dir), MT3_HF_REPO_ID, MT3_HF_REVISION, MT3_HF_CHECKPOINT_DIR]
+    assert "snapshot_download" in argv[6]
+    assert "checkpoint_0" in argv[6]

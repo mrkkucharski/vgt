@@ -577,7 +577,11 @@ def _mt3_detection_fields() -> dict[str, Any]:
     to read here (issue #288: MT3 has no per-instrument detection settings),
     unlike the two functions above."""
     from .mt3_normalize import MT3_NOTE_NORMALIZATION_VERSION, MT3_TRACK_SELECTION_VERSION
-    from .mt3_provision import MT3_LOCK_SHA256, MT3_MODEL_ID, MT3_PINNED_COMMIT, MT3_PINNED_TAG, MT3_REPO_URL, MT3_RUNTIME_VERSION
+    from .mt3_provision import (
+        MT3_INPUT_LENGTH_FRAMES, MT3_LOCK_SHA256, MT3_LOOKAHEAD_FRAMES,
+        MT3_MODEL_ID, MT3_PINNED_COMMIT, MT3_PINNED_TAG, MT3_REPO_URL,
+        MT3_RUNTIME_VERSION,
+    )
 
     return {
         "repository": MT3_REPO_URL,
@@ -586,6 +590,8 @@ def _mt3_detection_fields() -> dict[str, Any]:
         "runtime_version": MT3_RUNTIME_VERSION,
         "lock_sha256": MT3_LOCK_SHA256,
         "model_id": MT3_MODEL_ID,
+        "input_length_frames": MT3_INPUT_LENGTH_FRAMES,
+        "lookahead_frames": MT3_LOOKAHEAD_FRAMES,
         "track_selection_version": MT3_TRACK_SELECTION_VERSION,
         "note_normalization_version": MT3_NOTE_NORMALIZATION_VERSION,
     }
@@ -705,6 +711,8 @@ def spec_from_resolved_profile(
             runtime_version=detection["runtime_version"],
             lock_sha256=detection["lock_sha256"],
             model_id=detection["model_id"],
+            input_length_frames=detection["input_length_frames"],
+            lookahead_frames=detection["lookahead_frames"],
             checkpoint_fingerprint=mt3_checkpoint_fingerprint,
             track_selection_version=detection["track_selection_version"],
             note_normalization_version=detection["note_normalization_version"],

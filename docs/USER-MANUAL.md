@@ -739,11 +739,14 @@ that specific track is the wrong instrument, or MT3 is not provisioned, or
 the backend fails, the variant records that error and nothing else is
 substituted.
 
-`vgt transcription profile show guitar-mt3` reports the full pinned identity
-(fork repository, tag, commit, runtime, checkpoint model id, and both
-normalization-stage versions) instead of Basic Pitch/pYIN detector settings,
-which these profiles have none of. `vgt status`/`--json` report the variant
-like any other: backend `mt3`, note count, pitch range, and (once
+`guitar-mt3` and `bass-mt3` use the `checkpoint_1116020_it3_4s` guitar-pilot
+checkpoint with a 512-frame (~4.1 s) encoder window and 256 frames of
+lookahead: a 50% overlap. `vgt transcription profile show guitar-mt3` reports
+the full pinned identity (fork repository, tag, commit, runtime, checkpoint
+model id, inference window/overlap, and both normalization-stage versions)
+instead of Basic Pitch/pYIN detector settings, which these profiles have none
+of. `vgt status`/`--json` report the variant like any other: backend `mt3`,
+note count, pitch range, and (once
 provisioned) the checkpoint fingerprint as part of its cache identity.
 Rename, discard, purge, force refresh, and reconciliation behave exactly like
 any other retained note variant -- MT3 is admitted into the same two-level
