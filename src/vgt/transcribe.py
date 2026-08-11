@@ -1146,6 +1146,8 @@ class Mt3Spec:
     runtime_version: str
     lock_sha256: str
     model_id: str
+    input_length_frames: int
+    lookahead_frames: int
     checkpoint_fingerprint: str | None
     track_selection_version: int
     note_normalization_version: int
@@ -1163,6 +1165,8 @@ class Mt3Spec:
             "runtime_version": self.runtime_version,
             "lock_sha256": self.lock_sha256,
             "model_id": self.model_id,
+            "input_length_frames": self.input_length_frames,
+            "lookahead_frames": self.lookahead_frames,
             "checkpoint_fingerprint": self.checkpoint_fingerprint,
             "track_selection_version": self.track_selection_version,
             "note_normalization_version": self.note_normalization_version,
@@ -1307,11 +1311,16 @@ def default_spec_for_target(
         )
     if backend == "mt3":
         from .mt3_normalize import MT3_NOTE_NORMALIZATION_VERSION, MT3_TRACK_SELECTION_VERSION
-        from .mt3_provision import MT3_LOCK_SHA256, MT3_MODEL_ID, MT3_PINNED_COMMIT, MT3_PINNED_TAG, MT3_REPO_URL, MT3_RUNTIME_VERSION
+        from .mt3_provision import (
+            MT3_INPUT_LENGTH_FRAMES, MT3_LOCK_SHA256, MT3_LOOKAHEAD_FRAMES,
+            MT3_MODEL_ID, MT3_PINNED_COMMIT, MT3_PINNED_TAG, MT3_REPO_URL,
+            MT3_RUNTIME_VERSION,
+        )
 
         return Mt3Spec(
             backend="mt3", repository=MT3_REPO_URL, tag=MT3_PINNED_TAG, commit=MT3_PINNED_COMMIT,
             runtime_version=MT3_RUNTIME_VERSION, lock_sha256=MT3_LOCK_SHA256, model_id=MT3_MODEL_ID,
+            input_length_frames=MT3_INPUT_LENGTH_FRAMES, lookahead_frames=MT3_LOOKAHEAD_FRAMES,
             checkpoint_fingerprint=mt3_checkpoint_fingerprint,
             track_selection_version=MT3_TRACK_SELECTION_VERSION, note_normalization_version=MT3_NOTE_NORMALIZATION_VERSION,
             target=target, midi_tempo=midi_tempo, tempo_map=tempo_map,
@@ -1477,6 +1486,7 @@ def _settings_dict(spec: TranscriptionSpec) -> dict[str, Any]:
             "repository": spec.repository, "tag": spec.tag, "commit": spec.commit,
             "runtime_version": spec.runtime_version, "lock_sha256": spec.lock_sha256,
             "model_id": spec.model_id, "checkpoint_fingerprint": spec.checkpoint_fingerprint,
+            "input_length_frames": spec.input_length_frames, "lookahead_frames": spec.lookahead_frames,
             "track_selection_version": spec.track_selection_version,
             "note_normalization_version": spec.note_normalization_version,
             "target": spec.target,
@@ -3474,11 +3484,16 @@ def _mt3_base_command(repo_dir: Path) -> list[str]:
     return ["uv", "run", "--project", str(repo_dir), "mt3-transcribe"]
 
 
-def build_mt3_argv(source: Path, output: Path, checkpoint_dir: Path, repo_dir: Path) -> list[str]:
+def build_mt3_argv(
+    source: Path, output: Path, checkpoint_dir: Path, repo_dir: Path, *, input_length_frames: int, lookahead_frames: int,
+) -> list[str]:
     """Build the pinned `mt3-transcribe` command without executing it. Mirrors
     the fork's own documented invocation (see `vgt.mt3_provision`'s module
     docstring) exactly, so a human can reproduce a failure by hand."""
-    return [*_mt3_base_command(repo_dir), "--checkpoint", str(checkpoint_dir), "--input", str(source), "--output", str(output), "--json"]
+    return [
+        *_mt3_base_command(repo_dir), "--checkpoint", str(checkpoint_dir), "--input", str(source), "--output", str(output),
+        "--input-length", str(input_length_frames), "--lookahead-frames", str(lookahead_frames), "--json",
+    ]
 
 
 def _parse_mt3_json(stdout: str, work_dir: Path) -> dict[str, Any]:
@@ -3546,7 +3561,10 @@ class Mt3Transcriber:
         with tempfile.TemporaryDirectory(prefix="vgt-mt3-") as temporary:
             work_dir = Path(temporary)
             raw_output = work_dir / "mt3_raw.mid"
-            argv = build_mt3_argv(source, raw_output, checkpoint_dir, repo_dir)
+            argv = build_mt3_argv(
+                source, raw_output, checkpoint_dir, repo_dir,
+                input_length_frames=spec.input_length_frames, lookahead_frames=spec.lookahead_frames,
+            )
             try:
                 completed = subprocess.run(
                     argv, cwd=work_dir, capture_output=True, text=True, timeout=MT3_TIMEOUT_SECONDS, errors="replace",

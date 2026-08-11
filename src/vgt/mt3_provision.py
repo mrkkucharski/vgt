@@ -36,12 +36,12 @@ MT3_REPO_URL = "https://github.com/mrkkucharski/mt3.git"
 # subdirectory that the real GCS bucket layout could never produce, so
 # provisioning always failed at the download step. v0.1.1 fixed that (see
 # https://github.com/mrkkucharski/mt3/commit/36c9d1bfdc8f432376c1ca303cb965e71ef297d6).
-# v0.1.2 replaced the GCS-hosted official Google checkpoint entirely with the
-# guitar_pilot fine-tune from mrkkucharski's own Hugging Face repo (see
-# https://github.com/mrkkucharski/mt3/commit/ec19e8f2e19f123d9fa6a995698a9a5af0c48ff3).
-# Neither v0.1.0 nor v0.1.1 is usable/repinned here.
-MT3_PINNED_TAG = "v0.1.2"
-MT3_PINNED_COMMIT = "ec19e8f2e19f123d9fa6a995698a9a5af0c48ff3"
+# `main` at this exact commit adds head-cropped, overlapping encoder windows
+# to `mt3-transcribe` (the released v0.1.2 cannot run the 4 s / 50% overlap
+# checkpoint approach).  The branch name is only the checkout ref; the commit
+# check below is the reproducible version pin.
+MT3_PINNED_TAG = "main"
+MT3_PINNED_COMMIT = "d937756053e3cf3a2c94f1571c2ca77a3dceafe6"
 
 MT3_CACHE_DIR_ENV = "VGT_MT3_CACHE_DIR"
 
@@ -61,11 +61,20 @@ MT3_RUNTIME_VERSION = f"python=={MT3_REQUIRED_PYTHON[0]}.{MT3_REQUIRED_PYTHON[1]
 #     --jq '.content' | base64 -d | shasum -a 256
 MT3_LOCK_SHA256 = "1f103f1395c42617a1df98ade4238a7bff8ce84c3e6f7bf3fd1c45e63bf04f46"
 
-# `mt3.model_download.MODEL_ID` at the pinned commit: the only checkpoint
-# `mt3-download-model` knows how to fetch -- the guitar_pilot fine-tune from
-# mrkkucharski/mt3-guitar-pilot on Hugging Face, not Google's official
-# release (see `mt3.model_download.HF_REPO_ID`/`HF_REVISION`).
-MT3_MODEL_ID = "guitar-pilot-v1"
+# The model downloader in the overlap-capable fork still defaults to the
+# earlier 2 s checkpoint, so provisioning fetches this explicitly instead.
+# Both the model repo revision and directory are pinned: `main` on Hugging
+# Face is mutable and must not decide a transcription cache identity.
+MT3_MODEL_ID = "guitar-pilot-it3-4s"
+MT3_HF_REPO_ID = "mrkkucharski/mt3-guitar-pilot"
+MT3_HF_REVISION = "2c0c6a0b0a41e1840af157734173c7fa9be6b98e"
+MT3_HF_CHECKPOINT_DIR = "checkpoint_1116020_it3_4s"
+
+# 512 spectrogram frames at MT3's fixed 125 frames/s is a ~4.096 s window.
+# Keeping 256 frames of right-context lookahead makes the hop 256 frames: a
+# 50% overlap.  These must match the checkpoint training/inference approach.
+MT3_INPUT_LENGTH_FRAMES = 512
+MT3_LOOKAHEAD_FRAMES = 256
 
 
 class Mt3ProvisionError(Exception):
@@ -238,8 +247,27 @@ def _build_environment(repo_dir: Path) -> subprocess.CompletedProcess[str]:
 
 def _download_model(repo_dir: Path, model_dir: Path) -> subprocess.CompletedProcess[str]:
     model_dir.mkdir(parents=True, exist_ok=True)
+    # Do not call the fork's `mt3-download-model`: at the pinned source commit
+    # it is deliberately still hard-coded to checkpoint_1002000.  Use its
+    # locked huggingface_hub dependency to fetch the selected 4 s checkpoint
+    # and normalize its directory name to the stable checkpoint_0 contract.
+    downloader = (
+        "from huggingface_hub import snapshot_download\n"
+        "from pathlib import Path\n"
+        "import shutil, sys, tempfile\n"
+        "output = Path(sys.argv[1])\n"
+        "with tempfile.TemporaryDirectory(dir=output) as temporary:\n"
+        "    root = Path(snapshot_download(repo_id=sys.argv[2], revision=sys.argv[3], "
+        "allow_patterns=f'{sys.argv[4]}/*', local_dir=temporary))\n"
+        "    downloaded = root / sys.argv[4]\n"
+        "    if not downloaded.is_dir(): raise RuntimeError(f'missing checkpoint directory: {sys.argv[4]}')\n"
+        "    target = output / 'checkpoint_0'\n"
+        "    if target.exists(): shutil.rmtree(target)\n"
+        "    shutil.move(str(downloaded), str(target))\n"
+    )
     return _run(
-        ["uv", "run", "--project", str(repo_dir), "mt3-download-model", "--output-dir", str(model_dir), "--json"],
+        ["uv", "run", "--project", str(repo_dir), "python", "-c", downloader,
+         str(model_dir), MT3_HF_REPO_ID, MT3_HF_REVISION, MT3_HF_CHECKPOINT_DIR],
         cwd=repo_dir,
     )
 

@@ -562,6 +562,12 @@ track, unmodified by any cleanup stage. It never replaces or changes
 `guitar`'s existing Basic Pitch defaults, and there is no fallback if MT3 is
 unavailable or fails.
 
+As of issue #291, the backend is pinned to the guitar-pilot
+`checkpoint_1116020_it3_4s` checkpoint and runs it in its trained 512-frame
+(~4.1 s) context with 256 frames of lookahead — 50% overlap. This is a new
+approach, not a retroactive remeasurement of the results below: rerun the
+probe before comparing its output to the older one-run table.
+
 Measured against the same `7Rivers` stem and the same `guitar-acoustic`
 comparison harness as the rest of this document, `guitar-mt3` beside the
 shipped `guitar-acoustic-clean` default:

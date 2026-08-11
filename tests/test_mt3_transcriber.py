@@ -81,11 +81,12 @@ def test_build_mt3_argv_matches_the_forks_documented_invocation(tmp_path: Path) 
     source, output = tmp_path / "in.wav", tmp_path / "out.mid"
     checkpoint_dir, repo_dir = tmp_path / "models" / "checkpoint_0", tmp_path / "repo"
 
-    argv = build_mt3_argv(source, output, checkpoint_dir, repo_dir)
+    argv = build_mt3_argv(source, output, checkpoint_dir, repo_dir, input_length_frames=512, lookahead_frames=256)
 
     assert argv == [
         "uv", "run", "--project", str(repo_dir), "mt3-transcribe",
-        "--checkpoint", str(checkpoint_dir), "--input", str(source), "--output", str(output), "--json",
+        "--checkpoint", str(checkpoint_dir), "--input", str(source), "--output", str(output),
+        "--input-length", "512", "--lookahead-frames", "256", "--json",
     ]
 
 
@@ -306,10 +307,12 @@ def test_mt3_spec_serializes_its_full_pinned_identity() -> None:
 
     assert data["backend"] == "mt3"
     assert data["repository"] == spec.repository
-    assert data["tag"] == "v0.1.2"
+    assert data["tag"] == "main"
     assert data["commit"] == spec.commit
     assert data["runtime_version"] == "python==3.11"
-    assert data["model_id"] == "guitar-pilot-v1"
+    assert data["model_id"] == "guitar-pilot-it3-4s"
+    assert data["input_length_frames"] == 512
+    assert data["lookahead_frames"] == 256
     assert data["checkpoint_fingerprint"] == "fp-1"
     assert data["track_selection_version"] == spec.track_selection_version
     assert data["note_normalization_version"] == spec.note_normalization_version
