@@ -42,7 +42,7 @@ FIXTURE_DIR = ROOT / "test" / "Reaper Project"
 APPLY_SCRIPT = ROOT / "reascript" / "vgt_initialize.lua"
 SYNC_SCRIPT = ROOT / "reascript" / "vgt_sync.lua"
 TEMPO_SYNC_SCRIPT = ROOT / "reascript" / "vgt_sync_tempo_map.lua"
-WORKING_COPY_SCRIPT = ROOT / "reascript" / "vgt_working_copy_common.lua"
+WORKING_COPY_SCRIPT = ROOT / "reascript" / "vgt_common.lua"
 LUA = __import__("os").environ.get("VGT_TEST_LUA", "lua")
 REFERENCE_GUID = "{75418143-1F31-B548-B7D2-96815CB0297D}"
 

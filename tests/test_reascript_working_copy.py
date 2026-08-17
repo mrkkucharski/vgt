@@ -3,7 +3,7 @@ import os
 import subprocess
 
 
-WORKING_COPY_SCRIPT = Path(__file__).parents[1] / "reascript" / "vgt_working_copy_common.lua"
+WORKING_COPY_SCRIPT = Path(__file__).parents[1] / "reascript" / "vgt_common.lua"
 CREATE_WORKING_COPY_SCRIPT = Path(__file__).parents[1] / "reascript" / "vgt_create_working_copy.lua"
 PROMOTE_WORKING_COPY_SCRIPT = Path(__file__).parents[1] / "reascript" / "vgt_promote_working_copy.lua"
 LUA = os.environ.get("VGT_TEST_LUA", "lua")
@@ -832,13 +832,17 @@ def test_promote_refuses_when_both_closing_edges_would_move_at_once() -> None:
 
 
 def test_working_copy_uses_reaper_api_and_never_touches_the_sidecar_or_rpp_text() -> None:
+    # Scoped to the working-copy section of the now-shared vgt_common.lua
+    # (docs/on-demand-track-transcription-plan.md added a second, sidecar-
+    # reading section below it for the on-demand track-job actions).
     script = WORKING_COPY_SCRIPT.read_text()
-    assert "reaper.SetTrackStateChunk" in script
-    assert "reaper.GetTrackStateChunk" in script
+    working_copy_section = script[:script.index("-- ===== On-demand track transcription actions =====")]
+    assert "reaper.SetTrackStateChunk" in working_copy_section
+    assert "reaper.GetTrackStateChunk" in working_copy_section
     # This action manipulates the live project only: it must not read or write
     # the sidecar (no analysis/ownership state lives there for working copies).
-    assert ".vgt" not in script
-    assert "GetSetProjectInfo_String" not in script
-    assert "reaper.ReorderSelectedTracks" in script
-    assert "local function discard()" not in script
+    assert ".vgt" not in working_copy_section
+    assert "GetSetProjectInfo_String" not in working_copy_section
+    assert "reaper.ReorderSelectedTracks" in working_copy_section
+    assert "local function discard()" not in working_copy_section
     assert "workspace_has_only_discardable_children" not in script

@@ -90,6 +90,39 @@ def test_build_mt3_argv_matches_the_forks_documented_invocation(tmp_path: Path) 
     ]
 
 
+def test_build_mt3_argv_appends_force_program_when_set(tmp_path: Path) -> None:
+    source, output = tmp_path / "in.wav", tmp_path / "out.mid"
+    checkpoint_dir, repo_dir = tmp_path / "models" / "checkpoint_0", tmp_path / "repo"
+
+    argv = build_mt3_argv(
+        source, output, checkpoint_dir, repo_dir, input_length_frames=512, lookahead_frames=256, force_program=25,
+    )
+
+    assert argv[-2:] == ["--force-program", "25"]
+
+
+def test_build_mt3_argv_omits_force_program_when_absent(tmp_path: Path) -> None:
+    source, output = tmp_path / "in.wav", tmp_path / "out.mid"
+    checkpoint_dir, repo_dir = tmp_path / "models" / "checkpoint_0", tmp_path / "repo"
+
+    argv = build_mt3_argv(source, output, checkpoint_dir, repo_dir, input_length_frames=512, lookahead_frames=256)
+
+    assert "--force-program" not in argv
+
+
+def test_mt3_spec_force_program_changes_the_spec_hash() -> None:
+    from vgt.transcribe import spec_hash
+
+    base = _spec()
+    forced = replace(base, target=None, force_program=25)
+
+    assert base.force_program is None
+    assert forced.to_dict()["target"] is None
+    assert forced.to_dict()["force_program"] == 25
+    assert spec_hash(base) != spec_hash(forced)
+    assert spec_hash(forced) != spec_hash(replace(forced, force_program=26))
+
+
 def test_detect_raw_first_install_succeeds(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     _provisioned(monkeypatch, tmp_path)
     monkeypatch.setattr(subprocess, "run", _fake_run_success())
@@ -310,9 +343,9 @@ def test_mt3_spec_serializes_its_full_pinned_identity() -> None:
     assert data["tag"] == "main"
     assert data["commit"] == spec.commit
     assert data["runtime_version"] == "python==3.11"
-    assert data["model_id"] == "guitar-pilot-it3-4s"
+    assert data["model_id"] == "guitar-pilot-70ex-checkpoint-1106000"
     assert data["input_length_frames"] == 512
-    assert data["lookahead_frames"] == 256
+    assert data["lookahead_frames"] == 0
     assert data["checkpoint_fingerprint"] == "fp-1"
     assert data["track_selection_version"] == spec.track_selection_version
     assert data["note_normalization_version"] == spec.note_normalization_version

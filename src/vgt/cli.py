@@ -17,6 +17,7 @@ from .reascripts import ReaScriptInstallError, confirm_overwrite, default_destin
 from .separation import GUITAR_TYPES, OPTIONAL_STEMS, SeparationError, declared_guitar_type, separate, separation_preview
 from .sidecar import atomic_update_sidecar
 from .status import StatusError, build_status, format_status
+from .track_jobs import run_track_job
 from .transcribe import (
     DRUM_TRANSCRIPTION_PROFILE_NAMES,
     canonical_drum_profile_name,
@@ -187,6 +188,24 @@ def _parser() -> argparse.ArgumentParser:
         help="Rebuild the environment and re-verify/redownload the checkpoint even if already provisioned.",
     )
 
+    track_parser = transcription_sub.add_parser(
+        "track", help="On-demand single-track MT3 jobs (docs/on-demand-track-transcription-plan.md)."
+    )
+    track_sub = track_parser.add_subparsers(dest="track_command", required=True)
+    track_run = track_sub.add_parser(
+        "run",
+        help="Run one on-demand single-track MT3 job to completion. Spawned detached by a ReaScript "
+        "trigger action; not ordinarily run interactively.",
+    )
+    track_run.add_argument("project", help="Path to a .RPP project.")
+    track_run.add_argument("job_id", help="The job id the trigger script generated.")
+    track_run.add_argument("--source", required=True, type=Path, help="Rendered source WAV for this job.")
+    track_run.add_argument(
+        "--force-program", required=True, type=int, dest="force_program",
+        help="GM program (0-127) to force every decoded note onto.",
+    )
+    track_run.add_argument("--label", help="Optional human-readable label for this job (diagnostics only).")
+
     return parser
 
 
@@ -255,6 +274,18 @@ def _resolved_profile_dict(resolved: Any) -> dict[str, Any]:
 
 
 def _dispatch_transcription(args: argparse.Namespace, project: Path) -> int:
+    if args.transcription_command == "track":
+        if args.track_command == "run":
+            def report(message: str) -> None:
+                print(f"vgt: {message}", file=sys.stderr, flush=True)
+
+            status = run_track_job(
+                project, args.job_id, source=args.source, force_program=args.force_program,
+                label=args.label, progress=report,
+            )
+            print(json.dumps(status, indent=2))
+            return 0 if status.get("status") == "done" else 1
+        raise TranscriptionError(f"unknown transcription track subcommand: {args.track_command}")
     if args.transcription_command == "profile":
         project_profiles = load_project_profiles(project)
         if args.profile_command == "list":

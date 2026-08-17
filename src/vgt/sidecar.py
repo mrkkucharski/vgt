@@ -193,6 +193,34 @@ Schema versions:
       the schema-2/schema-4 best-effort backfill above can copy a human- or
       REAPER-authored `value` verbatim into an absent `detected`, so a legacy
       `detected` is not reliably machine-computed either.
+ 19 -- `analysis` gains a `track_jobs` block for on-demand, single-track MT3
+      transcription jobs (see docs/on-demand-track-transcription-plan.md).
+      Unlike every stage above, it holds no in-flight state at all: a
+      background job's `status.json` sidecar file (outside this document,
+      under `vgt/<namespace>/track-jobs/<job_id>/`) is that job's *only*
+      writer while it is running, since the job outlives the `vgt` process
+      that spawned it and would otherwise be writing this sidecar
+      concurrently with unrelated ReaScript/Python commits. `track_jobs` only
+      ever records a job's *terminal, imported* outcome, written once by the
+      REAPER import action at the moment it creates the result track -- a
+      moment when REAPER already holds the sidecar commit protocol's
+      generation check, so no in-flight write ever needs to reach here.
+      Shape, keyed by the same `job_id` as the `status.json` directory:
+        {
+          "<job_id>": {
+            "status": "imported" | "error",
+            "source_track_name": str,
+            "requested_program": int,
+            "midi_tempo": float | null,
+            "midi_file": str,   # relative to the project's vgt namespace dir
+            "notes_file": str,
+            "note_count": int | null,
+            "imported_at": str,
+            "error": str | null,
+          }, ...
+        }
+      Older sidecars migrate to an empty `{}`: there is nothing to migrate,
+      since no prior schema had any notion of a track job.
 
 Ordinary stages (`key` and `chords`) have this shape:
   {
@@ -238,7 +266,7 @@ import uuid
 from . import transcription_profiles
 from .transcribe import effective_profile_name_for_target
 
-SCHEMA_VERSION = 18
+SCHEMA_VERSION = 19
 STEMS_LEASE_TIMEOUT = timedelta(minutes=30)
 
 ANALYSIS_STAGES = ("tempo", "key", "sections", "chords", "transcription")
@@ -380,6 +408,10 @@ def _empty_transcription_block() -> dict[str, Any]:
 
 def _empty_mt3_review_block() -> dict[str, Any]:
     return {"status": "pending", "input_hash": None, "midi_file": None, "tracks": [], "error": None}
+
+
+def _empty_track_jobs_block() -> dict[str, Any]:
+    return {}
 
 
 def _legacy_variant_id(target: str, settings_hash: str | None) -> str:
@@ -582,6 +614,8 @@ def upgrade(data: dict[str, Any]) -> dict[str, Any]:
     transcription["targets"] = targets
     analysis["transcription"] = transcription
     analysis["mt3_review"] = {**_empty_mt3_review_block(), **(analysis.get("mt3_review") or {})}
+    track_jobs = analysis.get("track_jobs")
+    analysis["track_jobs"] = dict(track_jobs) if isinstance(track_jobs, dict) else _empty_track_jobs_block()
 
     upgraded["analysis"] = analysis
     return upgraded

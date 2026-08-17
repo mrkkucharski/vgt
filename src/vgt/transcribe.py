@@ -1136,7 +1136,17 @@ class Mt3Spec:
     `vgt.mt3_normalize.select_dominant_musical_track`); no other backend
     re-derives target-specific behavior from the target name at run time, so
     this is a deliberate, narrow exception to the rest of this module's
-    specs not carrying one.
+    specs not carrying one. `target` is `None` for an on-demand single-track
+    job (see docs/on-demand-track-transcription-plan.md): there is no vgt
+    target there, `force_program` already pins every note onto one GM
+    program, and family elimination (which needs a target) is moot once a
+    program is forced.
+
+    `force_program` (also on-demand-only), when set, is threaded straight
+    through to `mt3-transcribe --force-program N`: MT3 decodes every note
+    onto that one GM program instead of its own program-change predictions.
+    `None` preserves today's behavior byte-for-byte -- every existing spec's
+    identity/hash is unaffected by this field's mere existence.
     """
 
     backend: str  # "mt3" | "fake"
@@ -1151,10 +1161,11 @@ class Mt3Spec:
     checkpoint_fingerprint: str | None
     track_selection_version: int
     note_normalization_version: int
-    target: str
+    target: str | None
     midi_tempo: float | None
     tempo_map: "TempoMapReference | None" = None
     cleanup: tuple[CleanupStage, ...] = ()
+    force_program: int | None = None
 
     def to_dict(self) -> dict[str, Any]:
         data: dict[str, Any] = {
@@ -1173,6 +1184,7 @@ class Mt3Spec:
             "target": self.target,
             "midi_tempo": self.midi_tempo,
             "cleanup": [{"name": stage.name, "params": stage.params} for stage in self.cleanup],
+            "force_program": self.force_program,
         }
         if self.tempo_map is not None:
             data["tempo_map"] = self.tempo_map.to_dict()
@@ -3486,14 +3498,22 @@ def _mt3_base_command(repo_dir: Path) -> list[str]:
 
 def build_mt3_argv(
     source: Path, output: Path, checkpoint_dir: Path, repo_dir: Path, *, input_length_frames: int, lookahead_frames: int,
+    force_program: int | None = None,
 ) -> list[str]:
     """Build the pinned `mt3-transcribe` command without executing it. Mirrors
     the fork's own documented invocation (see `vgt.mt3_provision`'s module
-    docstring) exactly, so a human can reproduce a failure by hand."""
-    return [
+    docstring) exactly, so a human can reproduce a failure by hand.
+
+    `force_program`, when given, appends `--force-program N`: it pins every
+    decoded note onto that one GM program instead of MT3's own program-change
+    predictions (see `Mt3Spec.force_program`)."""
+    argv = [
         *_mt3_base_command(repo_dir), "--checkpoint", str(checkpoint_dir), "--input", str(source), "--output", str(output),
         "--input-length", str(input_length_frames), "--lookahead-frames", str(lookahead_frames), "--json",
     ]
+    if force_program is not None:
+        argv.extend(["--force-program", str(force_program)])
+    return argv
 
 
 def _parse_mt3_json(stdout: str, work_dir: Path) -> dict[str, Any]:
@@ -3559,7 +3579,8 @@ class Mt3Transcriber:
         output = destination_dir / "instrumental.mid"
         emit(f"transcribing (mt3 review): {source.name}")
         argv = build_mt3_argv(source, output, checkpoint_dir, repo_dir,
-                              input_length_frames=spec.input_length_frames, lookahead_frames=spec.lookahead_frames)
+                              input_length_frames=spec.input_length_frames, lookahead_frames=spec.lookahead_frames,
+                              force_program=spec.force_program)
         try:
             completed = subprocess.run(argv, cwd=destination_dir, capture_output=True, text=True,
                                        timeout=MT3_TIMEOUT_SECONDS, errors="replace")
@@ -3568,7 +3589,8 @@ class Mt3Transcriber:
         except OSError as exc:
             raise TranscriptionError(f"failed to run mt3-transcribe: {exc}") from exc
         if completed.returncode != 0:
-            raise TranscriptionError(f"mt3-transcribe exited with status {completed.returncode}: {_tail(completed.stderr, completed.stdout)}")
+            context = " | ".join(part for part in (_stderr_tail(completed.stderr), _stderr_tail(completed.stdout)) if part)
+            raise TranscriptionError(f"mt3-transcribe exited with status {completed.returncode}: {context}")
         result = _parse_mt3_json(completed.stdout, destination_dir)
         if Path(result["output"]).resolve() != output.resolve() or not output.is_file():
             raise TranscriptionError("mt3-transcribe reported an unexpected or missing output file")
@@ -3608,6 +3630,7 @@ class Mt3Transcriber:
             argv = build_mt3_argv(
                 source, raw_output, checkpoint_dir, repo_dir,
                 input_length_frames=spec.input_length_frames, lookahead_frames=spec.lookahead_frames,
+                force_program=spec.force_program,
             )
             try:
                 completed = subprocess.run(

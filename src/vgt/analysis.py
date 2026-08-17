@@ -24,6 +24,7 @@ import hashlib
 import json
 import logging
 import math
+import sys
 
 from . import __version__
 from .chords import ChordDetectionError, chord_sheet_path, detect_chords as _detect_chords, render_chord_sheet
@@ -36,6 +37,7 @@ from .sidecar import (
     SidecarError,
     DETECTED_SPLIT_STAGES,
     artifact_namespace_dir,
+    atomic_update_sidecar,
     ensure_artifact_namespace,
     migrate_transcription_target,
     read_sidecar,
@@ -93,6 +95,19 @@ class AnalysisError(ValueError):
 
 def _hash_settings(settings: dict[str, Any]) -> str:
     return hashlib.sha256(json.dumps(settings, sort_keys=True).encode("utf-8")).hexdigest()
+
+
+def _current_runtime_entrypoint() -> dict[str, Any]:
+    """This process's own absolute location, for ReaScript to spawn `vgt` by.
+
+    A macOS GUI app (REAPER) does not inherit a login shell's `PATH`, so a
+    ReaScript that shells out to a bare `vgt` fails invisibly. Python always
+    knows `sys.executable` and its own invoked entry point for free; Lua
+    cannot discover either. Recorded on every `analyze()` run so it never
+    goes stale relative to whatever venv/console-script is currently active.
+    """
+    console_script = str(Path(sys.argv[0]).resolve()) if sys.argv and sys.argv[0] else None
+    return {"python_executable": sys.executable, "console_script": console_script}
 
 
 def hash_source_file(path: Path) -> str:
@@ -687,6 +702,11 @@ def analyze(
             current["stems"]["artifact_namespace"] = namespace
 
     update_analysis(project_path, persist_namespace)
+
+    def persist_runtime(current: dict[str, Any]) -> None:
+        current["runtime"] = _current_runtime_entrypoint()
+
+    atomic_update_sidecar(project_path, persist_runtime)
     total = len(selected_stages)
     for position, stage in enumerate(selected_stages, start=1):
         if stage == "transcription":

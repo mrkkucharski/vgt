@@ -789,9 +789,10 @@ local function maintain_container(def, reference_name)
   return track
 end
 
--- Duplicated from vgt_working_copy_common.lua's folder_last_child_index: these two
--- .lua files are standalone REAPER actions with no shared module. The region
--- ends on the child whose I_FOLDERDEPTH brings the running depth back to zero
+-- Duplicated from vgt_common.lua's folder_last_child_index: this file
+-- deliberately has no dofile dependency of its own (see vgt_common.lua's
+-- header for why). The region ends on the child whose I_FOLDERDEPTH brings
+-- the running depth back to zero
 -- (0 for an empty/flattened container, which returns folder_index itself).
 local function folder_last_child_index(folder_index)
   local count = reaper.CountTracks(0)

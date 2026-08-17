@@ -171,7 +171,7 @@ def test_upgrade_keeps_v1_fields_and_adds_v2_analysis_skeleton() -> None:
 
     upgraded = upgrade(v1)
 
-    assert upgraded["schema_version"] == 18
+    assert upgraded["schema_version"] == 19
     assert upgraded["managed_region_ids"] == []
     assert upgraded["managed_track_guids"] == ["{AAAA}", "{BBBB}"]
     assert upgraded["config"] == {"reference_track_guid": REFERENCE_GUID}
@@ -220,7 +220,7 @@ def test_upgrade_v16_chords_and_key_corrections_collapse_and_cli_analyzes(tmp_pa
         },
     }
     upgraded = upgrade(legacy)
-    assert upgraded["schema_version"] == 18
+    assert upgraded["schema_version"] == 19
     assert upgraded["analysis"]["chords"] == {
         "value": legacy["analysis"]["chords"]["value"], "input_hash": "chords-input",
         "settings_hash": "chords-settings", "analyzed_at": None,
@@ -233,9 +233,37 @@ def test_upgrade_v16_chords_and_key_corrections_collapse_and_cli_analyzes(tmp_pa
     project.with_suffix(".vgt").write_text(json.dumps(legacy))
     assert main(["analyze", "--no-transcribe", str(project)]) == 0
     persisted = read_sidecar(project)
-    assert persisted["schema_version"] == 18
+    assert persisted["schema_version"] == 19
     assert persisted["analysis"]["chords"]["value"]["segments"][0]["chord"] == "C:maj"
     assert persisted["analysis"]["key"]["value"] == {"root": "C", "scale": "major", "confidence": 1.0, "backend": "fixture"}
+
+
+def test_upgrade_v18_migrates_to_an_empty_track_jobs_block() -> None:
+    upgraded = upgrade({"schema_version": 18, "analysis": {}})
+    assert upgraded["schema_version"] == 19
+    assert upgraded["analysis"]["track_jobs"] == {}
+
+
+def test_upgrade_preserves_an_existing_track_jobs_record() -> None:
+    record = {
+        "status": "imported", "source_track_name": "Guitar (stem)", "requested_program": 25,
+        "midi_tempo": 128.4, "midi_file": "track-jobs/abc123/result.mid",
+        "notes_file": "track-jobs/abc123/result.csv", "note_count": 812,
+        "imported_at": "2026-08-17T10:00:00Z", "error": None,
+    }
+    upgraded = upgrade({"schema_version": 19, "analysis": {"track_jobs": {"abc123": record}}})
+    assert upgraded["schema_version"] == 19
+    assert upgraded["analysis"]["track_jobs"] == {"abc123": record}
+
+
+def test_analyze_persists_a_runtime_entrypoint_block(tmp_path: Path) -> None:
+    project = _project_copy(tmp_path)
+    _write_v1_sidecar(project)
+    assert main(["analyze", "--no-transcribe", str(project)]) == 0
+    persisted = read_sidecar(project)
+    runtime = persisted["runtime"]
+    assert runtime["python_executable"] == sys.executable
+    assert Path(runtime["console_script"]).is_absolute()
 
 
 def test_upgrade_marks_legacy_librosa_tempo_as_unknown_bar_phase() -> None:
@@ -243,7 +271,7 @@ def test_upgrade_marks_legacy_librosa_tempo_as_unknown_bar_phase() -> None:
         "backend": "librosa", "bpm": 120.0, "downbeat_offset_seconds": 0.25,
     }}}})
 
-    assert upgraded["schema_version"] == 18
+    assert upgraded["schema_version"] == 19
     assert upgraded["analysis"]["tempo"]["value"]["downbeat_detected"] is False
 
 
@@ -334,7 +362,7 @@ def test_upgrade_adds_v10_transcription_block_to_a_v8_sidecar() -> None:
 
     upgraded = upgrade(v8)
 
-    assert upgraded["schema_version"] == 18
+    assert upgraded["schema_version"] == 19
     assert upgraded["analysis"]["transcription"] == {"requested_targets": ["guitar"], "modes": {}, "targets": {}, "detection_cache": {}}
     # Unrelated v8 fields survive the upgrade untouched.
     assert upgraded["analysis"]["stems"]["artifact_namespace"] == "abc12345"
@@ -532,7 +560,7 @@ def test_analyze_writes_v2_sidecar_with_skeleton_and_provenance(tmp_path: Path) 
 
     result = analyze(project)
 
-    assert result["schema_version"] == 18
+    assert result["schema_version"] == 19
     assert result["managed_track_guids"] == ["{AAAA}", "{BBBB}"]  # phase 0 fields intact
     for stage in ANALYSIS_STAGES:
         if stage == "transcription":
@@ -1035,7 +1063,7 @@ def test_cli_analyze_preserves_local_results_when_lalal_is_unavailable(
     captured = capsys.readouterr()
     assert captured.out == ""
     sidecar = read_sidecar(project)
-    assert sidecar["schema_version"] == 18
+    assert sidecar["schema_version"] == 19
     assert sidecar["analysis"]["tempo"]["value"] is not None
     assert "stem separation unavailable; continuing with available sources" in captured.err
 
