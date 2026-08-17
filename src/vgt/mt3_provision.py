@@ -38,10 +38,13 @@ MT3_REPO_URL = "https://github.com/mrkkucharski/mt3.git"
 # https://github.com/mrkkucharski/mt3/commit/36c9d1bfdc8f432376c1ca303cb965e71ef297d6).
 # `main` at this exact commit adds head-cropped, overlapping encoder windows
 # to `mt3-transcribe` (the released v0.1.2 cannot run the 4 s / 50% overlap
-# checkpoint approach).  The branch name is only the checkout ref; the commit
-# check below is the reproducible version pin.
+# checkpoint approach), and (as of this pin) a `--force-program` flag that
+# pins every decoded note onto one GM program instead of MT3's own
+# program-change predictions -- see `mt3/cli.py`, `mt3/transcription.py`, and
+# `mt3/note_sequences.py` at this commit. The branch name is only the
+# checkout ref; the commit check below is the reproducible version pin.
 MT3_PINNED_TAG = "main"
-MT3_PINNED_COMMIT = "d937756053e3cf3a2c94f1571c2ca77a3dceafe6"
+MT3_PINNED_COMMIT = "1e5d143a8c2d33d1845df7f05b9bef7246ad1b2e"
 
 MT3_CACHE_DIR_ENV = "VGT_MT3_CACHE_DIR"
 
@@ -65,16 +68,19 @@ MT3_LOCK_SHA256 = "1f103f1395c42617a1df98ade4238a7bff8ce84c3e6f7bf3fd1c45e63bf04
 # earlier 2 s checkpoint, so provisioning fetches this explicitly instead.
 # Both the model repo revision and directory are pinned: `main` on Hugging
 # Face is mutable and must not decide a transcription cache identity.
-MT3_MODEL_ID = "guitar-pilot-it3-4s"
+MT3_MODEL_ID = "guitar-pilot-70ex-checkpoint-1106000"
 MT3_HF_REPO_ID = "mrkkucharski/mt3-guitar-pilot"
-MT3_HF_REVISION = "2c0c6a0b0a41e1840af157734173c7fa9be6b98e"
-MT3_HF_CHECKPOINT_DIR = "checkpoint_1116020_it3_4s"
+MT3_HF_REVISION = "2f44bd3b40890586d581639c489f8b51cfaeb4fd"
+MT3_HF_CHECKPOINT_DIR = "70ex_checkpoint_1106000"
 
 # 512 spectrogram frames at MT3's fixed 125 frames/s is a ~4.096 s window.
-# Keeping 256 frames of right-context lookahead makes the hop 256 frames: a
-# 50% overlap.  These must match the checkpoint training/inference approach.
+# This checkpoint (70ex_checkpoint_1106000) is pinned to run with *no*
+# right-context lookahead/overlap -- unlike the earlier it3_4s checkpoint's
+# 256-frame (50%) overlap, each window is decoded independently with a
+# zero-frame hop overrun. These must match the checkpoint's own
+# training/inference approach.
 MT3_INPUT_LENGTH_FRAMES = 512
-MT3_LOOKAHEAD_FRAMES = 256
+MT3_LOOKAHEAD_FRAMES = 0
 
 
 class Mt3ProvisionError(Exception):

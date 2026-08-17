@@ -266,6 +266,45 @@ def select_dominant_musical_track(path: str | Path, *, target: str | None = None
     return best
 
 
+def merge_all_musical_tracks(path: str | Path) -> Mt3SelectedTrack:
+    """Merge every non-drum track from a `--force-program` MT3 file into one
+    `Mt3SelectedTrack` (docs/on-demand-track-transcription-plan.md).
+
+    `--force-program` already pins every non-drum note onto a single GM
+    program, so there is nothing left to disambiguate the way
+    `select_dominant_musical_track` does: no duration comparison, no
+    target-family elimination (there is no target here at all). The one
+    remaining split is MT3's own MIDI writer still separating notes across
+    *rhythm* (e.g. guitar-lead vs. guitar-rhythm; the pinned checkpoint
+    predicts this independently of program -- see `vgt.mt3_provision`'s
+    `MT3_MODEL_ID` comment), so a forced-program file can still be two MIDI
+    tracks. Concatenating them here is exactly what turns that into one
+    usable track.
+
+    Raises `TranscriptionError` if the file cannot be parsed or no surviving
+    track contains a note event.
+    """
+    import mido
+
+    try:
+        midi = mido.MidiFile(str(path))
+    except (OSError, EOFError, ValueError, KeyError, IndexError) as exc:
+        raise TranscriptionError(f"{path}: not a valid MIDI file: {exc}") from exc
+    if midi.ticks_per_beat <= 0:
+        raise TranscriptionError(f"{path}: MIDI file has an invalid ticks-per-beat")
+
+    tempo_events = _tempo_events(midi.tracks)
+    notes: list[ParsedNote] = []
+    for track in midi.tracks:
+        if _is_drum_track(track):
+            continue
+        notes.extend(_extract_track_notes(track, tempo_events, midi.ticks_per_beat))
+    if not notes:
+        raise TranscriptionError(f"{path}: no surviving MIDI track contains note events")
+    notes.sort(key=lambda note: (note.start_s, note.pitch_midi))
+    return Mt3SelectedTrack(track_name=None, notes=tuple(notes))
+
+
 def summarize_selected_track(selected: Mt3SelectedTrack) -> dict[str, Any]:
     """The retained-variant summary metrics this profile is expected to expose."""
     notes = list(selected.notes)

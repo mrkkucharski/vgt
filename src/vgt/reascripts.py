@@ -14,7 +14,9 @@ SCRIPT_NAMES = (
     "vgt_sync_tempo_map.lua",
     "vgt_create_working_copy.lua",
     "vgt_promote_working_copy.lua",
-    "vgt_working_copy_common.lua",
+    "vgt_common.lua",
+    "vgt_transcribe_track.lua",
+    "vgt_get_transcription.lua",
 )
 
 

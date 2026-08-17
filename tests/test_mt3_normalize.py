@@ -18,6 +18,7 @@ from vgt.mt3_normalize import (
     MT3_NOTE_NORMALIZATION_VERSION,
     MT3_TRACK_SELECTION_VERSION,
     Mt3SelectedTrack,
+    merge_all_musical_tracks,
     select_dominant_musical_track,
     summarize_selected_track,
     write_normalized_mt3_artifacts,
@@ -351,3 +352,35 @@ def test_mt3_selected_track_is_a_frozen_dataclass_of_parsed_notes(tmp_path: Path
     assert all(isinstance(note, ParsedNote) for note in selected.notes)
     with pytest.raises(AttributeError):
         selected.track_name = "changed"  # frozen
+
+
+def test_merge_all_musical_tracks_concatenates_the_rhythm_split_and_excludes_drums(tmp_path: Path) -> None:
+    """A `--force-program` file: two non-drum tracks (e.g. guitar-lead /
+    guitar-rhythm, same forced program) plus one drum track. Both non-drum
+    tracks merge; the drum channel is excluded."""
+    path = _midi(tmp_path, [
+        CONDUCTOR,
+        [_named("Drums"), *_drum_notes(3)],
+        [_named("Guitar-lead"), _program(24), _on(60, 90, 0), _off(60, 480)],
+        [_named("Guitar-rhythm"), _program(24), _on(64, 80, 0), _off(64, 240), _on(67, 70, 0), _off(67, 240)],
+    ])
+
+    merged = merge_all_musical_tracks(path)
+
+    assert merged.track_name is None
+    assert [note.pitch_midi for note in merged.notes] == [60, 64, 67]  # sorted by (start_s, pitch)
+
+
+def test_merge_all_musical_tracks_no_note_bearing_track_fails_clearly(tmp_path: Path) -> None:
+    path = _midi(tmp_path, [CONDUCTOR, [_named("Drums"), *_drum_notes(2)]])
+
+    with pytest.raises(TranscriptionError):
+        merge_all_musical_tracks(path)
+
+
+def test_merge_all_musical_tracks_malformed_file_fails_clearly(tmp_path: Path) -> None:
+    path = tmp_path / "bad.mid"
+    path.write_bytes(b"not a midi file")
+
+    with pytest.raises(TranscriptionError):
+        merge_all_musical_tracks(path)

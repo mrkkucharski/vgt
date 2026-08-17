@@ -4,7 +4,7 @@
 local source = debug.getinfo(1, "S").source
 local directory = source:match("^@(.*/)")
 if not directory then error("vgt create working copy must be loaded from a file") end
-local actions = dofile(directory .. "vgt_working_copy_common.lua")
+local actions = dofile(directory .. "vgt_common.lua")
 
 local ok, error_message = xpcall(function() actions.run("create") end, debug.traceback)
 if not ok then
