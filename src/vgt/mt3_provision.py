@@ -38,13 +38,20 @@ MT3_REPO_URL = "https://github.com/mrkkucharski/mt3.git"
 # https://github.com/mrkkucharski/mt3/commit/36c9d1bfdc8f432376c1ca303cb965e71ef297d6).
 # `main` at this exact commit adds head-cropped, overlapping encoder windows
 # to `mt3-transcribe` (the released v0.1.2 cannot run the 4 s / 50% overlap
-# checkpoint approach), and (as of this pin) a `--force-program` flag that
-# pins every decoded note onto one GM program instead of MT3's own
-# program-change predictions -- see `mt3/cli.py`, `mt3/transcription.py`, and
-# `mt3/note_sequences.py` at this commit. The branch name is only the
-# checkout ref; the commit check below is the reproducible version pin.
+# checkpoint approach), a `--force-program` flag that pins every decoded note
+# onto one GM program instead of MT3's own program-change predictions, and
+# (as of this pin) also makes `--force-program` suppress the rhythm/lead
+# split it otherwise still predicts independently of program -- see
+# `mt3/cli.py`, `mt3/transcription.py`, and `mt3/note_sequences.py` at this
+# commit. `mt3_normalize.merge_all_musical_tracks` still merges every
+# surviving non-drum track regardless, so this is a safety margin, not a
+# behavior this pin depends on. The branch name is only the checkout ref;
+# the commit check below is the reproducible version pin -- `main` is a
+# mutable ref that moves forward independently of this file, so provisioning
+# refuses outright (rather than silently using whatever main's tip currently
+# is) whenever the checked-out commit disagrees with this pin.
 MT3_PINNED_TAG = "main"
-MT3_PINNED_COMMIT = "1e5d143a8c2d33d1845df7f05b9bef7246ad1b2e"
+MT3_PINNED_COMMIT = "dbe0ffcecca88e0ae5c0c73e69cbaebfac85f142"
 
 MT3_CACHE_DIR_ENV = "VGT_MT3_CACHE_DIR"
 
@@ -68,13 +75,18 @@ MT3_LOCK_SHA256 = "1f103f1395c42617a1df98ade4238a7bff8ce84c3e6f7bf3fd1c45e63bf04
 # earlier 2 s checkpoint, so provisioning fetches this explicitly instead.
 # Both the model repo revision and directory are pinned: `main` on Hugging
 # Face is mutable and must not decide a transcription cache identity.
-MT3_MODEL_ID = "guitar-pilot-70ex-checkpoint-1106000"
+MT3_MODEL_ID = "guitar-pilot-70ex-checkpoint-1126000"
 MT3_HF_REPO_ID = "mrkkucharski/mt3-guitar-pilot"
-MT3_HF_REVISION = "2f44bd3b40890586d581639c489f8b51cfaeb4fd"
-MT3_HF_CHECKPOINT_DIR = "70ex_checkpoint_1106000"
+MT3_HF_REVISION = "93e070d82fd1e79b11b32059c53d6f31b4167564"
+# Unlike the sibling checkpoint dirs at repo root (e.g. checkpoint_1108000/,
+# with _CHECKPOINT_METADATA directly inside), this one was uploaded with an
+# extra nested `checkpoint_1126000/` level -- verified against the live HF
+# tree before pinning. The full path is required to land the same flat
+# layout `_download_model` normalizes into `checkpoint_0`.
+MT3_HF_CHECKPOINT_DIR = "70ex_checkpoint_1126000/checkpoint_1126000"
 
 # 512 spectrogram frames at MT3's fixed 125 frames/s is a ~4.096 s window.
-# This checkpoint (70ex_checkpoint_1106000) is pinned to run with *no*
+# This checkpoint (70ex_checkpoint_1126000) is pinned to run with *no*
 # right-context lookahead/overlap -- unlike the earlier it3_4s checkpoint's
 # 256-frame (50%) overlap, each window is decoded independently with a
 # zero-frame hop overrun. These must match the checkpoint's own
@@ -123,15 +135,22 @@ class CheckpointManifest:
     tag: str
     files: tuple[ModelFileRecord, ...]
     fingerprint: str
+    model_id: str
+    hf_revision: str
+    hf_checkpoint_dir: str
 
     def to_dict(self) -> dict[str, Any]:
-        return {"commit": self.commit, "tag": self.tag, "files": [f.to_dict() for f in self.files], "fingerprint": self.fingerprint}
+        return {
+            "commit": self.commit, "tag": self.tag, "files": [f.to_dict() for f in self.files], "fingerprint": self.fingerprint,
+            "model_id": self.model_id, "hf_revision": self.hf_revision, "hf_checkpoint_dir": self.hf_checkpoint_dir,
+        }
 
     @classmethod
     def from_dict(cls, data: Mapping[str, Any]) -> "CheckpointManifest":
         return cls(
             commit=str(data["commit"]), tag=str(data["tag"]),
             files=tuple(ModelFileRecord.from_dict(item) for item in data["files"]), fingerprint=str(data["fingerprint"]),
+            model_id=str(data["model_id"]), hf_revision=str(data["hf_revision"]), hf_checkpoint_dir=str(data["hf_checkpoint_dir"]),
         )
 
 
@@ -177,6 +196,33 @@ def _python311_available(uv_path: str | None) -> bool:
     except (OSError, subprocess.TimeoutExpired):
         return False
     return completed.returncode == 0
+
+
+def resolve_uv_executable() -> str:
+    """Absolute path to `uv`, falling back to common install locations when
+    it isn't on `PATH`.
+
+    A normal terminal-invoked `vgt` command inherits the user's shell `PATH`,
+    which has always included wherever `uv` was installed, so a bare `"uv"`
+    has worked for every subprocess call here until now. The on-demand
+    track-transcription job runner (docs/on-demand-track-transcription-plan.md)
+    changed that: it is spawned by a REAPER ReaScript action, and a macOS GUI
+    app does not inherit a login shell's environment -- REAPER's own `PATH`
+    is typically just `/usr/bin:/bin:/usr/sbin:/sbin`, missing `~/.local/bin`
+    or `~/.cargo/bin` entirely (the same trap the plan already solved for
+    locating vgt's own interpreter via the sidecar `runtime` block; `uv` is a
+    second, separate instance of the identical problem, one level deeper).
+    Never used by `probe_runtime`, which must keep reporting a plain `PATH`
+    miss so `diagnose_runtime` still tells an interactive terminal user to
+    install `uv` rather than silently finding a fallback and hiding it.
+    """
+    found = shutil.which("uv")
+    if found:
+        return found
+    for candidate in (Path.home() / ".local" / "bin" / "uv", Path.home() / ".cargo" / "bin" / "uv"):
+        if candidate.is_file():
+            return str(candidate)
+    return "uv"  # last resort: subprocess raises its own clear "not found" error
 
 
 def probe_runtime() -> RuntimeProbe:
@@ -248,7 +294,7 @@ def _checkout_repo(repo_url: str, ref: str, dest: Path) -> str:
 
 
 def _build_environment(repo_dir: Path) -> subprocess.CompletedProcess[str]:
-    return _run(["uv", "sync", "--project", str(repo_dir), "--frozen"], cwd=repo_dir)
+    return _run([resolve_uv_executable(), "sync", "--project", str(repo_dir), "--frozen"], cwd=repo_dir)
 
 
 def _download_model(repo_dir: Path, model_dir: Path) -> subprocess.CompletedProcess[str]:
@@ -272,7 +318,7 @@ def _download_model(repo_dir: Path, model_dir: Path) -> subprocess.CompletedProc
         "    shutil.move(str(downloaded), str(target))\n"
     )
     return _run(
-        ["uv", "run", "--project", str(repo_dir), "python", "-c", downloader,
+        [resolve_uv_executable(), "run", "--project", str(repo_dir), "python", "-c", downloader,
          str(model_dir), MT3_HF_REPO_ID, MT3_HF_REVISION, MT3_HF_CHECKPOINT_DIR],
         cwd=repo_dir,
     )
@@ -319,10 +365,24 @@ def _manifest_path(cache_dir: Path) -> Path:
 
 
 def mt3_status(cache_dir: Path | None = None) -> CheckpointManifest | None:
-    """Read-only, local-only check of provisioning state; never touches the network."""
+    """Read-only, local-only check of provisioning state; never touches the network.
+
+    Also compares the on-disk manifest's pinned identity (code commit, HF
+    checkpoint revision/dir) against this module's current constants. Without
+    that check, re-pinning `MT3_PINNED_COMMIT`/`MT3_HF_REVISION`/etc. in code
+    would leave a stale already-provisioned checkpoint reporting itself as
+    ready, and real transcription runs (`require_mt3_provisioned`) would keep
+    silently using the old weights until someone happened to notice and
+    manually rerun `vgt transcription backend provision mt3`.
+    """
     cache_dir = cache_dir or default_cache_dir()
     manifest = _load_manifest(_manifest_path(cache_dir))
     if manifest is None or not _model_matches_manifest(cache_dir / "models", manifest):
+        return None
+    if (
+        manifest.commit != MT3_PINNED_COMMIT or manifest.model_id != MT3_MODEL_ID
+        or manifest.hf_revision != MT3_HF_REVISION or manifest.hf_checkpoint_dir != MT3_HF_CHECKPOINT_DIR
+    ):
         return None
     return manifest
 
@@ -357,8 +417,13 @@ def provision_mt3(
         raise Mt3ProvisionError(f"checked-out mt3 commit {commit} does not match the pinned commit {MT3_PINNED_COMMIT} for {MT3_PINNED_TAG}")
 
     if not force:
-        existing = _load_manifest(_manifest_path(cache_dir))
-        if existing is not None and existing.commit == commit and _model_matches_manifest(model_dir, existing):
+        # `mt3_status` is the same identity check (code commit + HF checkpoint
+        # revision/dir + on-disk file hashes) that gates real transcription
+        # runs, reused here so a re-pin -- even one that only touches the HF
+        # checkpoint constants, not MT3_PINNED_COMMIT -- can never be mistaken
+        # for "already provisioned" and skip the download.
+        existing = mt3_status(cache_dir)
+        if existing is not None:
             emit("mt3 backend already provisioned; nothing to do")
             return Mt3ProvisionResult(cache_dir=cache_dir, repo_dir=repo_dir, model_dir=model_dir, manifest=existing, already_provisioned=True)
 
@@ -379,7 +444,10 @@ def provision_mt3(
     if empty:
         raise Mt3ProvisionError(f"mt3 checkpoint file(s) are empty (corrupt or truncated download): {', '.join(empty)}")
 
-    manifest = CheckpointManifest(commit=commit, tag=MT3_PINNED_TAG, files=files, fingerprint=_fingerprint(commit, files))
+    manifest = CheckpointManifest(
+        commit=commit, tag=MT3_PINNED_TAG, files=files, fingerprint=_fingerprint(commit, files),
+        model_id=MT3_MODEL_ID, hf_revision=MT3_HF_REVISION, hf_checkpoint_dir=MT3_HF_CHECKPOINT_DIR,
+    )
     _manifest_path(cache_dir).write_text(json.dumps(manifest.to_dict(), indent=2, sort_keys=True), encoding="utf-8")
     emit(f"mt3 backend provisioned (fingerprint {manifest.fingerprint[:12]})")
     return Mt3ProvisionResult(cache_dir=cache_dir, repo_dir=repo_dir, model_dir=model_dir, manifest=manifest, already_provisioned=False)

@@ -1978,6 +1978,69 @@ def test_write_settings_merges_a_concurrent_analyze_commit_via_generation_retry(
     assert data["generation"] == 3
 
 
+def test_write_settings_round_trips_the_top_level_runtime_block(tmp_path: Path) -> None:
+    """The Python-owned top-level `runtime` block (docs/on-demand-track-
+    transcription-plan.md: the vgt CLI entry point Lua needs to spawn a
+    track-transcription job) must survive an ordinary apply. write_settings
+    reconstructs the whole sidecar document from a template, so anything not
+    explicitly round-tripped -- exactly like `analysis` already is -- would
+    otherwise be silently dropped on every single apply run."""
+    sidecar = tmp_path / "song.vgt"
+    sidecar.write_text(json.dumps({
+        "schema_version": 19, "generation": 1,
+        "managed_track_guids": [], "managed_region_ids": [], "config": {},
+        "analysis": {"tempo": {"value": {"bpm": 120}}},
+        "runtime": {"python_executable": "/opt/vgt/.venv/bin/python3", "console_script": "/opt/vgt/.venv/bin/vgt"},
+    }))
+
+    script = APPLY_SCRIPT.read_text()
+    helpers_end = script.index("local function apply()")
+    lua_program = "\n".join(
+        [
+            "reaper = {}",
+            "function reaper.EnumProjects() return true, arg[1] end",
+            "function reaper.GetTrackGUID(track) return track.guid end",
+            "function reaper.GetTrackName(track) return true, track.name end",
+            script[:helpers_end],
+            "local track = {guid = '{TRACK-GUID}', name = 'Reference'}",
+            "write_settings({track}, {}, track, 'electric')",
+        ]
+    )
+    result = subprocess.run([LUA, "-", str(tmp_path / "song.RPP")], input=lua_program, text=True, capture_output=True)
+    assert result.returncode == 0, result.stderr
+
+    data = json.loads(sidecar.read_text())
+    assert data["runtime"] == {"python_executable": "/opt/vgt/.venv/bin/python3", "console_script": "/opt/vgt/.venv/bin/vgt"}
+    assert data["analysis"]["tempo"]["value"]["bpm"] == 120  # unaffected sibling
+
+
+def test_write_settings_leaves_no_runtime_field_when_none_was_ever_recorded(tmp_path: Path) -> None:
+    sidecar = tmp_path / "song.vgt"
+    sidecar.write_text(json.dumps({
+        "schema_version": 4, "generation": 1,
+        "managed_track_guids": [], "managed_region_ids": [], "config": {},
+    }))
+
+    script = APPLY_SCRIPT.read_text()
+    helpers_end = script.index("local function apply()")
+    lua_program = "\n".join(
+        [
+            "reaper = {}",
+            "function reaper.EnumProjects() return true, arg[1] end",
+            "function reaper.GetTrackGUID(track) return track.guid end",
+            "function reaper.GetTrackName(track) return true, track.name end",
+            script[:helpers_end],
+            "local track = {guid = '{TRACK-GUID}', name = 'Reference'}",
+            "write_settings({track}, {}, track, 'electric')",
+        ]
+    )
+    result = subprocess.run([LUA, "-", str(tmp_path / "song.RPP")], input=lua_program, text=True, capture_output=True)
+    assert result.returncode == 0, result.stderr
+
+    data = json.loads(sidecar.read_text())
+    assert "runtime" not in data
+
+
 def test_write_settings_gives_up_after_the_retry_limit_leaving_the_prior_sidecar_intact(tmp_path: Path) -> None:
     """A conflict must fail cleanly rather than silently discard another
     writer's update: if the sidecar keeps changing out from under it, apply

@@ -1,13 +1,29 @@
 # On-demand single-track MT3 transcription — design plan
 
 Status: implemented 2026-08-17 (waves 1-3 below), directly in an interactive
-session rather than through the issue-tracked workflow. All offline-testable
-pieces have passing tests (`uv run pytest`). The render step, `ExecProcess`
-detachment, the `defer()` polling loop, the OS notification, and the
-RENDER_SETTINGS/RENDER_BOUNDSFLAG/action-id numeric values used by
-`vgt_transcribe_track.lua` are unverified against a live REAPER — see that
-file's own `SPIKE` comments — and still need the human verification this
-plan always called for.
+session rather than through the issue-tracked workflow, then verified live
+end-to-end against a real project the same day. All offline-testable pieces
+have passing tests (`uv run pytest`).
+
+Fixed during live verification (each is now covered by a regression test):
+`reaper.ExecProcess` never actually detached a process on a real install
+(silently unreachable fallback logic) — spawn now uses `os.execute` alone;
+`python -m vgt` failed outright (`src/vgt/__main__.py` didn't exist); `uv`
+itself was unreachable from a REAPER-spawned process (bare `"uv"`, no `PATH`
+in a GUI app's environment) — see `mt3_provision.resolve_uv_executable`;
+`RENDER_FORMAT` was truncated to 4 bytes instead of REAPER's real 7-byte
+value, silently producing correctly-sized but exactly-silent WAV renders;
+the render-validation silence check (`reaper.CreateAudioAccessor`) never
+once refused a genuinely silent render — replaced with a self-contained WAV
+parser with no REAPER audio API dependency at all. `RENDER_SETTINGS=3`,
+`RENDER_BOUNDSFLAG=0`, and action id `42230` were all confirmed correct as
+originally guessed. Also added: a refusal when the selected track is
+muted (a muted track renders as correct-but-confusing silence under "stems
+via master"), and the imported result track is now named after its source
+verbatim + " (MT3)" rather than always re-prefixed `[vgt]` (see
+`track_job_name` in vgt_common.lua) — a deliberate deviation from this
+plan's original §9 wording, made after seeing the `[vgt]`-forced name in
+practice.
 
 ## Goal
 

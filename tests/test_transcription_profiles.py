@@ -75,7 +75,7 @@ def test_guitar_mt3_resolves_with_no_cleanup_and_the_mt3_backend() -> None:
     assert resolved.is_builtin is True
     assert resolved.cleanup == ()
     assert resolved.audio_frontend["stages"] == []  # raw stem, no HPSS frontend
-    assert resolved.detection["model_id"] == "guitar-pilot-70ex-checkpoint-1106000"
+    assert resolved.detection["model_id"] == "guitar-pilot-70ex-checkpoint-1126000"
     assert resolved.detection["tag"] == "main"
     assert "repository" in resolved.detection and "commit" in resolved.detection
     assert "track_selection_version" in resolved.detection

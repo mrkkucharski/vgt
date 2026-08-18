@@ -17,7 +17,7 @@ import subprocess
 import mido
 import pytest
 
-from vgt.mt3_provision import CheckpointManifest, Mt3ProvisionError
+from vgt.mt3_provision import CheckpointManifest, Mt3ProvisionError, resolve_uv_executable
 from vgt.transcribe import (
     FakeTranscriber,
     Mt3Spec,
@@ -56,7 +56,7 @@ def _provisioned(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> tuple[Path,
     repo_dir = cache_dir / "repo"
     checkpoint_dir = cache_dir / "models" / "checkpoint_0"
     checkpoint_dir.mkdir(parents=True)
-    manifest = CheckpointManifest(commit="deadbeef", tag="v0.1.0", files=(), fingerprint="fp-1")
+    manifest = CheckpointManifest(commit="deadbeef", tag="v0.1.0", files=(), fingerprint="fp-1", model_id="model-1", hf_revision="rev-1", hf_checkpoint_dir="ckpt-1")
     monkeypatch.setattr("vgt.mt3_provision.default_cache_dir", lambda: cache_dir)
     monkeypatch.setattr("vgt.mt3_provision.require_mt3_provisioned", lambda cache_dir=None: manifest)
     return cache_dir, repo_dir, checkpoint_dir
@@ -84,7 +84,7 @@ def test_build_mt3_argv_matches_the_forks_documented_invocation(tmp_path: Path) 
     argv = build_mt3_argv(source, output, checkpoint_dir, repo_dir, input_length_frames=512, lookahead_frames=256)
 
     assert argv == [
-        "uv", "run", "--project", str(repo_dir), "mt3-transcribe",
+        resolve_uv_executable(), "run", "--project", str(repo_dir), "mt3-transcribe",
         "--checkpoint", str(checkpoint_dir), "--input", str(source), "--output", str(output),
         "--input-length", "512", "--lookahead-frames", "256", "--json",
     ]
@@ -168,7 +168,7 @@ def test_detect_raw_requires_provisioning(tmp_path: Path, monkeypatch: pytest.Mo
 
 def test_detect_raw_requires_the_checkpoint_directory(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     cache_dir = tmp_path / "mt3-cache"
-    manifest = CheckpointManifest(commit="deadbeef", tag="v0.1.0", files=(), fingerprint="fp-1")
+    manifest = CheckpointManifest(commit="deadbeef", tag="v0.1.0", files=(), fingerprint="fp-1", model_id="model-1", hf_revision="rev-1", hf_checkpoint_dir="ckpt-1")
     monkeypatch.setattr("vgt.mt3_provision.default_cache_dir", lambda: cache_dir)
     monkeypatch.setattr("vgt.mt3_provision.require_mt3_provisioned", lambda cache_dir=None: manifest)
     # Deliberately do not create cache_dir/models/checkpoint_0.
@@ -343,7 +343,7 @@ def test_mt3_spec_serializes_its_full_pinned_identity() -> None:
     assert data["tag"] == "main"
     assert data["commit"] == spec.commit
     assert data["runtime_version"] == "python==3.11"
-    assert data["model_id"] == "guitar-pilot-70ex-checkpoint-1106000"
+    assert data["model_id"] == "guitar-pilot-70ex-checkpoint-1126000"
     assert data["input_length_frames"] == 512
     assert data["lookahead_frames"] == 0
     assert data["checkpoint_fingerprint"] == "fp-1"

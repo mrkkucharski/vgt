@@ -3492,8 +3492,17 @@ def _mt3_base_command(repo_dir: Path) -> list[str]:
     """Run inside the pinned, already-provisioned project (see
     `vgt.mt3_provision`), never an ephemeral `uvx`/`--isolated` invocation:
     MT3's own `uv.lock` is what makes the environment reproducible, and only
-    `uv run --project` reads it."""
-    return ["uv", "run", "--project", str(repo_dir), "mt3-transcribe"]
+    `uv run --project` reads it.
+
+    Resolves `uv`'s own absolute path (`mt3_provision.resolve_uv_executable`)
+    rather than relying on a bare `"uv"` and `PATH`: a terminal-invoked `vgt`
+    command always has `uv` on `PATH`, but the on-demand track-transcription
+    job runner (docs/on-demand-track-transcription-plan.md) is spawned by a
+    REAPER ReaScript action, whose minimal GUI-app `PATH` typically omits
+    `~/.local/bin`/`~/.cargo/bin` entirely -- confirmed for real, not just
+    hypothetically, the first time that path actually ran."""
+    from .mt3_provision import resolve_uv_executable
+    return [resolve_uv_executable(), "run", "--project", str(repo_dir), "mt3-transcribe"]
 
 
 def build_mt3_argv(

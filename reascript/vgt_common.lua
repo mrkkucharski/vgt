@@ -958,7 +958,9 @@ local function set_take_ignores_project_tempo(item, midi_tempo)
   return reaper.SetItemStateChunk(item, new_chunk, false)
 end
 
--- A `[vgt]`-named but deliberately *not* vgt_initialize.lua-managed track:
+-- A track-job result track (named after its source verbatim, e.g. a
+-- `[work] Guitar` source produces `[work] Guitar (MT3)` -- see
+-- track_job_name) that is deliberately *not* vgt_initialize.lua-managed:
 -- unlike add_locked_track's original (P_EXT:vgt_managed + a role tag geared
 -- at vgt_initialize.lua's own reconciliation, which recreates every managed
 -- track it recognizes from the sidecar on every apply), a track-job result
@@ -971,7 +973,8 @@ end
 -- distinct extended-state key instead, recording which job created it
 -- (diagnostic only) without opting into vgt_initialize.lua's reconciliation
 -- at all -- the same reasoning that already keeps `[work]`/`[clean]` copies
--- unmarked, just applied to a `[vgt]`-named track instead of a renamed one.
+-- unmarked, now naturally consistent since this track's name inherits
+-- whatever namespace prefix its source already had, `[vgt]` included.
 local TRACK_JOB_EXT_STATE_KEY = "P_EXT:vgt_track_job"
 
 local function add_track_job_track(index, name, job_id)
@@ -1009,6 +1012,18 @@ end
 -- room for provisioning checks and I/O around it.
 local STALE_JOB_SECONDS = 900
 
+-- A genuinely launched job writes `status: "running"` as the very first
+-- thing it does (run_track_job's first statement, before any provisioning
+-- check or heavy work) -- well under a second on any real machine. A job
+-- that still has no `started_at` at all after this much time did not fail
+-- partway through; the spawn itself never launched a working process (a bad
+-- interpreter path, an argument-parsing error, a Python import failure --
+-- see vgt_transcribe_track.lua's `as_integer_program`, a real prior
+-- instance of exactly this). That is worth surfacing in seconds, not by
+-- waiting out the full STALE_JOB_SECONDS budget meant for a job that is
+-- actually running long MT3 inference.
+local NEVER_STARTED_SECONDS = 30
+
 local function track_jobs_dir(namespace)
   return project_dir() .. "vgt/" .. namespace .. "/track-jobs"
 end
@@ -1042,16 +1057,20 @@ local function already_recorded(job_id)
   return record ~= nil
 end
 
--- The user-facing label for a track-job result track, from the source
--- track's name captured at spawn time (which may no longer exist live by
--- the time the job finishes -- see the plan's "user discards/deletes the
--- source track" edge case). Strips any leading vgt namespace prefix so a
--- job started on a `[vgt] Guitar (stem)` source doesn't stack prefixes.
-local function track_job_label(source_track_name)
-  local rest = (source_track_name or "Track")
-  rest = rest:gsub("^%[vgt%]%s*", ""):gsub("^%[work%]%s*", ""):gsub("^%[clean%]%s*", "")
-  if rest == "" then rest = "Track" end
-  return rest
+-- The result track's name mirrors the source track's name verbatim --
+-- prefix and all -- with " (MT3)" appended, from the name captured at spawn
+-- time (the source may no longer exist live by the time the job finishes --
+-- see the plan's "user discards/deletes the source track" edge case).
+-- Deliberately not re-prefixed with "[vgt]": the result sits next to
+-- whatever the user was actually working on (e.g. a `[work] Guitar` source
+-- produces `[work] Guitar (MT3)`, not a track that jumps into vgt's own
+-- managed namespace) -- and it is safe regardless of what that prefix is,
+-- since add_track_job_track deliberately never marks this track
+-- vgt_managed (see that function's own comment).
+local function track_job_name(source_track_name)
+  local name = source_track_name
+  if not name or name == "" then name = "Track" end
+  return name .. " (MT3)"
 end
 
 local function find_track_by_guid(guid)
@@ -1063,7 +1082,7 @@ local function find_track_by_guid(guid)
   return nil
 end
 
--- Import one finished job's MIDI result as a new `[vgt] <label> (MT3)`
+-- Import one finished job's MIDI result as a new "<source name> (MT3)"
 -- track, positioned to match the source track's captured bounds and
 -- authored at the analyzed project tempo (see the plan's "Tempo matching",
 -- fully reused via set_take_ignores_project_tempo -- the same mechanism
@@ -1073,12 +1092,25 @@ local function import_finished_job(namespace, job_id, status)
   local midi_path = job_dir .. "/result.mid"
   local source_track, source_index = find_track_by_guid(status.source_track_guid)
   local insert_index = source_track and (source_index + 1) or reaper.CountTracks(0)
+  -- A negative I_FOLDERDEPTH means the source track is the *last* child
+  -- closing its folder. Inserting the new track right after it (the normal
+  -- case, immediately below) would land one level shallower, outside that
+  -- folder, rather than nested alongside its source -- the exact "wrong
+  -- indentation" this comment exists to prevent. Reopen the source (0) and
+  -- let the newly inserted track become the new closer at the source's
+  -- former depth instead, mirroring the identical reopen-then-append
+  -- pattern vgt_common.lua's own create() already uses for working copies.
+  local source_folder_depth = source_track and reaper.GetMediaTrackInfo_Value(source_track, "I_FOLDERDEPTH") or 0
 
   local pcm_source = reaper.PCM_Source_CreateFromFile(midi_path)
   if not pcm_source then error("REAPER could not open the transcribed MIDI: " .. midi_path) end
 
-  local name = "[vgt] " .. track_job_label(status.source_track_name) .. " (MT3)"
+  local name = track_job_name(status.source_track_name)
   local track = add_track_job_track(insert_index, name, job_id)
+  if source_track and source_folder_depth < 0 then
+    reaper.SetMediaTrackInfo_Value(source_track, "I_FOLDERDEPTH", 0)
+    reaper.SetMediaTrackInfo_Value(track, "I_FOLDERDEPTH", source_folder_depth)
+  end
   local item = reaper.AddMediaItemToTrack(track)
   reaper.SetMediaItemInfo_Value(item, "D_POSITION", tonumber(status.item_start_s) or 0)
   local length = (tonumber(status.item_end_s) or 0) - (tonumber(status.item_start_s) or 0)
@@ -1106,21 +1138,38 @@ local function import_finished_job(namespace, job_id, status)
   reaper.UpdateArrange()
 end
 
+-- Howard Hinnant's days-from-civil calendar algorithm (proleptic Gregorian,
+-- no timezone or library dependence at all): the number of days between
+-- 1970-01-01 and the given UTC calendar date.
+local function days_from_civil(y, m, d)
+  y = m <= 2 and y - 1 or y
+  local era = math.floor((y >= 0 and y or y - 399) / 400)
+  local yoe = y - era * 400
+  local doy = math.floor((153 * (m > 2 and m - 3 or m + 9) + 2) / 5) + d - 1
+  local doe = yoe * 365 + math.floor(yoe / 4) - math.floor(yoe / 100) + doy
+  return era * 146097 + doe - 719468
+end
+
 -- Parse a UTC ISO-8601 timestamp (as `_now_iso`/status.json's `started_at`
--- always write it, e.g. "2026-08-17T10:23:45.123456Z") into a epoch second
--- comparable with os.time(). Stock Lua has no ISO-8601 parser; os.time()
--- itself only builds LOCAL time from a table, so the local/UTC offset is
--- measured once and applied. DST-transition-instant edge cases are not
--- exact, which is fine for a wide-margin staleness check, not a scheduler.
+-- always write it, e.g. "2026-08-17T10:23:45.123456Z") into a Unix epoch
+-- second, comparable directly with the bare `os.time()` (always UTC-based,
+-- unlike `os.time(table)` which is local-time-only).
+--
+-- This used to compute a local/UTC offset via os.date("*t")/os.date("!*t")
+-- pushed back through os.time() and add it in -- the usual Lua trick for
+-- this, but subtly wrong: os.time(table)'s `isdst` disambiguation forces a
+-- standard- or daylight-time interpretation of the *literal wall-clock
+-- fields* it's given, and a UTC-fields table (isdst always false from
+-- os.date("!*t")) does not carry the local zone's actual current DST state,
+-- so the computed "offset" silently missed daylight saving by exactly one
+-- hour -- caught for real in this project's own dev environment (CEST,
+-- UTC+2) while testing the stale-job watchdog below, not a hypothetical
+-- edge case. Pure calendar arithmetic has no such ambiguity to get wrong.
 local function parse_iso8601_utc(text)
   local year, month, day, hour, min, sec = (text or ""):match("(%d+)-(%d+)-(%d+)T(%d+):(%d+):(%d+)")
   if not year then return nil end
-  local now = os.time()
-  local offset = os.difftime(os.time(os.date("*t", now)), os.time(os.date("!*t", now)))
-  return os.time({
-    year = tonumber(year), month = tonumber(month), day = tonumber(day),
-    hour = tonumber(hour), min = tonumber(min), sec = tonumber(sec),
-  }) + offset
+  local days = days_from_civil(tonumber(year), tonumber(month), tonumber(day))
+  return days * 86400 + tonumber(hour) * 3600 + tonumber(min) * 60 + tonumber(sec)
 end
 
 -- Check job `job_id` (already known to exist) once: import it if freshly
@@ -1166,14 +1215,24 @@ local function check_and_import_job(job_id)
   -- watchdog instead of polling forever.
   local reference_time = status.started_at or status.created_at
   local reference_epoch = reference_time and parse_iso8601_utc(reference_time)
-  if reference_epoch and (os.time() - reference_epoch) > STALE_JOB_SECONDS then
-    reaper.ShowConsoleMsg(string.format(
-      "vgt: track job %s has shown no result for over %ds%s; it may have crashed or "
-        .. "failed to spawn (no output ever reaches a detached process). Check %s/status.json, "
-        .. "or just re-run the transcription.\n",
-      job_id, STALE_JOB_SECONDS, status.started_at and "" or " (never started)",
-      track_jobs_dir(namespace) .. "/" .. job_id
-    ))
+  local threshold = status.started_at and STALE_JOB_SECONDS or NEVER_STARTED_SECONDS
+  if reference_epoch and (os.time() - reference_epoch) > threshold then
+    local job_dir = track_jobs_dir(namespace) .. "/" .. job_id
+    if status.started_at then
+      reaper.ShowConsoleMsg(string.format(
+        "vgt: track job %s has shown no result for over %ds; it may have crashed partway "
+          .. "through (no output ever reaches a detached process). Check %s/status.json, "
+          .. "or just re-run the transcription.\n",
+        job_id, threshold, job_dir
+      ))
+    else
+      reaper.ShowConsoleMsg(string.format(
+        "vgt: track job %s never started -- the spawn itself failed (bad interpreter path, "
+          .. "an argument error, or similar; a running job always writes status \"running\" "
+          .. "within a second). Check %s/spawn.log, or just re-run the transcription.\n",
+        job_id, job_dir
+      ))
+    end
     return true -- stop polling this one; not recorded in the sidecar -- it never reached a terminal state
   end
   return false
@@ -1204,5 +1263,5 @@ return {
   shell_quote = shell_quote,
   track_jobs_dir = track_jobs_dir, list_job_ids = list_job_ids, read_job_status = read_job_status,
   already_recorded = already_recorded, check_and_import_job = check_and_import_job,
-  STALE_JOB_SECONDS = STALE_JOB_SECONDS,
+  STALE_JOB_SECONDS = STALE_JOB_SECONDS, NEVER_STARTED_SECONDS = NEVER_STARTED_SECONDS,
 }

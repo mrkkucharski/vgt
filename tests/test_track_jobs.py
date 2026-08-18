@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+import sys
 from types import SimpleNamespace
 import subprocess
 
@@ -46,7 +47,7 @@ def _provisioned(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     cache_dir = tmp_path / "mt3-cache"
     checkpoint_dir = cache_dir / "models" / "checkpoint_0"
     checkpoint_dir.mkdir(parents=True)
-    manifest = CheckpointManifest(commit="deadbeef", tag="main", files=(), fingerprint="fp-1")
+    manifest = CheckpointManifest(commit="deadbeef", tag="main", files=(), fingerprint="fp-1", model_id="model-1", hf_revision="rev-1", hf_checkpoint_dir="ckpt-1")
     monkeypatch.setattr("vgt.mt3_provision.default_cache_dir", lambda: cache_dir)
     monkeypatch.setattr("vgt.mt3_provision.require_mt3_provisioned", lambda cache_dir=None: manifest)
 
@@ -220,3 +221,18 @@ def test_cli_track_run_returns_zero_exit_on_success(tmp_path: Path, monkeypatch:
     assert exit_code == 0
     printed = json.loads(capsys.readouterr().out)
     assert printed["status"] == "done"
+
+
+def test_python_dash_m_vgt_actually_works() -> None:
+    """Regression test for a real bug: `src/vgt/__main__.py` didn't exist,
+    so `python -m vgt ...` -- exactly what vgt_transcribe_track.lua spawns
+    (see docs/on-demand-track-transcription-plan.md's "Invoking the vgt CLI
+    from Lua", which deliberately chose `-m vgt` over the console-script
+    shim) -- failed immediately with "No module named vgt.__main__; 'vgt' is
+    a package and cannot be directly executed", before ever reaching
+    `run_track_job`. A real subprocess, not an import, because the bug is
+    specifically about the package having no `__main__` module -- an import
+    of `vgt.cli` would never have caught it."""
+    result = subprocess.run([sys.executable, "-m", "vgt", "--help"], capture_output=True, text=True)
+    assert result.returncode == 0, result.stderr
+    assert "usage: vgt" in result.stdout

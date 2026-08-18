@@ -9,7 +9,7 @@ import mido
 import pytest
 
 from vgt import analysis as analysis_module
-from vgt.analysis import AnalysisError, add_transcription_targets, analyze, chord_sources, forget_transcription_targets, refresh_mt3_instrumental_review, set_transcription_modes
+from vgt.analysis import AnalysisError, add_transcription_targets, analyze, chord_sources, forget_mt3_review, forget_transcription_targets, refresh_mt3_instrumental_review, set_transcription_modes
 from vgt.cli import main
 from vgt.sidecar import (
     ANALYSIS_STAGES,
@@ -96,6 +96,22 @@ def test_instrumental_review_persists_split_mt3_tracks(tmp_path: Path, monkeypat
     assert review["status"] == "transcribed"
     assert review["tracks"] == [{"file": "01-piano.mid", "name": "Piano", "program": None}]
     assert (artifact_namespace_dir(project, namespace) / "mt3" / "tracks" / "01-piano.mid").is_file()
+
+    forget_mt3_review(project)
+
+    forgotten = read_sidecar(project)["analysis"]["mt3_review"]
+    assert forgotten == {"status": "pending", "input_hash": None, "midi_file": None, "tracks": [], "error": None}
+    assert not (artifact_namespace_dir(project, namespace) / "mt3").exists()
+
+
+def test_forget_mt3_review_with_no_review_on_record_is_a_no_op(tmp_path: Path) -> None:
+    project = _project_copy(tmp_path)
+    _write_v1_sidecar(project)
+    analyze(project, stages=("tempo",))
+
+    forget_mt3_review(project)  # must not raise
+
+    assert read_sidecar(project)["analysis"]["mt3_review"]["status"] == "pending"
 
 
 def _write_v1_sidecar(project: Path) -> Path:
@@ -1606,7 +1622,37 @@ def test_cli_no_transcribe_skips_the_stage_and_keeps_the_requested_set(
     assert read_sidecar(project)["analysis"]["transcription"]["requested_targets"] == ["guitar"]
 
 
-def test_cli_no_transcribe_also_skips_the_mt3_instrumental_review(
+def test_cli_mt3_review_is_off_by_default(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    project = _project_copy(tmp_path)
+    _write_v1_sidecar(project)
+    review_calls: list[object] = []
+
+    def fake_refresh(project: object, **_kwargs: object) -> None:
+        review_calls.append(project)
+
+    monkeypatch.setattr("vgt.cli.refresh_mt3_instrumental_review", fake_refresh)
+    monkeypatch.setattr("vgt.cli.analyze", lambda *_args, **_kwargs: read_sidecar(project))
+
+    assert main(["analyze", str(project)]) == 0
+    assert review_calls == []
+
+
+def test_cli_mt3_review_flag_opts_it_in(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    project = _project_copy(tmp_path)
+    _write_v1_sidecar(project)
+    review_calls: list[object] = []
+
+    def fake_refresh(project: object, **_kwargs: object) -> None:
+        review_calls.append(project)
+
+    monkeypatch.setattr("vgt.cli.refresh_mt3_instrumental_review", fake_refresh)
+    monkeypatch.setattr("vgt.cli.analyze", lambda *_args, **_kwargs: read_sidecar(project))
+
+    assert main(["analyze", "--mt3-review", str(project)]) == 0
+    assert len(review_calls) == 1
+
+
+def test_cli_no_transcribe_also_skips_the_mt3_instrumental_review_even_when_requested(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     project = _project_copy(tmp_path)
@@ -1619,7 +1665,7 @@ def test_cli_no_transcribe_also_skips_the_mt3_instrumental_review(
     monkeypatch.setattr("vgt.cli.refresh_mt3_instrumental_review", fake_refresh)
     monkeypatch.setattr("vgt.cli.analyze", lambda *_args, **_kwargs: read_sidecar(project))
 
-    assert main(["analyze", "--no-transcribe", str(project)]) == 0
+    assert main(["analyze", "--mt3-review", "--no-transcribe", str(project)]) == 0
     assert review_calls == []
 
 
@@ -1629,6 +1675,31 @@ def test_cli_transcribe_only_rejects_no_transcribe_and_transcribe(tmp_path: Path
 
     assert main(["analyze", "--transcribe-only", "bass", "--no-transcribe", str(project)]) == 2
     assert main(["analyze", "--transcribe-only", "bass", "--transcribe", "vocals", str(project)]) == 2
+
+
+def test_cli_forget_mt3_review_flag_resets_the_record_and_deletes_artifacts(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    project = _project_copy(tmp_path)
+    _write_v1_sidecar(project)
+    sidecar = read_sidecar(project)
+    namespace = ensure_artifact_namespace(sidecar, project)
+    sidecar["analysis"]["mt3_review"] = {
+        "status": "transcribed", "input_hash": "abc", "midi_file": "mt3/instrumental.mid",
+        "tracks": [{"file": "01-piano.mid", "name": "Piano", "program": None}], "error": None,
+    }
+    write_sidecar(project, sidecar)
+    review_dir = artifact_namespace_dir(project, namespace) / "mt3"
+    review_dir.mkdir(parents=True)
+    (review_dir / "instrumental.mid").write_bytes(b"fake-midi")
+
+    monkeypatch.setattr("vgt.cli.analyze", lambda *_args, **_kwargs: read_sidecar(project))
+
+    assert main(["analyze", "--forget-mt3-review", "--no-transcribe", str(project)]) == 0
+
+    result = read_sidecar(project)
+    assert result["analysis"]["mt3_review"] == {"status": "pending", "input_hash": None, "midi_file": None, "tracks": [], "error": None}
+    assert not review_dir.exists()
 
 
 def test_cli_forget_transcription_removes_entry_and_deletes_artifacts(

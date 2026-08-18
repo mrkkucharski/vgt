@@ -296,13 +296,13 @@ end
 -- object to the sidecar. This action is the sole writer of the sidecar's
 -- other fields, so it must round-trip that object verbatim on re-apply
 -- rather than silently dropping any analysis a user has already run.
--- `body`, when given, is a snapshot the caller already read (see write_settings,
--- which must derive the analysis block and the generation counter it is
--- racing against from the exact same read rather than two separate ones).
-local function read_analysis_block(body)
-  body = body or read_sidecar_body()
+-- Generalized over the key name (not just "analysis") so the same balanced
+-- scan also finds the top-level "runtime" block (see write_settings, which
+-- must round-trip both -- along with the generation counter it races
+-- against -- from the exact same read rather than several separate ones).
+local function find_json_object(body, key)
   if not body then return nil end
-  local key_start = body:find('"analysis"%s*:%s*{')
+  local key_start = body:find('"' .. key .. '"%s*:%s*{')
   if not key_start then return nil end
   local brace_start = body:find("{", key_start)
   local depth = 0
@@ -331,6 +331,19 @@ local function read_analysis_block(body)
     end
   end
   return nil
+end
+
+local function read_analysis_block(body)
+  return find_json_object(body or read_sidecar_body(), "analysis")
+end
+
+-- Python-owned, sibling to "analysis": the absolute vgt CLI entry point
+-- (docs/on-demand-track-transcription-plan.md), written by `vgt analyze`.
+-- Round-tripped here for the same reason `analysis` is: a full-document
+-- rewrite that dropped it would silently break every on-demand track-
+-- transcription trigger until the next `vgt analyze` happened to run again.
+local function read_runtime_block(body)
+  return find_json_object(body, "runtime")
 end
 
 -- Analysis is produced by Python, so use a small JSON reader here instead of
@@ -1430,12 +1443,17 @@ local function write_settings(managed_tracks, managed_region_ids, reference, gui
   for attempt = 1, GENERATION_RETRY_LIMIT do
     -- Preserve any analysis the Python CLI already wrote (schema v4); a fresh
     -- sidecar with no prior analysis stays schema v1, matching Phase 0's
-    -- long-standing on-disk format.
+    -- long-standing on-disk format. Also preserve the top-level "runtime"
+    -- block (Python-owned, sibling to "analysis") the same way: this is a
+    -- full-document rewrite, so anything not explicitly round-tripped here
+    -- is silently dropped on every apply.
     local prior_body = read_sidecar_body() or ""
     local analysis = read_analysis_block(prior_body)
+    local runtime = read_runtime_block(prior_body)
     local prior_schema = tonumber(prior_body:match('"schema_version"%s*:%s*(%d+)')) or 3
     local schema_version = analysis and math.max(prior_schema, 4) or 1
     local analysis_field = analysis and ('\n  "analysis": ' .. analysis .. ",") or ""
+    local runtime_field = runtime and ('\n  "runtime": ' .. runtime .. ",") or ""
     local generation = read_generation(prior_body)
 
     -- Write a complete replacement beside the sidecar, then rename it into
@@ -1446,14 +1464,14 @@ local function write_settings(managed_tracks, managed_region_ids, reference, gui
     local file, error_message = io.open(temporary_path, "w")
     if not file then error(error_message) end
     file:write(string.format([[{
-  "schema_version": %d,%s
+  "schema_version": %d,%s%s
   "generation": %d,
   "managed_track_guids": [%s],
   "managed_region_ids": [%s],
   "config": {"reference_track_name": "%s", "reference_track_guid": "%s", "folder_name": "%s", "tempo_map_applied": %s, "tempo_map_fingerprint": "%s", "tempo_data_fingerprint": "%s", "guitar_type": "%s"}
 }
 ]],
-      schema_version, analysis_field, generation + 1,
+      schema_version, analysis_field, runtime_field, generation + 1,
       table.concat(guids, ", "), table.concat(region_ids, ", "),
       escaped(track_name(reference)), reaper.GetTrackGUID(reference),
       escaped(PREFIX .. " " .. track_name(reference)), "false", "", "", escaped(guitar_type)))
