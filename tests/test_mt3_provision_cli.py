@@ -21,7 +21,7 @@ def _fake_result(cache_dir: Path, *, already_provisioned: bool = False) -> Mt3Pr
     manifest = CheckpointManifest(
         commit="4b49f9b9d38549fcc0231efbff3f4e85b3690923", tag="v0.1.0",
         files=(ModelFileRecord(relative_path="checkpoint_0/model.ckpt", size_bytes=8, sha256="a" * 64),),
-        fingerprint="b" * 64,
+        fingerprint="b" * 64, model_id="model-1", hf_revision="rev-1", hf_checkpoint_dir="ckpt-1",
     )
     return Mt3ProvisionResult(
         cache_dir=cache_dir, repo_dir=cache_dir / "repo", model_dir=cache_dir / "models",

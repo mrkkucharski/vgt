@@ -25,6 +25,7 @@ from vgt.mt3_provision import (
     mt3_status,
     provision_mt3,
     require_mt3_provisioned,
+    resolve_uv_executable,
 )
 
 GOOD_PROBE = RuntimeProbe(system="Darwin", machine="arm64", ffmpeg_path="/opt/homebrew/bin/ffmpeg", uv_version=(0, 9, 20), python311_available=True)
@@ -36,6 +37,33 @@ def _ok(stdout: str = "") -> SimpleNamespace:
 
 def _fail(stderr: str = "boom") -> SimpleNamespace:
     return SimpleNamespace(returncode=1, stdout="", stderr=stderr)
+
+
+def test_resolve_uv_executable_prefers_path(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("vgt.mt3_provision.shutil.which", lambda name: "/usr/bin/uv" if name == "uv" else None)
+    assert resolve_uv_executable() == "/usr/bin/uv"
+
+
+def test_resolve_uv_executable_falls_back_to_common_install_locations(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A macOS GUI app (REAPER, spawning the on-demand track-transcription
+    job runner) does not inherit a login shell's PATH, so `uv` -- installed
+    to ~/.local/bin by its own installer -- is invisible to shutil.which
+    there even though it works fine from any terminal."""
+    monkeypatch.setattr("vgt.mt3_provision.shutil.which", lambda name: None)
+    monkeypatch.setattr("vgt.mt3_provision.Path.home", lambda: tmp_path)
+    fallback = tmp_path / ".local" / "bin" / "uv"
+    fallback.parent.mkdir(parents=True)
+    fallback.write_text("")
+
+    assert resolve_uv_executable() == str(fallback)
+
+
+def test_resolve_uv_executable_last_resort_is_the_bare_name(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("vgt.mt3_provision.shutil.which", lambda name: None)
+    monkeypatch.setattr("vgt.mt3_provision.Path.home", lambda: tmp_path)
+    assert resolve_uv_executable() == "uv"
 
 
 def _fake_checkout(commit: str = MT3_PINNED_COMMIT):
@@ -124,6 +152,47 @@ def test_repeated_provisioning_is_a_no_op(tmp_path: Path, monkeypatch: pytest.Mo
     assert second.manifest == first.manifest
     assert len(build_calls) == 1
     assert len(download_calls) == 1
+
+
+def test_repinning_the_hf_checkpoint_forces_a_redownload_even_with_the_same_code_commit(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Re-pinning MT3_HF_REVISION/MT3_HF_CHECKPOINT_DIR/MT3_MODEL_ID (a
+    Hugging Face checkpoint swap) never touches MT3_PINNED_COMMIT (the mt3
+    code repo pin) at all. Before the manifest tracked checkpoint identity,
+    the reuse check only compared code commit + on-disk file hashes, so a
+    checkpoint re-pin with the old checkpoint still sitting on disk was
+    silently treated as already provisioned and never re-downloaded."""
+    cache_dir = tmp_path / "cache"
+    checkout, _ = _fake_checkout()
+    build_fn, build_calls = _counting(_ok())
+    download_fn, download_calls = _counting(_ok())
+
+    def download(repo_dir: Path, model_dir: Path) -> SimpleNamespace:
+        download_calls.append((repo_dir, model_dir))
+        _write_model_files(model_dir, {"checkpoint_0/model.ckpt": b"weights"})
+        return _ok()
+
+    _patch_good_environment(monkeypatch, checkout=checkout, build=build_fn, download=download)
+
+    first = provision_mt3(cache_dir=cache_dir)
+    assert first.already_provisioned is False
+
+    monkeypatch.setattr("vgt.mt3_provision.MT3_MODEL_ID", "guitar-pilot-70ex-checkpoint-9999999")
+    monkeypatch.setattr("vgt.mt3_provision.MT3_HF_REVISION", "deadbeefcafe")
+    monkeypatch.setattr("vgt.mt3_provision.MT3_HF_CHECKPOINT_DIR", "70ex_checkpoint_9999999")
+
+    assert mt3_status(cache_dir) is None
+    with pytest.raises(Mt3ProvisionError):
+        require_mt3_provisioned(cache_dir)
+
+    second = provision_mt3(cache_dir=cache_dir)
+
+    assert second.already_provisioned is False
+    assert len(download_calls) == 2
+    assert second.manifest.model_id == "guitar-pilot-70ex-checkpoint-9999999"
+    assert second.manifest.hf_revision == "deadbeefcafe"
+    assert second.manifest.hf_checkpoint_dir == "70ex_checkpoint_9999999"
 
 
 def test_interrupted_partial_model_state_is_resumed(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -329,7 +398,7 @@ def test_downloader_pins_the_requested_4s_hugging_face_checkpoint(tmp_path: Path
 
     argv, cwd = calls[0]
     assert cwd == repo_dir
-    assert argv[:5] == ["uv", "run", "--project", str(repo_dir), "python"]
+    assert argv[:5] == [resolve_uv_executable(), "run", "--project", str(repo_dir), "python"]
     assert argv[-4:] == [str(model_dir), MT3_HF_REPO_ID, MT3_HF_REVISION, MT3_HF_CHECKPOINT_DIR]
     assert "snapshot_download" in argv[6]
     assert "checkpoint_0" in argv[6]

@@ -24,6 +24,7 @@ import hashlib
 import json
 import logging
 import math
+import shutil
 import sys
 
 from . import __version__
@@ -36,6 +37,7 @@ from .sidecar import (
     ANALYSIS_STAGES,
     SidecarError,
     DETECTED_SPLIT_STAGES,
+    _empty_mt3_review_block,
     artifact_namespace_dir,
     atomic_update_sidecar,
     ensure_artifact_namespace,
@@ -638,6 +640,31 @@ def refresh_mt3_instrumental_review(project: str | Path, *, force: bool = False,
         value = {"status": "error", "input_hash": input_hash, "midi_file": None, "tracks": [], "error": str(exc)}
         emit(f"MT3 review unavailable: {exc}")
     update_analysis(project_path, lambda current: current.__setitem__("mt3_review", value))
+
+
+def forget_mt3_review(project: str | Path | None) -> dict[str, Any]:
+    """Discard the MT3 instrumental review: delete its generated MIDI
+    artifacts (mirrors `forget_transcription_targets`'s artifact cleanup) and
+    reset `analysis.mt3_review` to its empty/pending state, so the next
+    `vgt_initialize.lua` apply removes the `[vgt] MT3` review folder instead
+    of recreating it. A project with no review on record is a no-op.
+    """
+    project_path = locate_project(project)
+    try:
+        sidecar = read_sidecar(project_path)
+    except SidecarError as exc:
+        raise AnalysisError(str(exc)) from exc
+
+    namespace = sidecar["analysis"]["stems"].get("artifact_namespace")
+    if namespace:
+        output_dir = artifact_namespace_dir(project_path, namespace) / "mt3"
+        if output_dir.is_dir():
+            shutil.rmtree(output_dir)
+
+    def update(current: dict[str, Any]) -> None:
+        current["mt3_review"] = _empty_mt3_review_block()
+
+    return update_analysis(project_path, update)
 
 
 def analyze(

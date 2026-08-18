@@ -8,7 +8,15 @@ from pathlib import Path
 import sys
 from typing import Any
 
-from .analysis import AnalysisError, add_transcription_targets, analyze, forget_transcription_targets, refresh_mt3_instrumental_review, set_transcription_modes
+from .analysis import (
+    AnalysisError,
+    add_transcription_targets,
+    analyze,
+    forget_mt3_review,
+    forget_transcription_targets,
+    refresh_mt3_instrumental_review,
+    set_transcription_modes,
+)
 from .drum_cleanup import DRUM_CLEANUP_PROFILES
 from .lalal import LalalError, LalalSeparator
 from .mt3_provision import Mt3ProvisionError, provision_mt3
@@ -116,6 +124,18 @@ def _parser() -> argparse.ArgumentParser:
         "--no-transcribe",
         action="store_true",
         help="Skip the transcription stage this run; the persisted requested set is untouched.",
+    )
+    analyze_parser.add_argument(
+        "--mt3-review",
+        action="store_true",
+        help="Also run the MT3 instrumental review pass (unfiltered multi-instrument dump into a [vgt] MT3 "
+        "review folder). Off by default: it is not run automatically by a plain `vgt analyze`.",
+    )
+    analyze_parser.add_argument(
+        "--forget-mt3-review",
+        action="store_true",
+        help="Discard the MT3 instrumental review: delete its generated MIDI artifacts and reset the persisted "
+        "record, so the next apply removes the [vgt] MT3 review folder instead of recreating it.",
     )
     status_parser = subparsers.add_parser("status", help="Summarize the read-only vgt sidecar state for a project.")
     status_parser.add_argument("project", nargs="?", help="Path to a .RPP project (defaults to cwd's only .RPP).")
@@ -381,6 +401,9 @@ def _dispatch_transcription_backend(args: argparse.Namespace) -> int:
                 "tag": result.manifest.tag,
                 "fingerprint": result.manifest.fingerprint,
                 "checkpoint_files": len(result.manifest.files),
+                "model_id": result.manifest.model_id,
+                "hf_revision": result.manifest.hf_revision,
+                "hf_checkpoint_dir": result.manifest.hf_checkpoint_dir,
             },
             indent=2,
         ))
@@ -547,10 +570,17 @@ def main(argv: list[str] | None = None) -> int:
             # The complete instrumental prediction is a review surface, not a
             # target variant: keep every MT3 track once separation makes its
             # source available.  A missing provision is recorded as a local
-            # review error and does not discard the rest of analysis.  Still a
-            # transcription pass, so --no-transcribe must skip it too.
-            if not args.no_transcribe:
+            # review error and does not discard the rest of analysis.  Off by
+            # default (opt in with --mt3-review): the unfiltered multi-
+            # instrument dump is low signal for most songs, and --no-transcribe
+            # still skips it even when requested, since it is still a
+            # transcription pass.
+            if args.mt3_review and not args.no_transcribe:
                 refresh_mt3_instrumental_review(project, force=args.force, progress=report)
+
+            if args.forget_mt3_review:
+                forget_mt3_review(project)
+                report("forgot the MT3 instrumental review")
 
             if args.forget_transcription:
                 forget_transcription_targets(project, tuple(args.forget_transcription))
