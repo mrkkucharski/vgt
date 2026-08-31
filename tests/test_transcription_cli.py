@@ -581,7 +581,7 @@ def test_mt3_profiles_are_listed_and_show_their_pinned_identity(tmp_path: Path, 
     assert shown["backend"] == "mt3"
     assert shown["cleanup"] == []
     assert shown["audio_frontend"]["stages"] == []
-    assert shown["detection"]["model_id"] == "guitar-pilot-70ex-checkpoint-1126000"
+    assert shown["detection"]["model_id"] == "guitar-pilot-193ex-it7-norhythm-checkpoint-1196000"
     assert shown["detection"]["tag"] == "main"
     assert "repository" in shown["detection"]
     assert "commit" in shown["detection"]
@@ -622,7 +622,7 @@ def test_variant_add_guitar_mt3(tmp_path: Path, capsys) -> None:
     assert variant["backend"] == "mt3"
     assert variant["effective_profile"] == "guitar-mt3"
     assert variant["package_pin"] is None  # MT3 is git-cloned, not a pip package
-    assert variant["resolved_settings"]["detection"]["model_id"] == "guitar-pilot-70ex-checkpoint-1126000"
+    assert variant["resolved_settings"]["detection"]["model_id"] == "guitar-pilot-193ex-it7-norhythm-checkpoint-1196000"
     assert variant["resolved_settings"]["cleanup"] == []
     assert variant["resolved_settings"]["audio_frontend"]["stages"] == []  # raw stem, no HPSS frontend
 

@@ -344,7 +344,7 @@ def test_mt3_spec_serializes_its_full_pinned_identity() -> None:
     assert data["tag"] == "main"
     assert data["commit"] == spec.commit
     assert data["runtime_version"] == "python==3.11"
-    assert data["model_id"] == "guitar-pilot-70ex-checkpoint-1126000"
+    assert data["model_id"] == "guitar-pilot-193ex-it7-norhythm-checkpoint-1196000"
     assert data["input_length_frames"] == 512
     assert data["lookahead_frames"] == 0
     assert data["checkpoint_fingerprint"] == "fp-1"

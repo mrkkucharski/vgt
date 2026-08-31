@@ -40,18 +40,33 @@ MT3_REPO_URL = "https://github.com/mrkkucharski/mt3.git"
 # to `mt3-transcribe` (the released v0.1.2 cannot run the 4 s / 50% overlap
 # checkpoint approach), a `--force-program` flag that pins every decoded note
 # onto one GM program instead of MT3's own program-change predictions, and
-# (as of this pin) also makes `--force-program` suppress the rhythm/lead
-# split it otherwise still predicts independently of program -- see
-# `mt3/cli.py`, `mt3/transcription.py`, and `mt3/note_sequences.py` at this
-# commit. `mt3_normalize.merge_all_musical_tracks` still merges every
-# surviving non-drum track regardless, so this is a safety margin, not a
-# behavior this pin depends on. The branch name is only the checkout ref;
-# the commit check below is the reproducible version pin -- `main` is a
-# mutable ref that moves forward independently of this file, so provisioning
-# refuses outright (rather than silently using whatever main's tip currently
-# is) whenever the checked-out commit disagrees with this pin.
+# makes `--force-program` suppress the rhythm/lead split it otherwise still
+# predicts independently of program -- see `mt3/cli.py`, `mt3/transcription.py`,
+# and `mt3/note_sequences.py` at this commit. `mt3_normalize.merge_all_musical_tracks`
+# still merges every surviving non-drum track regardless, so this is a safety
+# margin, not a behavior this pin depends on.
+#
+# Re-pinned 2026-08-31 (dbe0ffce -> 48fa7174) to pick up "Make the rhythm/lead
+# extension optional in training and inference" and "feat: make rhythm-free
+# mode the default": `Transcriber.rhythm_vocab` now defaults to `False`
+# (rhythm-free), which is *required* to correctly decode a checkpoint trained
+# with `gin/no_rhythm.gin` -- exactly what the 193ex_it7_norhythm_checkpoint_1196000
+# pin below is (its own name says so). At the previous pinned commit, the
+# rhythm-free-checkpoint concept didn't exist yet: the codec always included
+# the rhythm/lead vocabulary, which the old commit's `mt3-transcribe` gave no
+# way to disable, and would have decoded this checkpoint against the wrong
+# vocabulary. `vgt`'s own `build_mt3_argv` passes no rhythm-related flag, so
+# it relies entirely on this default -- verified this pin needs no flag
+# change by reading `mt3/cli.py` at the new commit: `--include-rhythm-vocab`
+# is opt-in, off by default, exactly matching a rhythm-free checkpoint.
+#
+# The branch name is only the checkout ref; the commit check below is the
+# reproducible version pin -- `main` is a mutable ref that moves forward
+# independently of this file, so provisioning refuses outright (rather than
+# silently using whatever main's tip currently is) whenever the checked-out
+# commit disagrees with this pin.
 MT3_PINNED_TAG = "main"
-MT3_PINNED_COMMIT = "dbe0ffcecca88e0ae5c0c73e69cbaebfac85f142"
+MT3_PINNED_COMMIT = "48fa717462c612cdc74bdec4a1a854a0b84e9a0f"
 
 MT3_CACHE_DIR_ENV = "VGT_MT3_CACHE_DIR"
 
@@ -69,28 +84,41 @@ MT3_RUNTIME_VERSION = f"python=={MT3_REQUIRED_PYTHON[0]}.{MT3_REQUIRED_PYTHON[1]
 # checkout. Verify it against the pinned commit with:
 #   gh api "repos/mrkkucharski/mt3/contents/uv.lock?ref=<MT3_PINNED_COMMIT>" \
 #     --jq '.content' | base64 -d | shasum -a 256
-MT3_LOCK_SHA256 = "1f103f1395c42617a1df98ade4238a7bff8ce84c3e6f7bf3fd1c45e63bf04f46"
+MT3_LOCK_SHA256 = "814f0dd55ab3c592b59df97553fe5f988840c2809e5fef7fd93c3213dc1a7f9a"
 
 # The model downloader in the overlap-capable fork still defaults to the
 # earlier 2 s checkpoint, so provisioning fetches this explicitly instead.
 # Both the model repo revision and directory are pinned: `main` on Hugging
 # Face is mutable and must not decide a transcription cache identity.
-MT3_MODEL_ID = "guitar-pilot-70ex-checkpoint-1126000"
+#
+# Re-pinned from 70ex_checkpoint_1126000 to 193ex_it7_norhythm_checkpoint_1196000
+# (https://huggingface.co/mrkkucharski/mt3-guitar-pilot/tree/main/193ex_it7_norhythm_checkpoint_1196000),
+# a later checkpoint from the same guitar-pilot fine-tune, trained on a larger
+# (193-example) corpus. `MT3_HF_REVISION` below is `mt3-guitar-pilot`'s repo
+# sha as of this pin (verified via `curl -s
+# https://huggingface.co/api/models/mrkkucharski/mt3-guitar-pilot`, `.sha`
+# field, 40 hex chars); re-verify it if re-pinning again later, the same way
+# `MT3_PINNED_COMMIT` above is a snapshot, not `main`.
+MT3_MODEL_ID = "guitar-pilot-193ex-it7-norhythm-checkpoint-1196000"
 MT3_HF_REPO_ID = "mrkkucharski/mt3-guitar-pilot"
-MT3_HF_REVISION = "93e070d82fd1e79b11b32059c53d6f31b4167564"
-# Unlike the sibling checkpoint dirs at repo root (e.g. checkpoint_1108000/,
-# with _CHECKPOINT_METADATA directly inside), this one was uploaded with an
-# extra nested `checkpoint_1126000/` level -- verified against the live HF
-# tree before pinning. The full path is required to land the same flat
-# layout `_download_model` normalizes into `checkpoint_0`.
-MT3_HF_CHECKPOINT_DIR = "70ex_checkpoint_1126000/checkpoint_1126000"
+MT3_HF_REVISION = "7cef56834dab824995fc8aad6cdeb91f5b969c42"
+# Flat layout, like the other sibling checkpoint dirs at repo root (e.g.
+# checkpoint_1108000/) -- `_CHECKPOINT_METADATA` sits directly inside, unlike
+# the previous 70ex_checkpoint_1126000 pin's extra nested
+# `checkpoint_1126000/` level. Verified against the live HF tree (`curl -s
+# .../api/models/mrkkucharski/mt3-guitar-pilot`'s `siblings` listing) before
+# pinning.
+MT3_HF_CHECKPOINT_DIR = "193ex_it7_norhythm_checkpoint_1196000"
 
 # 512 spectrogram frames at MT3's fixed 125 frames/s is a ~4.096 s window.
-# This checkpoint (70ex_checkpoint_1126000) is pinned to run with *no*
-# right-context lookahead/overlap -- unlike the earlier it3_4s checkpoint's
-# 256-frame (50%) overlap, each window is decoded independently with a
-# zero-frame hop overrun. These must match the checkpoint's own
-# training/inference approach.
+# Carried over unchanged from the previous 70ex_checkpoint_1126000 pin: this
+# checkpoint family (193ex_it7_norhythm) has no training/inference config
+# published in the HF repo (`_CHECKPOINT_METADATA` is orbax bookkeeping only,
+# no window/overlap info), so these values are inferred from the maintainer's
+# own local render filenames for this exact checkpoint series (e.g.
+# `..._193ex_it7_norhythm_1196000_lb0s_la0s_keep2s.RPP` -- "la0s" reads as
+# zero-second lookahead), not confirmed from an authoritative source. If
+# transcription quality looks off, re-check this pin first.
 MT3_INPUT_LENGTH_FRAMES = 512
 MT3_LOOKAHEAD_FRAMES = 0
 
