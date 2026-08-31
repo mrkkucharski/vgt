@@ -110,16 +110,23 @@ MT3_HF_REVISION = "7cef56834dab824995fc8aad6cdeb91f5b969c42"
 # pinning.
 MT3_HF_CHECKPOINT_DIR = "193ex_it7_norhythm_checkpoint_1196000"
 
-# 512 spectrogram frames at MT3's fixed 125 frames/s is a ~4.096 s window.
-# Carried over unchanged from the previous 70ex_checkpoint_1126000 pin: this
-# checkpoint family (193ex_it7_norhythm) has no training/inference config
-# published in the HF repo (`_CHECKPOINT_METADATA` is orbax bookkeeping only,
-# no window/overlap info), so these values are inferred from the maintainer's
-# own local render filenames for this exact checkpoint series (e.g.
-# `..._193ex_it7_norhythm_1196000_lb0s_la0s_keep2s.RPP` -- "la0s" reads as
-# zero-second lookahead), not confirmed from an authoritative source. If
-# transcription quality looks off, re-check this pin first.
-MT3_INPUT_LENGTH_FRAMES = 512
+# 256 spectrogram frames at MT3's fixed 125 frames/s is a ~2.048 s window --
+# the fork's own `mt3-transcribe` default (`mt3/cli.py`: "Defaults to the
+# 256-frame (~2 s) baseline; pass 512 for a checkpoint adapted to the ~4 s
+# window"). Corrected 2026-08-31 from 512: that value was carried over
+# unchanged from the *previous* 70ex_checkpoint_1126000 pin, which really was
+# a 4 s-adapted checkpoint, but this checkpoint family (193ex_it7_norhythm)
+# is not -- verified for real by re-running `mt3-transcribe` directly against
+# a guitar stem at both window sizes and comparing to the maintainer's own
+# separately-generated reference render for this exact checkpoint
+# (`..._193ex_it7_norhythm_1196000_lb0s_la0s_keep2s.mid`, "keep2s" naming its
+# 2 s window): 512 frames produced only 117 notes total across the three
+# guitar-family programs it split into (87/18/12 for electric-clean/
+# overdriven/distortion), while 256 frames reproduced the reference's
+# per-program note counts exactly (211/8/60 for the same three programs).
+# `MT3_LOOKAHEAD_FRAMES = 0` matches the reference's own "la0s" (zero-second
+# lookahead) and was not implicated -- only the window length was wrong.
+MT3_INPUT_LENGTH_FRAMES = 256
 MT3_LOOKAHEAD_FRAMES = 0
 
 

@@ -209,6 +209,16 @@ def detection_identity(target: str, input_hash: str, spec: NoteSpec) -> dict[str
             "lock_sha256": spec.lock_sha256,
             "model_id": spec.model_id,
             "checkpoint_fingerprint": spec.checkpoint_fingerprint,
+            # Both directly determine what `mt3-transcribe` decodes (measured
+            # for real: 512 vs. 256 frames moved a real song's note count
+            # 117 -> 279 on the same checkpoint -- see `vgt.mt3_provision`'s
+            # `MT3_INPUT_LENGTH_FRAMES` comment), so they belong in the raw
+            # detection identity, not only in `settings_hash`. Omitting them
+            # would let a re-pinned window/lookahead be served a stale cached
+            # raw MIDI decoded under the old geometry -- exactly the "tuning
+            # a silent no-op" failure class `PyinSpec`'s docstring warns about.
+            "input_length_frames": spec.input_length_frames,
+            "lookahead_frames": spec.lookahead_frames,
             "track_selection_version": spec.track_selection_version,
             "note_normalization_version": spec.note_normalization_version,
         }

@@ -407,7 +407,10 @@ def _empty_transcription_block() -> dict[str, Any]:
 
 
 def _empty_mt3_review_block() -> dict[str, Any]:
-    return {"status": "pending", "input_hash": None, "midi_file": None, "tracks": [], "error": None}
+    return {
+        "status": "pending", "input_hash": None, "settings_hash": None,
+        "midi_file": None, "tracks": [], "error": None,
+    }
 
 
 def _empty_track_jobs_block() -> dict[str, Any]:
