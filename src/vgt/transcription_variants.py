@@ -54,6 +54,7 @@ from .transcribe import (
     BasicPitchSpec,
     AdtofSpec,
     DrumScriptSpec,
+    EssentiaSpec,
     Mt3Spec,
     NoteSpec,
     PyinSpec,
@@ -76,15 +77,21 @@ from .audio_frontend import canonical_recipe, frontend_hash, frontend_relative_p
 
 # Basic Pitch and pYIN share this raw-cache directory name (their disjoint
 # `detection_hash` identities already keep the two from ever colliding inside
-# it -- see `detection_identity`); MT3 gets its own (issue #287), so a human
-# browsing the cache can tell a TensorFlow/JAX-produced raw MIDI from an ONNX-
-# or in-process one at a glance.
+# it -- see `detection_identity`); MT3 gets its own (issue #287), and Essentia
+# gets its own too, so a human browsing the cache can tell a TensorFlow/JAX-
+# produced raw MIDI, an in-process classical-DSP one, and every other
+# in-process one apart at a glance.
 CACHE_BACKEND_DIR = "basic-pitch"
 MT3_CACHE_BACKEND_DIR = "mt3"
+ESSENTIA_CACHE_BACKEND_DIR = "essentia"
 
 
 def _cache_backend_dir_for_spec(spec: NoteSpec) -> str:
-    return MT3_CACHE_BACKEND_DIR if isinstance(spec, Mt3Spec) else CACHE_BACKEND_DIR
+    if isinstance(spec, Mt3Spec):
+        return MT3_CACHE_BACKEND_DIR
+    if isinstance(spec, EssentiaSpec):
+        return ESSENTIA_CACHE_BACKEND_DIR
+    return CACHE_BACKEND_DIR
 
 
 @dataclass(frozen=True)
@@ -136,11 +143,11 @@ def detection_identity(target: str, input_hash: str, spec: NoteSpec) -> dict[str
 
     Every note-producing backend resolves through here. Each backend branch's
     identity shape is disjoint from the others' apart from `common`'s keys --
-    a pyin, Basic Pitch, or MT3 variant can therefore never collide with, or
-    be served from, another backend's cache entry. Basic Pitch/pYIN's detector
-    fields (`minimum_note_length_ms`/frequency window) live in their own
-    branches rather than `common`: MT3 is a fixed pretrained model with no
-    such settings to hash.
+    a pyin, Basic Pitch, Essentia, or MT3 variant can therefore never collide
+    with, or be served from, another backend's cache entry. Basic
+    Pitch/pYIN/Essentia's detector fields (`minimum_note_length_ms`/frequency
+    window) live in their own branches rather than `common`: MT3 is a fixed
+    pretrained model with no such settings to hash.
     """
     common = {
         "target": target,
@@ -175,6 +182,22 @@ def detection_identity(target: str, input_hash: str, spec: NoteSpec) -> dict[str
             "rearticulation_span_frames": spec.rearticulation_span_frames,
             "rearticulation_rise_db": spec.rearticulation_rise_db,
             "rearticulation_minimum_spacing_beats": spec.rearticulation_minimum_spacing_beats,
+        }
+    if isinstance(spec, EssentiaSpec):
+        return {
+            **common,
+            "algorithm": spec.algorithm,
+            "algorithm_version": spec.algorithm_version,
+            "sample_rate_hz": spec.sample_rate_hz,
+            "minimum_note_length_ms": spec.minimum_note_length_ms,
+            "minimum_frequency_hz": spec.minimum_frequency_hz,
+            "maximum_frequency_hz": spec.maximum_frequency_hz,
+            # Bridging/dropping happens inside `segment_multipitch`, so it
+            # shapes the *raw* note list, not a cleanup derivation -- same
+            # reasoning as pYIN's re-articulation fields just above: omitting
+            # it would let a profile retune the merge gap and be served stale
+            # raw notes.
+            "merge_gap_ms": spec.merge_gap_ms,
         }
     if isinstance(spec, Mt3Spec):
         return {
@@ -275,11 +298,12 @@ def _base_variant_fields(request: VariantRequest, target: str) -> dict[str, Any]
         "profile_definition_hash": request.profile_definition_hash,
         "effective_profile": request.effective_profile,
         "backend": spec.backend,
-        # pYIN runs in-process, so it has neither a pinned package nor a model
-        # serialization; its runtime identity is `algorithm_version`, already
-        # inside `settings_hash` below (see `vgt.transcribe.PyinSpec`). MT3 is
-        # a git-cloned project pinned by commit, not a pip package.
-        "package_pin": None if isinstance(spec, (PyinSpec, Mt3Spec)) else spec.package_pin,
+        # pYIN and Essentia run in-process, so neither has a pinned package or
+        # a model serialization; their runtime identity is `algorithm_version`,
+        # already inside `settings_hash` below (see `vgt.transcribe.PyinSpec`/
+        # `EssentiaSpec`). MT3 is a git-cloned project pinned by commit, not a
+        # pip package.
+        "package_pin": None if isinstance(spec, (PyinSpec, EssentiaSpec, Mt3Spec)) else spec.package_pin,
         "serialization": spec.serialization if isinstance(spec, BasicPitchSpec) else None,
         "source_role": target,
         "settings_hash": variant_settings_hash(request),
@@ -633,7 +657,7 @@ def reconcile_variants(
             invocations += count
             commit_variant(request.variant_id, with_frontend(record, request))
             continue
-        if not isinstance(request.spec, (BasicPitchSpec, PyinSpec, Mt3Spec)):
+        if not isinstance(request.spec, (BasicPitchSpec, PyinSpec, EssentiaSpec, Mt3Spec)):
             raise TranscriptionError(f"unsupported spec type for variant {request.variant_id!r}: {type(request.spec)!r}")
         groups.setdefault((detection_hash(target, processed_hash, request.spec), processed_hash, processed_source), []).append(request)
 
@@ -666,7 +690,7 @@ def reconcile_variants(
 
         for request in group_requests:
             spec = request.spec
-            assert isinstance(spec, (BasicPitchSpec, PyinSpec, Mt3Spec))
+            assert isinstance(spec, (BasicPitchSpec, PyinSpec, EssentiaSpec, Mt3Spec))
             variant_cleanup_hash = cleanup_hash(raw_notes_hash, processed_hash, spec)
             existing = existing_variants.get(request.variant_id)
             if not force and _existing_basic_pitch_current(

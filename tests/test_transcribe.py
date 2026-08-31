@@ -19,6 +19,9 @@ from vgt.transcribe import (
     CleanupStage,
     DrumScriptSpec,
     DrumScriptTranscriber,
+    ESSENTIA_ALGORITHM_VERSION,
+    EssentiaSpec,
+    EssentiaTranscriber,
     GUITAR_GHOST_ONSET_TOLERANCE_S,
     GUITAR_GHOST_OVERLAP_FRACTION,
     GUITAR_GHOST_SPECTRAL_FREQ_TOLERANCE_SEMITONES,
@@ -84,7 +87,10 @@ def test_default_spec_applies_the_per_target_frequency_table() -> None:
     vocals = default_spec_for_target("vocals")
     piano = default_spec_for_target("piano")
 
-    assert (guitar.minimum_frequency_hz, guitar.maximum_frequency_hz) == (80.0, 1200.0)
+    # guitar's real default is the classical multi-pitch (Essentia) backend,
+    # whose own frequency window this is -- see
+    # `test_guitar_default_is_klapuri_and_explicit_default_is_the_basic_pitch_opt_out`.
+    assert (guitar.minimum_frequency_hz, guitar.maximum_frequency_hz) == (70.0, 1400.0)
     # Bass's window is the pyin tracker's fundamental search range, narrowed to
     # the range two independent estimators measured on a real stem; the retired
     # Basic Pitch profile keeps its original, wider window.
@@ -95,19 +101,39 @@ def test_default_spec_applies_the_per_target_frequency_table() -> None:
     assert (piano.minimum_frequency_hz, piano.maximum_frequency_hz) == (None, None)
 
 
-def test_guitar_harmonic_is_default_and_explicit_default_is_raw_opt_out() -> None:
-    """Stored stale modes safely use the harmonic default."""
+def test_guitar_default_is_klapuri_and_explicit_default_is_the_basic_pitch_opt_out() -> None:
+    """guitar's real default is the classical multi-pitch backend, not Basic
+    Pitch -- unconditionally, with no environment-dependent fallback. A
+    project analyzed where Essentia isn't installed fails loudly (see
+    `test_router_without_essentia_raises_for_the_default_too`), rather than
+    silently transcribing with a different backend than the one it asked for.
+
+    A stale/unrecognised stored mode falls back to this same default; an
+    explicit `default` selection stays the Basic Pitch (`guitar-harmonic`)
+    opt-out, regardless."""
     unset = default_spec_for_target("guitar")
-    electric = default_spec_for_target("guitar", modes={"guitar": "electric"})
+    stale = default_spec_for_target("guitar", modes={"guitar": "electric"})
     raw = default_spec_for_target("guitar", modes={"guitar": "default"})
 
-    for spec in (unset, electric):
-        assert (spec.minimum_frequency_hz, spec.maximum_frequency_hz) == (80.0, 1200.0)
-        assert spec.onset_threshold == 0.6
-        assert spec.frame_threshold == 0.65
-        assert "drop_harmonic_ghosts" in _cleanup_names(spec)
+    for spec in (unset, stale):
+        assert isinstance(spec, EssentiaSpec)
+        assert spec.algorithm == "klapuri"
+        assert (spec.minimum_frequency_hz, spec.maximum_frequency_hz) == (70.0, 1400.0)
+    assert isinstance(raw, BasicPitchSpec)
     assert (raw.minimum_frequency_hz, raw.maximum_frequency_hz) == (70.0, 1400.0)
     assert raw.cleanup == ()
+
+
+def test_guitar_harmonic_is_still_explicitly_selectable() -> None:
+    """`guitar-harmonic` was the previous default and remains a real,
+    explicitly-selectable profile -- only the implicit default changed."""
+    spec = default_spec_for_target("guitar", modes={"guitar": "guitar-harmonic"})
+
+    assert isinstance(spec, BasicPitchSpec)
+    assert (spec.minimum_frequency_hz, spec.maximum_frequency_hz) == (80.0, 1200.0)
+    assert spec.onset_threshold == 0.6
+    assert spec.frame_threshold == 0.65
+    assert "drop_harmonic_ghosts" in _cleanup_names(spec)
 
 
 def test_default_spec_narrows_acoustic_guitar_and_enables_cleanup() -> None:
@@ -192,6 +218,34 @@ def test_pyin_spec_omits_the_basic_pitch_only_settings_it_never_reads() -> None:
         assert present in payload, present
 
 
+def test_guitar_klapuri_and_melodia_profiles_resolve_to_essentia_specs() -> None:
+    klapuri = default_spec_for_target("guitar", midi_tempo=120.0, modes={"guitar": "guitar-klapuri"})
+    melodia = default_spec_for_target("guitar", midi_tempo=120.0, modes={"guitar": "guitar-melodia"})
+
+    assert isinstance(klapuri, EssentiaSpec) and isinstance(melodia, EssentiaSpec)
+    assert klapuri.backend == melodia.backend == "essentia"
+    assert klapuri.algorithm == "klapuri"
+    assert melodia.algorithm == "melodia"
+    assert klapuri.algorithm_version == ESSENTIA_ALGORITHM_VERSION
+    # Bare, opt-in profiles: no cleanup, matching `guitar-mt3`'s convention of
+    # shipping the algorithm's own output honestly before any measured
+    # evidence motivates a derived recipe.
+    assert klapuri.cleanup == () and melodia.cleanup == ()
+    # Same frequency window `guitar`'s own Basic Pitch profile uses.
+    assert (klapuri.minimum_frequency_hz, klapuri.maximum_frequency_hz) == (70.0, 1400.0)
+
+
+def test_essentia_spec_omits_the_basic_pitch_only_settings_it_never_reads() -> None:
+    """An essentia variant's identity must not contain fields nothing consults
+    -- same discipline `PyinSpec` enforces."""
+    payload = default_spec_for_target("guitar", midi_tempo=120.0, modes={"guitar": "guitar-klapuri"}).to_dict()
+
+    for absent in ("onset_threshold", "frame_threshold", "melodia_trick", "multiple_pitch_bends", "package_pin", "serialization"):
+        assert absent not in payload, absent
+    for present in ("algorithm", "algorithm_version", "sample_rate_hz", "merge_gap_ms"):
+        assert present in payload, present
+
+
 def test_default_spec_ignores_a_stored_profile_for_another_target() -> None:
     """A stale or malformed sidecar mode must retain the target default."""
     bass = default_spec_for_target("bass", modes={"bass": "guitar-acoustic"})
@@ -222,7 +276,9 @@ def test_bar_duration_seconds_defaults_to_4_4_when_signature_is_missing_or_malfo
 
 
 def test_default_spec_shares_the_common_defaults_across_targets() -> None:
-    guitar = default_spec_for_target("guitar")
+    # An explicit Basic Pitch profile: guitar's own implicit default is now
+    # Essentia, which shares none of these Basic-Pitch-only fields.
+    guitar = default_spec_for_target("guitar", modes={"guitar": "guitar-harmonic"})
     vocals = default_spec_for_target("vocals")
 
     assert guitar.backend == vocals.backend == "basic-pitch"
@@ -248,7 +304,9 @@ def test_spec_hash_is_deterministic_and_order_independent() -> None:
 def test_spec_hash_changes_when_a_target_setting_changes() -> None:
     from dataclasses import replace
 
-    spec = default_spec_for_target("guitar")
+    # An explicit Basic Pitch profile: `onset_threshold` isn't a field on
+    # guitar's own implicit (Essentia) default spec at all.
+    spec = default_spec_for_target("guitar", modes={"guitar": "guitar-harmonic"})
     retuned = replace(spec, onset_threshold=0.7)
 
     assert spec_hash(spec) != spec_hash(retuned)
@@ -421,9 +479,18 @@ def test_router_routes_only_drums_to_an_injected_drum_backend() -> None:
     router = TargetTranscriberRouter(basic_pitch, drumscript, drumscript_targets=("drums",))
 
     for target in VALID_TARGETS:
-        assert router.for_target(target) is (drumscript if target == "drums" else basic_pitch)
+        if target == "drums":
+            assert router.for_target(target) is drumscript
+        elif target == "guitar":
+            # guitar's own default now routes to Essentia, which this router
+            # has no transcriber wired for -- see
+            # `test_router_without_essentia_raises_rather_than_silently_using_basic_pitch`.
+            with pytest.raises(TranscriptionError, match="Essentia is not available"):
+                router.for_target(target)
+        else:
+            assert router.for_target(target) is basic_pitch
     assert isinstance(router.spec_for_target("drums", midi_tempo=120.0), DrumScriptSpec)
-    assert isinstance(router.spec_for_target("guitar", midi_tempo=120.0), BasicPitchSpec)
+    assert isinstance(router.spec_for_target("guitar", midi_tempo=120.0), EssentiaSpec)
 
 
 def test_router_uses_the_drum_profile_backend_and_keeps_drumscript_default() -> None:
@@ -472,7 +539,7 @@ def test_router_threads_modes_and_time_signature_through_to_the_spec() -> None:
     assert _cleanup_params(spec, "clamp_sustain")["max_duration_s"] == pytest.approx(3.0)
 
 
-def test_production_router_sends_drums_to_drumscript_bass_to_pyin_and_the_rest_to_basic_pitch() -> None:
+def test_production_router_sends_drums_to_drumscript_bass_to_pyin_guitar_to_essentia_and_the_rest_to_basic_pitch() -> None:
     router = production_transcriber_router()
 
     for target in VALID_TARGETS:
@@ -482,6 +549,12 @@ def test_production_router_sends_drums_to_drumscript_bass_to_pyin_and_the_rest_t
         elif target == "bass":
             assert router.for_target(target).name == "pyin"
             assert isinstance(router.for_target(target), PyinTranscriber)
+        elif target == "guitar":
+            # guitar's own implicit default is the classical multi-pitch
+            # (Essentia) backend, not Basic Pitch -- see
+            # `test_guitar_default_is_klapuri_and_explicit_default_is_the_basic_pitch_opt_out`.
+            assert router.for_target(target).name == "essentia"
+            assert isinstance(router.for_target(target), EssentiaTranscriber)
         else:
             assert router.for_target(target).name == "basic-pitch"
             assert isinstance(router.for_target(target), BasicPitchTranscriber)
@@ -492,8 +565,33 @@ def test_production_router_sends_drums_to_drumscript_bass_to_pyin_and_the_rest_t
     assert isinstance(router.spec_for_target("drums", midi_tempo=120.0), DrumScriptSpec)
     assert router.for_target("drums", {"drums": "drums-adtof"}).name == "adtof"
     assert isinstance(router.for_target("drums", {"drums": "drums-adtof"}), AdtofTranscriber)
+    # An explicit non-Essentia guitar profile still routes to Basic Pitch --
+    # the backend follows the profile, not the target name, same as bass above.
+    assert router.for_target("guitar", {"guitar": "guitar-harmonic"}).name == "basic-pitch"
+    assert router.for_target("guitar", {"guitar": "guitar-klapuri"}).name == "essentia"
+    assert isinstance(router.for_target("guitar", {"guitar": "guitar-klapuri"}), EssentiaTranscriber)
+    assert isinstance(router.spec_for_target("guitar", midi_tempo=120.0, modes={"guitar": "guitar-melodia"}), EssentiaSpec)
+
+
+def test_router_without_essentia_raises_rather_than_silently_using_basic_pitch() -> None:
+    """A router missing an `essentia` transcriber must fail loudly -- there is
+    no fallback, for an explicit `guitar-klapuri` selection or for guitar's
+    own default alike (guitar's implicit default is unconditionally Essentia
+    now, not an environment-dependent choice)."""
+    router = TargetTranscriberRouter(FakeTranscriber(), FakeTranscriber())
+
+    with pytest.raises(TranscriptionError, match="Essentia is not available"):
+        router.for_target("guitar", {"guitar": "guitar-klapuri"})
+    with pytest.raises(TranscriptionError, match="Essentia is not available"):
+        router.for_target("guitar")
     assert isinstance(router.spec_for_target("drums", midi_tempo=120.0, modes={"drums": "drums-adtof"}), AdtofSpec)
-    assert isinstance(router.spec_for_target("guitar", midi_tempo=120.0), BasicPitchSpec)
+    # Building a spec never touches the router's wired transcribers, so it
+    # still succeeds and correctly describes what *would* run -- only
+    # `for_target` (and, downstream, actually invoking the transcriber) fails.
+    assert isinstance(router.spec_for_target("guitar", midi_tempo=120.0), EssentiaSpec)
+    # An explicit non-Essentia profile still routes to the injected
+    # (Basic Pitch slot) transcriber, since it never asked for Essentia at all.
+    assert router.for_target("guitar", {"guitar": "guitar-harmonic"}) is router.basic_pitch
 
 
 def test_validate_target_accepts_every_documented_target() -> None:
@@ -685,7 +783,10 @@ def test_target_input_hash_falls_back_to_hash_source_file_without_an_artifact(tm
 
 def test_transcribed_entry_records_the_fake_transcribers_result(tmp_path: Path) -> None:
     source = _write_source(tmp_path)
-    spec = default_spec_for_target("guitar", backend="fake", midi_tempo=118.02)
+    # An explicit Basic Pitch profile: `transcribed_entry` only populates
+    # `notes_file`/`note_count`/etc. for `BasicPitchSpec`/`Mt3Spec`, and
+    # guitar's own implicit default is neither.
+    spec = default_spec_for_target("guitar", backend="fake", midi_tempo=118.02, modes={"guitar": "guitar-harmonic"})
     result = FakeTranscriber().transcribe(source, tmp_path / "out", spec)
 
     entry = transcribed_entry(
@@ -1335,3 +1436,101 @@ def test_pyin_detection_identity_tracks_the_algorithm_version() -> None:
 
     assert detection_hash("bass", "input-hash", spec) != detection_hash("bass", "input-hash", next_version)
     assert spec_hash(spec) != spec_hash(next_version)
+
+
+def test_essentia_transcriber_writes_a_valid_midi_csv_pair_for_a_guitar_tone(tmp_path: Path) -> None:
+    """The real essentia backend end to end, on audio the test synthesizes
+    itself. Skipped where Essentia isn't installed -- it is an optional
+    dependency, not a hard one (see `vgt.essentia_notes`'s module docstring)."""
+    pytest.importorskip("essentia")
+    source = _tone_wav(tmp_path / "guitar.wav", 220.0, duration=1.5, sample_rate=44100)
+    spec = default_spec_for_target("guitar", midi_tempo=120.0, modes={"guitar": "guitar-klapuri"})
+
+    result = EssentiaTranscriber().transcribe(source, tmp_path / "out", spec)
+
+    assert result.note_count >= 1
+    assert result.midi_path.read_bytes()[:4] == b"MThd"
+    header = result.notes_path.read_text(encoding="utf-8").splitlines()[0]
+    assert header == "start_time_s,end_time_s,pitch_midi,velocity,pitch_bend"
+
+
+def test_essentia_transcriber_rejects_a_spec_from_another_backend(tmp_path: Path) -> None:
+    source = _tone_wav(tmp_path / "guitar.wav", 220.0, duration=0.2)
+    bass = default_spec_for_target("bass", midi_tempo=120.0)
+
+    with pytest.raises(TranscriptionError, match="requires an EssentiaSpec"):
+        EssentiaTranscriber().transcribe(source, tmp_path / "out", bass)
+
+
+def test_essentia_transcriber_translates_a_missing_essentia_into_an_install_hint(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """An unavailable Essentia install must surface as a `TranscriptionError`
+    naming the install command, not a raw `ImportError` -- exercised via a
+    monkeypatch so this test passes whether or not Essentia is actually
+    installed in the environment running it."""
+    import vgt.essentia_notes as essentia_notes
+
+    def _raise_import_error(*_args, **_kwargs):
+        raise ImportError("No module named 'essentia'")
+
+    monkeypatch.setattr(essentia_notes, "transcribe_multipitch", _raise_import_error)
+    source = _tone_wav(tmp_path / "guitar.wav", 220.0, duration=0.2, sample_rate=44100)
+    spec = default_spec_for_target("guitar", midi_tempo=120.0, modes={"guitar": "guitar-klapuri"})
+
+    with pytest.raises(TranscriptionError, match="Essentia is not installed"):
+        EssentiaTranscriber().transcribe(source, tmp_path / "out", spec)
+
+
+def test_essentia_detection_identity_excludes_cleanup_so_retuning_it_reuses_the_track() -> None:
+    """Two guitar-klapuri variants differing only in cleanup must share one
+    multi-pitch track -- same two-level-cache discipline pYIN's identity
+    enforces."""
+    from dataclasses import replace as dataclass_replace
+
+    from vgt.transcription_variants import cleanup_hash, detection_hash
+
+    spec = default_spec_for_target("guitar", midi_tempo=120.0, modes={"guitar": "guitar-klapuri"})
+    with_cleanup = dataclass_replace(spec, cleanup=(CleanupStage("merge_fragments", {"max_gap_s": 0.05}),))
+
+    assert detection_hash("guitar", "input-hash", spec) == detection_hash("guitar", "input-hash", with_cleanup)
+    assert cleanup_hash("raw-hash", "input-hash", spec) != cleanup_hash("raw-hash", "input-hash", with_cleanup)
+
+
+def test_essentia_and_basic_pitch_guitar_variants_never_share_a_detection_entry() -> None:
+    from vgt.transcription_variants import detection_hash
+
+    essentia = default_spec_for_target("guitar", midi_tempo=120.0, modes={"guitar": "guitar-klapuri"})
+    basic_pitch = default_spec_for_target("guitar", midi_tempo=120.0, modes={"guitar": "guitar-acoustic"})
+
+    assert detection_hash("guitar", "input-hash", essentia) != detection_hash("guitar", "input-hash", basic_pitch)
+
+
+def test_essentia_klapuri_and_melodia_variants_never_share_a_detection_entry() -> None:
+    """Two profiles differing only in `algorithm` must not be served from the
+    same raw cache entry -- they run genuinely different estimators."""
+    from vgt.transcription_variants import detection_hash
+
+    klapuri = default_spec_for_target("guitar", midi_tempo=120.0, modes={"guitar": "guitar-klapuri"})
+    melodia = default_spec_for_target("guitar", midi_tempo=120.0, modes={"guitar": "guitar-melodia"})
+
+    assert detection_hash("guitar", "input-hash", klapuri) != detection_hash("guitar", "input-hash", melodia)
+
+
+def test_essentia_detection_identity_tracks_the_algorithm_version_and_merge_gap() -> None:
+    """Both fields shape the raw note list (`ESSENTIA_ALGORITHM_VERSION` is
+    the in-process stand-in for a pinned runtime; `merge_gap_ms` is consumed
+    inside `segment_multipitch`, not a cleanup stage), so retuning either must
+    invalidate a cached raw track -- the same "tuning a silent no-op" failure
+    `PyinSpec`'s docstring warns about."""
+    from dataclasses import replace as dataclass_replace
+
+    from vgt.transcription_variants import detection_hash
+
+    spec = default_spec_for_target("guitar", midi_tempo=120.0, modes={"guitar": "guitar-klapuri"})
+    next_version = dataclass_replace(spec, algorithm_version=spec.algorithm_version + 1)
+    wider_gap = dataclass_replace(spec, merge_gap_ms=spec.merge_gap_ms + 10.0)
+
+    assert detection_hash("guitar", "input-hash", spec) != detection_hash("guitar", "input-hash", next_version)
+    assert detection_hash("guitar", "input-hash", spec) != detection_hash("guitar", "input-hash", wider_gap)
+    assert spec_hash(spec) != spec_hash(next_version) != spec_hash(wider_gap)

@@ -255,7 +255,8 @@ vgt analyze --transcribe bass --transcribe drums "Song.RPP"
 - `--mode <target>=<profile>` persists a transcription profile for one target;
   repeat it to select several. Current profiles are `default`, `guitar`,
   `bass`, `bass-pyin`, `bass-basic-pitch`, `bass-monophonic`, `vocals`,
-  `guitar-acoustic`, `guitar-harmonic`, and (for `drums`)
+  `guitar-acoustic`, `guitar-harmonic`, `guitar-klapuri`, `guitar-melodia`,
+  and (for `drums`)
   `raw`, `hpss`, and `adtof`. For example, `vgt analyze --mode guitar=guitar-acoustic
   "Song.RPP"` or `vgt analyze --mode drums=hpss "Song.RPP"` (see
   [DrumScript](#drumscript-drums) below). A stale mode from an older sidecar
@@ -364,10 +365,16 @@ backend. Older sidecars using `default`, `drums-clean`, `drums-hpss-gentle`, or
 `drums-adtof` remain readable, but status and newly created variants use the
 canonical names `raw`, `hpss`, and `adtof`.
 
-Guitar transcription likewise uses `guitar-harmonic` by default: 50% harmonic
-HPSS feeds an analysis-only WAV into the acoustic-clean profile. The raw guitar
-stem is unchanged; use `--mode guitar=default` or `--profile default` to opt
-out to the raw, tuned guitar path.
+Guitar transcription defaults to `guitar-klapuri`, a classical multi-pitch
+estimator (Essentia's Klapuri backend) rather than Basic Pitch. Essentia is an
+optional dependency (`pip install "vgt[essentia]"`) with no fallback: if it
+isn't installed, guitar transcription fails with an actionable error rather
+than silently running a different backend than the one selected. The raw
+guitar stem is unchanged either way; use `--mode guitar=guitar-harmonic` for
+the previous default (50% harmonic HPSS feeding an analysis-only WAV into the
+acoustic-clean profile), `--mode guitar=default` or `--profile default` to
+opt out to the raw, tuned Basic Pitch path, or `guitar-melodia` for Essentia's
+other multi-pitch algorithm.
 
 Use `vgt transcription profile validate "Song.RPP"`, then add it with
 `vgt transcription variant add guitar --name "my clean" --profile

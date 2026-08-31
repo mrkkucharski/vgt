@@ -1724,7 +1724,14 @@ def test_goal_contract_keeps_drumscript_variants_on_the_project_timeline(
     separate(project, CountingSeparator(), guitar_type="electric")
 
     drumscript = TempoSkewedDrumScriptFake()
-    router = TargetTranscriberRouter(basic_pitch=CountingTranscriber(), drumscript=drumscript, drumscript_targets=("drums",))
+    basic_pitch = CountingTranscriber()
+    # `essentia` needs its own wiring: unlike `pyin`, `TargetTranscriberRouter`
+    # has no basic_pitch fallback for it (see `for_target`), and guitar's own
+    # default now selects it -- the later `analyze(..., transcriber_router=router)`
+    # call below re-processes every persisted requested target, guitar included.
+    router = TargetTranscriberRouter(
+        basic_pitch=basic_pitch, drumscript=drumscript, drumscript_targets=("drums",), essentia=basic_pitch,
+    )
     default = add_variant(project, "drums", label="default", profile="default", router=router)
     clean = add_variant(project, "drums", label="clean", profile="drums-clean", router=router)
     sidecar = read_sidecar(project)
