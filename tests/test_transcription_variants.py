@@ -1007,10 +1007,32 @@ def test_detection_identity_for_mt3_carries_its_own_pin_and_no_basic_pitch_field
     assert identity["repository"] == spec.repository
     assert identity["commit"] == spec.commit
     assert identity["checkpoint_fingerprint"] == "fp-1"
+    assert identity["input_length_frames"] == spec.input_length_frames
+    assert identity["lookahead_frames"] == spec.lookahead_frames
     assert identity["track_selection_version"] == spec.track_selection_version
     assert identity["note_normalization_version"] == spec.note_normalization_version
     assert "minimum_note_length_ms" not in identity
     assert "onset_threshold" not in identity
+
+
+def test_detection_identity_changes_with_either_window_geometry_field() -> None:
+    """`input_length_frames`/`lookahead_frames` directly determine what
+    `mt3-transcribe` decodes (measured for real: changing the window from
+    512 to 256 frames moved a real song's note count from 117 to 279 on the
+    same checkpoint) -- a retune of either must invalidate a cached raw
+    detection, not just move `settings_hash`."""
+    from dataclasses import replace
+
+    spec = default_spec_for_target("guitar", backend="mt3", midi_tempo=120.0, mt3_checkpoint_fingerprint="fp-1")
+    assert isinstance(spec, Mt3Spec)
+    base = detection_hash("guitar", "input-hash", spec)
+
+    bumped_length = detection_hash("guitar", "input-hash", replace(spec, input_length_frames=spec.input_length_frames + 1))
+    bumped_lookahead = detection_hash("guitar", "input-hash", replace(spec, lookahead_frames=spec.lookahead_frames + 1))
+
+    assert bumped_length != base
+    assert bumped_lookahead != base
+    assert bumped_length != bumped_lookahead
 
 
 def test_detection_identity_for_essentia_carries_its_own_fields_and_no_basic_pitch_fields() -> None:

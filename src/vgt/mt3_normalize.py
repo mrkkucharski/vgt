@@ -1,6 +1,8 @@
 """Backend-neutral MT3 multitrack MIDI normalization (issue #286, revised by
 issue #290 to select the dominant track by duration rather than the first,
-with target-aware program-family elimination for explicitly named tracks).
+with target-aware program-family elimination for explicitly named tracks;
+revised again 2026-08-31 to merge same-family named survivors instead of
+picking only the single largest one -- see step 3 below).
 
 MT3 writes its complete multi-instrument prediction into one Standard
 MIDI File; it exposes no stable primary-track field, and an apparent
@@ -21,20 +23,33 @@ therefore structural wherever possible, not a guess about audio content:
    declared program falls outside the requested target's General MIDI
    instrument family (guitar: 24-31; bass: 32-39). This is reading MT3's own
    declared classification for a track it was confident enough to label, not
-   vgt inventing an instrument-family guess. The one *unnamed* track a file
-   always has (MT3's structurally first-decoded instrument -- see finding 7)
-   is never eliminated by this rule: there is nothing to check its label
-   against, so it stays a candidate regardless of its numeric program.
-3. Among the survivors, select the one with the most total note *duration*
-   (not note count): a source-separated single-instrument stem is expected
-   to be dominated, in how much of the track it actually occupies, by its
-   intended instrument. Raw note count is gameable by fragmentation -- a
-   spurious track with many short notes can outcount a correct track with
-   fewer, longer ones (measured for real: see docs/instrument-transcription-
-   findings.md finding 7). Ties resolve to the earlier track in file order,
-   deterministically.
-4. Record the selected track's name for diagnostics when present, but never
-   require or select by it.
+   vgt inventing an instrument-family guess. Any *unnamed* track (MT3's
+   structurally first-decoded instrument -- see finding 7) is never
+   eliminated by this rule: there is nothing to check its label against, so
+   it stays a candidate regardless of its numeric program.
+3. Among the survivors, merge every *named*, in-family track's notes into one
+   combined candidate first: MT3 does not reliably keep one real performance
+   in one program (measured for real -- a single electric guitar part split
+   across clean/overdriven/distortion-guitar programs purely by tone; see
+   docs/instrument-transcription-findings.md finding 7's 7Rivers guitar
+   example), and once a track is both named and in-family, that split is
+   MT3's own declared classification agreeing it belongs to the target, not
+   an ambiguous case worth discarding to a duration tiebreak. Each unnamed
+   track, having no label to confirm that agreement, still competes as its
+   own separate candidate -- this preserves the original protection a real
+   counter-example required (docs' "Perfect_Chcemy-byc-soba" bass case,
+   where an always-unnamed track was *not* actually bass and had to lose the
+   duration comparison rather than being merged in blind). Select whichever
+   candidate -- the merged named-family group, or one of the unnamed tracks
+   -- has the most total note *duration* (not note count): a source-
+   separated single-instrument stem is expected to be dominated, in how much
+   of the track it actually occupies, by its intended instrument. Raw note
+   count is gameable by fragmentation -- a spurious track with many short
+   notes can outcount a correct track with fewer, longer ones (measured for
+   real: see docs/instrument-transcription-findings.md finding 7). Ties
+   resolve to the earlier-scanned candidate, deterministically.
+4. Record the selected candidate's name(s) for diagnostics when present
+   (joined with "+" for a merged group), but never require or select by it.
 5. Fail clearly if no surviving track contains a note event.
 
 This module never invokes or provisions MT3 itself (see `vgt.mt3_provision`
@@ -69,9 +84,14 @@ from .transcribe import (
 # TRACK_SELECTION bumped 1 -> 2 -> 3 by issue #290 (first: dominant-by-note-
 # count with drum-channel exclusion, replacing first-by-decode-order; then:
 # dominant-by-duration plus target-aware family elimination of named
-# tracks): any raw MT3 detection cached under an older version must not be
+# tracks); 3 -> 4 (2026-08-31) merges same-family named survivors into one
+# candidate before the duration pick, instead of discarding all but the
+# single largest (see the module docstring's step 3 -- found for real on a
+# guitar-mt3 run where MT3 split one electric guitar part into
+# clean/overdriven/distortion-guitar programs and vgt kept only one of the
+# three). Any raw MT3 detection cached under an older version must not be
 # reused as if it were selected under the current rule.
-MT3_TRACK_SELECTION_VERSION = 3
+MT3_TRACK_SELECTION_VERSION = 4
 MT3_NOTE_NORMALIZATION_VERSION = 1
 
 # General MIDI Level 1 program-family ranges (0-indexed), keyed by the vgt
@@ -220,16 +240,23 @@ def _total_duration_s(notes: tuple[ParsedNote, ...]) -> float:
 
 
 def select_dominant_musical_track(path: str | Path, *, target: str | None = None) -> Mt3SelectedTrack:
-    """Select and normalize MT3's dominant track from `path`: the surviving
-    track with the most total note duration, among tracks that are not drums
-    and were not explicitly named as a different instrument family.
+    """Select and normalize MT3's dominant candidate from `path`: the most
+    total note duration, among tracks that are not drums and were not
+    explicitly named as a different instrument family -- with every named,
+    in-family track merged into one candidate first (see the module
+    docstring's step 3).
 
     `target`, when it names a target in `GM_PROGRAM_FAMILIES` (currently
     "guitar" or "bass"), eliminates every explicitly *named* track whose
-    declared GM program falls outside that family; the one unnamed track a
-    file always has is never eliminated by this rule (see the module
-    docstring). `None`, or a target with no known family, applies no family
-    elimination -- only the drum-channel exclusion.
+    declared GM program falls outside that family, then merges the remaining
+    named tracks' notes into one candidate -- MT3 itself confirmed they
+    belong to the target's family, and does not reliably keep one real
+    performance in one program. Any unnamed track is never eliminated by
+    this rule and never merged into the named group either: there is no
+    label to confirm it agrees, so each one still competes as its own
+    separate candidate (see the module docstring). `None`, or a target with
+    no known family, applies no family elimination or merging -- only the
+    drum-channel exclusion, with every surviving track its own candidate.
 
     Raises `TranscriptionError` if the file cannot be parsed or no surviving
     track contains a note event.
@@ -246,19 +273,35 @@ def select_dominant_musical_track(path: str | Path, *, target: str | None = None
     family = GM_PROGRAM_FAMILIES.get(target) if target else None
 
     tempo_events = _tempo_events(midi.tracks)
-    best: Mt3SelectedTrack | None = None
-    best_duration = 0.0
+    candidates: list[Mt3SelectedTrack] = []
+    named_family_notes: list[ParsedNote] = []
+    named_family_names: list[str] = []
     for track in midi.tracks:
         if _is_drum_track(track):
             continue
-        if family is not None and _is_named_track(track) and _track_program(track) not in family:
+        named = _is_named_track(track)
+        if family is not None and named and _track_program(track) not in family:
             continue
         notes = _extract_track_notes(track, tempo_events, midi.ticks_per_beat)
         if not notes:
             continue
-        duration = _total_duration_s(notes)
-        if duration > best_duration:  # strictly greater: a tie keeps the earlier track
-            best = Mt3SelectedTrack(track_name=_track_name(track), notes=tuple(notes))
+        if family is not None and named:
+            named_family_notes.extend(notes)
+            name = _track_name(track)
+            if name:
+                named_family_names.append(name)
+        else:
+            candidates.append(Mt3SelectedTrack(track_name=_track_name(track), notes=tuple(notes)))
+    if named_family_notes:
+        named_family_notes.sort(key=lambda note: (note.start_s, note.pitch_midi))
+        candidates.append(Mt3SelectedTrack(track_name="+".join(named_family_names) or None, notes=tuple(named_family_notes)))
+
+    best: Mt3SelectedTrack | None = None
+    best_duration = 0.0
+    for candidate in candidates:  # strictly greater: a tie keeps the earlier-scanned candidate
+        duration = _total_duration_s(candidate.notes)
+        if duration > best_duration:
+            best = candidate
             best_duration = duration
     if best is None:
         family_detail = f" of the {target!r} program family (or unnamed)" if family is not None else ""

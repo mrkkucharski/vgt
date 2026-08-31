@@ -71,6 +71,7 @@ from .transcribe import (
     notes_artifact_name,
     production_transcriber_router,
     resolve_target_source,
+    spec_hash,
     target_input_hash,
     tempo_map_reference,
     validate_profile_for_target,
@@ -613,6 +614,8 @@ def refresh_mt3_instrumental_review(project: str | Path, *, force: bool = False,
     all predicted instruments and is surfaced as a separate `[vgt] MT3`
     REAPER folder, rather than claiming one prediction is the instrumental.
     """
+    from .mt3_provision import mt3_status
+
     emit = progress or (lambda _message: None)
     project_path = locate_project(project)
     sidecar = read_sidecar(project_path)
@@ -623,21 +626,55 @@ def refresh_mt3_instrumental_review(project: str | Path, *, force: bool = False,
         return
     instrumental, _artifact = resolved
     input_hash = hash_source_file(instrumental)
+    # Local-only provisioning check (never touches the network), the same one
+    # `transcription_lifecycle.add_variant` reads before building an `Mt3Spec`.
+    manifest = mt3_status()
+    checkpoint_fingerprint = manifest.fingerprint if manifest is not None else None
+    spec = default_spec_for_target("instrumental", backend="mt3", mt3_checkpoint_fingerprint=checkpoint_fingerprint)
+    assert isinstance(spec, Mt3Spec)
+    # The full spec identity, not just `checkpoint_fingerprint`: any field on
+    # `Mt3Spec` (window/lookahead geometry, track selection/normalization
+    # version, the pinned commit, ...) can change what gets decoded -- proven
+    # for real when a wrong `input_length_frames` silently produced a far
+    # sparser transcription on an unchanged checkpoint (see
+    # `vgt.mt3_provision`'s comment). Comparing the whole hash means a future
+    # change to any such field invalidates this review automatically, rather
+    # than requiring this function to be updated by hand for each one, the
+    # same way `_base_variant_fields` already covers the ordinary variant model.
+    settings_hash = spec_hash(spec)
     review = analysis["mt3_review"]
     namespace = ensure_artifact_namespace(sidecar, project_path)
     output_dir = artifact_namespace_dir(project_path, namespace) / "mt3"
     raw_path = output_dir / "instrumental.mid"
-    if not force and review.get("status") == "transcribed" and review.get("input_hash") == input_hash and raw_path.is_file():
+    if (
+        not force
+        and review.get("status") == "transcribed"
+        and review.get("input_hash") == input_hash
+        and review.get("settings_hash") == settings_hash
+        and raw_path.is_file()
+    ):
         return
     try:
-        spec = default_spec_for_target("instrumental", backend="mt3")
-        assert isinstance(spec, Mt3Spec)
         raw = Mt3Transcriber().transcribe_all_tracks(instrumental, output_dir, spec, progress=emit)
-        tracks = split_mt3_midi(raw, output_dir / "tracks")
-        value = {"status": "transcribed", "input_hash": input_hash, "midi_file": "mt3/instrumental.mid", "tracks": tracks, "error": None}
+        # Clear every previously retained per-track file first: a re-run can
+        # produce fewer, differently numbered, or differently named tracks
+        # than the last one (e.g. a re-pinned checkpoint dropping the
+        # rhythm/lead split), and split_mt3_midi only ever writes the current
+        # set -- it does not know which stale files no longer apply.
+        tracks_dir = output_dir / "tracks"
+        if tracks_dir.is_dir():
+            shutil.rmtree(tracks_dir)
+        tracks = split_mt3_midi(raw, tracks_dir)
+        value = {
+            "status": "transcribed", "input_hash": input_hash, "settings_hash": settings_hash,
+            "midi_file": "mt3/instrumental.mid", "tracks": tracks, "error": None,
+        }
         emit(f"MT3 review — retained {len(tracks)} predicted instrument track(s)")
     except TranscriptionError as exc:
-        value = {"status": "error", "input_hash": input_hash, "midi_file": None, "tracks": [], "error": str(exc)}
+        value = {
+            "status": "error", "input_hash": input_hash, "settings_hash": settings_hash,
+            "midi_file": None, "tracks": [], "error": str(exc),
+        }
         emit(f"MT3 review unavailable: {exc}")
     update_analysis(project_path, lambda current: current.__setitem__("mt3_review", value))
 

@@ -149,6 +149,88 @@ def test_unnamed_track_is_never_eliminated_by_family(tmp_path: Path) -> None:
     assert [note.pitch_midi for note in selected.notes] == [60]
 
 
+def test_multiple_named_in_family_tracks_are_merged_not_dominant_only(tmp_path: Path) -> None:
+    """MT3 does not reliably keep one real performance in one program (e.g. a
+    guitar's clean/overdriven/distortion tone shifts split across three
+    guitar-family programs) -- once family elimination has ruled out a
+    *different* instrument, the survivors are combined rather than picking
+    only the single largest one and discarding the rest."""
+    path = _midi(tmp_path, [
+        CONDUCTOR,
+        [_named("clean-guitar"), _program(27), _on(60, 90, 0), _off(60, 480)],  # 0.5s
+        [_named("overdriven-guitar"), _program(29), _on(62, 80, 0), _off(62, 240)],  # 0.25s
+        [_named("distortion-guitar"), _program(30), _on(64, 70, 0), _off(64, 120)],  # 0.125s
+    ])
+
+    selected = select_dominant_musical_track(path, target="guitar")
+
+    assert sorted(note.pitch_midi for note in selected.notes) == [60, 62, 64]
+    assert selected.track_name == "clean-guitar+overdriven-guitar+distortion-guitar"
+
+
+def test_merged_named_family_group_can_outweigh_a_larger_unnamed_track(tmp_path: Path) -> None:
+    """The merged group's *combined* duration is what competes against an
+    unnamed track, not any one constituent's duration alone. 480 ticks at
+    this fixture's 120 BPM/480-ticks-per-beat is 0.5s."""
+    path = _midi(tmp_path, [
+        CONDUCTOR,
+        [_program(0), _on(59, 90, 0), _off(59, 720)],  # unnamed, wrong family, 0.75s alone
+        [_named("clean-guitar"), _program(27), _on(60, 90, 0), _off(60, 480)],  # 0.5s
+        [_named("distortion-guitar"), _program(30), _on(64, 70, 0), _off(64, 480)],  # 0.5s
+    ])
+
+    selected = select_dominant_musical_track(path, target="guitar")
+
+    # 0.5s + 0.5s = 1.0s combined beats the unnamed track's 0.75s, even
+    # though neither guitar-family track alone (0.5s) would have.
+    assert selected.track_name == "clean-guitar+distortion-guitar"
+    assert sorted(note.pitch_midi for note in selected.notes) == [60, 64]
+
+
+def test_an_unnamed_track_still_wins_over_a_smaller_merged_named_group(tmp_path: Path) -> None:
+    """Merging does not override the duration comparison itself -- the
+    protection a real counter-example required (an always-unnamed track that
+    was not actually the target instrument) still applies."""
+    path = _midi(tmp_path, [
+        CONDUCTOR,
+        [_program(0), _on(59, 90, 0), _off(59, 1920)],  # unnamed, wrong family, 2.0s
+        [_named("clean-guitar"), _program(27), _on(60, 90, 0), _off(60, 480)],  # 0.5s
+        [_named("distortion-guitar"), _program(30), _on(64, 70, 0), _off(64, 480)],  # 0.5s
+    ])
+
+    selected = select_dominant_musical_track(path, target="guitar")
+
+    # Unnamed's 2.0s beats the merged group's 0.5s + 0.5s = 1.0s combined.
+    assert selected.track_name is None
+    assert [note.pitch_midi for note in selected.notes] == [59]
+
+
+def test_named_family_merge_sorts_notes_by_start_time_across_tracks(tmp_path: Path) -> None:
+    path = _midi(tmp_path, [
+        CONDUCTOR,
+        [_named("distortion-guitar"), _program(30), _on(64, 70, 480), _off(64, 240)],  # starts at 1.0s
+        [_named("clean-guitar"), _program(27), _on(60, 90, 0), _off(60, 240)],  # starts at 0.0s
+    ])
+
+    selected = select_dominant_musical_track(path, target="guitar")
+
+    assert [note.pitch_midi for note in selected.notes] == [60, 64]
+
+
+def test_a_single_named_in_family_survivor_still_reports_its_own_name(tmp_path: Path) -> None:
+    """A merge group of one constituent behaves like the pre-merge rule --
+    same case `test_named_wrong_family_track_is_eliminated_even_with_more_duration`
+    covers, asserted here against the merge path directly."""
+    path = _midi(tmp_path, [
+        CONDUCTOR,
+        [_named("Guitar"), _program(24), _on(62, 80, 0), _off(62, 480)],
+    ])
+
+    selected = select_dominant_musical_track(path, target="guitar")
+
+    assert selected.track_name == "Guitar"
+
+
 def test_no_surviving_track_for_the_target_family_fails_clearly(tmp_path: Path) -> None:
     path = _midi(tmp_path, [CONDUCTOR, [_named("Piano"), _program(0), _on(60, 90, 0), _off(60, 480)]])
 

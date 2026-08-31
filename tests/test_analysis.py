@@ -1,4 +1,5 @@
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 import hashlib
 import json
@@ -100,8 +101,125 @@ def test_instrumental_review_persists_split_mt3_tracks(tmp_path: Path, monkeypat
     forget_mt3_review(project)
 
     forgotten = read_sidecar(project)["analysis"]["mt3_review"]
-    assert forgotten == {"status": "pending", "input_hash": None, "midi_file": None, "tracks": [], "error": None}
+    assert forgotten == {
+        "status": "pending", "input_hash": None, "settings_hash": None,
+        "midi_file": None, "tracks": [], "error": None,
+    }
     assert not (artifact_namespace_dir(project, namespace) / "mt3").exists()
+
+
+def test_instrumental_review_clears_stale_track_files_on_a_rerun(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """A re-run can produce fewer, differently numbered, or differently named
+    tracks than the last one (e.g. a re-pinned checkpoint dropping a
+    rhythm/lead split) -- split_mt3_midi only ever writes the current set, so
+    a stale file from a previous run must be cleared first, not left behind
+    as clutter that no longer matches the sidecar's `tracks` record."""
+    project = _project_copy(tmp_path)
+    _write_v1_sidecar(project)
+    analyze(project, stages=("tempo",))
+    sidecar = read_sidecar(project)
+    namespace = sidecar["analysis"]["stems"]["artifact_namespace"]
+    stem = artifact_namespace_dir(project, namespace) / "stems" / "instrumental.wav"
+    stem.parent.mkdir(parents=True)
+    stem.write_bytes(b"instrumental")
+    sidecar["analysis"]["stems"]["artifacts"]["instrumental"] = {"file": str(stem.relative_to(project.parent))}
+    write_sidecar(project, sidecar)
+
+    def two_tracks(self: object, source: Path, destination: Path, spec: object, progress: object = None) -> Path:
+        del self, source, spec, progress
+        midi = mido.MidiFile()
+        midi.tracks.append(mido.MidiTrack([
+            mido.MetaMessage("track_name", name="Piano", time=0),
+            mido.Message("note_on", note=60, velocity=90, time=0), mido.Message("note_off", note=60, velocity=0, time=120),
+        ]))
+        midi.tracks.append(mido.MidiTrack([
+            mido.MetaMessage("track_name", name="Guitar-Rhythm", time=0),
+            mido.Message("note_on", note=62, velocity=90, time=0), mido.Message("note_off", note=62, velocity=0, time=120),
+        ]))
+        output = destination / "instrumental.mid"
+        destination.mkdir(parents=True, exist_ok=True)
+        midi.save(output)
+        return output
+
+    def one_track(self: object, source: Path, destination: Path, spec: object, progress: object = None) -> Path:
+        del self, source, spec, progress
+        midi = mido.MidiFile()
+        midi.tracks.append(mido.MidiTrack([
+            mido.MetaMessage("track_name", name="Piano", time=0),
+            mido.Message("note_on", note=60, velocity=90, time=0), mido.Message("note_off", note=60, velocity=0, time=120),
+        ]))
+        output = destination / "instrumental.mid"
+        destination.mkdir(parents=True, exist_ok=True)
+        midi.save(output)
+        return output
+
+    tracks_dir = artifact_namespace_dir(project, namespace) / "mt3" / "tracks"
+    monkeypatch.setattr("vgt.analysis.Mt3Transcriber.transcribe_all_tracks", two_tracks)
+    refresh_mt3_instrumental_review(project)
+    assert {p.name for p in tracks_dir.iterdir()} == {"01-piano.mid", "02-guitar-rhythm.mid"}
+
+    monkeypatch.setattr("vgt.analysis.Mt3Transcriber.transcribe_all_tracks", one_track)
+    refresh_mt3_instrumental_review(project, force=True)
+
+    assert {p.name for p in tracks_dir.iterdir()} == {"01-piano.mid"}
+    review = read_sidecar(project)["analysis"]["mt3_review"]
+    assert review["tracks"] == [{"file": "01-piano.mid", "name": "Piano", "program": None}]
+
+
+def test_instrumental_review_regenerates_when_the_mt3_spec_identity_changes(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A re-pinned checkpoint (or any other `Mt3Spec` field -- see
+    `vgt.mt3_provision`'s window-geometry comment for a real example where
+    getting one wrong silently produced a far sparser transcription) must
+    invalidate a cached review even when the stem's own content hasn't
+    changed and `force` isn't passed -- otherwise it silently keeps serving
+    MIDI transcribed under the old settings. Comparing the *full* spec
+    identity (`settings_hash`), not just `checkpoint_fingerprint` alone, is
+    what makes this generic to any such field rather than needing a
+    dedicated check added by hand for each one."""
+    project = _project_copy(tmp_path)
+    _write_v1_sidecar(project)
+    analyze(project, stages=("tempo",))
+    sidecar = read_sidecar(project)
+    namespace = sidecar["analysis"]["stems"]["artifact_namespace"]
+    stem = artifact_namespace_dir(project, namespace) / "stems" / "instrumental.wav"
+    stem.parent.mkdir(parents=True)
+    stem.write_bytes(b"instrumental")
+    sidecar["analysis"]["stems"]["artifacts"]["instrumental"] = {"file": str(stem.relative_to(project.parent))}
+    write_sidecar(project, sidecar)
+
+    calls = {"count": 0}
+
+    def fake_all_tracks(self: object, source: Path, destination: Path, spec: object, progress: object = None) -> Path:
+        del self, source, spec
+        calls["count"] += 1
+        midi = mido.MidiFile()
+        midi.tracks.append(mido.MidiTrack([
+            mido.MetaMessage("track_name", name="Piano", time=0),
+            mido.Message("note_on", note=60, velocity=90, time=0), mido.Message("note_off", note=60, velocity=0, time=120),
+        ]))
+        output = destination / "instrumental.mid"
+        destination.mkdir(parents=True, exist_ok=True)
+        midi.save(output)
+        return output
+
+    monkeypatch.setattr("vgt.analysis.Mt3Transcriber.transcribe_all_tracks", fake_all_tracks)
+
+    fingerprints = iter(["fp-old", "fp-old", "fp-new"])
+    monkeypatch.setattr("vgt.mt3_provision.mt3_status", lambda *_a, **_k: SimpleNamespace(fingerprint=next(fingerprints)))
+
+    refresh_mt3_instrumental_review(project)
+    assert calls["count"] == 1
+    first_hash = read_sidecar(project)["analysis"]["mt3_review"]["settings_hash"]
+
+    refresh_mt3_instrumental_review(project)  # same fingerprint, same input: unchanged, skipped
+    assert calls["count"] == 1
+
+    refresh_mt3_instrumental_review(project)  # fingerprint moved: must regenerate
+    assert calls["count"] == 2
+    second_hash = read_sidecar(project)["analysis"]["mt3_review"]["settings_hash"]
+    assert second_hash is not None and second_hash != first_hash
 
 
 def test_forget_mt3_review_with_no_review_on_record_is_a_no_op(tmp_path: Path) -> None:
@@ -1698,7 +1816,10 @@ def test_cli_forget_mt3_review_flag_resets_the_record_and_deletes_artifacts(
     assert main(["analyze", "--forget-mt3-review", "--no-transcribe", str(project)]) == 0
 
     result = read_sidecar(project)
-    assert result["analysis"]["mt3_review"] == {"status": "pending", "input_hash": None, "midi_file": None, "tracks": [], "error": None}
+    assert result["analysis"]["mt3_review"] == {
+        "status": "pending", "input_hash": None, "settings_hash": None,
+        "midi_file": None, "tracks": [], "error": None,
+    }
     assert not review_dir.exists()
 
 
