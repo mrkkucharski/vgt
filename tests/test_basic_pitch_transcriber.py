@@ -30,7 +30,12 @@ from vgt.transcribe import (
 
 
 def _spec(target: str = "guitar", **overrides):
-    spec = default_spec_for_target(target, midi_tempo=118.02)
+    # This whole module wants a representative `BasicPitchSpec` -- guitar's
+    # own implicit default is now the (unrelated) Essentia backend, so an
+    # explicit Basic Pitch profile is needed to keep using "guitar" as the
+    # convenient stand-in target these tests were written around.
+    modes = {"guitar": "guitar-harmonic"} if target == "guitar" else None
+    spec = default_spec_for_target(target, midi_tempo=118.02, modes=modes)
     if overrides:
         from dataclasses import replace
 

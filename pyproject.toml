@@ -36,6 +36,14 @@ madmom = [
 # falls back to a self-similarity novelty + peak-picking heuristic built on
 # librosa (a hard dependency above).
 msaf = ["msaf>=0.1.80"]
+# Essentia backs the `guitar-klapuri`/`guitar-melodia` transcription profiles
+# (classical multi-pitch estimation, see vgt.essentia_notes) -- isolated here
+# for the same reason `vgt.key`'s existing optional Essentia backend is: its
+# wheels are not reliable enough across platforms to make every `vgt` install
+# need it. Unlike `vgt.key`'s degrade-gracefully use, these two profiles have
+# no fallback -- selecting one without Essentia installed fails with a clear
+# error rather than silently running Basic Pitch.
+essentia = ["essentia"]
 
 [tool.uv.extra-build-dependencies]
 madmom = ["Cython", "numpy<2"]

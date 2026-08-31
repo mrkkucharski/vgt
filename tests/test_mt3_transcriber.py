@@ -327,10 +327,11 @@ def test_production_router_wires_a_real_mt3_transcriber() -> None:
 
     assert isinstance(router, TargetTranscriberRouter)
     assert isinstance(router.mt3, Mt3Transcriber)
-    # No profile selects mt3 yet (issue #288), so every documented target
-    # still resolves to its current backend.
+    # No profile defaults to mt3 (it is opt-in only, via `guitar-mt3`/
+    # `bass-mt3`), so no *default* target routes to it -- but guitar's own
+    # default is the Essentia backend, not Basic Pitch.
     for target in VALID_TARGETS:
-        assert router.for_target(target).name in {"drumscript", "pyin", "basic-pitch"}
+        assert router.for_target(target).name in {"drumscript", "pyin", "basic-pitch", "essentia"}
 
 
 def test_mt3_spec_serializes_its_full_pinned_identity() -> None:

@@ -5,6 +5,7 @@ import hashlib
 import pytest
 
 from vgt.transcribe import (
+    EssentiaSpec,
     FakeMt3Transcriber,
     FakeTranscriber,
     Mt3Spec,
@@ -15,6 +16,7 @@ from vgt.transcribe import (
 )
 from vgt.transcription_variants import (
     CACHE_BACKEND_DIR,
+    ESSENTIA_CACHE_BACKEND_DIR,
     MT3_CACHE_BACKEND_DIR,
     VariantRequest,
     cleanup_hash,
@@ -156,6 +158,74 @@ def test_strict_chords_needs_its_own_detection_group(tmp_path: Path) -> None:
     assert outcome.backend_invocations == 2
     assert len(outcome.detection_cache) == 2
     assert outcome.variants["v-detail"]["detection_hash"] != outcome.variants["v-strict"]["detection_hash"]
+
+
+def test_klapuri_and_melodia_need_separate_detection_groups(tmp_path: Path) -> None:
+    """Unlike `guitar-acoustic-detail`/`-clean` (identical detector settings,
+    shared raw run), Klapuri and Melodia are different estimators -- they must
+    never share a detection group even under otherwise-identical settings."""
+    source = _write_source(tmp_path)
+    klapuri = _variant("v-klapuri", "klapuri", "guitar-klapuri")
+    melodia = _variant("v-melodia", "melodia", "guitar-melodia")
+    transcriber = _CountingFake()
+
+    outcome = reconcile_variants(
+        target="guitar",
+        requests=[klapuri, melodia],
+        transcriber=transcriber,
+        source=source,
+        input_hash=_input_hash(source),
+        namespace_dir=tmp_path / "ns",
+    )
+
+    assert outcome.backend_invocations == 2
+    assert len(outcome.detection_cache) == 2
+    assert outcome.variants["v-klapuri"]["detection_hash"] != outcome.variants["v-melodia"]["detection_hash"]
+    assert outcome.variants["v-klapuri"]["status"] == outcome.variants["v-melodia"]["status"] == "transcribed"
+
+
+def test_essentia_variant_uses_the_essentia_cache_backend_directory(tmp_path: Path) -> None:
+    source = _write_source(tmp_path)
+    namespace_dir = tmp_path / "ns"
+    variant = _variant("v-klapuri", "klapuri", "guitar-klapuri")
+
+    outcome = reconcile_variants(
+        target="guitar", requests=[variant], transcriber=_CountingFake(),
+        source=source, input_hash=_input_hash(source), namespace_dir=namespace_dir,
+    )
+
+    assert outcome.backend_invocations == 1
+    dh = outcome.variants["v-klapuri"]["detection_hash"]
+    entry = outcome.detection_cache[dh]
+    assert entry["raw_midi_file"].startswith(f"transcription/cache/{ESSENTIA_CACHE_BACKEND_DIR}/")
+    assert entry["raw_notes_file"].startswith(f"transcription/cache/{ESSENTIA_CACHE_BACKEND_DIR}/")
+    assert (namespace_dir / entry["raw_midi_file"]).is_file()
+    assert (namespace_dir / entry["raw_notes_file"]).is_file()
+    assert outcome.variants["v-klapuri"]["status"] == "transcribed"
+    assert outcome.variants["v-klapuri"]["package_pin"] is None  # in-process, no pip pin
+
+
+def test_essentia_and_basic_pitch_raw_caches_never_collide(tmp_path: Path) -> None:
+    source = _write_source(tmp_path)
+    namespace_dir = tmp_path / "ns"
+
+    bp_variant = _variant("v-bp", "bp", "guitar-acoustic-detail")
+    bp_outcome = reconcile_variants(
+        target="guitar", requests=[bp_variant], transcriber=_CountingFake(),
+        source=source, input_hash=_input_hash(source), namespace_dir=namespace_dir,
+    )
+    bp_dh = bp_outcome.variants["v-bp"]["detection_hash"]
+
+    essentia_variant = _variant("v-klapuri", "klapuri", "guitar-klapuri")
+    essentia_outcome = reconcile_variants(
+        target="guitar", requests=[essentia_variant], transcriber=_CountingFake(),
+        source=source, input_hash=_input_hash(source), namespace_dir=namespace_dir,
+    )
+    essentia_dh = essentia_outcome.variants["v-klapuri"]["detection_hash"]
+
+    assert bp_dh != essentia_dh
+    assert (namespace_dir / "transcription" / "cache" / CACHE_BACKEND_DIR / bp_dh).is_dir()
+    assert (namespace_dir / "transcription" / "cache" / ESSENTIA_CACHE_BACKEND_DIR / essentia_dh).is_dir()
 
 
 def test_derived_artifacts_are_persisted_at_variant_scoped_paths(tmp_path: Path) -> None:
@@ -941,6 +1011,21 @@ def test_detection_identity_for_mt3_carries_its_own_pin_and_no_basic_pitch_field
     assert identity["note_normalization_version"] == spec.note_normalization_version
     assert "minimum_note_length_ms" not in identity
     assert "onset_threshold" not in identity
+
+
+def test_detection_identity_for_essentia_carries_its_own_fields_and_no_basic_pitch_fields() -> None:
+    spec = default_spec_for_target("guitar", midi_tempo=120.0, modes={"guitar": "guitar-klapuri"})
+    assert isinstance(spec, EssentiaSpec)
+
+    identity = detection_identity("guitar", "input-hash", spec)
+
+    assert identity["algorithm"] == "klapuri"
+    assert identity["algorithm_version"] == spec.algorithm_version
+    assert identity["merge_gap_ms"] == spec.merge_gap_ms
+    assert identity["minimum_frequency_hz"] == spec.minimum_frequency_hz
+    assert "onset_threshold" not in identity
+    assert "frame_length" not in identity  # a pYIN-only field
+    assert "repository" not in identity  # an MT3-only field
 
 
 def test_detection_identity_changes_with_either_normalization_version() -> None:

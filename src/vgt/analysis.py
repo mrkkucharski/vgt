@@ -753,7 +753,18 @@ def analyze(
                 raise AnalysisError("pass either transcriber or transcriber_router, not both")
             active_router = (
                 transcriber_router
-                or (TargetTranscriberRouter(transcriber, transcriber) if transcriber is not None else production_transcriber_router())
+                or (
+                    # `pyin` needs no explicit wiring here: `TargetTranscriberRouter`
+                    # already falls back to `basic_pitch` when it's unset. `essentia`
+                    # has no such fallback (by design -- see `EssentiaTranscriber`),
+                    # and guitar's own default now selects it, so this
+                    # single-backend convenience wrapper must wire it too, or a
+                    # caller passing just `transcriber` could no longer transcribe
+                    # guitar at its default profile at all.
+                    TargetTranscriberRouter(transcriber, transcriber, essentia=transcriber)
+                    if transcriber is not None
+                    else production_transcriber_router()
+                )
             )
             for target in targets_to_run:
                 analysis["transcription"]["targets"][target] = _refresh_target(

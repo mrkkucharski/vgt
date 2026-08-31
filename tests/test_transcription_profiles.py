@@ -15,7 +15,7 @@ from vgt.transcription_profiles import (
     validate_profile_for_target,
     validate_project_profiles,
 )
-from vgt.transcribe import Mt3Spec, PyinSpec
+from vgt.transcribe import EssentiaSpec, Mt3Spec, PyinSpec
 
 
 MINIMAL_PROFILE = """
@@ -131,6 +131,59 @@ extends = "guitar-mt3"
 """
     with pytest.raises(ProfileDefinitionError, match="does not support project overrides"):
         resolve_profile("my-mt3", parse_profiles_toml(text))
+
+
+# --- Essentia builtin profiles ---------------------------------------------
+
+
+def test_guitar_klapuri_resolves_with_no_cleanup_and_the_essentia_backend() -> None:
+    resolved = resolve_profile("guitar-klapuri")
+
+    assert resolved.backend == "essentia"
+    assert resolved.is_builtin is True
+    assert resolved.cleanup == ()
+    assert resolved.audio_frontend["stages"] == []  # raw stem, no HPSS frontend
+    assert resolved.detection["algorithm"] == "klapuri"
+    assert resolved.detection["minimum_frequency_hz"] == 70.0
+    assert resolved.detection["maximum_frequency_hz"] == 1400.0
+    assert "sample_rate_hz" in resolved.detection and "merge_gap_ms" in resolved.detection
+
+
+def test_guitar_melodia_resolves_identically_apart_from_algorithm() -> None:
+    klapuri = resolve_profile("guitar-klapuri")
+    melodia = resolve_profile("guitar-melodia")
+
+    assert melodia.backend == klapuri.backend == "essentia"
+    assert melodia.detection["algorithm"] == "melodia"
+    assert {k: v for k, v in melodia.detection.items() if k != "algorithm"} == {
+        k: v for k, v in klapuri.detection.items() if k != "algorithm"
+    }
+    assert melodia.cleanup == klapuri.cleanup == ()
+    assert resolved_detection_hash(klapuri) != resolved_detection_hash(melodia)
+
+
+def test_spec_from_resolved_essentia_profile_builds_an_essentia_spec() -> None:
+    resolved = resolve_profile("guitar-klapuri")
+
+    spec = spec_from_resolved_profile(resolved, midi_tempo=120.0)
+
+    assert isinstance(spec, EssentiaSpec)
+    assert spec.backend == "essentia"
+    assert spec.algorithm == "klapuri"
+    assert spec.midi_tempo == 120.0
+    assert spec.cleanup == ()
+
+
+def test_essentia_builtin_cannot_be_extended_by_a_project_profile() -> None:
+    text = """
+schema_version = 1
+
+[profiles.my-klapuri]
+target = "guitar"
+extends = "guitar-klapuri"
+"""
+    with pytest.raises(ProfileDefinitionError, match="does not support project overrides"):
+        resolve_profile("my-klapuri", parse_profiles_toml(text))
 
 
 # --- TOML parsing and validation -------------------------------------------

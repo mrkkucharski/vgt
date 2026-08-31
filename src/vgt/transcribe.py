@@ -40,6 +40,7 @@ from .drum_cleanup import (
     cleaned_events_to_midi_notes,
 )
 from .drum_grid import detect_uniform_step, reconcile_event_times
+from .essentia_notes import ESSENTIA_ALGORITHM_VERSION
 from .pyin_notes import PYIN_ALGORITHM_VERSION
 
 # Valid target names: the separation artifact names, plus the untouched mix
@@ -257,6 +258,23 @@ PYIN_REARTICULATION_RISE_DB = 0.8
 # one. The measured plateau runs 0.31-0.5 beats.
 PYIN_REARTICULATION_MINIMUM_SPACING_BEATS = 0.375
 
+# Essentia multi-pitch backend (see `vgt.essentia_notes`): a classical,
+# non-learned polyphonic alternative to Basic Pitch/MT3 for guitar. Unlike
+# pYIN, this is genuinely polyphonic -- the frequency window and note-length
+# floor below are analysis settings for the salience function, not a
+# monophony assumption.
+ESSENTIA_SAMPLE_RATE_HZ = 44100.0
+# Matches `_GUITAR_PROFILE`'s own window: below drop/Eb-tuned low E2 (82.4
+# Hz), above the practical top of a 24-fret guitar (E6, 1318.5 Hz).
+ESSENTIA_MIN_FREQUENCY_HZ = 70.0
+ESSENTIA_MAX_FREQUENCY_HZ = 1400.0
+ESSENTIA_MINIMUM_NOTE_LENGTH_MS = 80.0
+# Essentia's frame-to-frame pitch candidates are noisy enough that a held
+# note routinely drops out for a frame or two; bridging gaps up to this long
+# turns that back into one note rather than several fragments.
+ESSENTIA_MERGE_GAP_MS = 30.0
+
+
 # Bass, tracked monophonically. The frequency window is the *fundamental*
 # search range handed to pYIN, not a post-filter. Its supported production
 # range is 35–330 Hz: 35 Hz is higher than a five-string low B (30.9 Hz), so
@@ -320,6 +338,17 @@ class PyinSettings:
 
 
 @dataclass(frozen=True)
+class EssentiaSettings:
+    """The analysis settings a `backend="essentia"` profile adds on top of the
+    frequency window and note-length floor it already shares with a Basic
+    Pitch profile (see `InstrumentProfile.essentia`)."""
+
+    algorithm: str  # "klapuri" | "melodia"
+    sample_rate_hz: float = ESSENTIA_SAMPLE_RATE_HZ
+    merge_gap_ms: float = ESSENTIA_MERGE_GAP_MS
+
+
+@dataclass(frozen=True)
 class InstrumentProfile:
     """One instrument's complete transcription identity: its detector settings
     plus its ordered post-processing pipeline.
@@ -354,6 +383,8 @@ class InstrumentProfile:
     probe_expectations: ProbeExpectations | None = None
     # Required when `backend == "pyin"`; ignored otherwise.
     pyin: PyinSettings | None = None
+    # Required when `backend == "essentia"`; ignored otherwise.
+    essentia: EssentiaSettings | None = None
     # Bars of sustain `clamp_sustain` allows, when this profile's cleanup
     # includes that stage. Per-profile because a bass ring-out worth keeping is
     # not the same length as an acoustic guitar's.
@@ -614,6 +645,32 @@ _GUITAR_MT3_PROFILE = InstrumentProfile(
 )
 _BASS_MT3_PROFILE = replace(_GUITAR_MT3_PROFILE, name="bass-mt3")
 
+# Essentia multi-pitch alternatives: opt-in, experimental, and deliberately
+# bare -- same rationale as the MT3 profiles just above (onset/frame-
+# threshold/frequency-window/melodia fields are never read for
+# backend="essentia", see `InstrumentProfile`'s docstring; no cleanup
+# pipeline, so each algorithm's own raw output is what a comparison actually
+# sees, before any measured evidence would motivate a derived cleanup
+# recipe). `minimum_frequency_hz`/`maximum_frequency_hz` and
+# `minimum_note_length_ms` *are* read here, unlike MT3 -- Essentia's salience
+# search needs a frequency window and the segmenter needs a note floor, both
+# read from these shared fields exactly like a pyin profile's are.
+_GUITAR_KLAPURI_PROFILE = InstrumentProfile(
+    name="guitar-klapuri",
+    backend="essentia",
+    onset_threshold=DEFAULT_ONSET_THRESHOLD,
+    frame_threshold=DEFAULT_FRAME_THRESHOLD,
+    minimum_note_length_ms=ESSENTIA_MINIMUM_NOTE_LENGTH_MS,
+    minimum_frequency_hz=ESSENTIA_MIN_FREQUENCY_HZ,
+    maximum_frequency_hz=ESSENTIA_MAX_FREQUENCY_HZ,
+    multiple_pitch_bends=DEFAULT_MULTIPLE_PITCH_BENDS,
+    melodia_trick=DEFAULT_MELODIA_TRICK,
+    essentia=EssentiaSettings(algorithm="klapuri"),
+)
+_GUITAR_MELODIA_PROFILE = replace(
+    _GUITAR_KLAPURI_PROFILE, name="guitar-melodia", essentia=EssentiaSettings(algorithm="melodia")
+)
+
 _INSTRUMENT_PROFILES: dict[str, InstrumentProfile] = {
     "default": _DEFAULT_PROFILE,
     "guitar": _GUITAR_PROFILE,
@@ -629,6 +686,8 @@ _INSTRUMENT_PROFILES: dict[str, InstrumentProfile] = {
     "guitar-harmonic": _GUITAR_HARMONIC_PROFILE,
     "guitar-mt3": _GUITAR_MT3_PROFILE,
     "bass-mt3": _BASS_MT3_PROFILE,
+    "guitar-klapuri": _GUITAR_KLAPURI_PROFILE,
+    "guitar-melodia": _GUITAR_MELODIA_PROFILE,
 }
 VALID_PROFILE_NAMES: tuple[str, ...] = tuple(_INSTRUMENT_PROFILES)
 
@@ -765,6 +824,8 @@ _PROFILE_NAMES_BY_TARGET["guitar"] = (
     "guitar-acoustic-strict-chords",
     "guitar-harmonic",
     "guitar-mt3",
+    "guitar-klapuri",
+    "guitar-melodia",
 )
 _PROFILE_NAMES_BY_TARGET["bass"] = (
     "default",
@@ -837,7 +898,13 @@ def _profile_for_target(target: str, modes: Mapping[str, str] | None) -> Instrum
     """
     profile_name = modes.get(target) if isinstance(modes, Mapping) else None
     if target == "guitar" and (profile_name is None or profile_name not in valid_profile_names_for_target(target)):
-        return _GUITAR_HARMONIC_PROFILE
+        # guitar's real default is the classical multi-pitch backend, not
+        # Basic Pitch. Essentia is optional with no fallback (see
+        # `EssentiaTranscriber`/`TargetTranscriberRouter.for_target`) -- a
+        # project analyzed where it isn't installed fails loudly with an
+        # install hint rather than silently transcribing with a different
+        # backend than the one it asked for.
+        return _GUITAR_KLAPURI_PROFILE
     # `default` is the target-default selection, not an instruction to bypass
     # that target's profile. This matters for bass, whose default is pYIN;
     # the retained `bass-basic-pitch` profile remains the explicit opt-in.
@@ -996,6 +1063,42 @@ class PyinSpec:
     # whose tempo is re-detected invalidates for the right reason -- the
     # spacing genuinely changed -- rather than because a derived number moved.
     rearticulation_minimum_spacing_beats: float = PYIN_REARTICULATION_MINIMUM_SPACING_BEATS
+    tempo_map: "TempoMapReference | None" = None
+    cleanup: tuple[CleanupStage, ...] = ()
+
+    def to_dict(self) -> dict[str, Any]:
+        data = asdict(self)
+        if data["tempo_map"] is None:
+            del data["tempo_map"]
+        data["cleanup"] = [{"name": stage.name, "params": stage.params} for stage in self.cleanup]
+        return data
+
+
+@dataclass(frozen=True)
+class EssentiaSpec:
+    """Everything that changes one Essentia multi-pitch target's output.
+
+    Like `PyinSpec` this carries no `package_pin`/`serialization`: Essentia
+    runs in-process (an optional import, not a hard vgt dependency -- see
+    `vgt.essentia_notes`'s module docstring), so what stands in for a pinned
+    runtime is `algorithm_version` (`vgt.essentia_notes.ESSENTIA_ALGORITHM_VERSION`),
+    for the same reason Essentia's own package version is deliberately not
+    part of the identity.
+
+    Every field here is read by the backend: a `essentia` variant's
+    `settings_hash` must not contain an `onset_threshold` or a
+    `melodia_trick` that nothing consults, same discipline as `PyinSpec`.
+    """
+
+    backend: str  # "essentia" | "fake"
+    algorithm: str  # "klapuri" | "melodia"
+    algorithm_version: int
+    sample_rate_hz: float
+    minimum_note_length_ms: float
+    minimum_frequency_hz: float
+    maximum_frequency_hz: float
+    merge_gap_ms: float
+    midi_tempo: float | None
     tempo_map: "TempoMapReference | None" = None
     cleanup: tuple[CleanupStage, ...] = ()
 
@@ -1191,14 +1294,15 @@ class Mt3Spec:
         return data
 
 
-TranscriptionSpec = BasicPitchSpec | PyinSpec | DrumScriptSpec | AdtofSpec | Mt3Spec
+TranscriptionSpec = BasicPitchSpec | PyinSpec | EssentiaSpec | DrumScriptSpec | AdtofSpec | Mt3Spec
 
 # The note-producing specs. Each carries a `cleanup` pipeline, a `midi_tempo`
 # and a `tempo_map`, which is everything `_apply_cleanup_stages` and
-# `derive_variant_artifacts` need -- so a monophonic or MT3 variant reuses the
-# same raw-detection/derived-cleanup machinery as a Basic Pitch one rather
-# than getting a parallel code path (see `vgt.transcription_variants`).
-NoteSpec = BasicPitchSpec | PyinSpec | Mt3Spec
+# `derive_variant_artifacts` need -- so a monophonic, classical multi-pitch,
+# or MT3 variant reuses the same raw-detection/derived-cleanup machinery as a
+# Basic Pitch one rather than getting a parallel code path (see
+# `vgt.transcription_variants`).
+NoteSpec = BasicPitchSpec | PyinSpec | EssentiaSpec | Mt3Spec
 
 
 @dataclass(frozen=True)
@@ -1352,6 +1456,17 @@ def default_spec_for_target(
             # claim "pyin" even under `FakeTranscriber`.
             backend="pyin" if backend == "basic-pitch" else backend,
         )
+    if profile.backend == "essentia":
+        return essentia_spec_from_profile(
+            profile,
+            midi_tempo=midi_tempo,
+            sustain_clamp_s=sustain_clamp_s,
+            tempo_map=tempo_map,
+            # Same reasoning as the pyin branch above: `backend` is the
+            # caller's override (the offline suite forces `"fake"`), and the
+            # profile only decides which real backend would run.
+            backend="essentia" if backend == "basic-pitch" else backend,
+        )
     return BasicPitchSpec(
         backend=backend,
         package_pin=package_pin,
@@ -1409,6 +1524,42 @@ def pyin_spec_from_profile(
     )
 
 
+def essentia_spec_from_profile(
+    profile: InstrumentProfile,
+    *,
+    midi_tempo: float | None,
+    sustain_clamp_s: float | None,
+    tempo_map: TempoMapReference | None = None,
+    backend: str = "essentia",
+) -> EssentiaSpec:
+    """Build the `EssentiaSpec` a `backend="essentia"` profile describes.
+
+    Shared by `default_spec_for_target` and
+    `transcription_profiles.spec_from_resolved_profile`, so a profile selected
+    through `--mode` and one selected through `variant add --profile` can never
+    resolve to different settings.
+    """
+    if profile.backend != "essentia":
+        raise TranscriptionError(f"profile {profile.name!r} does not use the essentia backend")
+    if profile.essentia is None:
+        raise TranscriptionError(f"essentia profile {profile.name!r} carries no EssentiaSettings")
+    if profile.minimum_frequency_hz is None or profile.maximum_frequency_hz is None:
+        raise TranscriptionError(f"essentia profile {profile.name!r} needs an explicit frequency window")
+    return EssentiaSpec(
+        backend=backend,
+        algorithm=profile.essentia.algorithm,
+        algorithm_version=ESSENTIA_ALGORITHM_VERSION,
+        sample_rate_hz=profile.essentia.sample_rate_hz,
+        minimum_note_length_ms=profile.minimum_note_length_ms,
+        minimum_frequency_hz=profile.minimum_frequency_hz,
+        maximum_frequency_hz=profile.maximum_frequency_hz,
+        merge_gap_ms=profile.essentia.merge_gap_ms,
+        midi_tempo=midi_tempo,
+        tempo_map=tempo_map,
+        cleanup=_instantiate_cleanup(profile.cleanup, sustain_clamp_s=sustain_clamp_s),
+    )
+
+
 def spec_hash(spec: TranscriptionSpec) -> str:
     return hashlib.sha256(json.dumps(spec.to_dict(), sort_keys=True).encode("utf-8")).hexdigest()
 
@@ -1459,9 +1610,10 @@ def _spec_package_pin(spec: TranscriptionSpec) -> str | None:
     """The pinned package a spec's backend runs, or `None` for one with no
     single pip pin. pYIN runs in-process against librosa (already a vgt
     dependency; `PyinSpec.algorithm_version` carries its runtime identity
-    instead). MT3 is a git-cloned project pinned by commit, not a pip package
-    (see `Mt3Spec.repository`/`commit`)."""
-    return None if isinstance(spec, (PyinSpec, Mt3Spec)) else spec.package_pin
+    instead), and Essentia the same way (`EssentiaSpec.algorithm_version`).
+    MT3 is a git-cloned project pinned by commit, not a pip package (see
+    `Mt3Spec.repository`/`commit`)."""
+    return None if isinstance(spec, (PyinSpec, EssentiaSpec, Mt3Spec)) else spec.package_pin
 
 
 def _settings_dict(spec: TranscriptionSpec) -> dict[str, Any]:
@@ -1475,6 +1627,17 @@ def _settings_dict(spec: TranscriptionSpec) -> dict[str, Any]:
             "minimum_note_length_ms": spec.minimum_note_length_ms,
             "minimum_frequency_hz": spec.minimum_frequency_hz,
             "maximum_frequency_hz": spec.maximum_frequency_hz,
+            "midi_tempo": spec.midi_tempo,
+        }
+    if isinstance(spec, EssentiaSpec):
+        return {
+            "algorithm": spec.algorithm,
+            "algorithm_version": spec.algorithm_version,
+            "sample_rate_hz": spec.sample_rate_hz,
+            "minimum_note_length_ms": spec.minimum_note_length_ms,
+            "minimum_frequency_hz": spec.minimum_frequency_hz,
+            "maximum_frequency_hz": spec.maximum_frequency_hz,
+            "merge_gap_ms": spec.merge_gap_ms,
             "midi_tempo": spec.midi_tempo,
         }
     if isinstance(spec, DrumScriptSpec):
@@ -1716,6 +1879,8 @@ class TargetTranscriberRouter:
     pyin: Transcriber | None = None
     # Routed to by the `guitar-mt3`/`bass-mt3` profiles (issue #288).
     mt3: Transcriber | None = None
+    # Routed to by the `guitar-klapuri`/`guitar-melodia` profiles.
+    essentia: Transcriber | None = None
 
     def for_target(self, target: str, modes: Mapping[str, str] | None = None) -> Transcriber:
         validate_target(target)
@@ -1728,6 +1893,10 @@ class TargetTranscriberRouter:
             if self.mt3 is None:
                 raise TranscriptionError("MT3 is not available in this router")
             return self.mt3
+        if backend == "essentia":
+            if self.essentia is None:
+                raise TranscriptionError("Essentia is not available in this router")
+            return self.essentia
         if backend == "pyin":
             return self.pyin if self.pyin is not None else self.basic_pitch
         return self.drumscript if backend == "drumscript" else self.basic_pitch
@@ -1762,9 +1931,11 @@ def production_transcriber_router() -> TranscriberRouter:
     """Current production route: DrumScript handles drums, pYIN handles the
     monophonic targets its profiles claim (bass), Basic Pitch everything else.
 
-    `mt3=Mt3Transcriber()` is wired for when a future profile claims it (issue
-    #288); constructing it does nothing until a target is actually routed to
-    it, exactly like `AdtofTranscriber()` above."""
+    `mt3=Mt3Transcriber()`/`essentia=EssentiaTranscriber()` are wired for when
+    a profile claims them (issue #288, and `guitar-klapuri`/`guitar-melodia`);
+    constructing either does nothing until a target is actually routed to it,
+    exactly like `AdtofTranscriber()` above -- `EssentiaTranscriber()` in
+    particular never imports Essentia itself."""
     basic_pitch = BasicPitchTranscriber()
     return TargetTranscriberRouter(
         basic_pitch=basic_pitch,
@@ -1772,6 +1943,7 @@ def production_transcriber_router() -> TranscriberRouter:
         adtof=AdtofTranscriber(),
         pyin=PyinTranscriber(),
         mt3=Mt3Transcriber(),
+        essentia=EssentiaTranscriber(),
         drumscript_targets=("drums",),
     )
 
@@ -1797,8 +1969,8 @@ def _fake_notes(source: Path, spec: TranscriptionSpec, note_count: int = 4) -> l
     """A short, deterministic note list: (start_s, end_s, pitch_midi, velocity)."""
     # Inline `isinstance` rather than a hoisted bool: only the inline form lets
     # a type checker narrow the spec union before the attribute access.
-    minimum_frequency_hz = spec.minimum_frequency_hz if isinstance(spec, (BasicPitchSpec, PyinSpec)) else None
-    maximum_frequency_hz = spec.maximum_frequency_hz if isinstance(spec, (BasicPitchSpec, PyinSpec)) else None
+    minimum_frequency_hz = spec.minimum_frequency_hz if isinstance(spec, (BasicPitchSpec, PyinSpec, EssentiaSpec)) else None
+    maximum_frequency_hz = spec.maximum_frequency_hz if isinstance(spec, (BasicPitchSpec, PyinSpec, EssentiaSpec)) else None
     min_pitch = _hz_to_midi(minimum_frequency_hz or 82.4)  # standard-tuning low E as a fallback center
     max_pitch = _hz_to_midi(maximum_frequency_hz or 880.0)
     if max_pitch <= min_pitch:
@@ -1977,7 +2149,7 @@ class FakeTranscriber:
         notes = _fake_notes(source, spec)
         midi_path = destination_dir / "transcription.mid"
         notes_path = destination_dir / "transcription.csv"
-        tempo_bpm = spec.midi_tempo if isinstance(spec, (BasicPitchSpec, PyinSpec, Mt3Spec)) else None
+        tempo_bpm = spec.midi_tempo if isinstance(spec, (BasicPitchSpec, PyinSpec, EssentiaSpec, Mt3Spec)) else None
         tempo_bpm = tempo_bpm or 120.0
         _write_midi(midi_path, notes, tempo_bpm, tempo_map=spec.tempo_map)
         _write_notes_csv(notes_path, notes, source, spec)
@@ -3047,6 +3219,91 @@ class PyinTranscriber:
     ) -> TranscriptionResult:
         if not isinstance(spec, PyinSpec):
             raise TranscriptionError("PyinTranscriber requires a PyinSpec")
+        raw = self.detect_raw(source, destination_dir, spec, progress)
+        return derive_variant_artifacts(
+            raw.notes, spec, midi_path=raw.raw_midi_path, notes_path=raw.raw_notes_path
+        )
+
+
+class EssentiaTranscriber:
+    """Classical multi-pitch backend (see `vgt.essentia_notes`).
+
+    Unlike Basic Pitch/DrumScript/MT3 this runs in-process, but unlike pYIN,
+    Essentia is *not* a hard vgt dependency -- it is an optional import (see
+    `pyproject.toml`'s `essentia` extra), because its wheels are not reliable
+    enough across platforms to make every `vgt` install need it (the same
+    caveat `vgt.key`'s existing optional Essentia backend already documents).
+    There is no fallback: an unavailable or failing import raises
+    `TranscriptionError` with the install hint, exactly like a missing MT3
+    provisioning does, rather than silently running Basic Pitch instead.
+
+    It implements `detect_raw` as well as `transcribe` so a variant joins the
+    same two-level cache as every other backend's: the multi-pitch track is by
+    far the expensive part, and retuning only `cleanup` must not re-run it.
+    """
+
+    name = "essentia"
+
+    def detect_raw(
+        self,
+        source: Path,
+        destination_dir: Path,
+        spec: TranscriptionSpec,
+        progress: Callable[[str], None] | None = None,
+    ) -> RawDetectionResult:
+        emit = progress or (lambda _message: None)
+        if not isinstance(spec, EssentiaSpec):
+            raise TranscriptionError("EssentiaTranscriber requires an EssentiaSpec")
+        try:
+            destination_dir.mkdir(parents=True, exist_ok=True)
+        except OSError as exc:
+            raise TranscriptionError(f"could not prepare {destination_dir}: {exc}") from exc
+
+        emit(f"transcribing (essentia/{spec.algorithm}): {source.name}")
+        from .essentia_notes import transcribe_multipitch
+
+        try:
+            raw_notes = transcribe_multipitch(
+                str(source),
+                algorithm=spec.algorithm,
+                sample_rate_hz=spec.sample_rate_hz,
+                minimum_frequency_hz=spec.minimum_frequency_hz,
+                maximum_frequency_hz=spec.maximum_frequency_hz,
+                minimum_note_length_ms=spec.minimum_note_length_ms,
+                merge_gap_ms=spec.merge_gap_ms,
+            )
+        except ImportError as exc:
+            raise TranscriptionError(
+                f"Essentia is not installed ({exc}); install it with `uv pip install essentia` "
+                'or add the `essentia` extra (`pip install "vgt[essentia]"`)'
+            ) from exc
+        except TranscriptionError:
+            raise
+        except Exception as exc:  # essentia/numpy raise a wide range of errors
+            raise TranscriptionError(f"essentia ({spec.algorithm}) failed on {source.name}: {exc}") from exc
+
+        notes = [
+            ParsedNote(start_s=start, end_s=end, pitch_midi=pitch, velocity=velocity, pitch_bend=())
+            for start, end, pitch, velocity in raw_notes
+        ]
+        midi_path = destination_dir / "transcription.mid"
+        notes_path = destination_dir / "transcription.csv"
+        _write_parsed_notes_csv(notes_path, notes)
+        _write_midi(midi_path, raw_notes, spec.midi_tempo or 120.0, tempo_map=spec.tempo_map)
+        emit(f"detected (essentia/{spec.algorithm}): {len(notes)} notes")
+        return RawDetectionResult(
+            notes=notes, raw_midi_path=midi_path, raw_notes_path=notes_path, midi_tempo=spec.midi_tempo
+        )
+
+    def transcribe(
+        self,
+        source: Path,
+        destination_dir: Path,
+        spec: TranscriptionSpec,
+        progress: Callable[[str], None] | None = None,
+    ) -> TranscriptionResult:
+        if not isinstance(spec, EssentiaSpec):
+            raise TranscriptionError("EssentiaTranscriber requires an EssentiaSpec")
         raw = self.detect_raw(source, destination_dir, spec, progress)
         return derive_variant_artifacts(
             raw.notes, spec, midi_path=raw.raw_midi_path, notes_path=raw.raw_notes_path

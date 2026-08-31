@@ -28,6 +28,7 @@ import hashlib
 import json
 import tomllib
 
+from .essentia_notes import ESSENTIA_ALGORITHM_VERSION
 from .transcribe import (
     BASIC_PITCH_PACKAGE_PIN,
     BASIC_PITCH_SERIALIZATION,
@@ -49,6 +50,7 @@ from .transcribe import (
     GUITAR_SUSTAIN_CLAMP_BARS,
     BasicPitchSpec,
     CleanupStage,
+    EssentiaSpec,
     InstrumentProfile,
     Mt3Spec,
     PyinSpec,
@@ -449,6 +451,8 @@ def resolve_profile(name: str, project_profiles: Mapping[str, RawProfileDefiniti
             detection = _profile_detection_fields(base)
         elif base.backend == "pyin":
             detection = _pyin_detection_fields(base)
+        elif base.backend == "essentia":
+            detection = _essentia_detection_fields(base)
         elif base.backend == "mt3":
             detection = _mt3_detection_fields()
         else:
@@ -569,6 +573,22 @@ def _profile_detection_fields(profile: InstrumentProfile) -> dict[str, Any]:
     }
 
 
+def _essentia_detection_fields(profile: InstrumentProfile) -> dict[str, Any]:
+    """An essentia profile's detection settings, in the same `resolved.detection`
+    slot a Basic Pitch/pYIN profile fills -- so `profile show`, `variant list`,
+    and the sidecar's `resolved_settings` describe what actually ran instead
+    of an empty table or, worse, Basic Pitch fields nothing consulted."""
+    settings = profile.essentia
+    fields: dict[str, Any] = {
+        "minimum_note_length_ms": profile.minimum_note_length_ms,
+        "minimum_frequency_hz": profile.minimum_frequency_hz,
+        "maximum_frequency_hz": profile.maximum_frequency_hz,
+    }
+    if settings is not None:
+        fields.update(algorithm=settings.algorithm, sample_rate_hz=settings.sample_rate_hz, merge_gap_ms=settings.merge_gap_ms)
+    return fields
+
+
 def _mt3_detection_fields() -> dict[str, Any]:
     """MT3's pinned identity, in the same `resolved.detection` slot a Basic
     Pitch/pYIN profile fills -- so `profile show`/`variant add` report the
@@ -682,7 +702,7 @@ def spec_from_resolved_profile(
     tempo_map: TempoMapReference | None = None,
     mt3_checkpoint_fingerprint: str | None = None,
     target: str | None = None,
-) -> BasicPitchSpec | PyinSpec | Mt3Spec:
+) -> BasicPitchSpec | PyinSpec | EssentiaSpec | Mt3Spec:
     """Build the spec a resolved profile (builtin or project-local) describes
     -- the bridge `transcription_profiles.py`'s module docstring calls out as
     later-issue work: turning a `ResolvedProfile` into the same spec shape
@@ -736,6 +756,22 @@ def spec_from_resolved_profile(
             minimum_note_length_ms=detection["minimum_note_length_ms"],
             minimum_frequency_hz=detection["minimum_frequency_hz"],
             maximum_frequency_hz=detection["maximum_frequency_hz"],
+            midi_tempo=midi_tempo,
+            tempo_map=tempo_map,
+            cleanup=cleanup,
+        )
+    if resolved.backend == "essentia":
+        detection = resolved.detection
+        cleanup = _instantiate_resolved_cleanup(resolved.cleanup, midi_tempo=midi_tempo, time_signature=time_signature)
+        return EssentiaSpec(
+            backend="essentia",
+            algorithm=detection["algorithm"],
+            algorithm_version=ESSENTIA_ALGORITHM_VERSION,
+            sample_rate_hz=detection["sample_rate_hz"],
+            minimum_note_length_ms=detection["minimum_note_length_ms"],
+            minimum_frequency_hz=detection["minimum_frequency_hz"],
+            maximum_frequency_hz=detection["maximum_frequency_hz"],
+            merge_gap_ms=detection["merge_gap_ms"],
             midi_tempo=midi_tempo,
             tempo_map=tempo_map,
             cleanup=cleanup,
