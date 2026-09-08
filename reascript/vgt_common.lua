@@ -1057,20 +1057,34 @@ local function already_recorded(job_id)
   return record ~= nil
 end
 
+-- Short label appended to a track-job result's name, per `--backend` value
+-- (see vgt_transcribe_track.lua's TRANSCRIPTION_BACKENDS and
+-- vgt.track_jobs.TRACK_JOB_BACKENDS on the Python side). An unrecognized or
+-- absent backend falls back to the value itself, or "MT3" when there is
+-- none at all -- an older job's status.json predates the backend picker and
+-- always ran MT3.
+local TRACK_JOB_BACKEND_SUFFIX = {
+  mt3 = "MT3",
+  ["guitar-klapuri"] = "guitar-klapuri",
+  ["guitar-melodia"] = "guitar-melodia",
+  ["basic-pitch"] = "Basic Pitch",
+}
+
 -- The result track's name mirrors the source track's name verbatim --
--- prefix and all -- with " (MT3)" appended, from the name captured at spawn
--- time (the source may no longer exist live by the time the job finishes --
--- see the plan's "user discards/deletes the source track" edge case).
--- Deliberately not re-prefixed with "[vgt]": the result sits next to
--- whatever the user was actually working on (e.g. a `[work] Guitar` source
--- produces `[work] Guitar (MT3)`, not a track that jumps into vgt's own
--- managed namespace) -- and it is safe regardless of what that prefix is,
--- since add_track_job_track deliberately never marks this track
--- vgt_managed (see that function's own comment).
-local function track_job_name(source_track_name)
+-- prefix and all -- with the backend's suffix appended in parentheses, from
+-- the name/backend captured at spawn time (the source may no longer exist
+-- live by the time the job finishes -- see the plan's "user discards/
+-- deletes the source track" edge case). Deliberately not re-prefixed with
+-- "[vgt]": the result sits next to whatever the user was actually working
+-- on (e.g. a `[work] Guitar` source produces `[work] Guitar (MT3)`, not a
+-- track that jumps into vgt's own managed namespace) -- and it is safe
+-- regardless of what that prefix is, since add_track_job_track deliberately
+-- never marks this track vgt_managed (see that function's own comment).
+local function track_job_name(source_track_name, backend)
   local name = source_track_name
   if not name or name == "" then name = "Track" end
-  return name .. " (MT3)"
+  local suffix = TRACK_JOB_BACKEND_SUFFIX[backend] or backend or "MT3"
+  return name .. " (" .. suffix .. ")"
 end
 
 local function find_track_by_guid(guid)
@@ -1105,7 +1119,7 @@ local function import_finished_job(namespace, job_id, status)
   local pcm_source = reaper.PCM_Source_CreateFromFile(midi_path)
   if not pcm_source then error("REAPER could not open the transcribed MIDI: " .. midi_path) end
 
-  local name = track_job_name(status.source_track_name)
+  local name = track_job_name(status.source_track_name, status.backend)
   local track = add_track_job_track(insert_index, name, job_id)
   if source_track and source_folder_depth < 0 then
     reaper.SetMediaTrackInfo_Value(source_track, "I_FOLDERDEPTH", 0)

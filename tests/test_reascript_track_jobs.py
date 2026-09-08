@@ -219,6 +219,60 @@ def test_guessed_program_for_track_name_matches_known_targets() -> None:
     assert _run(lua_program).stdout == "25|33|0"
 
 
+def test_common_program_menu_labels_lists_curated_instruments_plus_a_manual_escape_hatch() -> None:
+    lua_program = "\n".join([
+        "reaper = {}",
+        _helpers_prefix(FAKE_COMMON),
+        "local labels = common_program_menu_labels()",
+        "io.write(#labels, '|', labels[1], '|', labels[2], '|', labels[#labels])",
+    ])
+    assert _run(lua_program).stdout == (
+        "9|0: Acoustic Grand Piano|4: Electric Piano 1|Other (enter a GM program number)..."
+    )
+
+
+def test_common_programs_covers_every_menu_label() -> None:
+    # Every curated program (not just the family ranges) resolves to a real
+    # GM name, and the flat COMMON_PROGRAMS list stays in lockstep with the
+    # labels pick_common_program numbers its menu by.
+    lua_program = "\n".join([
+        "reaper = {}",
+        _helpers_prefix(FAKE_COMMON),
+        "for _, program in ipairs(COMMON_PROGRAMS) do io.write(program, ':', gm_program_name(program), '|') end",
+    ])
+    assert _run(lua_program).stdout == (
+        "0:Acoustic Grand Piano|4:Electric Piano 1|16:Drawbar Organ|48:String Ensemble 1|"
+        "52:Choir Aahs|56:Trumpet|65:Alto Sax|73:Flute|"
+    )
+
+
+def test_backend_menu_labels_lists_every_transcription_method() -> None:
+    lua_program = "\n".join([
+        "reaper = {}",
+        _helpers_prefix(FAKE_COMMON),
+        "local labels = backend_menu_labels()",
+        "io.write(#labels, '|', labels[1], '|', labels[2], '|', labels[3], '|', labels[4])",
+    ])
+    assert _run(lua_program).stdout == (
+        "4|MT3 (multi-instrument decoder, default)|guitar-klapuri (Essentia multi-pitch DSP)|"
+        "guitar-melodia (Essentia, alternate algorithm)|Basic Pitch (raw, general-purpose)"
+    )
+
+
+def test_transcription_backends_values_match_the_cli_backend_flag() -> None:
+    # These `value`s are passed verbatim as `--backend` on the spawned
+    # command line (see transcribe_selected_track) -- they must stay in
+    # lockstep with `vgt.track_jobs.TRACK_JOB_BACKENDS`.
+    lua_program = "\n".join([
+        "reaper = {}",
+        _helpers_prefix(FAKE_COMMON),
+        "local values = {}",
+        "for _, backend in ipairs(TRANSCRIPTION_BACKENDS) do values[#values + 1] = backend.value end",
+        "io.write(table.concat(values, '|'))",
+    ])
+    assert _run(lua_program).stdout == "mt3|guitar-klapuri|guitar-melodia|basic-pitch"
+
+
 def test_project_tempo_or_refuse_requires_an_analyzed_bpm() -> None:
     lua_program = "\n".join([
         "reaper = {}",

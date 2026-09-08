@@ -1,7 +1,11 @@
-"""Offline coverage for the on-demand single-track MT3 job runner
-(docs/on-demand-track-transcription-plan.md). Every scenario fakes
+"""Offline coverage for the on-demand single-track job runner
+(docs/on-demand-track-transcription-plan.md). MT3 scenarios fake
 provisioning state and the `mt3-transcribe` subprocess, exactly like
 test_mt3_transcriber.py; nothing here clones MT3 or imports TensorFlow/JAX.
+The non-MT3 `--backend` alternatives (guitar-klapuri/guitar-melodia/
+basic-pitch) fake `EssentiaTranscriber`/`BasicPitchTranscriber` themselves,
+the same seam `test_analysis.py` fakes for the main pipeline, so nothing
+here needs a real Essentia install or Basic Pitch's `uvx` subprocess either.
 """
 
 from __future__ import annotations
@@ -18,6 +22,7 @@ import pytest
 from vgt.cli import main
 from vgt.mt3_provision import CheckpointManifest, Mt3ProvisionError
 from vgt.track_jobs import run_track_job, write_status
+from vgt.transcribe import TranscriptionResult
 
 
 def _project_with_tempo(tmp_path: Path, *, bpm: float | None = 120.0) -> Path:
@@ -177,6 +182,133 @@ def test_run_track_job_unexpected_exception_is_captured_as_error(tmp_path: Path,
     assert status["status"] == "error"
     assert "unexpected error" in status["error"]
     assert "disk full" in status["error"]
+
+
+class _FakeProfileTranscriber:
+    """Stand-in for `BasicPitchTranscriber`/`EssentiaTranscriber`: fabricates
+    a small valid MIDI/CSV pair without a real Essentia install or Basic
+    Pitch's `uvx` subprocess. Mirrors `_fake_run_success`'s role for MT3, one
+    level up the stack (`_run_profile_backend` calls `.transcribe` directly,
+    not a subprocess)."""
+
+    def __init__(self, note_count: int = 2) -> None:
+        self._note_count = note_count
+
+    def transcribe(self, source, destination_dir, spec, progress=None):
+        destination_dir.mkdir(parents=True, exist_ok=True)
+        midi_path = destination_dir / "transcription.mid"
+        notes_path = destination_dir / "transcription.csv"
+        midi = mido.MidiFile(ticks_per_beat=480)
+        midi.tracks.append(mido.MidiTrack([mido.MetaMessage("set_tempo", tempo=500_000, time=0)]))
+        track = mido.MidiTrack()
+        for index in range(self._note_count):
+            track.append(mido.Message("note_on", note=60 + index, velocity=90, time=0))
+            track.append(mido.Message("note_off", note=60 + index, velocity=0, time=240))
+        midi.tracks.append(track)
+        midi.save(str(midi_path))
+        notes_path.write_text("start_s,end_s,pitch_midi,velocity\n0.0,0.5,60,90\n")
+        return TranscriptionResult(
+            note_count=self._note_count, pitch_range_midi=(60, 60 + self._note_count - 1),
+            first_note_s=0.0, last_note_s=0.5 * self._note_count, midi_path=midi_path, notes_path=notes_path,
+        )
+
+
+def test_run_track_job_guitar_klapuri_backend_writes_done_status(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    project = _project_with_tempo(tmp_path)
+    job_dir = _job_dir(tmp_path)
+    source = _source(job_dir)
+    write_status(job_dir, job_id="job-1", source_track_name="KoHD_instrumental", requested_program=0)
+    monkeypatch.setattr("vgt.track_jobs.EssentiaTranscriber", lambda: _FakeProfileTranscriber(note_count=3))
+
+    status = run_track_job(project, "job-1", source=source, force_program=0, backend="guitar-klapuri")
+
+    assert status["status"] == "done"
+    assert status["note_count"] == 3
+    assert status["backend"] == "guitar-klapuri"
+    assert status["error"] is None
+    assert (job_dir / "result.mid").is_file()
+    assert (job_dir / "result.csv").is_file()
+
+
+def test_run_track_job_guitar_melodia_backend_uses_essentia_transcriber(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    project = _project_with_tempo(tmp_path)
+    job_dir = _job_dir(tmp_path)
+    source = _source(job_dir)
+    monkeypatch.setattr("vgt.track_jobs.EssentiaTranscriber", lambda: _FakeProfileTranscriber(note_count=1))
+
+    status = run_track_job(project, "job-1", source=source, force_program=0, backend="guitar-melodia")
+
+    assert status["status"] == "done"
+    assert status["backend"] == "guitar-melodia"
+
+
+def test_run_track_job_basic_pitch_backend_writes_done_status(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    project = _project_with_tempo(tmp_path)
+    job_dir = _job_dir(tmp_path)
+    source = _source(job_dir)
+    monkeypatch.setattr("vgt.track_jobs.BasicPitchTranscriber", lambda: _FakeProfileTranscriber(note_count=5))
+
+    status = run_track_job(project, "job-1", source=source, force_program=52, backend="basic-pitch")
+
+    assert status["status"] == "done"
+    assert status["note_count"] == 5
+    assert status["backend"] == "basic-pitch"
+    assert (job_dir / "result.mid").is_file()
+    assert (job_dir / "result.csv").is_file()
+
+
+def test_run_track_job_mt3_backend_never_constructs_a_profile_transcriber(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The default `backend="mt3"` path must not touch either non-MT3
+    transcriber -- confirms the branch split in `run_track_job` is real,
+    not just cosmetic."""
+    project = _project_with_tempo(tmp_path)
+    job_dir = _job_dir(tmp_path)
+    source = _source(job_dir)
+    _provisioned(monkeypatch, tmp_path)
+    monkeypatch.setattr(subprocess, "run", _fake_run_success())
+
+    def _boom():
+        raise AssertionError("mt3 backend must not construct a profile-backend transcriber")
+
+    monkeypatch.setattr("vgt.track_jobs.EssentiaTranscriber", _boom)
+    monkeypatch.setattr("vgt.track_jobs.BasicPitchTranscriber", _boom)
+
+    status = run_track_job(project, "job-1", source=source, force_program=25)
+
+    assert status["status"] == "done"
+    assert status["backend"] == "mt3"
+
+
+def test_run_track_job_unknown_backend_records_error_status(tmp_path: Path) -> None:
+    project = _project_with_tempo(tmp_path)
+    job_dir = _job_dir(tmp_path)
+    source = _source(job_dir)
+
+    status = run_track_job(project, "job-1", source=source, force_program=0, backend="not-a-real-backend")
+
+    assert status["status"] == "error"
+    assert "not-a-real-backend" in status["error"]
+
+
+def test_cli_track_run_accepts_backend_flag(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture
+) -> None:
+    project = _project_with_tempo(tmp_path)
+    job_dir = _job_dir(tmp_path)
+    source = _source(job_dir)
+    monkeypatch.setattr("vgt.track_jobs.EssentiaTranscriber", lambda: _FakeProfileTranscriber(note_count=2))
+
+    exit_code = main([
+        "transcription", "track", "run", str(project), "job-1", "--source", str(source), "--force-program", "0",
+        "--backend", "guitar-klapuri",
+    ])
+
+    assert exit_code == 0
+    printed = json.loads(capsys.readouterr().out)
+    assert printed["status"] == "done"
+    assert printed["backend"] == "guitar-klapuri"
 
 
 def test_write_status_merges_onto_existing_fields(tmp_path: Path) -> None:

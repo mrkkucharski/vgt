@@ -28,6 +28,7 @@ from typing import Any, Callable
 import json
 import os
 import platform
+import shutil
 import subprocess
 import tempfile
 
@@ -40,15 +41,36 @@ from .mt3_normalize import (
 from .sidecar import SidecarError, read_sidecar
 from .transcribe import (
     MT3_TIMEOUT_SECONDS,
+    BasicPitchTranscriber,
+    EssentiaTranscriber,
     Mt3Spec,
     TranscriptionError,
+    _bar_duration_seconds,
     _stderr_tail,
     _without_temporary_path,
+    basic_pitch_spec_from_profile,
     build_mt3_argv,
+    essentia_spec_from_profile,
+    instrument_profile,
     tempo_map_reference,
 )
 
 NOTIFICATION_TITLE = "vgt"
+
+# The on-demand track job's non-MT3 alternatives (see the plan's "profile
+# picker" step, added on top of the original MT3-only design): each maps to
+# a builtin registry profile, resolved through the exact same
+# `*_spec_from_profile` helpers `vgt analyze` uses for its own targets, so a
+# profile picked here and one picked through `--mode` never diverge. `mt3`
+# is not in this map -- it stays on its own dedicated path in
+# `run_track_job` below, since only MT3 has a multi-instrument decode to
+# pin with `force_program`.
+TRACK_JOB_BACKENDS: tuple[str, ...] = ("mt3", "guitar-klapuri", "guitar-melodia", "basic-pitch")
+_PROFILE_NAME_FOR_BACKEND: dict[str, str] = {
+    "guitar-klapuri": "guitar-klapuri",
+    "guitar-melodia": "guitar-melodia",
+    "basic-pitch": "default",
+}
 
 
 def _now_iso() -> str:
@@ -158,13 +180,15 @@ def _run_mt3(source: Path, spec: Mt3Spec, *, work_dir: Path) -> Path:
     return raw_output
 
 
-def _resolve_tempo(project: str | Path) -> tuple[float | None, Any]:
-    """The project's already-analyzed tempo/tempo-map, read-only.
+def _resolve_tempo(project: str | Path) -> tuple[float | None, Any, str | None]:
+    """The project's already-analyzed tempo/tempo-map/time-signature, read-only.
 
     Never calls `analysis.analyze()`: a track job runs entirely off what
     `vgt analyze` already persisted (see the plan's "Independence from
     `vgt apply`"). Fails clearly, rather than falling back to a bare 120 BPM
-    guess, when no analyzed tempo is on record yet.
+    guess, when no analyzed tempo is on record yet. The time signature is
+    used only by the non-MT3 backends' bar-based cleanup (see
+    `_run_profile_backend`); MT3 has no such cleanup and ignores it.
     """
     try:
         sidecar = read_sidecar(project)
@@ -176,7 +200,42 @@ def _resolve_tempo(project: str | Path) -> tuple[float | None, Any]:
             "no analyzed tempo is on record for this project; run `vgt analyze` at least once before "
             "transcribing an arbitrary track"
         )
-    return tempo_value.get("bpm"), tempo_map_reference(tempo_value)
+    return tempo_value.get("bpm"), tempo_map_reference(tempo_value), tempo_value.get("time_signature")
+
+
+def _run_profile_backend(
+    source: Path,
+    backend: str,
+    *,
+    midi_tempo: float | None,
+    tempo_map: Any,
+    time_signature: str | None,
+    work_dir: Path,
+    progress: Callable[[str], None] | None = None,
+) -> tuple[Path, Path, int]:
+    """Run one of the non-MT3 on-demand backends and return its raw MIDI/CSV
+    paths and note count.
+
+    Unlike MT3's `force_program` (see `_build_spec`), Basic Pitch and
+    Essentia have no multi-instrument classification to pin: neither backend
+    is even aware of the user's requested GM program. That choice is
+    recorded in `status.json` for labelling only (see `run_track_job`) and
+    never reaches these specs.
+    """
+    profile = instrument_profile(_PROFILE_NAME_FOR_BACKEND[backend])
+    bar_seconds = _bar_duration_seconds(midi_tempo, time_signature)
+    sustain_clamp_s = bar_seconds * profile.sustain_clamp_bars if bar_seconds else None
+    if profile.backend == "essentia":
+        spec = essentia_spec_from_profile(
+            profile, midi_tempo=midi_tempo, sustain_clamp_s=sustain_clamp_s, tempo_map=tempo_map,
+        )
+        result = EssentiaTranscriber().transcribe(source, work_dir, spec, progress)
+    else:
+        spec = basic_pitch_spec_from_profile(
+            profile, midi_tempo=midi_tempo, sustain_clamp_s=sustain_clamp_s, tempo_map=tempo_map,
+        )
+        result = BasicPitchTranscriber().transcribe(source, work_dir, spec, progress)
+    return result.midi_path, result.notes_path, result.note_count
 
 
 def run_track_job(
@@ -185,50 +244,79 @@ def run_track_job(
     *,
     source: Path,
     force_program: int,
+    backend: str = "mt3",
     label: str | None = None,
     progress: Callable[[str], None] | None = None,
 ) -> dict[str, Any]:
-    """Run one on-demand single-track MT3 job to completion and return its
-    final `status.json` contents.
+    """Run one on-demand single-track transcription job to completion and
+    return its final `status.json` contents.
+
+    `backend` selects between the original MT3 path (default, unchanged) and
+    the non-MT3 alternatives in `TRACK_JOB_BACKENDS`/`_PROFILE_NAME_FOR_BACKEND`
+    -- Essentia's `guitar-klapuri`/`guitar-melodia` multi-pitch estimators, or
+    plain Basic Pitch -- run through `_run_profile_backend`. Only MT3 ever
+    reads `force_program`: the other backends have no multi-instrument
+    decode to pin (see `_run_profile_backend`'s docstring); `force_program`
+    is still recorded in `status.json` for every backend, for track-label
+    purposes only.
 
     Never raises: every failure mode (missing analyzed tempo, missing
-    provisioning, a bad subprocess exit, a malformed MT3 file, or any other
-    unexpected exception) is caught and recorded as `status: "error"` in
-    `status.json`, because this process is detached and nothing else will
-    ever see it fail (see the module docstring). The OS notification fires
-    last, success or failure, and is itself never allowed to raise.
+    provisioning, a bad subprocess exit, a malformed output file, or any
+    other unexpected exception) is caught and recorded as `status: "error"`
+    in `status.json`, because this process is detached and nothing else
+    will ever see it fail (see the module docstring). The OS notification
+    fires last, success or failure, and is itself never allowed to raise.
     """
     emit = progress or (lambda _message: None)
     job_dir = source.parent
-    write_status(job_dir, status="running", job_id=job_id, label=label, started_at=_now_iso())
+    write_status(job_dir, status="running", job_id=job_id, label=label, backend=backend, started_at=_now_iso())
 
     try:
-        emit(f"transcribing (on-demand mt3): {source.name}")
-        midi_tempo, tempo_map = _resolve_tempo(project)
-        from .mt3_provision import Mt3ProvisionError, require_mt3_provisioned
+        midi_tempo, tempo_map, time_signature = _resolve_tempo(project)
+        if backend == "mt3":
+            emit(f"transcribing (on-demand mt3): {source.name}")
+            from .mt3_provision import Mt3ProvisionError, require_mt3_provisioned
 
-        try:
-            checkpoint_fingerprint = require_mt3_provisioned().fingerprint
-        except Mt3ProvisionError as exc:
-            raise TranscriptionError(str(exc)) from exc
-        spec = _build_spec(
-            midi_tempo=midi_tempo, tempo_map=tempo_map, force_program=force_program,
-            checkpoint_fingerprint=checkpoint_fingerprint,
-        )
-        with tempfile.TemporaryDirectory(prefix="vgt-track-job-") as temporary:
-            work_dir = Path(temporary)
-            raw_output = _run_mt3(source, spec, work_dir=work_dir)
             try:
-                selected = merge_all_musical_tracks(raw_output)
-            except TranscriptionError as exc:
-                raise TranscriptionError(_without_temporary_path(str(exc), work_dir)) from exc
-            midi_path = job_dir / "result.mid"
-            notes_path = job_dir / "result.csv"
-            write_normalized_mt3_artifacts(
-                selected, csv_path=notes_path, midi_path=midi_path, tempo_bpm=midi_tempo or 120.0, tempo_map=tempo_map,
+                checkpoint_fingerprint = require_mt3_provisioned().fingerprint
+            except Mt3ProvisionError as exc:
+                raise TranscriptionError(str(exc)) from exc
+            spec = _build_spec(
+                midi_tempo=midi_tempo, tempo_map=tempo_map, force_program=force_program,
+                checkpoint_fingerprint=checkpoint_fingerprint,
             )
-        note_count = len(selected.notes)
-        emit(f"done (on-demand mt3): {note_count} notes")
+            with tempfile.TemporaryDirectory(prefix="vgt-track-job-") as temporary:
+                work_dir = Path(temporary)
+                raw_output = _run_mt3(source, spec, work_dir=work_dir)
+                try:
+                    selected = merge_all_musical_tracks(raw_output)
+                except TranscriptionError as exc:
+                    raise TranscriptionError(_without_temporary_path(str(exc), work_dir)) from exc
+                midi_path = job_dir / "result.mid"
+                notes_path = job_dir / "result.csv"
+                write_normalized_mt3_artifacts(
+                    selected, csv_path=notes_path, midi_path=midi_path, tempo_bpm=midi_tempo or 120.0, tempo_map=tempo_map,
+                )
+            note_count = len(selected.notes)
+        elif backend in _PROFILE_NAME_FOR_BACKEND:
+            emit(f"transcribing (on-demand {backend}): {source.name}")
+            with tempfile.TemporaryDirectory(prefix="vgt-track-job-") as temporary:
+                work_dir = Path(temporary)
+                try:
+                    raw_midi_path, raw_notes_path, note_count = _run_profile_backend(
+                        source, backend, midi_tempo=midi_tempo, tempo_map=tempo_map, time_signature=time_signature,
+                        work_dir=work_dir, progress=progress,
+                    )
+                except TranscriptionError as exc:
+                    raise TranscriptionError(_without_temporary_path(str(exc), work_dir)) from exc
+                midi_path = job_dir / "result.mid"
+                notes_path = job_dir / "result.csv"
+                shutil.copyfile(raw_midi_path, midi_path)
+                shutil.copyfile(raw_notes_path, notes_path)
+        else:
+            raise TranscriptionError(f"unknown track job backend {backend!r}; must be one of {TRACK_JOB_BACKENDS}")
+
+        emit(f"done (on-demand {backend}): {note_count} notes")
         status = write_status(
             job_dir, status="done", finished_at=_now_iso(), note_count=note_count, error=None,
         )

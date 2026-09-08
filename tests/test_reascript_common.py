@@ -337,6 +337,28 @@ def test_track_job_name_mirrors_the_source_name_verbatim() -> None:
     )
 
 
+def test_track_job_name_labels_every_non_mt3_backend_and_falls_back_for_unknown() -> None:
+    """A `--backend` other than mt3 gets its own suffix (see
+    vgt_transcribe_track.lua's TRANSCRIPTION_BACKENDS); an unrecognized
+    string still falls through readably rather than erroring, and a job
+    from before the backend picker existed (no `backend` field at all, i.e.
+    Lua `nil`) still resolves to "MT3", exactly like the single-argument
+    call above."""
+    lua_program = "\n".join([
+        "reaper = {}",
+        _helpers_prefix(),
+        "io.write(track_job_name('Guitar (stem)', 'mt3'), '|')",
+        "io.write(track_job_name('Guitar (stem)', 'guitar-klapuri'), '|')",
+        "io.write(track_job_name('Guitar (stem)', 'guitar-melodia'), '|')",
+        "io.write(track_job_name('Guitar (stem)', 'basic-pitch'), '|')",
+        "io.write(track_job_name('Guitar (stem)', 'made-up-backend'))",
+    ])
+    assert _run(lua_program).stdout == (
+        "Guitar (stem) (MT3)|Guitar (stem) (guitar-klapuri)|Guitar (stem) (guitar-melodia)|"
+        "Guitar (stem) (Basic Pitch)|Guitar (stem) (made-up-backend)"
+    )
+
+
 def _import_finished_job_reaper_stubs() -> str:
     """A minimal live-project stand-in for import_finished_job: one source
     track (index 0) whose I_FOLDERDEPTH the test sets before calling in,

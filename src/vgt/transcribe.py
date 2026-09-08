@@ -1467,20 +1467,14 @@ def default_spec_for_target(
             # profile only decides which real backend would run.
             backend="essentia" if backend == "basic-pitch" else backend,
         )
-    return BasicPitchSpec(
+    return basic_pitch_spec_from_profile(
+        profile,
+        midi_tempo=midi_tempo,
+        sustain_clamp_s=sustain_clamp_s,
+        tempo_map=tempo_map,
         backend=backend,
         package_pin=package_pin,
         serialization=serialization,
-        onset_threshold=profile.onset_threshold,
-        frame_threshold=profile.frame_threshold,
-        minimum_note_length_ms=profile.minimum_note_length_ms,
-        minimum_frequency_hz=profile.minimum_frequency_hz,
-        maximum_frequency_hz=profile.maximum_frequency_hz,
-        multiple_pitch_bends=profile.multiple_pitch_bends,
-        melodia_trick=profile.melodia_trick,
-        midi_tempo=midi_tempo,
-        tempo_map=tempo_map,
-        cleanup=_instantiate_cleanup(profile.cleanup, sustain_clamp_s=sustain_clamp_s),
     )
 
 
@@ -1554,6 +1548,41 @@ def essentia_spec_from_profile(
         minimum_frequency_hz=profile.minimum_frequency_hz,
         maximum_frequency_hz=profile.maximum_frequency_hz,
         merge_gap_ms=profile.essentia.merge_gap_ms,
+        midi_tempo=midi_tempo,
+        tempo_map=tempo_map,
+        cleanup=_instantiate_cleanup(profile.cleanup, sustain_clamp_s=sustain_clamp_s),
+    )
+
+
+def basic_pitch_spec_from_profile(
+    profile: InstrumentProfile,
+    *,
+    midi_tempo: float | None,
+    sustain_clamp_s: float | None,
+    tempo_map: TempoMapReference | None = None,
+    backend: str = "basic-pitch",
+    package_pin: str = BASIC_PITCH_PACKAGE_PIN,
+    serialization: str = BASIC_PITCH_SERIALIZATION,
+) -> BasicPitchSpec:
+    """Build the `BasicPitchSpec` a `backend="basic-pitch"` profile describes.
+
+    Shared by `default_spec_for_target` and the on-demand track-job runner
+    (`track_jobs.run_track_job`), so a profile selected through `--mode` and
+    one selected for an arbitrary track resolve to identical settings.
+    """
+    if profile.backend != "basic-pitch":
+        raise TranscriptionError(f"profile {profile.name!r} does not use the basic-pitch backend")
+    return BasicPitchSpec(
+        backend=backend,
+        package_pin=package_pin,
+        serialization=serialization,
+        onset_threshold=profile.onset_threshold,
+        frame_threshold=profile.frame_threshold,
+        minimum_note_length_ms=profile.minimum_note_length_ms,
+        minimum_frequency_hz=profile.minimum_frequency_hz,
+        maximum_frequency_hz=profile.maximum_frequency_hz,
+        multiple_pitch_bends=profile.multiple_pitch_bends,
+        melodia_trick=profile.melodia_trick,
         midi_tempo=midi_tempo,
         tempo_map=tempo_map,
         cleanup=_instantiate_cleanup(profile.cleanup, sustain_clamp_s=sustain_clamp_s),

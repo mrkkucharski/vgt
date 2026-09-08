@@ -1,8 +1,10 @@
--- vgt: transcribe the selected track (MT3, on-demand) for REAPER 7.x.
+-- vgt: transcribe the selected track (on-demand) for REAPER 7.x.
 -- Install this file in REAPER's Action List and run it while the target RPP
 -- is open, with exactly one track selected. It renders that track's audio,
--- captures the selection's geometry, spawns a detached background MT3 job,
--- and starts a bounded poll that auto-imports the result when it finishes.
+-- captures the selection's geometry, spawns a detached background
+-- transcription job (MT3 by default, or one of the other backends offered
+-- in the second-step menu below), and starts a bounded poll that
+-- auto-imports the result when it finishes.
 -- See docs/on-demand-track-transcription-plan.md for the full design.
 --
 -- RENDER_SETTINGS/RENDER_BOUNDSFLAG/RENDER_FORMAT (the "stems, selected
@@ -112,7 +114,7 @@ end
 -- (see mt3_normalize.GM_PROGRAM_FAMILIES) -- exactly the ones worth
 -- offering as a full clickable menu instead of a bare number field. Other
 -- guesses (vocals, strings, piano/keys) have no equally clean 8-item
--- family, so they fall straight to manual number entry.
+-- family; they get the curated common-instrument menu below instead.
 local GM_PROGRAM_FAMILIES = {
   guitar = {first = 24, last = 31},
   bass = {first = 32, last = 39},
@@ -152,6 +154,79 @@ local function pick_program_from_family(name, family)
   if choice < 1 then return nil end
   if choice == #labels then return "manual" end
   return family.first + choice - 1
+end
+
+-- A hand-picked set of common non-guitar/non-bass instruments -- covering
+-- piano, electric piano, organ, strings, choir/vocal, and a few winds/brass
+-- -- offered when the track-name guess didn't land in either GM_PROGRAM_
+-- FAMILIES range above. These programs are not contiguous, unlike the
+-- guitar/bass families, so they need their own flat list rather than a
+-- first/last range.
+local COMMON_PROGRAMS = {0, 4, 16, 48, 52, 56, 65, 73}
+
+-- Same menu-numbering contract as family_menu_labels (every listed program,
+-- then a manual-entry escape hatch), over COMMON_PROGRAMS's flat list
+-- instead of a contiguous range.
+local function common_program_menu_labels()
+  local labels = {}
+  for _, program in ipairs(COMMON_PROGRAMS) do
+    labels[#labels + 1] = program .. ": " .. gm_program_name(program)
+  end
+  labels[#labels + 1] = "Other (enter a GM program number)..."
+  return labels
+end
+
+-- Same contract as pick_program_from_family (chosen program number, the
+-- string "manual", or nil if dismissed), over the curated common-instrument
+-- list instead of a family range.
+local function pick_common_program(name)
+  local labels = common_program_menu_labels()
+  gfx.init('vgt: transcribe "' .. name .. '"', 0, 0)
+  gfx.x, gfx.y = gfx.mouse_x, gfx.mouse_y
+  local choice = gfx.showmenu(table.concat(labels, "|"))
+  gfx.quit()
+  if choice < 1 then return nil end
+  if choice == #labels then return "manual" end
+  return COMMON_PROGRAMS[choice]
+end
+
+-- The transcription methods offered as a second step, after the instrument
+-- picker: MT3 remains the original default/first option; the other three
+-- run the track through vgt's regular Essentia/Basic Pitch profiles instead
+-- (see track_jobs._PROFILE_NAME_FOR_BACKEND on the Python side). `value` is
+-- exactly what `--backend` on the spawned command line expects -- keep this
+-- list in lockstep with `vgt.track_jobs.TRACK_JOB_BACKENDS`.
+local TRANSCRIPTION_BACKENDS = {
+  {value = "mt3", label = "MT3 (multi-instrument decoder, default)"},
+  {value = "guitar-klapuri", label = "guitar-klapuri (Essentia multi-pitch DSP)"},
+  {value = "guitar-melodia", label = "guitar-melodia (Essentia, alternate algorithm)"},
+  {value = "basic-pitch", label = "Basic Pitch (raw, general-purpose)"},
+}
+
+-- Menu labels for every entry in TRANSCRIPTION_BACKENDS, in the exact order
+-- gfx.showmenu will number them (1-based) -- split out from pick_backend so
+-- this part is testable without a live gfx context, mirroring
+-- family_menu_labels/common_program_menu_labels above.
+local function backend_menu_labels()
+  local labels = {}
+  for _, backend in ipairs(TRANSCRIPTION_BACKENDS) do
+    labels[#labels + 1] = backend.label
+  end
+  return labels
+end
+
+-- Offer a clickable menu of every method in TRANSCRIPTION_BACKENDS. Returns
+-- the chosen backend's `value`, or nil if the menu was dismissed. Unlike
+-- the instrument pickers above, there is no manual-entry escape hatch here:
+-- the backend list is a small, fixed set, not an open GM program range.
+local function pick_backend(name)
+  local labels = backend_menu_labels()
+  gfx.init('vgt: transcribe "' .. name .. '"', 0, 0)
+  gfx.x, gfx.y = gfx.mouse_x, gfx.mouse_y
+  local choice = gfx.showmenu(table.concat(labels, "|"))
+  gfx.quit()
+  if choice < 1 then return nil end
+  return TRANSCRIPTION_BACKENDS[choice].value
 end
 
 local function validated_single_selection()
@@ -468,10 +543,14 @@ local function transcribe_selected_track()
     local picked = pick_program_from_family(name, family)
     if picked == nil then return end
     if picked ~= "manual" then program = picked end
+  else
+    local picked = pick_common_program(name)
+    if picked == nil then return end
+    if picked ~= "manual" then program = picked end
   end
   if not program then
-    -- Either no family menu applies to this guess, or the user explicitly
-    -- asked for manual entry from that menu. The field caption column has a
+    -- The user asked for manual entry from whichever menu was shown above
+    -- (family or common-instrument). The field caption column has a
     -- fixed width GetUserInputs never widens (extrawidth only grows the
     -- input box itself), so a longer instrument name gets silently clipped
     -- there; the dialog's own title bar has much more room and renders in
@@ -488,11 +567,20 @@ local function transcribe_selected_track()
     end
   end
   program = as_integer_program(program)
-  -- Echo back what the number means before actually spending an inference
-  -- run on it: the whole point of naming it is so the user can catch a typo
-  -- (e.g. 35 instead of 33) before the job starts, not just after.
+
+  local chosen_backend = pick_backend(name)
+  if chosen_backend == nil then return end
+  local backend_label = chosen_backend
+  for _, backend in ipairs(TRANSCRIPTION_BACKENDS) do
+    if backend.value == chosen_backend then backend_label = backend.label end
+  end
+
+  -- Echo back what the number and method mean before actually spending an
+  -- inference run on it: the whole point of naming both is so the user can
+  -- catch a typo (e.g. 35 instead of 33) or the wrong method before the job
+  -- starts, not just after.
   if reaper.ShowMessageBox(
-    string.format('Transcribe "%s" onto GM program %d (%s)?', name, program, gm_program_name(program)),
+    string.format('Transcribe "%s" onto GM program %d (%s) via %s?', name, program, gm_program_name(program), backend_label),
     "vgt: transcribe " .. name, 4
   ) ~= 6 then
     return
@@ -516,12 +604,14 @@ local function transcribe_selected_track()
   "item_start_s": %f,
   "item_end_s": %f,
   "requested_program": %d,
+  "backend": %s,
   "midi_tempo": %f,
   "created_at": %s
 }
 ]],
     common.encode_json_scalar(job_id), common.encode_json_scalar(name), common.encode_json_scalar(track_guid(track)),
-    start_s, end_s, program, tempo_bpm, common.encode_json_scalar(os.date("!%Y-%m-%dT%H:%M:%SZ"))
+    start_s, end_s, program, common.encode_json_scalar(chosen_backend),
+    tempo_bpm, common.encode_json_scalar(os.date("!%Y-%m-%dT%H:%M:%SZ"))
   ))
   status_file:close()
 
@@ -535,6 +625,7 @@ local function transcribe_selected_track()
     common.shell_quote(python_executable), "-m", "vgt", "transcription", "track", "run",
     common.shell_quote((common.project_path())), common.shell_quote(job_id),
     "--source", common.shell_quote(wav_path), "--force-program", tostring(program),
+    "--backend", common.shell_quote(chosen_backend),
     "--label", common.shell_quote(name),
   }, " ")
 
@@ -557,7 +648,7 @@ local function transcribe_selected_track()
 
   reaper.ShowConsoleMsg(
     "vgt: started transcription job " .. job_id .. " for \"" .. name .. "\" (program " .. program
-      .. " = " .. gm_program_name(program) .. ")\n"
+      .. " = " .. gm_program_name(program) .. ", backend " .. chosen_backend .. ")\n"
   )
 
   -- Reuses vgt_get_transcription.lua's own importer (common.check_and_import_job)

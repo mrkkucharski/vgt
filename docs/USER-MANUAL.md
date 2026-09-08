@@ -17,7 +17,7 @@ checklist.
 
    The actions are installed to
    `~/Library/Application Support/REAPER/Scripts/vgt`. In REAPER's Action
-   List, use `ReaScript: Load` to register the five installed action files once:
+   List, use `ReaScript: Load` to register the seven installed action files once:
    `vgt_initialize.lua` initializes and applies vgt-managed objects,
    `vgt_sync.lua` saves section corrections;
    `vgt_sync_tempo_map.lua` is the separate, confirmation-gated action for
@@ -25,6 +25,11 @@ checklist.
    `vgt_create_working_copy.lua` creates protected user-owned `[work]` copies
    of generated reference MIDI, chords, or key tracks; and
    `vgt_promote_working_copy.lua` promotes finished copies into `[clean]`.
+   `vgt_transcribe_track.lua` and `vgt_get_transcription.lua` run an
+   independent on-demand transcription job against any single selected track
+   (see [On-demand single-track transcription](#on-demand-single-track-transcription)
+   below); `vgt_common.lua` is a shared library the others load and is not
+   itself a registerable action.
    This step does not require retaining a source checkout. `--dry-run` previews
    paths without changing them and
    `--destination DIR` is useful for a custom REAPER resource location or
@@ -787,6 +792,56 @@ guitar-family track) has still been silently dropped by the
 dominant-track-only rule. Treat these profiles as an experimental,
 single-song-at-a-time comparison against the current default (see
 docs/instrument-transcription-findings.md), not a production replacement.
+
+## On-demand single-track transcription
+
+`vgt_transcribe_track.lua` and `vgt_get_transcription.lua` transcribe **any
+one selected track** -- a separated stem, a raw recording, a `[work]` edit,
+anything with audio -- independently of the target/profile system above.
+Unlike `vgt analyze`'s per-target transcription, this runs as a detached
+background job kicked off from REAPER itself: no terminal step, no
+`vgt apply` involved. It requires `vgt_initialize.lua` and at least one
+prior `vgt analyze` run (for the project's analyzed tempo and artifact
+namespace).
+
+1. Select exactly one non-`[vgt]`, unmuted track and run
+   `vgt_transcribe_track.lua` from the Action List.
+2. **Pick an instrument.** A menu offers the guitar or bass GM-program family
+   when the track name suggests one; otherwise a curated menu of common
+   instruments (grand piano, electric piano, organ, strings, choir, trumpet,
+   alto sax, flute) is offered instead. Either menu's last entry, "Other,"
+   falls through to typing a raw GM program number (0-127).
+3. **Pick a transcription method.** A second menu offers:
+
+   | Method | What it does |
+   | --- | --- |
+   | MT3 (default) | MT3's multi-instrument decoder, forced (`--force-program`) onto the GM program just chosen -- every predicted note, across every MT3-detected instrument track, is merged onto that one instrument. |
+   | `guitar-klapuri` | Essentia's Klapuri multi-pitch estimator -- the same backend `guitar` targets by default (see [Basic Pitch](#basic-pitch-guitar-vocals-piano-strings-instrumental-backing-original-mix) above). Requires the optional `essentia` extra (`pip install "vgt[essentia]"`); a missing install fails the job cleanly with an install hint, in `status.json`, not as a silent fallback to another backend. |
+   | `guitar-melodia` | Essentia's other multi-pitch algorithm; same install requirement. |
+   | Basic Pitch | The plain, general-purpose Basic Pitch profile (no frequency narrowing, no cleanup) -- a reasonable default when the track isn't a guitar or bass and the two Essentia options don't apply. |
+
+   Only MT3 reads the chosen GM program as a real instruction (it pins the
+   decoder's output onto it); the other three backends have no
+   multi-instrument classification of their own to pin, so the program is
+   recorded only as the result track's label.
+4. Confirm the summary dialog. The track renders, and the job runs detached
+   in the background -- REAPER is not blocked.
+5. `vgt_get_transcription.lua` reports and imports any finished job at any
+   time; the same check also runs automatically for a few minutes right
+   after step 4 via a bounded background poll, so the common case needs no
+   manual re-check. A finished job appears as one new
+   `<source name> (<method>)` MIDI track -- e.g. `[work] Guitar (MT3)` or
+   `KoHD_instrumental (guitar-klapuri)` -- positioned to match the source
+   track and authored at the analyzed project tempo, plus an OS-level
+   notification even if REAPER has lost focus.
+
+This track is deliberately **not** `[vgt]`-managed: `vgt_initialize.lua`/
+apply never creates, renames, or reconciles it, exactly like a `[work]`
+copy. Job state lives in `vgt/<stable-id>/track-jobs/<job-id>/status.json`
+beside the project, never in the `.vgt` sidecar while a job is in flight;
+only the finished import touches the sidecar, and only at the moment
+REAPER creates the track. See docs/on-demand-track-transcription-plan.md
+for the full design.
 
 ## Working copies and promotion
 
