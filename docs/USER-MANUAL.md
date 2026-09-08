@@ -40,7 +40,8 @@ checklist.
    folders in that order.
 4. Run `vgt analyze "Song.RPP"` in a terminal. After any available separation,
    it also transcribes the requested stems locally: DrumScript transcribes
-   `drums`, a pYIN pitch tracker transcribes `bass`, and Basic Pitch
+   `drums`, a pYIN pitch tracker transcribes `bass`, Essentia's Klapuri
+   multi-pitch estimator transcribes `guitar` by default, and Basic Pitch
    transcribes every other target. This is free and needs no confirmation;
    guitar is requested by default.
    When MT3 has been provisioned, it also transcribes the complete instrumental
@@ -119,10 +120,13 @@ Artifacts live under `vgt/<stable-id>/` beside the project:
 - `transcription/<target>/<variant-id>.mid` — a generated reference MIDI for
   each retained successful variant. The opaque ID is stable; a label is not a
   filename.
-- `transcription/<target>/<variant-id>.csv` — that Basic Pitch variant's
-  derived note-events data (every target except `drums`).
-- `transcription/cache/basic-pitch/<detection-hash>/raw.csv` (and raw MIDI) —
-  shared raw detection data. Cleanup-only guitar variants can reuse it.
+- `transcription/<target>/<variant-id>.csv` — that variant's derived
+  note-events data (every target except `drums`).
+- `transcription/cache/<backend-dir>/<detection-hash>/raw.csv` (and raw MIDI)
+  — shared raw detection data, keyed by backend (`basic-pitch/` for Basic
+  Pitch and pYIN, `essentia/` for `guitar-klapuri`/`guitar-melodia`, `mt3/`
+  for the MT3 profiles). Cleanup-only variants of the same backend/target can
+  reuse it.
 - `transcription/drums/<variant-id>.json` — a DrumScript variant's percussion
   event data (instrument labels and onset times).
 
@@ -231,7 +235,7 @@ full mix.
 | --- | --- |
 | `drums` | DrumScript on the raw stem by default (`raw`); `hpss` adds analysis-only gentle HPSS, and `adtof` uses ADTOF |
 | `bass` | pYIN, a monophonic pitch tracker (see [Bass](#pyin-bass) below) |
-| `guitar` | Basic Pitch with analysis-only harmonic HPSS by default; explicit `default` opts out to raw guitar |
+| `guitar` | `guitar-klapuri`, Essentia's classical multi-pitch estimator, by default; `--mode guitar=guitar-harmonic` or `--mode guitar=default` opt out to Basic Pitch (see [Basic Pitch](#basic-pitch-guitar-vocals-piano-strings-instrumental-backing-original-mix) below) |
 | `vocals`, `instrumental`, `backing`, `strings`, `piano`, `original` | Basic Pitch |
 
 Guitar is the default requested target. Add other targets with repeatable
@@ -967,9 +971,10 @@ never block closing an issue:
 - Automatic chord analysis remains audio-based (original mix plus available
   instrumental/guitar/backing stems). Generated or clean MIDI is never fed
   back into chord analysis and is not ground truth.
-- DrumScript backs `drums`; Basic Pitch backs every other target. A DrumScript
-  or Basic Pitch failure records a per-target error and never falls back to
-  the other backend.
+- DrumScript backs `drums`; pYIN backs `bass`; Essentia's Klapuri estimator
+  backs `guitar` by default; Basic Pitch backs every other target (and
+  guitar's opt-out profiles). A backend failure records a per-target error
+  and never falls back to another backend.
 - Reference MIDI tracks are unmuted, time-based, and paired with their source
   stem; their edits are not a supported sync workflow and must be copied to a
   user-owned track first.
