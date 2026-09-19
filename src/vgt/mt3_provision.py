@@ -60,13 +60,23 @@ MT3_REPO_URL = "https://github.com/mrkkucharski/mt3.git"
 # change by reading `mt3/cli.py` at the new commit: `--include-rhythm-vocab`
 # is opt-in, off by default, exactly matching a rhythm-free checkpoint.
 #
+# Re-pinned 2026-09-19 (48fa7174 -> c9116495) to the fork commit the
+# replay12s_checkpoint_1290000 pin below was trained at. Inference-relevant
+# changes in between: "feat: add pitch bend event transcription" adds an
+# opt-in `--pitch-bends` flag (off by default; with it off the codec is
+# id-for-id identical to 48fa7174's rhythm-free one, which is what this
+# no-pitch-bend checkpoint needs), and "Add replay mixture and robust
+# long-window training" raises the parameter-free sinusoidal `FixedEmbed`
+# capacity 2048 -> 4096 for the long-window run's 3072-token targets. The
+# `uv.lock` is byte-identical, so `MT3_LOCK_SHA256` is unchanged.
+#
 # The branch name is only the checkout ref; the commit check below is the
 # reproducible version pin -- `main` is a mutable ref that moves forward
 # independently of this file, so provisioning refuses outright (rather than
 # silently using whatever main's tip currently is) whenever the checked-out
 # commit disagrees with this pin.
 MT3_PINNED_TAG = "main"
-MT3_PINNED_COMMIT = "48fa717462c612cdc74bdec4a1a854a0b84e9a0f"
+MT3_PINNED_COMMIT = "c911649578902ddb951cf3470e685ea95626469a"
 
 MT3_CACHE_DIR_ENV = "VGT_MT3_CACHE_DIR"
 
@@ -91,42 +101,38 @@ MT3_LOCK_SHA256 = "814f0dd55ab3c592b59df97553fe5f988840c2809e5fef7fd93c3213dc1a7
 # Both the model repo revision and directory are pinned: `main` on Hugging
 # Face is mutable and must not decide a transcription cache identity.
 #
-# Re-pinned from 70ex_checkpoint_1126000 to 193ex_it7_norhythm_checkpoint_1196000
-# (https://huggingface.co/mrkkucharski/mt3-guitar-pilot/tree/main/193ex_it7_norhythm_checkpoint_1196000),
-# a later checkpoint from the same guitar-pilot fine-tune, trained on a larger
-# (193-example) corpus. `MT3_HF_REVISION` below is `mt3-guitar-pilot`'s repo
-# sha as of this pin (verified via `curl -s
+# Re-pinned 2026-09-19 from 193ex_it7_norhythm_checkpoint_1196000 to
+# replay12s_checkpoint_1290000
+# (https://huggingface.co/mrkkucharski/mt3-guitar-pilot/tree/main/replay12s_checkpoint_1290000),
+# from training run `replay_12s_nr_npb_i1536_t3072_10k`: guitar-pilot corpus
+# mixed with original-MT3 replay data, rhythm-free ("nr"), no pitch bends
+# ("npb"), 1536-frame inputs ("i1536"), 3072-token targets ("t3072"). The
+# rhythm-free / no-pitch-bend / 12 s window facts were confirmed by the
+# maintainer, not just read off the run name. `MT3_HF_REVISION` below is
+# `mt3-guitar-pilot`'s repo sha as of this pin (the commit that added this
+# checkpoint; verified via `curl -s
 # https://huggingface.co/api/models/mrkkucharski/mt3-guitar-pilot`, `.sha`
-# field, 40 hex chars); re-verify it if re-pinning again later, the same way
+# field); re-verify it if re-pinning again later, the same way
 # `MT3_PINNED_COMMIT` above is a snapshot, not `main`.
-MT3_MODEL_ID = "guitar-pilot-193ex-it7-norhythm-checkpoint-1196000"
+MT3_MODEL_ID = "guitar-pilot-replay12s-checkpoint-1290000"
 MT3_HF_REPO_ID = "mrkkucharski/mt3-guitar-pilot"
-MT3_HF_REVISION = "7cef56834dab824995fc8aad6cdeb91f5b969c42"
-# Flat layout, like the other sibling checkpoint dirs at repo root (e.g.
-# checkpoint_1108000/) -- `_CHECKPOINT_METADATA` sits directly inside, unlike
-# the previous 70ex_checkpoint_1126000 pin's extra nested
-# `checkpoint_1126000/` level. Verified against the live HF tree (`curl -s
-# .../api/models/mrkkucharski/mt3-guitar-pilot`'s `siblings` listing) before
-# pinning.
-MT3_HF_CHECKPOINT_DIR = "193ex_it7_norhythm_checkpoint_1196000"
+MT3_HF_REVISION = "d7f33c4934b6877b37246b10ad61735df679f588"
+# Flat layout, like the other sibling checkpoint dirs at repo root --
+# `_CHECKPOINT_METADATA` sits directly inside. Verified against the live HF
+# `siblings` listing before pinning.
+MT3_HF_CHECKPOINT_DIR = "replay12s_checkpoint_1290000"
 
-# 256 spectrogram frames at MT3's fixed 125 frames/s is a ~2.048 s window --
-# the fork's own `mt3-transcribe` default (`mt3/cli.py`: "Defaults to the
-# 256-frame (~2 s) baseline; pass 512 for a checkpoint adapted to the ~4 s
-# window"). Corrected 2026-08-31 from 512: that value was carried over
-# unchanged from the *previous* 70ex_checkpoint_1126000 pin, which really was
-# a 4 s-adapted checkpoint, but this checkpoint family (193ex_it7_norhythm)
-# is not -- verified for real by re-running `mt3-transcribe` directly against
-# a guitar stem at both window sizes and comparing to the maintainer's own
-# separately-generated reference render for this exact checkpoint
-# (`..._193ex_it7_norhythm_1196000_lb0s_la0s_keep2s.mid`, "keep2s" naming its
-# 2 s window): 512 frames produced only 117 notes total across the three
-# guitar-family programs it split into (87/18/12 for electric-clean/
-# overdriven/distortion), while 256 frames reproduced the reference's
-# per-program note counts exactly (211/8/60 for the same three programs).
-# `MT3_LOOKAHEAD_FRAMES = 0` matches the reference's own "la0s" (zero-second
-# lookahead) and was not implicated -- only the window length was wrong.
-MT3_INPUT_LENGTH_FRAMES = 256
+# 1536 spectrogram frames at MT3's fixed 125 frames/s is a ~12.3 s window,
+# matching the checkpoint's training input length ("i1536"). History: the
+# previous 193ex_it7_norhythm pin used the fork's 256-frame (~2 s) default,
+# after 512 (carried over from the 4 s-adapted 70ex pin) was shown to lose
+# over half the notes against a reference render -- the window must match
+# the checkpoint's training, it is not a free decoding knob.
+#
+# Known gap: `mt3-transcribe` exposes no target-length flag, so decoding
+# runs with the fork's default 1024-token target rather than the 3072 this
+# checkpoint trained with. Very dense 12 s windows may be truncated.
+MT3_INPUT_LENGTH_FRAMES = 1536
 MT3_LOOKAHEAD_FRAMES = 0
 
 
