@@ -7,7 +7,8 @@ creates local reference MIDI from requested stems, and adds only its own
 containers that initialize keeps immediately above the `[vgt]` area.
 
 Read the [user manual](docs/USER-MANUAL.md) for the current workflow, commands,
-track states, correction process, cost controls, and regression contract.
+track states, correction process, and cost controls. The regression contract
+and live REAPER checks are in [docs/verification-checklist.md](docs/verification-checklist.md).
 
 ## Install
 
