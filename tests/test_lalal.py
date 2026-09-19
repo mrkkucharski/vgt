@@ -77,6 +77,26 @@ def test_v1_split_uploads_submits_polls_and_streams_wavs(tmp_path: Path) -> None
     assert all("/api/v1/split/multistem/" != str(request.url.path) for request in seen)
 
 
+def test_upload_encodes_non_ascii_source_names(tmp_path: Path) -> None:
+    source = tmp_path / "Czerwony Jak Cegła (2003 Remaster).m4a"
+    source.write_bytes(_wav_bytes())
+    dispositions: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/api/v1/upload/":
+            dispositions.append(request.headers["Content-Disposition"])
+            return httpx.Response(200, json={"id": "source-1", "duration": 6, "expires": 4102444800})
+        return httpx.Response(200, json={"minutes_left": 0})
+
+    separator = LalalSeparator(license_key=LICENSE_KEY, client=_client(handler))
+    with pytest.raises(InsufficientMinutesError):
+        separator.preflight(source=source, outstanding_operations=5)
+    assert dispositions == [
+        'attachment; filename="Czerwony Jak Ceg_a (2003 Remaster).m4a"; '
+        "filename*=UTF-8''Czerwony%20Jak%20Ceg%C5%82a%20%282003%20Remaster%29.m4a"
+    ]
+
+
 def test_ambiguous_submission_fails_closed_without_a_second_request(tmp_path: Path) -> None:
     wav = _wav_bytes()
     calls = 0

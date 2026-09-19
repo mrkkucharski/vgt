@@ -10,14 +10,34 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Callable
+from urllib.parse import quote
 import os
 import time
+import unicodedata
 import uuid
 import wave
 
 import httpx
 
 from .separation import SplitResult, SplitSpec
+
+
+def _content_disposition(name: str) -> str:
+    """Build an upload ``Content-Disposition`` that survives non-ASCII names.
+
+    HTTP header values must be ASCII, so a name such as ``Cegła.m4a`` gets an
+    ASCII ``filename`` fallback (keeping its extension) plus the exact name as
+    an RFC 5987 ``filename*``.
+    """
+    decomposed = unicodedata.normalize("NFKD", name)
+    fallback = "".join(
+        char if char.isascii() else "_"
+        for char in decomposed
+        if not unicodedata.combining(char)
+    ).replace("\\", "_").replace('"', "_")
+    if fallback == name:
+        return f'attachment; filename="{name}"'
+    return f"attachment; filename=\"{fallback}\"; filename*=UTF-8''{quote(name, safe='')}"
 
 
 class LalalError(RuntimeError):
@@ -162,7 +182,7 @@ class LalalSeparator:
     def _upload(self, source: Path, state: dict[str, Any], checkpoint: Callable[[dict[str, Any]], None]) -> dict[str, Any]:
         if state.get("source_id") and not self._expired(state):
             return state
-        headers = {"Content-Disposition": f'attachment; filename="{source.name}"'}
+        headers = {"Content-Disposition": _content_disposition(source.name)}
         try:
             with source.open("rb") as stream:
                 response = self._client.post(
